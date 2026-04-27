@@ -6,7 +6,7 @@
 
 **Architecture:** FastAPI backend serves a React frontend (built as static files in production). MySQL stores all data. openpyxl generates Excel exports from templates. The system auto-determines the next issue number from a publication schedule table, copies previous issue data as defaults, and lets the user edit only the variable fields before exporting.
 
-**Tech Stack:** Python 3.11+ / FastAPI / SQLAlchemy / Alembic / openpyxl / React 18 / TypeScript / Vite / Ant Design / MySQL
+**Tech Stack:** Python 3.11+ / FastAPI / SQLAlchemy / Alembic / openpyxl / React 18 / TypeScript / Vite / Arco Design (@arco-design/web-react) / MySQL
 
 **Database:** `mysql://ace:EjcT&^h0zYv8Tp@bj-cdb-8qudxjds.sql.tencentcdb.com:24433/zgjyb` (stored in `.env`, never committed)
 
