@@ -1,3 +1,43 @@
+import { useState, useEffect } from 'react';
+import { Table, Tag, Button, Space } from '@arco-design/web-react';
+import { IconEdit, IconSend, IconDownload } from '@arco-design/web-react/icon';
+import { useNavigate } from 'react-router-dom';
+import { getIssues } from '../api/issues';
+import type { Issue } from '../api/issues';
+import type { ColumnProps } from '@arco-design/web-react/es/Table';
+import dayjs from 'dayjs';
+
+const statusColors: Record<string, string> = { draft: 'orange', confirmed: 'blue', exported: 'green' };
+const statusLabels: Record<string, string> = { draft: '草稿', confirmed: '已确认', exported: '已导出' };
+
 export default function History() {
-  return <div>History — 开发中</div>;
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setLoading(true);
+    getIssues(0, 100).then(res => setIssues(res.data)).finally(() => setLoading(false));
+  }, []);
+
+  const columns: ColumnProps<Issue>[] = [
+    { title: '期号', dataIndex: 'issue_number', sorter: (a: Issue, b: Issue) => a.issue_number - b.issue_number },
+    { title: '出版日期', dataIndex: 'publish_date', render: (_, record) => dayjs(record!.publish_date).format('YYYY-MM-DD') },
+    { title: '状态', dataIndex: 'status', render: (_, record) => <Tag color={statusColors[record!.status]}>{statusLabels[record!.status]}</Tag> },
+    { title: '创建时间', dataIndex: 'created_at', render: (_, record) => record!.created_at ? dayjs(record!.created_at).format('MM-DD HH:mm') : '—' },
+    { title: '操作', render: (_, record) => (
+      <Space>
+        <Button size="small" icon={<IconEdit />} onClick={() => navigate(`/report/${record!.id}`)}>报数</Button>
+        <Button size="small" icon={<IconSend />} onClick={() => navigate(`/shipping/${record!.id}`)}>发货</Button>
+        <Button size="small" icon={<IconDownload />} onClick={() => window.open(`/api/issues/${record!.id}/export/all`, '_blank')}>导出</Button>
+      </Space>
+    )},
+  ];
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: 16 }}>历史期数</h2>
+      <Table columns={columns} data={issues} rowKey="id" loading={loading} size="small" />
+    </div>
+  );
 }
