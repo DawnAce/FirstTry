@@ -1,0 +1,12 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+sqlalchemy==2.0.35
+pymysql==1.1.1
+cryptography==43.0.0
+alembic==1.13.2
+python-dotenv==1.0.1
+openpyxl==3.1.5
+pandas==2.2.2
+pydantic==2.9.0
+pydantic-settings==2.5.0
+python-multipart==0.0.9
