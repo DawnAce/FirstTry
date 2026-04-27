@@ -7,8 +7,8 @@ class PublicationSchedule(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     year = Column(Integer, nullable=False)
-    issue_number = Column(Integer, nullable=False)
+    issue_number = Column(Integer, nullable=True)
     publish_date = Column(Date, nullable=False)
     is_suspended = Column(Boolean, default=False, nullable=False)
 
-    __table_args__ = (UniqueConstraint("year", "issue_number"),)
+    __table_args__ = (UniqueConstraint("year", "publish_date"),)

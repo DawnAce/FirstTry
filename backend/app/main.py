@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.database import SessionLocal
+from app.seeds.publication_schedule_2026 import seed_publication_schedule_2026
 
 app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
 
@@ -15,3 +17,13 @@ app.add_middleware(
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.post("/api/admin/seed")
+def run_seeds():
+    db = SessionLocal()
+    try:
+        count = seed_publication_schedule_2026(db)
+        return {"message": f"Seeded {count} publication schedule entries"}
+    finally:
+        db.close()
