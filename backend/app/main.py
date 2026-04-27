@@ -4,6 +4,7 @@ from app.database import SessionLocal
 from app.seeds.publication_schedule_2026 import seed_publication_schedule_2026
 from app.api.schedule import router as schedule_router
 from app.api.issues import router as issues_router
+from app.api.reports import router as reports_router
 
 app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
 
@@ -17,6 +18,7 @@ app.add_middleware(
 
 app.include_router(schedule_router)
 app.include_router(issues_router)
+app.include_router(reports_router)
 
 
 @app.get("/api/health")
