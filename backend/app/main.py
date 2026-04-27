@@ -6,6 +6,7 @@ from app.api.schedule import router as schedule_router
 from app.api.issues import router as issues_router
 from app.api.reports import router as reports_router
 from app.api.recipients import router as recipients_router
+from app.api.shipping import router as shipping_router
 
 app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
 
@@ -21,6 +22,7 @@ app.include_router(schedule_router)
 app.include_router(issues_router)
 app.include_router(reports_router)
 app.include_router(recipients_router)
+app.include_router(shipping_router)
 
 
 @app.get("/api/health")
