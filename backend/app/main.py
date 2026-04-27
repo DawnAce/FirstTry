@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import SessionLocal
 from app.seeds.publication_schedule_2026 import seed_publication_schedule_2026
+from app.seeds.report_templates import seed_report_templates
 from app.api.schedule import router as schedule_router
 from app.api.issues import router as issues_router
 from app.api.reports import router as reports_router
@@ -36,7 +37,10 @@ def health_check():
 def run_seeds():
     db = SessionLocal()
     try:
-        count = seed_publication_schedule_2026(db)
-        return {"message": f"Seeded {count} publication schedule entries"}
+        schedule_count = seed_publication_schedule_2026(db)
+        template_count = seed_report_templates(db)
+        return {
+            "message": f"Seeded {schedule_count} schedule entries, {template_count} report templates"
+        }
     finally:
         db.close()
