@@ -16,6 +16,16 @@ export interface NextIssueInfo {
   previous_issue_id: number | null;
 }
 
+export interface DashboardData {
+  recent_issues: Issue[];
+  stats: { total: number; draft: number };
+  next_issue: NextIssueInfo | null;
+  available_issues: NextIssueInfo[];
+}
+
+export const getDashboard = () =>
+  api.get<DashboardData>('/dashboard');
+
 export const getIssues = (skip = 0, limit = 20) =>
   api.get<Issue[]>('/issues', { params: { skip, limit } });
 

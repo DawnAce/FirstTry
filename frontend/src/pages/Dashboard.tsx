@@ -12,7 +12,7 @@ import {
 } from '@arco-design/web-react';
 import { IconPlus, IconEdit, IconSend } from '@arco-design/web-react/icon';
 import dayjs from 'dayjs';
-import { getIssues, getNextIssue, getAvailableIssues, createIssue } from '../api/issues';
+import { getDashboard, createIssue } from '../api/issues';
 import type { Issue, NextIssueInfo } from '../api/issues';
 
 const { Row, Col } = Grid;
@@ -34,26 +34,18 @@ export default function Dashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [nextRes, issuesRes, availRes] = await Promise.all([
-        getNextIssue().catch(() => ({ data: null })),
-        getIssues(0, 10),
-        getAvailableIssues(),
-      ]);
-      setNextIssue(nextRes.data);
-      setAvailableIssues(availRes.data);
-      setRecentIssues(issuesRes.data);
+      const res = await getDashboard();
+      const { recent_issues, stats: s, next_issue, available_issues } = res.data;
+      setNextIssue(next_issue);
+      setAvailableIssues(available_issues);
+      setRecentIssues(recent_issues);
+      setStats(s);
 
-      // Default selection: next upcoming issue, or first available
-      if (nextRes.data) {
-        setSelectedIssue(String(nextRes.data.issue_number));
-      } else if (availRes.data.length > 0) {
-        setSelectedIssue(String(availRes.data[0].issue_number));
+      if (next_issue) {
+        setSelectedIssue(String(next_issue.issue_number));
+      } else if (available_issues.length > 0) {
+        setSelectedIssue(String(available_issues[0].issue_number));
       }
-      
-      // Calculate stats
-      const total = issuesRes.data.length;
-      const draft = issuesRes.data.filter(i => i.status === 'draft').length;
-      setStats({ total, draft });
     } catch (error: any) {
       Message.error(error.response?.data?.detail || '加载数据失败');
     } finally {

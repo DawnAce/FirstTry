@@ -1,9 +1,11 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from app.database import SessionLocal
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+from app.database import SessionLocal, get_db, engine
 from app.seeds.publication_schedule_2026 import seed_publication_schedule_2026
 from app.seeds.report_templates import seed_report_templates
 from app.api.schedule import router as schedule_router
@@ -12,6 +14,18 @@ from app.api.reports import router as reports_router
 from app.api.recipients import router as recipients_router
 from app.api.shipping import router as shipping_router
 from app.api.exports import router as exports_router
+from app.models import Issue
+from app.services.issue_service import get_next_issue_info, get_available_issues
+
+app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
+
+
+@app.on_event("startup")
+def warmup_pool():
+    """Pre-create a DB connection to avoid cold-start latency."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
 
 app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
 
@@ -34,6 +48,34 @@ app.include_router(exports_router)
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/dashboard")
+def dashboard_data(db: Session = Depends(get_db)):
+    """Combined endpoint for Dashboard — single DB session, one round-trip."""
+    issues = db.query(Issue).order_by(desc(Issue.issue_number)).limit(10).all()
+    total = len(issues)
+    draft = sum(1 for i in issues if i.status.value == "draft")
+    next_info = get_next_issue_info(db)
+    available = get_available_issues(db)
+
+    return {
+        "recent_issues": [
+            {
+                "id": i.id,
+                "issue_number": i.issue_number,
+                "publish_date": i.publish_date.isoformat(),
+                "status": i.status.value,
+                "notes": i.notes,
+                "created_at": i.created_at.isoformat() if i.created_at else None,
+                "updated_at": i.updated_at.isoformat() if i.updated_at else None,
+            }
+            for i in issues
+        ],
+        "stats": {"total": total, "draft": draft},
+        "next_issue": next_info,
+        "available_issues": available,
+    }
 
 
 @app.post("/api/admin/seed")
