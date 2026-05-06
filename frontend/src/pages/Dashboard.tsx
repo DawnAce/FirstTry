@@ -6,7 +6,6 @@ import {
   Statistic,
   Button,
   Tag,
-  List,
   Space,
   Message,
   Select,
@@ -94,119 +93,140 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ padding: '24px' }}>
-      <h1 style={{ marginBottom: '24px' }}>报数管理系统</h1>
-      
-      <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col span={10}>
-          <Card loading={loading} title="新建报数">
-            {nextIssue && (
-              <Button
-                type="primary"
-                icon={<IconPlus />}
-                onClick={() => handleCreateIssue(nextIssue.issue_number)}
-                loading={creating && selectedIssue === String(nextIssue?.issue_number)}
-                size="large"
-                style={{ width: '100%', marginBottom: '16px' }}
-              >
-                一键创建第 {nextIssue.issue_number} 期（{dayjs(nextIssue.publish_date).format('MM-DD')}）
-              </Button>
-            )}
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <div style={{ color: '#86909c', fontSize: '13px' }}>
-                或选择其他期数补录：
-              </div>
-              <Space style={{ width: '100%' }}>
-                <Select
-                  style={{ width: '280px' }}
-                  placeholder="选择期数"
-                  value={selectedIssue}
-                  onChange={(val) => setSelectedIssue(val)}
-                  showSearch
-                >
-                  {availableIssues.map((item) => (
-                    <Select.Option key={item.issue_number} value={String(item.issue_number)}>
-                      第 {item.issue_number} 期 ({dayjs(item.publish_date).format('MM-DD')})
-                    </Select.Option>
-                  ))}
-                </Select>
-                <Button
-                  type="outline"
-                  icon={<IconPlus />}
-                  onClick={() => handleCreateIssue()}
-                  loading={creating}
-                  disabled={!selectedIssue}
-                >
-                  创建
-                </Button>
-              </Space>
-            </Space>
+    <div style={{ maxWidth: 960, margin: '0 auto' }}>
+      <h1 style={{
+        fontSize: 28,
+        fontWeight: 700,
+        color: '#1d1d1f',
+        margin: '0 0 32px 0',
+        letterSpacing: '-0.02em',
+      }}>
+        报数管理
+      </h1>
+
+      {/* Stats Row */}
+      <Row gutter={20} style={{ marginBottom: 28 }}>
+        <Col span={12}>
+          <Card loading={loading} style={{ padding: 4 }}>
+            <Statistic title="已创建报数" value={stats.total} suffix="期" />
           </Card>
         </Col>
-        
-        <Col span={7}>
-          <Card loading={loading}>
-            <Statistic
-              title="已创建报数"
-              value={stats.total}
-              suffix="期"
-            />
-          </Card>
-        </Col>
-        
-        <Col span={7}>
-          <Card loading={loading}>
-            <Statistic
-              title="待确认报数"
-              value={stats.draft}
-              suffix="期"
-            />
+        <Col span={12}>
+          <Card loading={loading} style={{ padding: 4 }}>
+            <Statistic title="待确认报数" value={stats.draft} suffix="期" />
           </Card>
         </Col>
       </Row>
 
-      <Card title="最近报数" loading={loading}>
-        <List
-          dataSource={recentIssues}
-          render={(item) => (
-            <List.Item
+      {/* Create Issue */}
+      <Card loading={loading} style={{ marginBottom: 28 }}>
+        <div style={{ padding: '4px 0' }}>
+          {nextIssue && (
+            <Button
+              type="primary"
+              icon={<IconPlus />}
+              onClick={() => handleCreateIssue(nextIssue.issue_number)}
+              loading={creating && selectedIssue === String(nextIssue?.issue_number)}
+              size="large"
+              style={{ width: '100%', height: 48, fontSize: 15, marginBottom: 20 }}
+            >
+              一键创建第 {nextIssue.issue_number} 期（{dayjs(nextIssue.publish_date).format('MM-DD')}）
+            </Button>
+          )}
+          <div style={{
+            padding: '16px 20px',
+            background: '#f5f5f7',
+            borderRadius: 10,
+          }}>
+            <div style={{ color: '#86868b', fontSize: 13, marginBottom: 10 }}>
+              或选择其他期数补录
+            </div>
+            <Space style={{ width: '100%' }}>
+              <Select
+                style={{ width: 280 }}
+                placeholder="选择期数"
+                value={selectedIssue}
+                onChange={(val) => setSelectedIssue(val)}
+                showSearch
+              >
+                {availableIssues.map((item) => (
+                  <Select.Option key={item.issue_number} value={String(item.issue_number)}>
+                    第 {item.issue_number} 期 ({dayjs(item.publish_date).format('MM-DD')})
+                  </Select.Option>
+                ))}
+              </Select>
+              <Button
+                type="outline"
+                icon={<IconPlus />}
+                onClick={() => handleCreateIssue()}
+                loading={creating}
+                disabled={!selectedIssue}
+              >
+                创建
+              </Button>
+            </Space>
+          </div>
+        </div>
+      </Card>
+
+      {/* Recent Issues */}
+      <div style={{ marginBottom: 12 }}>
+        <h2 style={{
+          fontSize: 20,
+          fontWeight: 600,
+          color: '#1d1d1f',
+          margin: '0 0 16px 0',
+        }}>
+          最近报数
+        </h2>
+      </div>
+      <Card loading={loading}>
+        {recentIssues.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#86868b' }}>暂无数据</div>
+        ) : (
+          recentIssues.map((item, index) => (
+            <div
               key={item.id}
-              actions={[
+              style={{
+                padding: '16px 4px',
+                borderBottom: index < recentIssues.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>
+                    第 {item.issue_number} 期
+                  </span>
+                  {getStatusTag(item.status)}
+                </div>
+                <div style={{ fontSize: 13, color: '#86868b' }}>
+                  {dayjs(item.publish_date).format('YYYY-MM-DD')} · 创建于 {dayjs(item.created_at).format('MM-DD HH:mm')}
+                </div>
+              </div>
+              <Space>
                 <Button
-                  key="edit"
                   type="text"
                   icon={<IconEdit />}
                   onClick={() => navigate(`/issues/${item.id}/edit`)}
+                  style={{ color: '#86868b' }}
                 >
-                  编辑报数
-                </Button>,
+                  编辑
+                </Button>
                 <Button
-                  key="deliveries"
                   type="text"
                   icon={<IconSend />}
                   onClick={() => navigate(`/issues/${item.id}/deliveries`)}
+                  style={{ color: '#86868b' }}
                 >
-                  发货明细
-                </Button>,
-              ]}
-            >
-              <List.Item.Meta
-                title={
-                  <Space>
-                    <span>第 {item.issue_number} 期</span>
-                    {getStatusTag(item.status)}
-                  </Space>
-                }
-                description={
-                  <Space>
-                    <span>发布日期: {dayjs(item.publish_date).format('YYYY-MM-DD')}</span>
-                    <span>创建时间: {dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}</span>
-                  </Space>
-                }
-              />
-            </List.Item>
-          )}
-        />
+                  发货
+                </Button>
+              </Space>
+            </div>
+          ))
+        )}
       </Card>
     </div>
   );

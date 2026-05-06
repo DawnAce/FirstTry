@@ -2,7 +2,7 @@ import { Layout, Menu } from '@arco-design/web-react';
 import { IconDashboard, IconUser, IconHistory } from '@arco-design/web-react/icon';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 
-const { Sider, Header, Content } = Layout;
+const { Sider, Content } = Layout;
 const MenuItem = Menu.Item;
 
 export default function AppLayout() {
@@ -13,48 +13,61 @@ export default function AppLayout() {
     <Layout style={{ minHeight: '100vh' }}>
       <Sider
         collapsed={false}
-        style={{ width: 200 }}
+        width={240}
+        style={{
+          background: '#fff',
+          borderRight: '1px solid rgba(0,0,0,0.06)',
+        }}
       >
         <div style={{
-          height: 64,
+          height: 72,
           display: 'flex',
-          alignItems: 'center',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
           justifyContent: 'center',
-          color: '#fff',
-          fontWeight: 'bold',
-          fontSize: 16,
+          padding: '0 24px',
+          borderBottom: '1px solid rgba(0,0,0,0.04)',
         }}>
-          中国经营报
+          <span style={{
+            fontSize: 18,
+            fontWeight: 700,
+            color: '#1d1d1f',
+            letterSpacing: '-0.01em',
+          }}>
+            印数报数系统
+          </span>
+          <span style={{
+            fontSize: 12,
+            color: '#86868b',
+            marginTop: 2,
+          }}>
+            中国经营报
+          </span>
         </div>
-        <Menu
-          selectedKeys={[location.pathname]}
-          onClickMenuItem={(key) => navigate(key)}
-          theme="dark"
-        >
-          <MenuItem key="/">
-            <IconDashboard /> 首页
-          </MenuItem>
-          <MenuItem key="/recipients">
-            <IconUser /> 收件人管理
-          </MenuItem>
-          <MenuItem key="/history">
-            <IconHistory /> 历史记录
-          </MenuItem>
-        </Menu>
+        <div style={{ padding: '12px 8px' }}>
+          <Menu
+            selectedKeys={[location.pathname]}
+            onClickMenuItem={(key) => navigate(key)}
+            theme="dark"
+          >
+            <MenuItem key="/">
+              <IconDashboard /> 首页
+            </MenuItem>
+            <MenuItem key="/recipients">
+              <IconUser /> 收件人管理
+            </MenuItem>
+            <MenuItem key="/history">
+              <IconHistory /> 历史记录
+            </MenuItem>
+          </Menu>
+        </div>
       </Sider>
       <Layout>
-        <Header style={{
-          background: '#fff',
-          padding: '0 24px',
-          fontSize: 18,
-          fontWeight: 'bold',
-          display: 'flex',
-          alignItems: 'center',
-          borderBottom: '1px solid #e8e8e8',
+        <Content style={{
+          padding: 32,
+          background: '#f5f5f7',
+          minHeight: '100vh',
         }}>
-          印数报数系统
-        </Header>
-        <Content style={{ margin: 24, padding: 24, background: '#fff', borderRadius: 8 }}>
           <Outlet />
         </Content>
       </Layout>

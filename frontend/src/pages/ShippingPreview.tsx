@@ -8,8 +8,6 @@ import {
   Space,
   Spin,
   Card,
-  Grid,
-  Statistic,
   Message,
 } from '@arco-design/web-react';
 import {
@@ -23,7 +21,6 @@ import type { Issue } from '../api/issues';
 import { getShipping, regenerateShipping } from '../api/shipping';
 import type { ShippingRecord } from '../api/shipping';
 
-const { Row, Col } = Grid;
 const TabPane = Tabs.TabPane;
 
 const TYPE_LABELS: Record<string, string> = {
@@ -187,105 +184,101 @@ export default function ShippingPreview() {
   }
 
   return (
-    <div style={{ padding: '20px' }}>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <Button
-            icon={<IconArrowLeft />}
-            onClick={() => navigate('/dashboard')}
-          />
-          <h2 style={{ margin: 0 }}>
-            第 {issue?.issue_number} 期 — 发货明细
-          </h2>
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
+        <Button
+          icon={<IconArrowLeft />}
+          onClick={() => navigate('/dashboard')}
+          style={{ borderRadius: 8 }}
+        />
+        <h2 style={{
+          margin: 0,
+          fontSize: 24,
+          fontWeight: 700,
+          color: '#1d1d1f',
+          letterSpacing: '-0.02em',
+        }}>
+          第 {issue?.issue_number} 期 — 发货明细
+        </h2>
+      </div>
+
+      {/* Inline Stats + Actions */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 32,
+        marginBottom: 24,
+        padding: '16px 24px',
+        background: '#fff',
+        borderRadius: 12,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
+      }}>
+        <div>
+          <div style={{ fontSize: 12, color: '#86868b', fontWeight: 500, marginBottom: 2 }}>收件人</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#1d1d1f' }}>{getTotalRecipients()}</div>
         </div>
+        <div style={{ width: 1, height: 36, background: 'rgba(0,0,0,0.06)' }} />
+        <div>
+          <div style={{ fontSize: 12, color: '#86868b', fontWeight: 500, marginBottom: 2 }}>总份数</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#1d1d1f' }}>{getTotalCopies()}</div>
+        </div>
+        <div style={{ flex: 1 }} />
+        <Space>
+          <Button
+            type="primary"
+            icon={<IconRefresh />}
+            onClick={handleRegenerate}
+            loading={regenerating}
+          >
+            重新生成
+          </Button>
+          <Button icon={<IconDownload />} onClick={handleExportFiltered}>
+            导出当前
+          </Button>
+          <Button icon={<IconDownload />} onClick={handleExportAll}>
+            导出全部
+          </Button>
+        </Space>
+      </div>
 
-        {/* Stats Row */}
-        <Card>
-          <Row gutter={16}>
-            <Col span={6}>
-              <Statistic
-                title="总收件人数"
-                value={getTotalRecipients()}
-                suffix="人"
-              />
-            </Col>
-            <Col span={6}>
-              <Statistic
-                title="总份数"
-                value={getTotalCopies()}
-                suffix="份"
-              />
-            </Col>
-            <Col span={12} style={{ textAlign: 'right', alignSelf: 'center' }}>
-              <Space>
-                <Button
-                  type="primary"
-                  icon={<IconRefresh />}
-                  onClick={handleRegenerate}
-                  loading={regenerating}
-                >
-                  重新生成
-                </Button>
-                <Button
-                  icon={<IconDownload />}
-                  onClick={handleExportFiltered}
-                >
-                  导出发货明细
-                </Button>
-                <Button
-                  icon={<IconDownload />}
-                  onClick={handleExportAll}
-                >
-                  导出全部
-                </Button>
-              </Space>
-            </Col>
-          </Row>
-        </Card>
-
-        {/* Tabs with Tables */}
-        <Card>
-          <Tabs activeTab={activeTab} onChange={setActiveTab}>
-            <TabPane key="all" title="全部">
-              <Table
-                columns={columns}
-                data={getFilteredRecords()}
-                rowKey="id"
-                pagination={{ pageSize: 20 }}
-                border
-              />
-            </TabPane>
-            <TabPane key="corporate" title="对公">
-              <Table
-                columns={columns}
-                data={getFilteredRecords()}
-                rowKey="id"
-                pagination={{ pageSize: 20 }}
-                border
-              />
-            </TabPane>
-            <TabPane key="reader" title="读者">
-              <Table
-                columns={columns}
-                data={getFilteredRecords()}
-                rowKey="id"
-                pagination={{ pageSize: 20 }}
-                border
-              />
-            </TabPane>
-            <TabPane key="sample" title="样报">
-              <Table
-                columns={columns}
-                data={getFilteredRecords()}
-                rowKey="id"
-                pagination={{ pageSize: 20 }}
-                border
-              />
-            </TabPane>
-          </Tabs>
-        </Card>
-      </Space>
+      {/* Tabs with Tables */}
+      <Card>
+        <Tabs activeTab={activeTab} onChange={setActiveTab}>
+          <TabPane key="all" title="全部">
+            <Table
+              columns={columns}
+              data={getFilteredRecords()}
+              rowKey="id"
+              pagination={{ pageSize: 20 }}
+            />
+          </TabPane>
+          <TabPane key="corporate" title="对公">
+            <Table
+              columns={columns}
+              data={getFilteredRecords()}
+              rowKey="id"
+              pagination={{ pageSize: 20 }}
+            />
+          </TabPane>
+          <TabPane key="reader" title="读者">
+            <Table
+              columns={columns}
+              data={getFilteredRecords()}
+              rowKey="id"
+              pagination={{ pageSize: 20 }}
+            />
+          </TabPane>
+          <TabPane key="sample" title="样报">
+            <Table
+              columns={columns}
+              data={getFilteredRecords()}
+              rowKey="id"
+              pagination={{ pageSize: 20 }}
+            />
+          </TabPane>
+        </Tabs>
+      </Card>
     </div>
   );
 }

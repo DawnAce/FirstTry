@@ -173,44 +173,43 @@ export default function ReportEditor() {
   const groupedEntries = groupEntriesByCategory();
 
   return (
-    <div style={{ padding: 24, maxWidth: 1400, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ marginBottom: 28, display: 'flex', alignItems: 'center', gap: 16 }}>
         <Button
           icon={<IconArrowLeft />}
           onClick={() => navigate('/dashboard')}
-        >
-          返回
-        </Button>
-        <h2 style={{ margin: 0, flex: 1 }}>第 {issue.issue_number} 期报数编辑</h2>
-        <Tag color="blue">{issue.publish_date}</Tag>
+          style={{ borderRadius: 8 }}
+        />
+        <div style={{ flex: 1 }}>
+          <h2 style={{
+            margin: 0,
+            fontSize: 24,
+            fontWeight: 700,
+            color: '#1d1d1f',
+            letterSpacing: '-0.02em',
+          }}>
+            第 {issue.issue_number} 期报数编辑
+          </h2>
+        </div>
+        <Tag color="blue" style={{ fontSize: 13, padding: '4px 14px' }}>{issue.publish_date}</Tag>
       </div>
 
-      {/* Stats Row */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
+      {/* Stats & Actions */}
+      <Row gutter={20} style={{ marginBottom: 28 }}>
         <Col span={8}>
-          <Card>
-            <Statistic
-              title="总印数"
-              value={calculateTotal()}
-              suffix="份"
-              precision={0}
-            />
+          <Card style={{ padding: 4 }}>
+            <Statistic title="总印数" value={calculateTotal()} suffix="份" precision={0} />
           </Card>
         </Col>
         <Col span={8}>
-          <Card>
-            <Statistic
-              title="变动项数量"
-              value={countVariableItems()}
-              suffix="项"
-              precision={0}
-            />
+          <Card style={{ padding: 4 }}>
+            <Statistic title="变动项数量" value={countVariableItems()} suffix="项" precision={0} />
           </Card>
         </Col>
         <Col span={8}>
-          <Card>
-            <Space size="medium" style={{ width: '100%', justifyContent: 'center' }}>
+          <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 88 }}>
+            <Space size="medium">
               <Button
                 type="outline"
                 icon={<IconSave />}
@@ -224,19 +223,12 @@ export default function ReportEditor() {
                 content="确认后将无法再修改，是否继续？"
                 onOk={handleConfirm}
               >
-                <Button
-                  type="primary"
-                  icon={<IconCheck />}
-                  loading={saving}
-                >
+                <Button type="primary" icon={<IconCheck />} loading={saving}>
                   确认报数
                 </Button>
               </Popconfirm>
-              <Button
-                icon={<IconDownload />}
-                onClick={handleExport}
-              >
-                导出Excel
+              <Button icon={<IconDownload />} onClick={handleExport}>
+                导出
               </Button>
             </Space>
           </Card>
@@ -248,24 +240,26 @@ export default function ReportEditor() {
         <Card
           key={category}
           title={categoryLabels[category] || category}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 20 }}
         >
           {categoryEntries.map((entry, index) => (
             <div key={entry.id}>
-              {index > 0 && <Divider style={{ margin: '12px 0' }} />}
-              <Row 
-                align="center" 
+              {index > 0 && <Divider style={{ margin: '8px 0' }} />}
+              <Row
+                align="center"
                 style={{
-                  padding: '8px 12px',
-                  backgroundColor: entry.is_variable ? '#fff7e6' : 'transparent',
-                  borderRadius: 4,
+                  padding: '10px 16px',
+                  borderLeft: entry.is_variable ? '3px solid #0071e3' : '3px solid transparent',
+                  borderRadius: 6,
+                  background: entry.is_variable ? 'rgba(0,113,227,0.03)' : 'transparent',
+                  transition: 'background 0.2s ease',
                 }}
               >
                 <Col span={12}>
                   <Space>
-                    <span>{entry.sub_category}</span>
+                    <span style={{ fontWeight: 500 }}>{entry.sub_category}</span>
                     {entry.is_variable && (
-                      <Tag color="orange" size="small">变动</Tag>
+                      <Tag color="arcoblue" size="small">变动</Tag>
                     )}
                   </Space>
                 </Col>
@@ -282,13 +276,15 @@ export default function ReportEditor() {
               </Row>
             </div>
           ))}
-          <Divider style={{ margin: '16px 0' }} />
-          <Row>
+          <Divider style={{ margin: '12px 0' }} />
+          <Row style={{ padding: '0 16px' }}>
             <Col span={12}>
-              <strong>小计</strong>
+              <span style={{ fontWeight: 600, color: '#1d1d1f' }}>小计</span>
             </Col>
             <Col span={12} style={{ textAlign: 'right' }}>
-              <strong>{calculateCategoryTotal(categoryEntries)} 份</strong>
+              <span style={{ fontWeight: 600, color: '#1d1d1f', fontSize: 15 }}>
+                {calculateCategoryTotal(categoryEntries)} 份
+              </span>
             </Col>
           </Row>
         </Card>

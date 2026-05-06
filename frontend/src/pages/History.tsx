@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Table, Tag, Button, Space } from '@arco-design/web-react';
+import { Table, Tag, Button, Space, Card } from '@arco-design/web-react';
 import { IconEdit, IconSend, IconDownload } from '@arco-design/web-react/icon';
 import { useNavigate } from 'react-router-dom';
 import { getIssues } from '../api/issues';
@@ -27,17 +27,27 @@ export default function History() {
     { title: '创建时间', dataIndex: 'created_at', render: (_, record) => record!.created_at ? dayjs(record!.created_at).format('MM-DD HH:mm') : '—' },
     { title: '操作', render: (_, record) => (
       <Space>
-        <Button size="small" icon={<IconEdit />} onClick={() => navigate(`/report/${record!.id}`)}>报数</Button>
-        <Button size="small" icon={<IconSend />} onClick={() => navigate(`/shipping/${record!.id}`)}>发货</Button>
-        <Button size="small" icon={<IconDownload />} onClick={() => window.open(`/api/issues/${record!.id}/export/all`, '_blank')}>导出</Button>
+        <Button size="small" type="text" icon={<IconEdit />} onClick={() => navigate(`/report/${record!.id}`)}>报数</Button>
+        <Button size="small" type="text" icon={<IconSend />} onClick={() => navigate(`/shipping/${record!.id}`)}>发货</Button>
+        <Button size="small" type="text" icon={<IconDownload />} onClick={() => window.open(`/api/issues/${record!.id}/export/all`, '_blank')}>导出</Button>
       </Space>
     )},
   ];
 
   return (
     <div>
-      <h2 style={{ marginBottom: 16 }}>历史期数</h2>
-      <Table columns={columns} data={issues} rowKey="id" loading={loading} size="small" />
+      <h2 style={{
+        fontSize: 24,
+        fontWeight: 700,
+        color: '#1d1d1f',
+        margin: '0 0 24px 0',
+        letterSpacing: '-0.02em',
+      }}>
+        历史期数
+      </h2>
+      <Card style={{ padding: 0 }}>
+        <Table columns={columns} data={issues} rowKey="id" loading={loading} />
+      </Card>
     </div>
   );
 }

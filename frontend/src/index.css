@@ -1,1 +1,238 @@
+/* ===== Apple-like Minimalist Theme ===== */
 
+:root {
+  --color-bg: #f5f5f7;
+  --color-card: #ffffff;
+  --color-accent: #0071e3;
+  --color-accent-hover: #0077ed;
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #86868b;
+  --color-border: rgba(0, 0, 0, 0.06);
+  --color-divider: rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --radius-card: 12px;
+  --radius-input: 8px;
+  --radius-tag: 20px;
+  --radius-button: 8px;
+  --font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --transition: 0.2s ease;
+}
+
+/* ===== Base ===== */
+* {
+  font-family: var(--font-family);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== Layout Overrides ===== */
+.arco-layout-sider {
+  background: var(--color-card) !important;
+  border-right: 1px solid var(--color-border) !important;
+  box-shadow: none !important;
+}
+
+.arco-layout-sider .arco-layout-sider-children {
+  background: var(--color-card) !important;
+}
+
+.arco-layout-content {
+  background: var(--color-bg) !important;
+}
+
+/* ===== Menu (Light Sidebar) ===== */
+.arco-menu-dark,
+.arco-menu-dark .arco-menu-inner {
+  background: var(--color-card) !important;
+}
+
+.arco-menu-dark .arco-menu-item {
+  color: var(--color-text-primary) !important;
+  border-radius: var(--radius-input) !important;
+  margin: 2px 8px !important;
+  transition: background var(--transition) !important;
+}
+
+.arco-menu-dark .arco-menu-item:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+.arco-menu-dark .arco-menu-item.arco-menu-selected {
+  background: rgba(0, 113, 227, 0.08) !important;
+  color: var(--color-accent) !important;
+  font-weight: 500 !important;
+}
+
+.arco-menu-dark .arco-menu-item .arco-icon {
+  color: inherit !important;
+}
+
+/* ===== Cards ===== */
+.arco-card {
+  border: none !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--shadow-card) !important;
+  transition: box-shadow var(--transition) !important;
+}
+
+.arco-card:hover {
+  box-shadow: var(--shadow-card-hover) !important;
+}
+
+.arco-card-header {
+  border-bottom: 1px solid var(--color-divider) !important;
+}
+
+.arco-card-header-title {
+  font-weight: 600 !important;
+  font-size: 15px !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* ===== Buttons ===== */
+.arco-btn {
+  border-radius: var(--radius-button) !important;
+  font-weight: 500 !important;
+  transition: all var(--transition) !important;
+}
+
+.arco-btn-primary {
+  background: var(--color-accent) !important;
+  border-color: var(--color-accent) !important;
+}
+
+.arco-btn-primary:hover {
+  background: var(--color-accent-hover) !important;
+  border-color: var(--color-accent-hover) !important;
+}
+
+.arco-btn-outline {
+  border-color: var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.arco-btn-outline:hover {
+  border-color: var(--color-accent) !important;
+  color: var(--color-accent) !important;
+}
+
+/* ===== Tags ===== */
+.arco-tag {
+  border-radius: var(--radius-tag) !important;
+  border: none !important;
+  font-weight: 500 !important;
+  padding: 2px 12px !important;
+  font-size: 12px !important;
+}
+
+/* ===== Tables ===== */
+.arco-table {
+  border-radius: var(--radius-card) !important;
+  overflow: hidden !important;
+}
+
+.arco-table-border .arco-table-container {
+  border: none !important;
+}
+
+.arco-table-th {
+  background: #fafafa !important;
+  border-bottom: 1px solid var(--color-divider) !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  color: var(--color-text-secondary) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.02em !important;
+}
+
+.arco-table-td {
+  border-bottom: 1px solid var(--color-divider) !important;
+  padding: 14px 16px !important;
+}
+
+.arco-table-tr:hover .arco-table-td {
+  background: rgba(0, 0, 0, 0.01) !important;
+}
+
+/* ===== Inputs ===== */
+.arco-input,
+.arco-input-inner-wrapper,
+.arco-select .arco-select-view,
+.arco-input-number,
+.arco-picker {
+  border-radius: var(--radius-input) !important;
+  border-color: var(--color-border) !important;
+}
+
+.arco-input:focus,
+.arco-input-inner-wrapper:focus-within,
+.arco-select.arco-select-focused .arco-select-view {
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.12) !important;
+}
+
+/* ===== Tabs ===== */
+.arco-tabs-header-nav-line .arco-tabs-header-ink-bar {
+  background: var(--color-accent) !important;
+}
+
+.arco-tabs-header-title-active {
+  color: var(--color-accent) !important;
+  font-weight: 600 !important;
+}
+
+/* ===== Statistic ===== */
+.arco-statistic-title {
+  color: var(--color-text-secondary) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+
+.arco-statistic-value {
+  font-weight: 700 !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* ===== List ===== */
+.arco-list-item {
+  border-bottom: 1px solid var(--color-divider) !important;
+  padding: 16px 0 !important;
+}
+
+/* ===== Divider ===== */
+.arco-divider {
+  border-color: var(--color-divider) !important;
+}
+
+/* ===== Spin ===== */
+.arco-spin .arco-spin-icon {
+  color: var(--color-accent) !important;
+}
+
+/* ===== Modal ===== */
+.arco-modal-content {
+  border-radius: var(--radius-card) !important;
+}
+
+/* ===== Drawer ===== */
+.arco-drawer-content {
+  border-radius: var(--radius-card) 0 0 var(--radius-card) !important;
+}
+
+/* ===== Timeline ===== */
+.arco-timeline-item-dot {
+  background: var(--color-accent) !important;
+  border-color: var(--color-accent) !important;
+}
+
+/* ===== Pagination ===== */
+.arco-pagination-item-active {
+  background: var(--color-accent) !important;
+  border-color: var(--color-accent) !important;
+}

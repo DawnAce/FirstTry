@@ -14,6 +14,7 @@ import {
   DatePicker,
   InputNumber,
   Popconfirm,
+  Card,
 } from '@arco-design/web-react';
 import { IconPlus, IconStop, IconPlayArrow } from '@arco-design/web-react/icon';
 import type { ColumnProps } from '@arco-design/web-react/es/Table';
@@ -239,8 +240,27 @@ export default function Recipients() {
   ];
 
   return (
-    <div style={{ padding: '20px' }}>
-      <div style={{ marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+    <div>
+      <h2 style={{
+        fontSize: 24,
+        fontWeight: 700,
+        color: '#1d1d1f',
+        margin: '0 0 24px 0',
+        letterSpacing: '-0.02em',
+      }}>
+        收件人管理
+      </h2>
+
+      <div style={{
+        marginBottom: 20,
+        display: 'flex',
+        gap: 12,
+        alignItems: 'center',
+        padding: '16px 20px',
+        background: '#fff',
+        borderRadius: 12,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
+      }}>
         <Select
           placeholder="类型"
           style={{ width: 120 }}
@@ -269,18 +289,22 @@ export default function Recipients() {
           onChange={(value) => setFilters({ ...filters, name: value })}
         />
         
+        <div style={{ flex: 1 }} />
+        
         <Button type="primary" icon={<IconPlus />} onClick={() => handleOpenModal()}>
           新增收件人
         </Button>
       </div>
 
-      <Table
-        loading={loading}
-        columns={columns}
-        data={recipients}
-        rowKey="id"
-        pagination={{ pageSize: 20 }}
-      />
+      <Card style={{ padding: 0 }}>
+        <Table
+          loading={loading}
+          columns={columns}
+          data={recipients}
+          rowKey="id"
+          pagination={{ pageSize: 20 }}
+        />
+      </Card>
 
       {/* Create/Edit Modal */}
       <Modal
