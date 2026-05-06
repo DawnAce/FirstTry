@@ -229,7 +229,25 @@ body {
 }
 
 /* ===== Pagination ===== */
+.arco-pagination-item {
+  border-radius: var(--radius-input) !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--color-text-primary) !important;
+}
+
+.arco-pagination-item:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+  color: var(--color-text-primary) !important;
+}
+
 .arco-pagination-item-active {
-  background: var(--color-accent) !important;
-  border-color: var(--color-accent) !important;
+  background: rgba(0, 113, 227, 0.08) !important;
+  color: var(--color-accent) !important;
+  font-weight: 500 !important;
+}
+
+.arco-pagination-item-active:hover {
+  background: rgba(0, 113, 227, 0.12) !important;
+  color: var(--color-accent) !important;
 }
