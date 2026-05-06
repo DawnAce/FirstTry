@@ -5,34 +5,25 @@ from app.models import PublicationSchedule, Issue, ReportEntry, ReportItemTempla
 
 
 def get_next_issue_info(db: Session) -> dict:
-    """Determine the next issue number and publish date based on current date."""
-    today = date.today()
+    """Determine the next issue to create — prioritizes missed issues, then upcoming."""
+    # Get all issue_numbers that already exist
+    existing_numbers = {
+        row[0] for row in db.query(Issue.issue_number).all()
+    }
+
+    # Find the earliest schedule entry (not suspended) that has no Issue yet
     next_entry = (
         db.query(PublicationSchedule)
-        .filter(PublicationSchedule.publish_date >= today, PublicationSchedule.is_suspended == False)
+        .filter(
+            PublicationSchedule.is_suspended == False,
+            PublicationSchedule.issue_number.notin_(existing_numbers) if existing_numbers else True,
+        )
         .order_by(PublicationSchedule.publish_date.asc())
         .first()
     )
     if not next_entry:
         return None
 
-    # Check if this issue already exists
-    existing = db.query(Issue).filter(Issue.issue_number == next_entry.issue_number).first()
-    if existing:
-        # Find the one after
-        next_entry = (
-            db.query(PublicationSchedule)
-            .filter(
-                PublicationSchedule.publish_date > next_entry.publish_date,
-                PublicationSchedule.is_suspended == False,
-            )
-            .order_by(PublicationSchedule.publish_date.asc())
-            .first()
-        )
-        if not next_entry:
-            return None
-
-    # Find previous issue for copying data
     prev_issue = db.query(Issue).order_by(desc(Issue.issue_number)).first()
 
     return {
