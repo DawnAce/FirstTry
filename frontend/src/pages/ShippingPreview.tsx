@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Table,
   Tabs,
@@ -38,40 +39,35 @@ const TYPE_COLORS: Record<string, string> = {
 export default function ShippingPreview() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [issue, setIssue] = useState<Issue | null>(null);
-  const [shippingRecords, setShippingRecords] = useState<ShippingRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [regenerating, setRegenerating] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
 
   const issueId = Number(id);
 
-  useEffect(() => {
-    loadData();
-  }, [issueId]);
+  const { data: issue } = useQuery({
+    queryKey: ['issue', id],
+    queryFn: async () => {
+      const res = await getIssue(issueId);
+      return res.data;
+    },
+    enabled: !!id,
+  });
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [issueRes, shippingRes] = await Promise.all([
-        getIssue(issueId),
-        getShipping(issueId),
-      ]);
-      setIssue(issueRes.data);
-      setShippingRecords(shippingRes.data);
-    } catch (error) {
-      Message.error('加载发货数据失败');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: shippingRecords = [], isLoading: loading } = useQuery({
+    queryKey: ['shipping', id],
+    queryFn: async () => {
+      const res = await getShipping(issueId);
+      return res.data;
+    },
+    enabled: !!id,
+  });
 
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
       const res = await regenerateShipping(issueId);
-      setShippingRecords(res.data);
+      queryClient.setQueryData(['shipping', id], res.data);
       Message.success('发货明细已重新生成');
     } catch (error) {
       Message.error('重新生成失败');

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Table,
   Button,
@@ -17,6 +17,7 @@ import {
   Card,
 } from '@arco-design/web-react';
 import { IconPlus, IconStop, IconPlayArrow } from '@arco-design/web-react/icon';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnProps } from '@arco-design/web-react/es/Table';
 import type { Recipient, Subscription } from '../api/recipients';
 import {
@@ -37,8 +38,7 @@ const statusColors: Record<string, string> = { active: 'green', suspended: 'red'
 const subTypeLabels: Record<string, string> = { new: '新订', renewal: '续订' };
 
 export default function Recipients() {
-  const [recipients, setRecipients] = useState<Recipient[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<Record<string, any>>({});
   
   // Create/Edit modal
@@ -56,21 +56,13 @@ export default function Recipients() {
   const [subModalVisible, setSubModalVisible] = useState(false);
   const [subForm] = Form.useForm();
 
-  useEffect(() => {
-    fetchRecipients();
-  }, [filters]);
-
-  const fetchRecipients = async () => {
-    setLoading(true);
-    try {
-      const response = await getRecipients(filters);
-      setRecipients(response.data);
-    } catch (error) {
-      Message.error('加载收件人失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: recipients = [], isLoading: loading } = useQuery({
+    queryKey: ['recipients', filters],
+    queryFn: async () => {
+      const res = await getRecipients(filters);
+      return res.data;
+    },
+  });
 
   const handleOpenModal = (recipient?: Recipient) => {
     setEditingRecipient(recipient || null);
@@ -100,7 +92,7 @@ export default function Recipients() {
         Message.success('创建成功');
       }
       handleCloseModal();
-      fetchRecipients();
+      queryClient.invalidateQueries({ queryKey: ['recipients'] });
     } catch (error) {
       Message.error('操作失败');
     }
@@ -111,7 +103,7 @@ export default function Recipients() {
     try {
       await updateRecipientStatus(recipient.id, newStatus);
       Message.success(newStatus === 'active' ? '已恢复发送' : '已停止发送');
-      fetchRecipients();
+      queryClient.invalidateQueries({ queryKey: ['recipients'] });
     } catch (error) {
       Message.error('状态更新失败');
     }
@@ -164,7 +156,7 @@ export default function Recipients() {
       const response = await getSubscriptions(currentRecipient.id);
       setSubscriptions(response.data);
       // Refresh recipients list to update active_subscription_end
-      fetchRecipients();
+      queryClient.invalidateQueries({ queryKey: ['recipients'] });
     } catch (error) {
       Message.error('订阅创建失败');
     }

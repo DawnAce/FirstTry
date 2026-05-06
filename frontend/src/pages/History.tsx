@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
 import { Table, Tag, Button, Space, Card } from '@arco-design/web-react';
 import { IconEdit, IconSend, IconDownload } from '@arco-design/web-react/icon';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { getIssues } from '../api/issues';
 import type { Issue } from '../api/issues';
 import type { ColumnProps } from '@arco-design/web-react/es/Table';
@@ -11,14 +11,15 @@ const statusColors: Record<string, string> = { draft: 'orange', confirmed: 'blue
 const statusLabels: Record<string, string> = { draft: '草稿', confirmed: '已确认', exported: '已导出' };
 
 export default function History() {
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    setLoading(true);
-    getIssues(0, 100).then(res => setIssues(res.data)).finally(() => setLoading(false));
-  }, []);
+  const { data: issues = [], isLoading: loading } = useQuery({
+    queryKey: ['issues', 'history'],
+    queryFn: async () => {
+      const res = await getIssues(0, 100);
+      return res.data;
+    },
+  });
 
   const columns: ColumnProps<Issue>[] = [
     { title: '期号', dataIndex: 'issue_number', sorter: (a: Issue, b: Issue) => a.issue_number - b.issue_number },

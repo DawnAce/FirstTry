@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Card,
   Grid,
@@ -38,35 +39,34 @@ const categoryLabels: Record<string, string> = {
 export default function ReportEditor() {
   const { issueId } = useParams<{ issueId: string }>();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [issue, setIssue] = useState<Issue | null>(null);
-  const [reportData, setReportData] = useState<ReportData | null>(null);
   const [entries, setEntries] = useState<ReportEntry[]>([]);
 
-  useEffect(() => {
-    if (!issueId) return;
-    
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [issueRes, reportRes] = await Promise.all([
-          getIssue(Number(issueId)),
-          getReport(Number(issueId)),
-        ]);
-        setIssue(issueRes.data);
-        setReportData(reportRes.data);
-        setEntries(reportRes.data.entries);
-      } catch (err) {
-        Message.error('加载数据失败');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const { data: issue, isLoading: issueLoading } = useQuery({
+    queryKey: ['issue', issueId],
+    queryFn: async () => {
+      const res = await getIssue(Number(issueId));
+      return res.data;
+    },
+    enabled: !!issueId,
+  });
 
-    fetchData();
-  }, [issueId]);
+  const { isLoading: reportLoading } = useQuery({
+    queryKey: ['report', issueId],
+    queryFn: async () => {
+      const res = await getReport(Number(issueId));
+      return res.data;
+    },
+    enabled: !!issueId,
+    select: (data) => {
+      if (entries.length === 0) {
+        setEntries(data.entries);
+      }
+      return data;
+    },
+  });
+
+  const loading = issueLoading || reportLoading;
 
   const handleValueChange = (entryId: number, value: number | undefined) => {
     setEntries(entries.map(entry => 
@@ -166,7 +166,7 @@ export default function ReportEditor() {
     );
   }
 
-  if (!issue || !reportData) {
+  if (!issue || entries.length === 0) {
     return <div style={{ padding: 24 }}>数据加载失败</div>;
   }
 

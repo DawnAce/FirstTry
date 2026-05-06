@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Card,
   Grid,
@@ -19,39 +20,33 @@ const { Row, Col } = Grid;
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
-  const [nextIssue, setNextIssue] = useState<NextIssueInfo | null>(null);
-  const [availableIssues, setAvailableIssues] = useState<NextIssueInfo[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<string | undefined>(undefined);
-  const [recentIssues, setRecentIssues] = useState<Issue[]>([]);
-  const [stats, setStats] = useState({ total: 0, draft: 0 });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: async () => {
       const res = await getDashboard();
-      const { recent_issues, stats: s, next_issue, available_issues } = res.data;
-      setNextIssue(next_issue);
-      setAvailableIssues(available_issues);
-      setRecentIssues(recent_issues);
-      setStats(s);
-
-      if (next_issue) {
-        setSelectedIssue(String(next_issue.issue_number));
-      } else if (available_issues.length > 0) {
-        setSelectedIssue(String(available_issues[0].issue_number));
+      return res.data;
+    },
+    select: (data) => {
+      // Set default selection on first load
+      if (!selectedIssue) {
+        if (data.next_issue) {
+          setSelectedIssue(String(data.next_issue.issue_number));
+        } else if (data.available_issues.length > 0) {
+          setSelectedIssue(String(data.available_issues[0].issue_number));
+        }
       }
-    } catch (error: any) {
-      Message.error(error.response?.data?.detail || '加载数据失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+      return data;
+    },
+  });
+
+  const nextIssue = data?.next_issue ?? null;
+  const availableIssues = data?.available_issues ?? [];
+  const recentIssues = data?.recent_issues ?? [];
+  const stats = data?.stats ?? { total: 0, draft: 0 };
 
   const handleCreateIssue = async (issueNum?: number) => {
     const num = issueNum ?? (selectedIssue ? Number(selectedIssue) : null);
@@ -66,6 +61,8 @@ export default function Dashboard() {
         publish_date: chosen.publish_date,
       });
       Message.success(`报数第 ${res.data.issue_number} 期创建成功`);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['issues'] });
       navigate(`/issues/${res.data.id}/edit`);
     } catch (error: any) {
       Message.error(error.response?.data?.detail || '创建失败');
