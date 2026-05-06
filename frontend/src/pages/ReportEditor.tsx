@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Card,
   Grid,
@@ -39,6 +39,7 @@ const categoryLabels: Record<string, string> = {
 export default function ReportEditor() {
   const { issueId } = useParams<{ issueId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [entries, setEntries] = useState<ReportEntry[]>([]);
 
@@ -108,6 +109,7 @@ export default function ReportEditor() {
         value: entry.value,
       }));
       await updateReport(Number(issueId), payload);
+      queryClient.invalidateQueries({ queryKey: ['report', issueId] });
       Message.success('保存成功');
     } catch (err) {
       Message.error('保存失败');
@@ -132,6 +134,9 @@ export default function ReportEditor() {
       
       // Then confirm
       await confirmReport(Number(issueId));
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['issues'] });
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       Message.success('确认成功');
       navigate('/dashboard');
     } catch (err: any) {
