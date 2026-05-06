@@ -185,7 +185,7 @@ export default function ShippingPreview() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
         <Button
           icon={<IconArrowLeft />}
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate('/')}
           style={{ borderRadius: 8 }}
         />
         <h2 style={{

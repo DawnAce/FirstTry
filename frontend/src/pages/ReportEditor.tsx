@@ -138,7 +138,7 @@ export default function ReportEditor() {
       queryClient.invalidateQueries({ queryKey: ['issues'] });
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       Message.success('确认成功');
-      navigate('/dashboard');
+      navigate('/');
     } catch (err: any) {
       if (err.response?.data?.detail) {
         const details = err.response.data.detail;
@@ -183,7 +183,7 @@ export default function ReportEditor() {
       <div style={{ marginBottom: 28, display: 'flex', alignItems: 'center', gap: 16 }}>
         <Button
           icon={<IconArrowLeft />}
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate('/')}
           style={{ borderRadius: 8 }}
         />
         <div style={{ flex: 1 }}>

@@ -63,7 +63,7 @@ export default function Dashboard() {
       Message.success(`报数第 ${res.data.issue_number} 期创建成功`);
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
-      navigate(`/issues/${res.data.id}/edit`);
+      navigate(`/report/${res.data.id}`);
     } catch (error: any) {
       Message.error(error.response?.data?.detail || '创建失败');
     } finally {
@@ -199,7 +199,7 @@ export default function Dashboard() {
                 <Button
                   type="text"
                   icon={<IconEdit />}
-                  onClick={() => navigate(`/issues/${item.id}/edit`)}
+                  onClick={() => navigate(`/report/${item.id}`)}
                   style={{ color: '#86868b' }}
                 >
                   编辑
@@ -207,7 +207,7 @@ export default function Dashboard() {
                 <Button
                   type="text"
                   icon={<IconSend />}
-                  onClick={() => navigate(`/issues/${item.id}/deliveries`)}
+                  onClick={() => navigate(`/shipping/${item.id}`)}
                   style={{ color: '#86868b' }}
                 >
                   发货
