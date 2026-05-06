@@ -9,6 +9,15 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Map sub-routes to their parent menu key
+  const getSelectedKey = () => {
+    const path = location.pathname;
+    if (path.startsWith('/report/') || path.startsWith('/shipping/')) return '/';
+    if (path.startsWith('/recipients')) return '/recipients';
+    if (path.startsWith('/history')) return '/history';
+    return path;
+  };
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider
@@ -46,7 +55,7 @@ export default function AppLayout() {
         </div>
         <div style={{ padding: '12px 8px' }}>
           <Menu
-            selectedKeys={[location.pathname]}
+            selectedKeys={[getSelectedKey()]}
             onClickMenuItem={(key) => navigate(key)}
           >
             <MenuItem key="/">

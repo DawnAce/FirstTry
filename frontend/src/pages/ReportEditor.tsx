@@ -214,27 +214,29 @@ export default function ReportEditor() {
         </Col>
         <Col span={8}>
           <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 88 }}>
-            <Space size="medium">
-              <Button
-                type="outline"
-                icon={<IconSave />}
-                onClick={handleSave}
-                loading={saving}
-              >
-                保存草稿
-              </Button>
+            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              <Space size="medium" style={{ width: '100%', justifyContent: 'center' }}>
+                <Button
+                  type="outline"
+                  icon={<IconSave />}
+                  onClick={handleSave}
+                  loading={saving}
+                >
+                  保存草稿
+                </Button>
+                <Button icon={<IconDownload />} onClick={handleExport}>
+                  导出Excel
+                </Button>
+              </Space>
               <Popconfirm
                 title="确认报数"
                 content="确认后将无法再修改，是否继续？"
                 onOk={handleConfirm}
               >
-                <Button type="primary" icon={<IconCheck />} loading={saving}>
+                <Button type="primary" icon={<IconCheck />} loading={saving} style={{ width: '100%' }}>
                   确认报数
                 </Button>
               </Popconfirm>
-              <Button icon={<IconDownload />} onClick={handleExport}>
-                导出
-              </Button>
             </Space>
           </Card>
         </Col>
