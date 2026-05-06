@@ -47,30 +47,27 @@ body {
 }
 
 /* ===== Menu (Light Sidebar) ===== */
-.arco-menu-dark,
-.arco-menu-dark .arco-menu-inner {
+.arco-menu {
   background: var(--color-card) !important;
 }
 
-.arco-menu-dark .arco-menu-item {
-  color: var(--color-text-primary) !important;
+.arco-menu-inner {
+  background: var(--color-card) !important;
+}
+
+.arco-menu-item {
   border-radius: var(--radius-input) !important;
   margin: 2px 8px !important;
-  transition: background var(--transition) !important;
 }
 
-.arco-menu-dark .arco-menu-item:hover {
-  background: rgba(0, 0, 0, 0.04) !important;
-}
-
-.arco-menu-dark .arco-menu-item.arco-menu-selected {
+.arco-menu-item.arco-menu-selected {
   background: rgba(0, 113, 227, 0.08) !important;
   color: var(--color-accent) !important;
   font-weight: 500 !important;
 }
 
-.arco-menu-dark .arco-menu-item .arco-icon {
-  color: inherit !important;
+.arco-menu-item.arco-menu-selected .arco-icon {
+  color: var(--color-accent) !important;
 }
 
 /* ===== Cards ===== */

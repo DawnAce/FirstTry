@@ -48,7 +48,6 @@ export default function AppLayout() {
           <Menu
             selectedKeys={[location.pathname]}
             onClickMenuItem={(key) => navigate(key)}
-            theme="dark"
           >
             <MenuItem key="/">
               <IconDashboard /> 首页
