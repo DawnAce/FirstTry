@@ -62,9 +62,10 @@ export default function Dashboard() {
     }
   };
 
-  const handleCreateIssue = async () => {
-    if (!selectedIssue) return;
-    const chosen = availableIssues.find(i => i.issue_number === Number(selectedIssue));
+  const handleCreateIssue = async (issueNum?: number) => {
+    const num = issueNum ?? (selectedIssue ? Number(selectedIssue) : null);
+    if (!num) return;
+    const chosen = availableIssues.find(i => i.issue_number === num);
     if (!chosen) return;
 
     setCreating(true);
@@ -97,40 +98,53 @@ export default function Dashboard() {
       <h1 style={{ marginBottom: '24px' }}>报数管理系统</h1>
       
       <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col span={8}>
-          <Card loading={loading}>
-            <Statistic
-              title="创建报数"
-              value={selectedIssue ? `第 ${selectedIssue} 期` : '-'}
-            />
-            <Select
-              style={{ width: '100%', marginTop: '12px' }}
-              placeholder="选择期数"
-              value={selectedIssue}
-              onChange={(val) => setSelectedIssue(val)}
-              showSearch
-            >
-              {availableIssues.map((item) => (
-                <Select.Option key={item.issue_number} value={String(item.issue_number)}>
-                  第 {item.issue_number} 期 ({dayjs(item.publish_date).format('MM-DD')})
-                  {nextIssue && item.issue_number === nextIssue.issue_number ? ' ← 推荐' : ''}
-                </Select.Option>
-              ))}
-            </Select>
-            <Button
-              type="primary"
-              icon={<IconPlus />}
-              onClick={handleCreateIssue}
-              loading={creating}
-              disabled={!selectedIssue}
-              style={{ marginTop: '8px', width: '100%' }}
-            >
-              创建本期报数
-            </Button>
+        <Col span={10}>
+          <Card loading={loading} title="新建报数">
+            {nextIssue && (
+              <Button
+                type="primary"
+                icon={<IconPlus />}
+                onClick={() => handleCreateIssue(nextIssue.issue_number)}
+                loading={creating && selectedIssue === String(nextIssue?.issue_number)}
+                size="large"
+                style={{ width: '100%', marginBottom: '16px' }}
+              >
+                一键创建第 {nextIssue.issue_number} 期（{dayjs(nextIssue.publish_date).format('MM-DD')}）
+              </Button>
+            )}
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <div style={{ color: '#86909c', fontSize: '13px' }}>
+                或选择其他期数补录：
+              </div>
+              <Space style={{ width: '100%' }}>
+                <Select
+                  style={{ width: '280px' }}
+                  placeholder="选择期数"
+                  value={selectedIssue}
+                  onChange={(val) => setSelectedIssue(val)}
+                  showSearch
+                >
+                  {availableIssues.map((item) => (
+                    <Select.Option key={item.issue_number} value={String(item.issue_number)}>
+                      第 {item.issue_number} 期 ({dayjs(item.publish_date).format('MM-DD')})
+                    </Select.Option>
+                  ))}
+                </Select>
+                <Button
+                  type="outline"
+                  icon={<IconPlus />}
+                  onClick={() => handleCreateIssue()}
+                  loading={creating}
+                  disabled={!selectedIssue}
+                >
+                  创建
+                </Button>
+              </Space>
+            </Space>
           </Card>
         </Col>
         
-        <Col span={8}>
+        <Col span={7}>
           <Card loading={loading}>
             <Statistic
               title="已创建报数"
@@ -140,7 +154,7 @@ export default function Dashboard() {
           </Card>
         </Col>
         
-        <Col span={8}>
+        <Col span={7}>
           <Card loading={loading}>
             <Statistic
               title="待确认报数"
