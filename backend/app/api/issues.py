@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.database import get_db
 from app.models import Issue
 from app.schemas.issue import IssueCreate, IssueOut, NextIssueInfo
-from app.services.issue_service import get_next_issue_info, create_issue_with_data
+from app.services.issue_service import get_next_issue_info, get_available_issues, create_issue_with_data
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
 
@@ -21,6 +21,12 @@ def next_issue(db: Session = Depends(get_db)):
     if not info:
         raise HTTPException(status_code=404, detail="No upcoming issues found in schedule")
     return info
+
+
+@router.get("/available", response_model=List[NextIssueInfo])
+def available_issues(db: Session = Depends(get_db)):
+    """List all uncreated issues from the schedule for user to pick from."""
+    return get_available_issues(db)
 
 
 @router.post("", response_model=IssueOut, status_code=201)

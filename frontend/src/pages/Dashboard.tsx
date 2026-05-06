@@ -9,10 +9,11 @@ import {
   List,
   Space,
   Message,
+  Select,
 } from '@arco-design/web-react';
 import { IconPlus, IconEdit, IconSend } from '@arco-design/web-react/icon';
 import dayjs from 'dayjs';
-import { getIssues, getNextIssue, createIssue } from '../api/issues';
+import { getIssues, getNextIssue, getAvailableIssues, createIssue } from '../api/issues';
 import type { Issue, NextIssueInfo } from '../api/issues';
 
 const { Row, Col } = Grid;
@@ -22,6 +23,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [nextIssue, setNextIssue] = useState<NextIssueInfo | null>(null);
+  const [availableIssues, setAvailableIssues] = useState<NextIssueInfo[]>([]);
+  const [selectedIssue, setSelectedIssue] = useState<string | undefined>(undefined);
   const [recentIssues, setRecentIssues] = useState<Issue[]>([]);
   const [stats, setStats] = useState({ total: 0, draft: 0 });
 
@@ -32,12 +35,21 @@ export default function Dashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [nextRes, issuesRes] = await Promise.all([
-        getNextIssue(),
+      const [nextRes, issuesRes, availRes] = await Promise.all([
+        getNextIssue().catch(() => ({ data: null })),
         getIssues(0, 10),
+        getAvailableIssues(),
       ]);
       setNextIssue(nextRes.data);
+      setAvailableIssues(availRes.data);
       setRecentIssues(issuesRes.data);
+
+      // Default selection: next upcoming issue, or first available
+      if (nextRes.data) {
+        setSelectedIssue(String(nextRes.data.issue_number));
+      } else if (availRes.data.length > 0) {
+        setSelectedIssue(String(availRes.data[0].issue_number));
+      }
       
       // Calculate stats
       const total = issuesRes.data.length;
@@ -51,13 +63,15 @@ export default function Dashboard() {
   };
 
   const handleCreateIssue = async () => {
-    if (!nextIssue) return;
-    
+    if (!selectedIssue) return;
+    const chosen = availableIssues.find(i => i.issue_number === Number(selectedIssue));
+    if (!chosen) return;
+
     setCreating(true);
     try {
       const res = await createIssue({
-        issue_number: nextIssue.issue_number,
-        publish_date: nextIssue.publish_date,
+        issue_number: chosen.issue_number,
+        publish_date: chosen.publish_date,
       });
       Message.success(`报数第 ${res.data.issue_number} 期创建成功`);
       navigate(`/issues/${res.data.id}/edit`);
@@ -86,21 +100,30 @@ export default function Dashboard() {
         <Col span={8}>
           <Card loading={loading}>
             <Statistic
-              title="下一期报数"
-              value={nextIssue ? `第 ${nextIssue.issue_number} 期` : '-'}
-              extra={
-                <div style={{ fontSize: '14px', color: '#86909c', marginTop: '8px' }}>
-                  {nextIssue ? dayjs(nextIssue.publish_date).format('YYYY-MM-DD') : ''}
-                </div>
-              }
+              title="创建报数"
+              value={selectedIssue ? `第 ${selectedIssue} 期` : '-'}
             />
+            <Select
+              style={{ width: '100%', marginTop: '12px' }}
+              placeholder="选择期数"
+              value={selectedIssue}
+              onChange={(val) => setSelectedIssue(val)}
+              showSearch
+            >
+              {availableIssues.map((item) => (
+                <Select.Option key={item.issue_number} value={String(item.issue_number)}>
+                  第 {item.issue_number} 期 ({dayjs(item.publish_date).format('MM-DD')})
+                  {nextIssue && item.issue_number === nextIssue.issue_number ? ' ← 推荐' : ''}
+                </Select.Option>
+              ))}
+            </Select>
             <Button
               type="primary"
               icon={<IconPlus />}
               onClick={handleCreateIssue}
               loading={creating}
-              disabled={!nextIssue}
-              style={{ marginTop: '16px', width: '100%' }}
+              disabled={!selectedIssue}
+              style={{ marginTop: '8px', width: '100%' }}
             >
               创建本期报数
             </Button>

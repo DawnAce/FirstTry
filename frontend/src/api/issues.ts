@@ -22,6 +22,9 @@ export const getIssues = (skip = 0, limit = 20) =>
 export const getNextIssue = () =>
   api.get<NextIssueInfo>('/issues/next');
 
+export const getAvailableIssues = () =>
+  api.get<NextIssueInfo[]>('/issues/available');
+
 export const createIssue = (data: { issue_number: number; publish_date: string }) =>
   api.post<Issue>('/issues', data);
 

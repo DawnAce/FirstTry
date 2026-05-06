@@ -5,18 +5,19 @@ from app.models import PublicationSchedule, Issue, ReportEntry, ReportItemTempla
 
 
 def get_next_issue_info(db: Session) -> dict:
-    """Determine the next issue to create — prioritizes missed issues, then upcoming."""
-    # Get all issue_numbers that already exist
+    """Suggest the next upcoming uncreated issue based on current date."""
+    today = date.today()
     existing_numbers = {
         row[0] for row in db.query(Issue.issue_number).all()
     }
 
-    # Find the earliest schedule entry (not suspended) that has no Issue yet
+    # Next upcoming uncreated issue (publish_date >= today)
     next_entry = (
         db.query(PublicationSchedule)
         .filter(
             PublicationSchedule.is_suspended == False,
             PublicationSchedule.issue_number.notin_(existing_numbers) if existing_numbers else True,
+            PublicationSchedule.publish_date >= today,
         )
         .order_by(PublicationSchedule.publish_date.asc())
         .first()
@@ -31,6 +32,28 @@ def get_next_issue_info(db: Session) -> dict:
         "publish_date": next_entry.publish_date,
         "previous_issue_id": prev_issue.id if prev_issue else None,
     }
+
+
+def get_available_issues(db: Session) -> list[dict]:
+    """Return all uncreated issues from the schedule, for user to pick from."""
+    existing_numbers = {
+        row[0] for row in db.query(Issue.issue_number).all()
+    }
+
+    entries = (
+        db.query(PublicationSchedule)
+        .filter(
+            PublicationSchedule.is_suspended == False,
+            PublicationSchedule.issue_number.notin_(existing_numbers) if existing_numbers else True,
+        )
+        .order_by(PublicationSchedule.publish_date.asc())
+        .all()
+    )
+
+    return [
+        {"issue_number": e.issue_number, "publish_date": e.publish_date}
+        for e in entries
+    ]
 
 
 def create_issue_with_data(db: Session, issue_number: int, publish_date: date, notes: str = None) -> Issue:
