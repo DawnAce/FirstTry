@@ -24,3 +24,6 @@ Thumbs.db
 
 # Superpowers
 .superpowers/
+
+# Third-party prompt extensions
+.github/prompts/
