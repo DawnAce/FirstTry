@@ -1,5 +1,5 @@
 import { Layout, Menu } from '@arco-design/web-react';
-import { IconDashboard, IconUser, IconHistory } from '@arco-design/web-react/icon';
+import { IconDashboard, IconUser, IconHistory, IconSettings } from '@arco-design/web-react/icon';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
@@ -15,6 +15,7 @@ export default function AppLayout() {
     if (path.startsWith('/report/') || path.startsWith('/shipping/')) return '/';
     if (path.startsWith('/recipients')) return '/recipients';
     if (path.startsWith('/history')) return '/history';
+    if (path.startsWith('/templates')) return '/templates';
     return path;
   };
 
@@ -66,6 +67,9 @@ export default function AppLayout() {
             </MenuItem>
             <MenuItem key="/history">
               <IconHistory /> 历史记录
+            </MenuItem>
+            <MenuItem key="/templates">
+              <IconSettings /> 模板管理
             </MenuItem>
           </Menu>
         </div>
