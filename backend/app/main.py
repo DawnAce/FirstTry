@@ -22,12 +22,10 @@ app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
 
 @app.on_event("startup")
 def warmup_pool():
-    """Pre-create a DB connection to avoid cold-start latency."""
+    """Pre-create DB connections to avoid cold-start latency."""
     from sqlalchemy import text
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
-
-app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
