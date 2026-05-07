@@ -110,7 +110,8 @@ export default function Templates() {
         <Tag color="arcoblue">{categoryLabels[val] || val}</Tag>
       ),
       filters: categoryOptions.map((o) => ({ text: o.label, value: o.value })),
-      onFilter: (value, record) => record.category === value,
+      onFilter: (values: string[], record: Template) =>
+        values.length === 0 || values.includes(record.category),
     },
     {
       title: '子类别',
@@ -179,7 +180,7 @@ export default function Templates() {
       <Table
         rowKey="id"
         columns={columns}
-        data={templates}
+        data={templates || []}
         loading={isLoading}
         pagination={{ pageSize: 50 }}
         scroll={{ y: 'calc(100vh - 240px)' }}
