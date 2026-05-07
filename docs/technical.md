@@ -45,6 +45,7 @@ FirstTry/
 │   │   ├── services/           # 业务逻辑
 │   │   ├── templates/          # Excel 模板
 │   │   ├── config.py           # 配置管理
+│   │   ├── cache.py            # Dashboard 内存缓存
 │   │   ├── database.py         # 数据库连接
 │   │   └── main.py             # FastAPI 应用入口
 │   ├── alembic.ini
@@ -217,6 +218,19 @@ FirstTry/
 **响应**：
 ```json
 {"status": "ok"}
+```
+
+#### GET /api/dashboard
+Dashboard 聚合接口，返回最近期数、统计、下一期信息和可创建期数列表。使用 30 秒内存缓存，创建期数时自动清除缓存。
+
+**响应**：
+```json
+{
+  "recent_issues": [...],
+  "stats": {"total": 10, "draft": 2},
+  "next_issue": {"issue_number": 2652, "publish_date": "2026-05-18", "previous_issue_id": 2},
+  "available_issues": [{"issue_number": 2635, "publish_date": "2026-01-05"}, ...]
+}
 ```
 
 #### POST /api/admin/seed
@@ -715,6 +729,14 @@ alembic downgrade -1
 - 关系映射（`relationship`）
 - 级联删除（`cascade="all, delete-orphan"`）
 - 会话管理（`SessionLocal`）
+
+### 8.3 数据库连接性能优化
+由于数据库部署在腾讯云（远程），每次 DB 往返约 500ms+，因此采用以下策略：
+- **启动预热**：`warmup_pool()` 在 FastAPI startup 事件中预建连接，避免首次请求冷启动
+- **连接超时**：`connect_timeout=5s`、`read_timeout=10s`、`write_timeout=10s`
+- **关闭 pre-ping**：`pool_pre_ping=False`，配合 `pool_recycle=300` 管理连接有效性
+- **Dashboard 缓存**：30 秒内存缓存（`backend/app/cache.py`），写操作时自动清除
+- **查询合并**：Dashboard 接口从 7 次 DB 查询优化到 2 次
 
 ### 8.3 React + TypeScript
 - 函数式组件 + Hooks
