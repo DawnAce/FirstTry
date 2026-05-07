@@ -5,7 +5,7 @@ from app.config import get_settings
 
 engine = create_engine(
     get_settings().DATABASE_URL,
-    pool_pre_ping=True,
+    pool_pre_ping=False,
     pool_size=10,
     max_overflow=20,
     pool_recycle=300,

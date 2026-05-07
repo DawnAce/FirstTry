@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Optional
 from app.database import get_db
+from app.cache import invalidate_dashboard_cache
 from app.models import Issue
 from app.schemas.issue import IssueCreate, IssueOut, NextIssueInfo
 from app.services.issue_service import get_next_issue_info, get_available_issues, create_issue_with_data
@@ -34,7 +35,9 @@ def create_issue(data: IssueCreate, db: Session = Depends(get_db)):
     existing = db.query(Issue).filter(Issue.issue_number == data.issue_number).first()
     if existing:
         raise HTTPException(status_code=409, detail=f"Issue {data.issue_number} already exists")
-    return create_issue_with_data(db, data.issue_number, data.publish_date, data.notes)
+    result = create_issue_with_data(db, data.issue_number, data.publish_date, data.notes)
+    invalidate_dashboard_cache()
+    return result
 
 
 @router.get("/{issue_id}", response_model=IssueOut)
