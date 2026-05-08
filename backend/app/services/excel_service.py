@@ -1,6 +1,6 @@
 import io
 import os
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from openpyxl import load_workbook, Workbook
@@ -247,9 +247,10 @@ def export_report_excel(issue_id: int, db: Session) -> io.BytesIO:
     d = issue.publish_date
     header = f"期数：{issue.issue_number}   版数：24    出版日期：{d.year}年{d.month}月{d.day}日"
     wb["北京印厂"]["A3"] = header
-    # 制表时间 in D15
-    today = date.today()
-    wb["北京印厂"]["D15"] = f"制表时间：{today.year}年{today.month}月{today.day}日"
+    # 制表时间 = 出版日期的上一周周五 (weekday: Mon=0 ... Fri=4)
+    days_since_friday = (d.weekday() - 4) % 7 or 7
+    report_date = d - timedelta(days=days_since_friday)
+    wb["北京印厂"]["D15"] = f"制表时间：{report_date.year}年{report_date.month}月{report_date.day}日"
 
     # Save to BytesIO
     output = io.BytesIO()
