@@ -675,7 +675,7 @@ export default function ReportEditor() {
       <Modal
         title="作废确认"
         visible={revokeModalVisible}
-        onOk={handleRevoke}
+        onOk={() => { handleRevoke(); }}
         onCancel={() => setRevokeModalVisible(false)}
         confirmLoading={revoking}
         okText="确认作废"
