@@ -46,14 +46,14 @@ export default function Login() {
         <p style={{ textAlign: 'center', color: '#86868b', marginBottom: 32, fontSize: 14 }}>
           中国经营报
         </p>
-        <Form onSubmit={handleSubmit} autoComplete="off">
+        <Form onSubmit={handleSubmit} autoComplete="off" layout="vertical" style={{ width: '100%' }}>
           <Form.Item field="username" rules={[{ required: true, message: '请输入用户名' }]}>
             <Input prefix={<IconUser />} placeholder="用户名" size="large" />
           </Form.Item>
           <Form.Item field="password" rules={[{ required: true, message: '请输入密码' }]}>
             <Input.Password prefix={<IconLock />} placeholder="密码" size="large" />
           </Form.Item>
-          <Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
             <Button type="primary" htmlType="submit" long size="large" loading={loading}>
               登录
             </Button>
