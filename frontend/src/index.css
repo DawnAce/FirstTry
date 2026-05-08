@@ -33,18 +33,6 @@ body {
 
 /* ===== Layout Overrides ===== */
 
-/* Disabled InputNumber: keep text readable (for confirmed reports) */
-.arco-input-number-disabled,
-.arco-input-number-disabled input,
-.arco-input-number-disabled .arco-input,
-.arco-input-number-disabled .arco-input-disabled,
-.arco-input-number-disabled .arco-input-inner-wrapper,
-.arco-input-number-disabled .arco-input-suffix,
-.arco-input-number-disabled input::placeholder {
-  color: var(--color-text-primary) !important;
-  -webkit-text-fill-color: var(--color-text-primary) !important;
-  opacity: 1 !important;
-}
 
 .arco-layout-sider {
   background: var(--color-card) !important;

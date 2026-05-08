@@ -259,6 +259,28 @@ export default function ReportEditor() {
   // Extract 临时加印 from social_use for prominent display at top
   const tempEntry = entries.find(e => e.category === 'social_use' && e.sub_category === '临时加印');
 
+  // Render value: plain text when confirmed, InputNumber when editing
+  const renderValue = (entry: ReportEntry, opts?: { width?: number; size?: 'mini' | 'small' | 'default' | 'large' }) => {
+    if (isConfirmed) {
+      return (
+        <span style={{ fontSize: opts?.size === 'large' ? 16 : 14, fontWeight: 500, color: '#1d1d1f' }}>
+          {entry.value.toLocaleString()} 份
+        </span>
+      );
+    }
+    return (
+      <InputNumber
+        value={entry.value}
+        onChange={(value) => handleValueChange(entry.id, value)}
+        min={0}
+        precision={0}
+        style={{ width: opts?.width ?? 140 }}
+        suffix="份"
+        size={opts?.size}
+      />
+    );
+  };
+
   // Render a single table row for an entry (used in social_use, spans first 2 columns)
   const renderEntryRow = (entry: ReportEntry, showTags?: { freq?: string }) => {
     const isExtra = EXTRA_ITEMS.includes(entry.sub_category);
@@ -282,15 +304,7 @@ export default function ReportEditor() {
           </Space>
         </td>
         <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-          <InputNumber
-            value={entry.value}
-            onChange={(value) => handleValueChange(entry.id, value)}
-            disabled={isConfirmed}
-            min={0}
-            precision={0}
-            style={{ width: 140 }}
-            suffix="份"
-          />
+          {renderValue(entry)}
         </td>
       </tr>
     );
@@ -314,23 +328,25 @@ export default function ReportEditor() {
               人民日报印厂 · 出版日期 {issue.publish_date}
             </span>
             <span style={{ fontSize: 13, color: '#86868b' }}>
-              版数：
-              <InputNumber
-                size="mini"
-                value={issue.page_count ?? 24}
-                min={4}
-                step={4}
-                precision={0}
-                disabled={isConfirmed}
-                style={{ width: 64, display: 'inline-block' }}
-                onChange={(val) => {
-                  if (val && val !== issue.page_count) {
-                    updateIssue(Number(issueId), { page_count: val }).then(() => {
-                      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
-                    });
-                  }
-                }}
-              />
+              版数：{isConfirmed ? (
+                <span style={{ color: '#1d1d1f', fontWeight: 500 }}>{issue.page_count ?? 24}</span>
+              ) : (
+                <InputNumber
+                  size="mini"
+                  value={issue.page_count ?? 24}
+                  min={4}
+                  step={4}
+                  precision={0}
+                  style={{ width: 64, display: 'inline-block' }}
+                  onChange={(val) => {
+                    if (val && val !== issue.page_count) {
+                      updateIssue(Number(issueId), { page_count: val }).then(() => {
+                        queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+                      });
+                    }
+                  }}
+                />
+              )}
             </span>
           </Space>
         </div>
@@ -387,16 +403,7 @@ export default function ReportEditor() {
               <span style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>临时加印</span>
               <Tag size="small" color="orangered">变动</Tag>
             </Space>
-            <InputNumber
-              value={tempEntry.value}
-              onChange={(value) => handleValueChange(tempEntry.id, value)}
-              disabled={isConfirmed}
-              min={0}
-              precision={0}
-              style={{ width: 160 }}
-              suffix="份"
-              size="large"
-            />
+            {renderValue(tempEntry, { width: 160, size: 'large' })}
           </div>
         </Card>
       )}
@@ -483,16 +490,7 @@ export default function ReportEditor() {
                           </Space>
                         </td>
                         <td style={{ padding: '6px 16px', textAlign: 'right' }}>
-                          <InputNumber
-                            value={entry.value}
-                            onChange={(value) => handleValueChange(entry.id, value)}
-                            disabled={isConfirmed}
-                            min={0}
-                            precision={0}
-                            style={{ width: 120 }}
-                            suffix="份"
-                            size="small"
-                          />
+                          {renderValue(entry, { width: 120, size: 'small' })}
                         </td>
                       </tr>
                     ))}
@@ -561,15 +559,7 @@ export default function ReportEditor() {
                       </Space>
                     </td>
                     <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-                      <InputNumber
-                        value={entry.value}
-                        onChange={(value) => handleValueChange(entry.id, value)}
-                        disabled={isConfirmed}
-                        min={0}
-                        precision={0}
-                        style={{ width: 140 }}
-                        suffix="份"
-                      />
+                      {renderValue(entry)}
                     </td>
                   </tr>
                 </tbody>
@@ -612,15 +602,7 @@ export default function ReportEditor() {
                       </Space>
                     </td>
                     <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-                      <InputNumber
-                        value={entry.value}
-                        onChange={(value) => handleValueChange(entry.id, value)}
-                        disabled={isConfirmed}
-                        min={0}
-                        precision={0}
-                        style={{ width: 140 }}
-                        suffix="份"
-                      />
+                      {renderValue(entry)}
                     </td>
                   </tr>
                 ))}
