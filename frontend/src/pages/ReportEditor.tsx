@@ -74,7 +74,7 @@ export default function ReportEditor() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entriesRef = useRef<ReportEntry[]>([]);
-  const initialLoadRef = useRef(true);
+  const confirmedRef = useRef<boolean | null>(null);
   const [revokeModalVisible, setRevokeModalVisible] = useState(false);
   const [revokeReason, setRevokeReason] = useState('');
   const [revoking, setRevoking] = useState(false);
@@ -96,7 +96,8 @@ export default function ReportEditor() {
     },
     enabled: !!issueId,
     select: (data) => {
-      if (entries.length === 0) {
+      // Refresh entries on initial load or after revoke (status changed from confirmed to draft)
+      if (entries.length === 0 || (confirmedRef.current === true && data.entries.length > 0)) {
         setEntries(data.entries);
         entriesRef.current = data.entries;
       }
@@ -106,6 +107,7 @@ export default function ReportEditor() {
 
   const loading = issueLoading || reportLoading;
   const isConfirmed = issue?.status === 'confirmed';
+  confirmedRef.current = isConfirmed ?? null;
 
   // Fetch revision history
   const { data: revisions } = useQuery({
@@ -125,6 +127,7 @@ export default function ReportEditor() {
       Message.success('已作废，可重新编辑');
       setRevokeModalVisible(false);
       setRevokeReason('');
+      setSaveStatus('idle');
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       queryClient.invalidateQueries({ queryKey: ['revisions', issueId] });
       queryClient.invalidateQueries({ queryKey: ['report', issueId] });
@@ -138,6 +141,8 @@ export default function ReportEditor() {
   // Auto-save: persist to server after 1.5s of no edits
   const doSave = useCallback(async () => {
     if (!issueId || entriesRef.current.length === 0) return;
+    // Skip auto-save if issue is already confirmed (race condition guard)
+    if (confirmedRef.current) return;
     setSaveStatus('saving');
     try {
       const payload = entriesRef.current.map(entry => ({
@@ -148,7 +153,8 @@ export default function ReportEditor() {
       await updateReport(Number(issueId), payload);
       queryClient.invalidateQueries({ queryKey: ['report', issueId] });
       setSaveStatus('saved');
-    } catch {
+    } catch (err) {
+      console.error('Auto-save failed:', err);
       setSaveStatus('error');
     }
   }, [issueId, queryClient]);
@@ -198,6 +204,7 @@ export default function ReportEditor() {
     // Flush any pending auto-save
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaving(true);
+    setSaveStatus('idle');
     try {
       const payload = entriesRef.current.length > 0
         ? entriesRef.current.map(entry => ({
