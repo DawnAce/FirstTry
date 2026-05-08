@@ -10,15 +10,21 @@ import {
   Spin,
   Popconfirm,
   Message,
+  Modal,
+  Input,
+  Timeline,
 } from '@arco-design/web-react';
 import {
   IconCheck,
   IconDownload,
   IconArrowLeft,
+  IconUndo,
 } from '@arco-design/web-react/icon';
 import { getIssue, updateIssue } from '../api/issues';
 import type { ReportEntry } from '../api/reports';
-import { getReport, updateReport, confirmReport } from '../api/reports';
+import { getReport, updateReport, confirmReport, revokeReport, getRevisions } from '../api/reports';
+import type { RevisionRecord } from '../api/reports';
+import { useAuth } from '../contexts/AuthContext';
 
 const categoryLabels: Record<string, string> = {
   postal: '北京邮发',
@@ -62,12 +68,16 @@ export default function ReportEditor() {
   const { issueId } = useParams<{ issueId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const [saving, setSaving] = useState(false);
   const [entries, setEntries] = useState<ReportEntry[]>([]);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entriesRef = useRef<ReportEntry[]>([]);
   const initialLoadRef = useRef(true);
+  const [revokeModalVisible, setRevokeModalVisible] = useState(false);
+  const [revokeReason, setRevokeReason] = useState('');
+  const [revoking, setRevoking] = useState(false);
 
   const { data: issue, isLoading: issueLoading } = useQuery({
     queryKey: ['issue', issueId],
@@ -95,6 +105,35 @@ export default function ReportEditor() {
   });
 
   const loading = issueLoading || reportLoading;
+  const isConfirmed = issue?.status === 'confirmed';
+
+  // Fetch revision history
+  const { data: revisions } = useQuery({
+    queryKey: ['revisions', issueId],
+    queryFn: async () => {
+      const res = await getRevisions(Number(issueId));
+      return res.data;
+    },
+    enabled: !!issueId,
+  });
+
+  const handleRevoke = async () => {
+    if (!issueId) return;
+    setRevoking(true);
+    try {
+      await revokeReport(Number(issueId), revokeReason || undefined);
+      Message.success('已作废，可重新编辑');
+      setRevokeModalVisible(false);
+      setRevokeReason('');
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+      queryClient.invalidateQueries({ queryKey: ['revisions', issueId] });
+      queryClient.invalidateQueries({ queryKey: ['report', issueId] });
+    } catch (err: any) {
+      Message.error(err.response?.data?.detail || '作废失败');
+    } finally {
+      setRevoking(false);
+    }
+  };
 
   // Auto-save: persist to server after 1.5s of no edits
   const doSave = useCallback(async () => {
@@ -115,6 +154,7 @@ export default function ReportEditor() {
   }, [issueId, queryClient]);
 
   const handleValueChange = (entryId: number, value: number | undefined) => {
+    if (isConfirmed) return;
     const updated = entries.map(entry =>
       entry.id === entryId ? { ...entry, value: value ?? 0 } : entry
     );
@@ -245,6 +285,7 @@ export default function ReportEditor() {
           <InputNumber
             value={entry.value}
             onChange={(value) => handleValueChange(entry.id, value)}
+            disabled={isConfirmed}
             min={0}
             precision={0}
             style={{ width: 140 }}
@@ -280,6 +321,7 @@ export default function ReportEditor() {
                 min={4}
                 step={4}
                 precision={0}
+                disabled={isConfirmed}
                 style={{ width: 64, display: 'inline-block' }}
                 onChange={(val) => {
                   if (val && val !== issue.page_count) {
@@ -293,24 +335,47 @@ export default function ReportEditor() {
           </Space>
         </div>
         <Space size="medium">
-          {/* Auto-save status indicator */}
-          <span style={{ fontSize: 13, color: saveStatus === 'error' ? '#f53f3f' : '#86868b' }}>
-            {saveStatus === 'saving' && '⏳ 保存中...'}
-            {saveStatus === 'saved' && '✅ 已自动保存'}
-            {saveStatus === 'error' && '❌ 保存失败，请重试'}
-          </span>
-          <Button icon={<IconDownload />} onClick={handleExport}>
-            导出
-          </Button>
-          <Popconfirm
-            title="确认报数"
-            content="确认后将无法再修改，是否继续？"
-            onOk={handleConfirm}
-          >
-            <Button type="primary" icon={<IconCheck />} loading={saving}>
-              确认报数
-            </Button>
-          </Popconfirm>
+          {isConfirmed ? (
+            <>
+              <Tag color="green" size="large" style={{ fontSize: 13, padding: '4px 12px' }}>
+                ✅ 已确认报数
+              </Tag>
+              {isAdmin && (
+                <Button
+                  type="outline"
+                  status="warning"
+                  icon={<IconUndo />}
+                  onClick={() => setRevokeModalVisible(true)}
+                >
+                  作废
+                </Button>
+              )}
+              <Button icon={<IconDownload />} onClick={handleExport}>
+                导出
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* Auto-save status indicator */}
+              <span style={{ fontSize: 13, color: saveStatus === 'error' ? '#f53f3f' : '#86868b' }}>
+                {saveStatus === 'saving' && '⏳ 保存中...'}
+                {saveStatus === 'saved' && '✅ 已自动保存'}
+                {saveStatus === 'error' && '❌ 保存失败，请重试'}
+              </span>
+              <Button icon={<IconDownload />} onClick={handleExport}>
+                导出
+              </Button>
+              <Popconfirm
+                title="确认报数"
+                content="确认后将无法再修改，是否继续？"
+                onOk={handleConfirm}
+              >
+                <Button type="primary" icon={<IconCheck />} loading={saving}>
+                  确认报数
+                </Button>
+              </Popconfirm>
+            </>
+          )}
         </Space>
       </div>
 
@@ -325,6 +390,7 @@ export default function ReportEditor() {
             <InputNumber
               value={tempEntry.value}
               onChange={(value) => handleValueChange(tempEntry.id, value)}
+              disabled={isConfirmed}
               min={0}
               precision={0}
               style={{ width: 160 }}
@@ -420,6 +486,7 @@ export default function ReportEditor() {
                           <InputNumber
                             value={entry.value}
                             onChange={(value) => handleValueChange(entry.id, value)}
+                            disabled={isConfirmed}
                             min={0}
                             precision={0}
                             style={{ width: 120 }}
@@ -497,6 +564,7 @@ export default function ReportEditor() {
                       <InputNumber
                         value={entry.value}
                         onChange={(value) => handleValueChange(entry.id, value)}
+                        disabled={isConfirmed}
                         min={0}
                         precision={0}
                         style={{ width: 140 }}
@@ -547,6 +615,7 @@ export default function ReportEditor() {
                       <InputNumber
                         value={entry.value}
                         onChange={(value) => handleValueChange(entry.id, value)}
+                        disabled={isConfirmed}
                         min={0}
                         precision={0}
                         style={{ width: 140 }}
@@ -580,6 +649,49 @@ export default function ReportEditor() {
           </tfoot>
         </table>
       </Card>
+
+      {/* Revision History */}
+      {revisions && revisions.length > 0 && (
+        <Card style={{ marginTop: 24 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: '#1d1d1f' }}>
+            变更历史（共 {revisions.length} 次作废）
+          </h3>
+          <Timeline>
+            {revisions.map((rev: RevisionRecord) => (
+              <Timeline.Item key={rev.id} label={rev.revoked_at?.replace('T', ' ').slice(0, 16)}>
+                <div style={{ fontSize: 13 }}>
+                  <strong>第 {rev.revision_number} 次作废</strong>
+                  <span style={{ color: '#86868b', marginLeft: 8 }}>操作人：{rev.operator}</span>
+                  {rev.reason && (
+                    <div style={{ color: '#86868b', marginTop: 4 }}>原因：{rev.reason}</div>
+                  )}
+                </div>
+              </Timeline.Item>
+            ))}
+          </Timeline>
+        </Card>
+      )}
+
+      {/* Revoke Modal */}
+      <Modal
+        title="作废确认"
+        visible={revokeModalVisible}
+        onOk={handleRevoke}
+        onCancel={() => setRevokeModalVisible(false)}
+        confirmLoading={revoking}
+        okText="确认作废"
+        okButtonProps={{ status: 'warning' }}
+      >
+        <p style={{ marginBottom: 12, color: '#424245' }}>
+          作废后该期报数将恢复为可编辑状态，此操作将被记录。
+        </p>
+        <Input.TextArea
+          placeholder="作废原因（可选）"
+          value={revokeReason}
+          onChange={setRevokeReason}
+          autoSize={{ minRows: 2 }}
+        />
+      </Modal>
     </div>
   );
 }

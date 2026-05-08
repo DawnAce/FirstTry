@@ -5,6 +5,8 @@ from app.models.report_entry import ReportEntry
 from app.models.recipient import Recipient, RecipientType, RecipientFrequency, RecipientStatus
 from app.models.subscription import Subscription, SubscriptionType
 from app.models.shipping_record import ShippingRecord, ShippingStatus
+from app.models.user import User, UserRole
+from app.models.report_revision import ReportRevision
 
 __all__ = [
     "PublicationSchedule",
@@ -14,4 +16,6 @@ __all__ = [
     "Recipient", "RecipientType", "RecipientFrequency", "RecipientStatus",
     "Subscription", "SubscriptionType",
     "ShippingRecord", "ShippingStatus",
+    "User", "UserRole",
+    "ReportRevision",
 ]

@@ -15,6 +15,16 @@ export interface ReportData {
   total: number;
 }
 
+export interface RevisionRecord {
+  id: number;
+  revision_number: number;
+  operator: string;
+  reason: string | null;
+  changes_json: { category: string; sub_category: string; value: number }[];
+  confirmed_at: string | null;
+  revoked_at: string | null;
+}
+
 export const getReport = (issueId: number) =>
   api.get<ReportData>(`/issues/${issueId}/report`);
 
@@ -23,3 +33,9 @@ export const updateReport = (issueId: number, entries: { category: string; sub_c
 
 export const confirmReport = (issueId: number) =>
   api.post(`/issues/${issueId}/report/confirm`);
+
+export const revokeReport = (issueId: number, reason?: string) =>
+  api.post(`/issues/${issueId}/report/revoke`, null, { params: { reason } });
+
+export const getRevisions = (issueId: number) =>
+  api.get<RevisionRecord[]>(`/issues/${issueId}/report/revisions`);
