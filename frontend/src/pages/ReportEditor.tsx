@@ -487,7 +487,7 @@ export default function ReportEditor() {
               <Popconfirm
                 title="确认报数"
                 content="确认后将无法再修改，是否继续？"
-                onOk={handleConfirm}
+                onOk={() => { handleConfirm(); }}
               >
                 <Button type="primary" icon={<IconCheck />} loading={saving}>
                   确认报数
