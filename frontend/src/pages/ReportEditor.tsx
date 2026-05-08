@@ -278,7 +278,7 @@ export default function ReportEditor() {
                 size="mini"
                 value={issue.page_count ?? 24}
                 min={4}
-                step={8}
+                step={4}
                 precision={0}
                 style={{ width: 64, display: 'inline-block' }}
                 onChange={(val) => {
