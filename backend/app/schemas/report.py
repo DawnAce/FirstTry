@@ -27,3 +27,15 @@ class ReportDataOut(BaseModel):
 
 class ReportDataUpdate(BaseModel):
     entries: List[ReportEntryUpdate]
+
+
+class TempPrintDetailIn(BaseModel):
+    department: str
+    custom_name: Optional[str] = None
+    quantity: int
+    self_quantity: int
+
+
+class TempPrintDetailOut(TempPrintDetailIn):
+    id: int
+    model_config = {"from_attributes": True}

@@ -13,16 +13,19 @@ import {
   Modal,
   Input,
   Timeline,
+  Select,
 } from '@arco-design/web-react';
 import {
   IconCheck,
   IconDownload,
   IconArrowLeft,
   IconUndo,
+  IconPlus,
+  IconDelete,
 } from '@arco-design/web-react/icon';
 import { getIssue, updateIssue } from '../api/issues';
-import type { ReportEntry } from '../api/reports';
-import { getReport, updateReport, confirmReport, revokeReport, getRevisions } from '../api/reports';
+import type { ReportEntry, TempPrintDetail } from '../api/reports';
+import { getReport, updateReport, confirmReport, revokeReport, getRevisions, getTempPrintDetails, updateTempPrintDetails } from '../api/reports';
 import type { RevisionRecord } from '../api/reports';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -64,6 +67,14 @@ const COMPOSITE_GROUPS: { label: string; prefix: string; items: string[] }[] = [
   },
 ];
 
+const DEPARTMENT_OPTIONS = [
+  { label: '营报传媒', value: '营报传媒' },
+  { label: '财经中心', value: '财经中心' },
+  { label: '中经未来', value: '中经未来' },
+  { label: '产经中心', value: '产经中心' },
+  { label: '其他', value: '其他' },
+];
+
 export default function ReportEditor() {
   const { issueId } = useParams<{ issueId: string }>();
   const navigate = useNavigate();
@@ -78,6 +89,8 @@ export default function ReportEditor() {
   const [revokeModalVisible, setRevokeModalVisible] = useState(false);
   const [revokeReason, setRevokeReason] = useState('');
   const [revoking, setRevoking] = useState(false);
+  const [tempDetails, setTempDetails] = useState<TempPrintDetail[]>([]);
+  const [tempDetailsLoaded, setTempDetailsLoaded] = useState(false);
 
   const { data: issue, isLoading: issueLoading } = useQuery({
     queryKey: ['issue', issueId],
@@ -128,6 +141,70 @@ export default function ReportEditor() {
     },
     enabled: !!issueId,
   });
+
+  // Fetch temp print details
+  const { data: tempDetailsData } = useQuery({
+    queryKey: ['tempDetails', issueId],
+    queryFn: async () => {
+      const res = await getTempPrintDetails(Number(issueId));
+      return res.data;
+    },
+    enabled: !!issueId,
+  });
+
+  useEffect(() => {
+    if (tempDetailsData && !tempDetailsLoaded) {
+      setTempDetails(tempDetailsData);
+      setTempDetailsLoaded(true);
+    }
+  }, [tempDetailsData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveTempDetails = useCallback(async (details: TempPrintDetail[]) => {
+    if (!issueId) return;
+    try {
+      const res = await updateTempPrintDetails(Number(issueId), details);
+      setTempDetails(res.data);
+      queryClient.invalidateQueries({ queryKey: ['tempDetails', issueId] });
+      queryClient.invalidateQueries({ queryKey: ['report', issueId] });
+    } catch (err: any) {
+      Message.error(err.response?.data?.detail || '保存明细失败');
+    }
+  }, [issueId, queryClient]);
+
+  const handleAddTempDetail = () => {
+    const newDetail: TempPrintDetail = {
+      department: '营报传媒',
+      quantity: 0,
+      self_quantity: 0,
+    };
+    const updated = [...tempDetails, newDetail];
+    setTempDetails(updated);
+    saveTempDetails(updated);
+  };
+
+  const handleRemoveTempDetail = (index: number) => {
+    const updated = tempDetails.filter((_, i) => i !== index);
+    setTempDetails(updated);
+    saveTempDetails(updated);
+  };
+
+  const handleTempDetailChange = (index: number, field: keyof TempPrintDetail, value: any) => {
+    const updated = tempDetails.map((d, i) => {
+      if (i !== index) return d;
+      const newD = { ...d, [field]: value };
+      // If department changes away from '其他', clear custom_name
+      if (field === 'department' && value !== '其他') {
+        newD.custom_name = null;
+      }
+      // Ensure self_quantity doesn't exceed quantity
+      if (field === 'quantity' && newD.self_quantity > (value as number)) {
+        newD.self_quantity = value as number;
+      }
+      return newD;
+    });
+    setTempDetails(updated);
+    saveTempDetails(updated);
+  };
 
   const handleRevoke = async () => {
     if (!issueId) return;
@@ -430,7 +507,11 @@ export default function ReportEditor() {
               <span style={{ fontSize: 13, color: '#86868b' }}>分配：</span>
               <Space size="small" style={{ alignItems: 'center' }}>
                 <span style={{ fontSize: 13, color: '#424245' }}>自留分发</span>
-                {isConfirmed ? (
+                {tempDetails.length > 0 ? (
+                  <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>
+                    {tempDetails.reduce((s, d) => s + d.self_quantity, 0).toLocaleString()} 份
+                  </span>
+                ) : isConfirmed ? (
                   <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{tempSelfEntry.value.toLocaleString()} 份</span>
                 ) : (
                   <InputNumber
@@ -447,8 +528,123 @@ export default function ReportEditor() {
               </Space>
               <Space size="small" style={{ alignItems: 'center' }}>
                 <span style={{ fontSize: 13, color: '#424245' }}>北京快递</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{tempExpressValue.toLocaleString()} 份</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>
+                  {tempDetails.length > 0
+                    ? (tempDetails.reduce((s, d) => s + d.quantity, 0) - tempDetails.reduce((s, d) => s + d.self_quantity, 0)).toLocaleString()
+                    : tempExpressValue.toLocaleString()
+                  } 份
+                </span>
               </Space>
+            </div>
+          )}
+
+          {/* 归属明细 detail table */}
+          {tempEntry.value > 0 && (
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#424245' }}>归属明细</span>
+                {!isConfirmed && (
+                  <Button
+                    size="mini"
+                    type="outline"
+                    icon={<IconPlus />}
+                    onClick={handleAddTempDetail}
+                  >
+                    添加
+                  </Button>
+                )}
+              </div>
+              {tempDetails.length > 0 && (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#fafafa', borderBottom: '1px solid #e8e8e8' }}>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: '#86868b' }}>部门</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#86868b' }}>份数</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#86868b' }}>自留</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#86868b' }}>快递</th>
+                      {!isConfirmed && (
+                        <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 500, color: '#86868b', width: 40 }}>操作</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tempDetails.map((detail, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                        <td style={{ padding: '6px 8px' }}>
+                          {isConfirmed ? (
+                            <span>{detail.department === '其他' ? (detail.custom_name || '其他') : detail.department}</span>
+                          ) : (
+                            <Space size="mini">
+                              <Select
+                                size="mini"
+                                value={detail.department}
+                                options={DEPARTMENT_OPTIONS}
+                                onChange={(val) => handleTempDetailChange(idx, 'department', val)}
+                                style={{ width: 100 }}
+                              />
+                              {detail.department === '其他' && (
+                                <Input
+                                  size="mini"
+                                  placeholder="名称"
+                                  value={detail.custom_name || ''}
+                                  onChange={(val) => handleTempDetailChange(idx, 'custom_name', val)}
+                                  style={{ width: 80 }}
+                                />
+                              )}
+                            </Space>
+                          )}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                          {isConfirmed ? (
+                            <span>{detail.quantity}</span>
+                          ) : (
+                            <InputNumber
+                              size="mini"
+                              value={detail.quantity}
+                              onChange={(val) => handleTempDetailChange(idx, 'quantity', val ?? 0)}
+                              min={0}
+                              precision={0}
+                              style={{ width: 80 }}
+                            />
+                          )}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                          {isConfirmed ? (
+                            <span>{detail.self_quantity}</span>
+                          ) : (
+                            <InputNumber
+                              size="mini"
+                              value={detail.self_quantity}
+                              onChange={(val) => handleTempDetailChange(idx, 'self_quantity', val ?? 0)}
+                              min={0}
+                              max={detail.quantity}
+                              precision={0}
+                              style={{ width: 80 }}
+                            />
+                          )}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', color: '#86868b' }}>
+                          {detail.quantity - detail.self_quantity}
+                        </td>
+                        {!isConfirmed && (
+                          <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                            <Button
+                              size="mini"
+                              type="text"
+                              status="danger"
+                              icon={<IconDelete />}
+                              onClick={() => handleRemoveTempDetail(idx)}
+                            />
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {tempDetails.length === 0 && !isConfirmed && (
+                <span style={{ fontSize: 12, color: '#86868b' }}>暂无明细，点击"添加"按钮录入归属信息</span>
+              )}
             </div>
           )}
         </Card>
@@ -486,7 +682,7 @@ export default function ReportEditor() {
                      !compositeSubCategories.has(e.sub_category)
               );
               const extraItems = allCategoryEntries.filter(
-                e => EXTRA_ITEMS.includes(e.sub_category) && e.sub_category !== '临时加印'
+                e => EXTRA_ITEMS.includes(e.sub_category) && e.sub_category !== '临时加印' && e.sub_category !== '临时加印_自留'
               );
               const subtotal = calculateCategoryTotal(allCategoryEntries);
 

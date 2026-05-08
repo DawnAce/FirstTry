@@ -7,6 +7,7 @@ from app.models.subscription import Subscription, SubscriptionType
 from app.models.shipping_record import ShippingRecord, ShippingStatus
 from app.models.user import User, UserRole
 from app.models.report_revision import ReportRevision
+from app.models.temp_print_detail import TempPrintDetail
 
 __all__ = [
     "PublicationSchedule",
@@ -18,4 +19,5 @@ __all__ = [
     "ShippingRecord", "ShippingStatus",
     "User", "UserRole",
     "ReportRevision",
+    "TempPrintDetail",
 ]

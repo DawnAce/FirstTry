@@ -4,8 +4,8 @@ from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime
 from app.database import get_db
-from app.models import Issue, ReportEntry, IssueStatus, ReportRevision, User
-from app.schemas.report import ReportDataOut, ReportDataUpdate, ReportEntryOut
+from app.models import Issue, ReportEntry, IssueStatus, ReportRevision, User, TempPrintDetail
+from app.schemas.report import ReportDataOut, ReportDataUpdate, ReportEntryOut, TempPrintDetailIn, TempPrintDetailOut
 from app.auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/issues/{issue_id}/report", tags=["reports"])
@@ -151,3 +151,70 @@ def get_revisions(issue_id: int, db: Session = Depends(get_db)):
         }
         for r in revisions
     ]
+
+
+@router.get("/temp-details", response_model=List[TempPrintDetailOut])
+def get_temp_print_details(issue_id: int, db: Session = Depends(get_db)):
+    """获取临时加印归属明细。"""
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    details = (
+        db.query(TempPrintDetail)
+        .filter(TempPrintDetail.issue_id == issue_id)
+        .order_by(TempPrintDetail.id)
+        .all()
+    )
+    return [TempPrintDetailOut.model_validate(d) for d in details]
+
+
+@router.put("/temp-details", response_model=List[TempPrintDetailOut])
+def update_temp_print_details(
+    issue_id: int,
+    details: List[TempPrintDetailIn],
+    db: Session = Depends(get_db),
+):
+    """替换临时加印归属明细，并同步更新临时加印_自留条目。"""
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    if issue.status == IssueStatus.confirmed:
+        raise HTTPException(status_code=403, detail="报数已确认，如需修改请先作废")
+
+    # Delete existing details
+    db.query(TempPrintDetail).filter(TempPrintDetail.issue_id == issue_id).delete()
+
+    # Insert new details
+    new_records = []
+    for d in details:
+        record = TempPrintDetail(
+            issue_id=issue_id,
+            department=d.department,
+            custom_name=d.custom_name,
+            quantity=d.quantity,
+            self_quantity=d.self_quantity,
+        )
+        db.add(record)
+        new_records.append(record)
+
+    # Sync 临时加印_自留 entry value
+    total_self = sum(d.self_quantity for d in details)
+    self_entry = (
+        db.query(ReportEntry)
+        .filter(
+            ReportEntry.issue_id == issue_id,
+            ReportEntry.category == "social_use",
+            ReportEntry.sub_category == "临时加印_自留",
+        )
+        .first()
+    )
+    if self_entry:
+        self_entry.value = total_self
+
+    db.commit()
+    for r in new_records:
+        db.refresh(r)
+
+    return [TempPrintDetailOut.model_validate(r) for r in new_records]
