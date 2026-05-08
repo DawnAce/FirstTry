@@ -5,11 +5,14 @@ export interface ShippingDetail {
   id: number;
   issue_number: number;
   sheet_name: string;
+  channel: string;
+  transport: string;
+  frequency: string;
+  status: string;
   name: string;
   address: string | null;
   phone: string | null;
   quantity: number;
-  publication: string | null;
   deadline: string | null;
   notes: string | null;
   extra_info: string | null;
@@ -27,11 +30,14 @@ export interface ShippingDetail {
 export interface ShippingDetailCreate {
   issue_number: number;
   sheet_name: string;
+  channel: string;
+  transport?: string;
+  frequency?: string;
+  status?: string;
   name: string;
   address?: string;
   phone?: string;
   quantity?: number;
-  publication?: string;
   deadline?: string;
   notes?: string;
   extra_info?: string;
@@ -45,11 +51,14 @@ export interface ShippingDetailCreate {
 }
 
 export interface ShippingDetailUpdate {
+  channel?: string;
+  transport?: string;
+  frequency?: string;
+  status?: string;
   name?: string;
   address?: string;
   phone?: string;
   quantity?: number;
-  publication?: string;
   deadline?: string;
   notes?: string;
   extra_info?: string;
@@ -64,9 +73,6 @@ export interface ShippingDetailUpdate {
 
 export const getShippingDetails = (params?: Record<string, any>): Promise<AxiosResponse<ShippingDetail[]>> =>
   api.get<ShippingDetail[]>('/shipping-details', { params });
-
-export const getShippingSheets = (params?: Record<string, any>): Promise<AxiosResponse<string[]>> =>
-  api.get<string[]>('/shipping-details/sheets', { params });
 
 export const createShippingDetail = (data: ShippingDetailCreate): Promise<AxiosResponse<ShippingDetail>> =>
   api.post<ShippingDetail>('/shipping-details', data);

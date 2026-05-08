@@ -45,129 +45,46 @@ const statusLabels: Record<string, string> = { active: '正常', suspended: '停
 const statusColors: Record<string, string> = { active: 'green', suspended: 'red' };
 const subTypeLabels: Record<string, string> = { new: '新订', renewal: '续订' };
 
-const SHEET_TABS = [
-  '每周（对公）',
-  '每周（读者）',
-  '高铁展示',
-  '上犹',
-  '停发-双周（读者）',
-  '月底-整月',
-] as const;
+const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订户', '记者站', '监管赠阅', '政府赠阅', '库房留存', '报社留存'] as const;
+const FREQUENCY_OPTIONS = ['每周', '双周', '月底整月'] as const;
+const TRANSPORT_OPTIONS = ['中通物流', '邮政物流', '包车运输', '库房留存'] as const;
+const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
 
-type SheetName = typeof SHEET_TABS[number];
+const channelColors: Record<string, string> = {
+  '渠道订阅': 'blue',
+  '对公订阅': 'arcoblue',
+  '个人订户': 'green',
+  '记者站': 'purple',
+  '监管赠阅': 'orange',
+  '政府赠阅': 'gold',
+  '库房留存': 'gray',
+  '报社留存': 'cyan',
+};
 
-interface SheetFieldConfig {
-  columns: ColumnProps<ShippingDetail>[];
-  formFields: { field: string; label: string; type: 'input' | 'number' | 'textarea'; required?: boolean }[];
-}
-
-function getSheetConfig(sheetName: SheetName, onEdit: (r: ShippingDetail) => void, onDelete: (id: number) => void): SheetFieldConfig {
-  const actionColumn: ColumnProps<ShippingDetail> = {
-    title: '操作',
-    key: 'actions',
-    width: 120,
-    render: (_: any, record: ShippingDetail) => (
-      <Space>
-        <Button type="text" size="small" icon={<IconEdit />} onClick={() => onEdit(record)}>编辑</Button>
-        <Popconfirm title="确认删除？" onOk={() => onDelete(record.id)}>
-          <Button type="text" size="small" status="danger" icon={<IconDelete />}>删除</Button>
-        </Popconfirm>
-      </Space>
-    ),
-  };
-
-  const col = (title: string, dataIndex: string, width?: number): ColumnProps<ShippingDetail> => ({
-    title,
-    dataIndex,
-    key: dataIndex,
-    ...(width ? { width } : {}),
-    render: (v: any) => v ?? '-',
-  });
-
-  switch (sheetName) {
-    case '每周（对公）':
-      return {
-        columns: [col('姓名', 'name'), col('地址', 'address'), col('电话', 'phone'), col('份数', 'quantity', 80), col('刊物', 'publication'), col('备注', 'notes'), actionColumn],
-        formFields: [
-          { field: 'name', label: '姓名', type: 'input', required: true },
-          { field: 'address', label: '地址', type: 'input' },
-          { field: 'phone', label: '电话', type: 'input' },
-          { field: 'quantity', label: '份数', type: 'number' },
-          { field: 'publication', label: '刊物', type: 'input' },
-          { field: 'notes', label: '备注', type: 'textarea' },
-        ],
-      };
-    case '每周（读者）':
-      return {
-        columns: [col('姓名', 'name'), col('地址', 'address'), col('电话', 'phone'), col('份数', 'quantity', 80), col('刊物', 'publication'), col('截止日期', 'deadline'), col('备注', 'notes'), actionColumn],
-        formFields: [
-          { field: 'name', label: '姓名', type: 'input', required: true },
-          { field: 'address', label: '地址', type: 'input' },
-          { field: 'phone', label: '电话', type: 'input' },
-          { field: 'quantity', label: '份数', type: 'number' },
-          { field: 'publication', label: '刊物', type: 'input' },
-          { field: 'deadline', label: '截止日期', type: 'input' },
-          { field: 'notes', label: '备注', type: 'textarea' },
-        ],
-      };
-    case '高铁展示':
-      return {
-        columns: [col('城市', 'city'), col('序号', 'seq_number', 80), col('站名', 'station_name'), col('站厅名称', 'station_hall'), col('联系人', 'contact_person'), col('电话', 'phone'), col('地址', 'address'), col('投放数量', 'quantity', 100), actionColumn],
-        formFields: [
-          { field: 'name', label: '姓名', type: 'input', required: true },
-          { field: 'city', label: '城市', type: 'input' },
-          { field: 'seq_number', label: '序号', type: 'number' },
-          { field: 'station_name', label: '站名', type: 'input' },
-          { field: 'station_hall', label: '站厅名称', type: 'input' },
-          { field: 'contact_person', label: '联系人', type: 'input' },
-          { field: 'phone', label: '电话', type: 'input' },
-          { field: 'address', label: '地址', type: 'input' },
-          { field: 'quantity', label: '投放数量', type: 'number' },
-        ],
-      };
-    case '上犹':
-      return {
-        columns: [col('姓名', 'name'), col('地址', 'address'), col('电话', 'phone'), col('份数', 'quantity', 80), col('刊物', 'publication'), col('备注', 'notes'), actionColumn],
-        formFields: [
-          { field: 'name', label: '姓名', type: 'input', required: true },
-          { field: 'address', label: '地址', type: 'input' },
-          { field: 'phone', label: '电话', type: 'input' },
-          { field: 'quantity', label: '份数', type: 'number' },
-          { field: 'publication', label: '刊物', type: 'input' },
-          { field: 'notes', label: '备注', type: 'textarea' },
-        ],
-      };
-    case '停发-双周（读者）':
-    case '月底-整月':
-      return {
-        columns: [col('姓名', 'name'), col('地址', 'address'), col('电话', 'phone'), col('期数', 'period_count', 80), col('份数', 'quantity', 80), col('刊物', 'publication'), col('截止日期', 'deadline'), col('备注', 'notes'), actionColumn],
-        formFields: [
-          { field: 'name', label: '姓名', type: 'input', required: true },
-          { field: 'address', label: '地址', type: 'input' },
-          { field: 'phone', label: '电话', type: 'input' },
-          { field: 'period_count', label: '期数', type: 'number' },
-          { field: 'quantity', label: '份数', type: 'number' },
-          { field: 'publication', label: '刊物', type: 'input' },
-          { field: 'deadline', label: '截止日期', type: 'input' },
-          { field: 'notes', label: '备注', type: 'textarea' },
-        ],
-      };
-  }
+interface ShippingFilters {
+  channel?: string;
+  frequency?: string;
+  transport?: string;
+  status?: string;
+  search?: string;
 }
 
 function ShippingDetailsTab() {
   const queryClient = useQueryClient();
-  const [activeSheet, setActiveSheet] = useState<SheetName>('每周（对公）');
-  const [search, setSearch] = useState('');
+  const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ShippingDetail | null>(null);
   const [form] = Form.useForm();
 
   const { data: details = [], isLoading } = useQuery({
-    queryKey: ['shippingDetails', activeSheet, search],
+    queryKey: ['shippingDetails', shippingFilters],
     queryFn: async () => {
-      const params: Record<string, any> = { issue_number: 2649, sheet_name: activeSheet };
-      if (search) params.search = search;
+      const params: Record<string, any> = { issue_number: 2649 };
+      if (shippingFilters.channel) params.channel = shippingFilters.channel;
+      if (shippingFilters.frequency) params.frequency = shippingFilters.frequency;
+      if (shippingFilters.transport) params.transport = shippingFilters.transport;
+      if (shippingFilters.status) params.status = shippingFilters.status;
+      if (shippingFilters.search) params.search = shippingFilters.search;
       const res = await getShippingDetails(params);
       return res.data;
     },
@@ -212,7 +129,7 @@ function ShippingDetailsTab() {
         const createData: ShippingDetailCreate = {
           ...values,
           issue_number: 2649,
-          sheet_name: activeSheet,
+          sheet_name: '手动添加',
         };
         await createShippingDetail(createData);
         Message.success('创建成功');
@@ -224,57 +141,115 @@ function ShippingDetailsTab() {
     }
   };
 
-  const config = getSheetConfig(activeSheet, handleEdit, handleDelete);
-
-  const renderFormField = (f: SheetFieldConfig['formFields'][number]) => {
-    const rules = f.required ? [{ required: true, message: `请输入${f.label}` }] : undefined;
-    if (f.type === 'number') {
-      return (
-        <Form.Item key={f.field} label={f.label} field={f.field} rules={rules}>
-          <InputNumber placeholder={`请输入${f.label}`} style={{ width: '100%' }} min={0} />
-        </Form.Item>
-      );
-    }
-    if (f.type === 'textarea') {
-      return (
-        <Form.Item key={f.field} label={f.label} field={f.field} rules={rules}>
-          <Input.TextArea placeholder={`请输入${f.label}`} rows={3} />
-        </Form.Item>
-      );
-    }
-    return (
-      <Form.Item key={f.field} label={f.label} field={f.field} rules={rules}>
-        <Input placeholder={`请输入${f.label}`} />
-      </Form.Item>
-    );
-  };
+  const shippingColumns: ColumnProps<ShippingDetail>[] = [
+    { title: '姓名', dataIndex: 'name', key: 'name' },
+    {
+      title: '渠道',
+      dataIndex: 'channel',
+      key: 'channel',
+      width: 110,
+      render: (v: string) => v ? <Tag color={channelColors[v] || 'gray'}>{v}</Tag> : '-',
+    },
+    {
+      title: '地址',
+      dataIndex: 'address',
+      key: 'address',
+      ellipsis: true,
+      render: (v: string | null) => v ?? '-',
+    },
+    { title: '电话', dataIndex: 'phone', key: 'phone', width: 130, render: (v: string | null) => v ?? '-' },
+    { title: '份数', dataIndex: 'quantity', key: 'quantity', width: 70, render: (v: number) => v ?? '-' },
+    { title: '频率', dataIndex: 'frequency', key: 'frequency', width: 90, render: (v: string | null) => v ?? '-' },
+    { title: '运输方式', dataIndex: 'transport', key: 'transport', width: 100, render: (v: string | null) => v ?? '-' },
+    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 100, render: (v: string | null) => v ?? '-' },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 80,
+      render: (v: string) => v ? <Tag color={v === '正常' ? 'green' : 'red'}>{v}</Tag> : '-',
+    },
+    {
+      title: '备注',
+      dataIndex: 'notes',
+      key: 'notes',
+      ellipsis: true,
+      render: (v: string | null) => v ?? '-',
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 120,
+      render: (_: any, record: ShippingDetail) => (
+        <Space>
+          <Button type="text" size="small" icon={<IconEdit />} onClick={() => handleEdit(record)}>编辑</Button>
+          <Popconfirm title="确认删除？" onOk={() => handleDelete(record.id)}>
+            <Button type="text" size="small" status="danger" icon={<IconDelete />}>删除</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <div>
-      <Tabs activeTab={activeSheet} onChange={(key) => { setActiveSheet(key as SheetName); setSearch(''); }}>
-        {SHEET_TABS.map((sheet) => (
-          <Tabs.TabPane key={sheet} title={sheet} />
-        ))}
-      </Tabs>
-
       <div style={{
         marginBottom: 20,
-        marginTop: 16,
         display: 'flex',
         gap: 12,
         alignItems: 'center',
+        flexWrap: 'wrap',
         padding: '16px 20px',
         background: '#fff',
         borderRadius: 12,
         boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
       }}>
+        <Select
+          placeholder="渠道"
+          style={{ width: 130 }}
+          allowClear
+          onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value }))}
+        >
+          {CHANNEL_OPTIONS.map((ch) => (
+            <Select.Option key={ch} value={ch}>{ch}</Select.Option>
+          ))}
+        </Select>
+        <Select
+          placeholder="频率"
+          style={{ width: 120 }}
+          allowClear
+          onChange={(value) => setShippingFilters((f) => ({ ...f, frequency: value }))}
+        >
+          {FREQUENCY_OPTIONS.map((fr) => (
+            <Select.Option key={fr} value={fr}>{fr}</Select.Option>
+          ))}
+        </Select>
+        <Select
+          placeholder="运输方式"
+          style={{ width: 130 }}
+          allowClear
+          onChange={(value) => setShippingFilters((f) => ({ ...f, transport: value }))}
+        >
+          {TRANSPORT_OPTIONS.map((tr) => (
+            <Select.Option key={tr} value={tr}>{tr}</Select.Option>
+          ))}
+        </Select>
+        <Select
+          placeholder="状态"
+          style={{ width: 100 }}
+          allowClear
+          onChange={(value) => setShippingFilters((f) => ({ ...f, status: value }))}
+        >
+          {SHIPPING_STATUS_OPTIONS.map((st) => (
+            <Select.Option key={st} value={st}>{st}</Select.Option>
+          ))}
+        </Select>
         <Input
           placeholder="搜索姓名"
           style={{ width: 200 }}
           allowClear
           prefix={<IconSearch />}
-          value={search}
-          onChange={(value) => setSearch(value)}
+          onChange={(value) => setShippingFilters((f) => ({ ...f, search: value }))}
         />
         <div style={{ flex: 1 }} />
         <Button type="primary" icon={<IconPlus />} onClick={handleOpenCreate}>
@@ -285,7 +260,7 @@ function ShippingDetailsTab() {
       <Card style={{ padding: 0 }}>
         <Table
           loading={isLoading}
-          columns={config.columns}
+          columns={shippingColumns}
           data={details}
           rowKey="id"
           pagination={{ pageSize: 20 }}
@@ -301,7 +276,52 @@ function ShippingDetailsTab() {
         focusLock={true}
       >
         <Form form={form} layout="vertical">
-          {config.formFields.map(renderFormField)}
+          <Form.Item label="姓名" field="name" rules={[{ required: true, message: '请输入姓名' }]}>
+            <Input placeholder="请输入姓名" />
+          </Form.Item>
+          <Form.Item label="渠道" field="channel" rules={[{ required: true, message: '请选择渠道' }]}>
+            <Select placeholder="请选择渠道">
+              {CHANNEL_OPTIONS.map((ch) => (
+                <Select.Option key={ch} value={ch}>{ch}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item label="地址" field="address">
+            <Input placeholder="请输入地址" />
+          </Form.Item>
+          <Form.Item label="电话" field="phone">
+            <Input placeholder="请输入电话" />
+          </Form.Item>
+          <Form.Item label="份数" field="quantity">
+            <InputNumber placeholder="请输入份数" style={{ width: '100%' }} min={0} />
+          </Form.Item>
+          <Form.Item label="频率" field="frequency">
+            <Select placeholder="请选择频率" allowClear>
+              {FREQUENCY_OPTIONS.map((fr) => (
+                <Select.Option key={fr} value={fr}>{fr}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item label="运输方式" field="transport">
+            <Select placeholder="请选择运输方式" allowClear>
+              {TRANSPORT_OPTIONS.map((tr) => (
+                <Select.Option key={tr} value={tr}>{tr}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item label="截止日期" field="deadline">
+            <Input placeholder="请输入截止日期（如：长期、2025-12-31）" />
+          </Form.Item>
+          <Form.Item label="状态" field="status">
+            <Select placeholder="请选择状态" allowClear>
+              {SHIPPING_STATUS_OPTIONS.map((st) => (
+                <Select.Option key={st} value={st}>{st}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item label="备注" field="notes">
+            <Input.TextArea placeholder="请输入备注" rows={3} />
+          </Form.Item>
         </Form>
       </Modal>
     </div>
