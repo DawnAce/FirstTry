@@ -41,12 +41,17 @@ npm install
 npm run dev
 ```
 
-### 5. 初始化数据
+### 5. 登录系统
+访问 `http://localhost:5173`，使用默认管理员账户登录：
+- **用户名**：`admin`
+- **密码**：`admin123`
+
+### 6. 初始化数据
 ```bash
 curl -X POST http://localhost:8000/api/admin/seed
 ```
 
-### 6. 生产部署
+### 7. 生产部署
 ```bash
 cd frontend && npm run build
 cd ../backend && uvicorn app.main:app --port 8000
