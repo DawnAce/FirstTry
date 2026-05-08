@@ -39,8 +39,8 @@ const categoryLabels: Record<string, string> = {
   binding: '合订本',
 };
 
-// Display order (临时加印 extracted from social_use, shown at top separately)
-const categoryOrder = ['postal', 'retail', 'guangzhou', 'chengdu', 'guotumao', 'social_use', 'binding'];
+// Display order (临时加印 extracted from social_use, shown at top separately; binding merged into social_use)
+const categoryOrder = ['postal', 'retail', 'guangzhou', 'chengdu', 'guotumao', 'social_use'];
 
 const categoryFrequency: Record<string, string> = {
   postal: '每周',
@@ -268,7 +268,10 @@ export default function ReportEditor() {
   }, []);
 
   const calculateTotal = () => {
-    return entries.reduce((sum, entry) => sum + entry.value, 0);
+    // 临时加印_自留 is a sub-allocation of 临时加印, not additional
+    return entries
+      .filter(e => e.sub_category !== '临时加印_自留')
+      .reduce((sum, entry) => sum + entry.value, 0);
   };
 
   const groupEntriesByCategory = () => {
@@ -283,9 +286,9 @@ export default function ReportEditor() {
   };
 
   const calculateCategoryTotal = (categoryEntries: ReportEntry[]) => {
-    // 临时加印_自留 is a sub-allocation of 临时加印, not additional count
+    // 临时加印 is displayed separately at top; 临时加印_自留 is its sub-allocation
     return categoryEntries
-      .filter(e => e.sub_category !== '临时加印_自留')
+      .filter(e => e.sub_category !== '临时加印' && e.sub_category !== '临时加印_自留')
       .reduce((sum, entry) => sum + entry.value, 0);
   };
 
@@ -676,18 +679,21 @@ export default function ReportEditor() {
 
             // For social_use, handle composite groups, extras, and 临时加印 (shown at top)
             if (category === 'social_use') {
+              // Include binding entries in social_use section
+              const bindingEntries = groupedEntries['binding'] || [];
+              const allSocialEntries = [...allCategoryEntries, ...bindingEntries];
               // Identify all sub_categories that belong to composite groups
               const compositeSubCategories = new Set<string>();
               COMPOSITE_GROUPS.forEach(g => g.items.forEach(i => compositeSubCategories.add(i)));
 
-              const mainItems = allCategoryEntries.filter(
+              const mainItems = allSocialEntries.filter(
                 e => !EXTRA_ITEMS.includes(e.sub_category) &&
                      !compositeSubCategories.has(e.sub_category)
               );
-              const extraItems = allCategoryEntries.filter(
+              const extraItems = allSocialEntries.filter(
                 e => EXTRA_ITEMS.includes(e.sub_category) && e.sub_category !== '临时加印' && e.sub_category !== '临时加印_自留'
               );
-              const subtotal = calculateCategoryTotal(allCategoryEntries);
+              const subtotal = calculateCategoryTotal(allSocialEntries);
 
               // Render composite group (auto-summing sub-items)
               const renderCompositeGroup = (group: typeof COMPOSITE_GROUPS[0]) => {
