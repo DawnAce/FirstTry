@@ -19,6 +19,7 @@ from app.api.shipping import router as shipping_router
 from app.api.exports import router as exports_router
 from app.api.templates import router as templates_router
 from app.api.auth import router as auth_router
+from app.api.shipping_details import router as shipping_details_router
 from app.models import Issue, PublicationSchedule
 
 app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
@@ -47,6 +48,7 @@ app.include_router(shipping_router)
 app.include_router(exports_router)
 app.include_router(templates_router)
 app.include_router(auth_router)
+app.include_router(shipping_details_router)
 
 
 @app.get("/api/health")
