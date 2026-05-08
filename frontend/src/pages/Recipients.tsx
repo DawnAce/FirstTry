@@ -40,13 +40,13 @@ import dayjs from 'dayjs';
 
 const typeLabels: Record<string, string> = { corporate: '对公', reader: '读者', sample: '样报' };
 const typeColors: Record<string, string> = { corporate: 'blue', reader: 'green', sample: 'purple' };
-const freqLabels: Record<string, string> = { weekly: '每周', biweekly: '双周', monthly: '月底' };
+const freqLabels: Record<string, string> = { weekly: '每周', biweekly: '每半月', monthly: '每月' };
 const statusLabels: Record<string, string> = { active: '正常', suspended: '停发' };
 const statusColors: Record<string, string> = { active: 'green', suspended: 'red' };
 const subTypeLabels: Record<string, string> = { new: '新订', renewal: '续订' };
 
 const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订户', '记者站', '监管赠阅', '政府赠阅', '库房留存', '报社留存'] as const;
-const FREQUENCY_OPTIONS = ['每周', '双周', '月底整月'] as const;
+const FREQUENCY_OPTIONS = ['每周', '每半月', '每月'] as const;
 const TRANSPORT_OPTIONS = ['中通物流', '邮政物流', '包车运输', '库房留存'] as const;
 const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
 
@@ -620,7 +620,7 @@ export default function Recipients() {
           <Form.Item label="频率" field="frequency" rules={[{ required: true }]}>
             <Select>
               <Select.Option value="weekly">每周</Select.Option>
-              <Select.Option value="biweekly">双周</Select.Option>
+              <Select.Option value="biweekly">每半月</Select.Option>
               <Select.Option value="monthly">月底</Select.Option>
             </Select>
           </Form.Item>

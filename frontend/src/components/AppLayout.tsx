@@ -56,7 +56,7 @@ export default function AppLayout() {
               color: '#1d1d1f',
               letterSpacing: '-0.01em',
             }}>
-              印数报数系统
+              发行系统
             </span>
             <span style={{
               fontSize: 12,
@@ -72,7 +72,7 @@ export default function AppLayout() {
               onClickMenuItem={(key) => navigate(key)}
             >
               <MenuItem key="/">
-                <IconDashboard /> 首页
+                <IconDashboard /> 印数报数管理
               </MenuItem>
               <MenuItem key="/recipients">
                 <IconUser /> 收件人管理
