@@ -15,11 +15,13 @@ import {
   InputNumber,
   Popconfirm,
   Card,
+  Tabs,
 } from '@arco-design/web-react';
-import { IconPlus, IconStop, IconPlayArrow } from '@arco-design/web-react/icon';
+import { IconPlus, IconStop, IconPlayArrow, IconSearch, IconDelete, IconEdit } from '@arco-design/web-react/icon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnProps } from '@arco-design/web-react/es/Table';
 import type { Recipient, Subscription } from '../api/recipients';
+import type { ShippingDetail, ShippingDetailCreate, ShippingDetailUpdate } from '../api/shippingDetails';
 import {
   getRecipients,
   createRecipient,
@@ -28,6 +30,12 @@ import {
   getSubscriptions,
   createSubscription,
 } from '../api/recipients';
+import {
+  getShippingDetails,
+  createShippingDetail,
+  updateShippingDetail,
+  deleteShippingDetail,
+} from '../api/shippingDetails';
 import dayjs from 'dayjs';
 
 const typeLabels: Record<string, string> = { corporate: '对公', reader: '读者', sample: '样报' };
@@ -36,6 +44,269 @@ const freqLabels: Record<string, string> = { weekly: '每周', biweekly: '双周
 const statusLabels: Record<string, string> = { active: '正常', suspended: '停发' };
 const statusColors: Record<string, string> = { active: 'green', suspended: 'red' };
 const subTypeLabels: Record<string, string> = { new: '新订', renewal: '续订' };
+
+const SHEET_TABS = [
+  '每周（对公）',
+  '每周（读者）',
+  '高铁展示',
+  '上犹',
+  '停发-双周（读者）',
+  '月底-整月',
+] as const;
+
+type SheetName = typeof SHEET_TABS[number];
+
+interface SheetFieldConfig {
+  columns: ColumnProps<ShippingDetail>[];
+  formFields: { field: string; label: string; type: 'input' | 'number' | 'textarea'; required?: boolean }[];
+}
+
+function getSheetConfig(sheetName: SheetName, onEdit: (r: ShippingDetail) => void, onDelete: (id: number) => void): SheetFieldConfig {
+  const actionColumn: ColumnProps<ShippingDetail> = {
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    render: (_: any, record: ShippingDetail) => (
+      <Space>
+        <Button type="text" size="small" icon={<IconEdit />} onClick={() => onEdit(record)}>编辑</Button>
+        <Popconfirm title="确认删除？" onOk={() => onDelete(record.id)}>
+          <Button type="text" size="small" status="danger" icon={<IconDelete />}>删除</Button>
+        </Popconfirm>
+      </Space>
+    ),
+  };
+
+  const col = (title: string, dataIndex: string, width?: number): ColumnProps<ShippingDetail> => ({
+    title,
+    dataIndex,
+    key: dataIndex,
+    ...(width ? { width } : {}),
+    render: (v: any) => v ?? '-',
+  });
+
+  switch (sheetName) {
+    case '每周（对公）':
+      return {
+        columns: [col('姓名', 'name'), col('地址', 'address'), col('电话', 'phone'), col('份数', 'quantity', 80), col('刊物', 'publication'), col('备注', 'notes'), actionColumn],
+        formFields: [
+          { field: 'name', label: '姓名', type: 'input', required: true },
+          { field: 'address', label: '地址', type: 'input' },
+          { field: 'phone', label: '电话', type: 'input' },
+          { field: 'quantity', label: '份数', type: 'number' },
+          { field: 'publication', label: '刊物', type: 'input' },
+          { field: 'notes', label: '备注', type: 'textarea' },
+        ],
+      };
+    case '每周（读者）':
+      return {
+        columns: [col('姓名', 'name'), col('地址', 'address'), col('电话', 'phone'), col('份数', 'quantity', 80), col('刊物', 'publication'), col('截止日期', 'deadline'), col('备注', 'notes'), actionColumn],
+        formFields: [
+          { field: 'name', label: '姓名', type: 'input', required: true },
+          { field: 'address', label: '地址', type: 'input' },
+          { field: 'phone', label: '电话', type: 'input' },
+          { field: 'quantity', label: '份数', type: 'number' },
+          { field: 'publication', label: '刊物', type: 'input' },
+          { field: 'deadline', label: '截止日期', type: 'input' },
+          { field: 'notes', label: '备注', type: 'textarea' },
+        ],
+      };
+    case '高铁展示':
+      return {
+        columns: [col('城市', 'city'), col('序号', 'seq_number', 80), col('站名', 'station_name'), col('站厅名称', 'station_hall'), col('联系人', 'contact_person'), col('电话', 'phone'), col('地址', 'address'), col('投放数量', 'quantity', 100), actionColumn],
+        formFields: [
+          { field: 'name', label: '姓名', type: 'input', required: true },
+          { field: 'city', label: '城市', type: 'input' },
+          { field: 'seq_number', label: '序号', type: 'number' },
+          { field: 'station_name', label: '站名', type: 'input' },
+          { field: 'station_hall', label: '站厅名称', type: 'input' },
+          { field: 'contact_person', label: '联系人', type: 'input' },
+          { field: 'phone', label: '电话', type: 'input' },
+          { field: 'address', label: '地址', type: 'input' },
+          { field: 'quantity', label: '投放数量', type: 'number' },
+        ],
+      };
+    case '上犹':
+      return {
+        columns: [col('姓名', 'name'), col('地址', 'address'), col('电话', 'phone'), col('份数', 'quantity', 80), col('刊物', 'publication'), col('备注', 'notes'), actionColumn],
+        formFields: [
+          { field: 'name', label: '姓名', type: 'input', required: true },
+          { field: 'address', label: '地址', type: 'input' },
+          { field: 'phone', label: '电话', type: 'input' },
+          { field: 'quantity', label: '份数', type: 'number' },
+          { field: 'publication', label: '刊物', type: 'input' },
+          { field: 'notes', label: '备注', type: 'textarea' },
+        ],
+      };
+    case '停发-双周（读者）':
+    case '月底-整月':
+      return {
+        columns: [col('姓名', 'name'), col('地址', 'address'), col('电话', 'phone'), col('期数', 'period_count', 80), col('份数', 'quantity', 80), col('刊物', 'publication'), col('截止日期', 'deadline'), col('备注', 'notes'), actionColumn],
+        formFields: [
+          { field: 'name', label: '姓名', type: 'input', required: true },
+          { field: 'address', label: '地址', type: 'input' },
+          { field: 'phone', label: '电话', type: 'input' },
+          { field: 'period_count', label: '期数', type: 'number' },
+          { field: 'quantity', label: '份数', type: 'number' },
+          { field: 'publication', label: '刊物', type: 'input' },
+          { field: 'deadline', label: '截止日期', type: 'input' },
+          { field: 'notes', label: '备注', type: 'textarea' },
+        ],
+      };
+  }
+}
+
+function ShippingDetailsTab() {
+  const queryClient = useQueryClient();
+  const [activeSheet, setActiveSheet] = useState<SheetName>('每周（对公）');
+  const [search, setSearch] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<ShippingDetail | null>(null);
+  const [form] = Form.useForm();
+
+  const { data: details = [], isLoading } = useQuery({
+    queryKey: ['shippingDetails', activeSheet, search],
+    queryFn: async () => {
+      const params: Record<string, any> = { issue_number: 2649, sheet_name: activeSheet };
+      if (search) params.search = search;
+      const res = await getShippingDetails(params);
+      return res.data;
+    },
+  });
+
+  const handleEdit = (record: ShippingDetail) => {
+    setEditingRecord(record);
+    form.setFieldsValue(record);
+    setModalVisible(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteShippingDetail(id);
+      Message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+    } catch {
+      Message.error('删除失败');
+    }
+  };
+
+  const handleOpenCreate = () => {
+    setEditingRecord(null);
+    form.resetFields();
+    setModalVisible(true);
+  };
+
+  const handleCloseModal = () => {
+    setModalVisible(false);
+    setEditingRecord(null);
+    form.resetFields();
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validate();
+      if (editingRecord) {
+        const updateData: ShippingDetailUpdate = { ...values };
+        await updateShippingDetail(editingRecord.id, updateData);
+        Message.success('更新成功');
+      } else {
+        const createData: ShippingDetailCreate = {
+          ...values,
+          issue_number: 2649,
+          sheet_name: activeSheet,
+        };
+        await createShippingDetail(createData);
+        Message.success('创建成功');
+      }
+      handleCloseModal();
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+    } catch {
+      Message.error('操作失败');
+    }
+  };
+
+  const config = getSheetConfig(activeSheet, handleEdit, handleDelete);
+
+  const renderFormField = (f: SheetFieldConfig['formFields'][number]) => {
+    const rules = f.required ? [{ required: true, message: `请输入${f.label}` }] : undefined;
+    if (f.type === 'number') {
+      return (
+        <Form.Item key={f.field} label={f.label} field={f.field} rules={rules}>
+          <InputNumber placeholder={`请输入${f.label}`} style={{ width: '100%' }} min={0} />
+        </Form.Item>
+      );
+    }
+    if (f.type === 'textarea') {
+      return (
+        <Form.Item key={f.field} label={f.label} field={f.field} rules={rules}>
+          <Input.TextArea placeholder={`请输入${f.label}`} rows={3} />
+        </Form.Item>
+      );
+    }
+    return (
+      <Form.Item key={f.field} label={f.label} field={f.field} rules={rules}>
+        <Input placeholder={`请输入${f.label}`} />
+      </Form.Item>
+    );
+  };
+
+  return (
+    <div>
+      <Tabs activeTab={activeSheet} onChange={(key) => { setActiveSheet(key as SheetName); setSearch(''); }}>
+        {SHEET_TABS.map((sheet) => (
+          <Tabs.TabPane key={sheet} title={sheet} />
+        ))}
+      </Tabs>
+
+      <div style={{
+        marginBottom: 20,
+        marginTop: 16,
+        display: 'flex',
+        gap: 12,
+        alignItems: 'center',
+        padding: '16px 20px',
+        background: '#fff',
+        borderRadius: 12,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
+      }}>
+        <Input
+          placeholder="搜索姓名"
+          style={{ width: 200 }}
+          allowClear
+          prefix={<IconSearch />}
+          value={search}
+          onChange={(value) => setSearch(value)}
+        />
+        <div style={{ flex: 1 }} />
+        <Button type="primary" icon={<IconPlus />} onClick={handleOpenCreate}>
+          新增
+        </Button>
+      </div>
+
+      <Card style={{ padding: 0 }}>
+        <Table
+          loading={isLoading}
+          columns={config.columns}
+          data={details}
+          rowKey="id"
+          pagination={{ pageSize: 20 }}
+        />
+      </Card>
+
+      <Modal
+        title={editingRecord ? '编辑记录' : '新增记录'}
+        visible={modalVisible}
+        onOk={handleSubmit}
+        onCancel={handleCloseModal}
+        autoFocus={false}
+        focusLock={true}
+      >
+        <Form form={form} layout="vertical">
+          {config.formFields.map(renderFormField)}
+        </Form>
+      </Modal>
+    </div>
+  );
+}
 
 export default function Recipients() {
   const queryClient = useQueryClient();
@@ -243,6 +514,8 @@ export default function Recipients() {
         收件人管理
       </h2>
 
+      <Tabs defaultActiveTab="recipients" size="large">
+        <Tabs.TabPane key="recipients" title="收件人">
       <div style={{
         marginBottom: 20,
         display: 'flex',
@@ -431,6 +704,12 @@ export default function Recipients() {
           </Form.Item>
         </Form>
       </Modal>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane key="shipping" title="中通发货明细">
+          <ShippingDetailsTab />
+        </Tabs.TabPane>
+      </Tabs>
     </div>
   );
 }
