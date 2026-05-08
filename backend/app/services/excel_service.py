@@ -45,10 +45,6 @@ CELL_MAPPING: dict[tuple[str, str], list[tuple[str, str]]] = {
     ("social_use", "广东站用"): [("社用报`", "B20")],
     ("social_use", "成都站用"): [("社用报`", "B21")],
     ("social_use", "西安站用"): [("社用报`", "B22")],
-    ("social_use", "营报传媒加印"): [("社用报`", "B23")],
-    ("social_use", "财经中心加印"): [("社用报`", "B24")],
-    ("social_use", "中经未来"): [("社用报`", "B25")],
-    ("social_use", "产经中心加印"): [("社用报`", "B26")],
     # 临时加印: split into 自留 (收发室) and 快递 (社用报) — handled specially in export
     # ("social_use", "临时加印") — 快递部分 = 总数 - 自留, written to 社用报` B27
     # ("social_use", "临时加印_自留") — written to 收发室自留分发（需打印） B18
@@ -97,10 +93,7 @@ PREV_CELL_MAPPING: dict[tuple[str, str], list[tuple[str, str]]] = {
     ("social_use", "广东站用"): [("社用报`", "C20")],
     ("social_use", "成都站用"): [("社用报`", "C21")],
     ("social_use", "西安站用"): [("社用报`", "C22")],
-    ("social_use", "营报传媒加印"): [("社用报`", "C23")],
-    ("social_use", "财经中心加印"): [("社用报`", "C24")],
-    ("social_use", "中经未来"): [("社用报`", "C25")],
-    ("social_use", "产经中心加印"): [("社用报`", "C26")],
+
     # 临时加印 快递部分 handled specially
     ("social_use", "临时加印_自留"): [("收发室自留分发（需打印）", "C18")],
 }
@@ -172,7 +165,6 @@ def _fill_prev_issue_aggregates(
         ("social_use", "社科院、工经所"),
         ("social_use", "财务"),
         ("social_use", "库房"),
-        ("social_use", "财经中心加印"),
     ]
     shoufashi_total = sum(get(k, 0) for k in dept_keys)
     ws["D15"] = (

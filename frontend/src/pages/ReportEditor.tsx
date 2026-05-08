@@ -50,8 +50,8 @@ const categoryFrequency: Record<string, string> = {
   guotumao: '每年',
 };
 
-// Items that are "加印" extras, grouped at bottom of social_use
-const EXTRA_ITEMS = ['营报传媒加印', '财经中心加印', '中经未来', '产经中心加印', '临时加印', '临时加印_自留'];
+// Items hidden from social_use display (shown separately or managed by temp print details)
+const EXTRA_ITEMS = ['临时加印', '临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'];
 
 // Composite groups: parent label → sub_category prefixes
 const COMPOSITE_GROUPS: { label: string; prefix: string; items: string[] }[] = [
@@ -268,9 +268,10 @@ export default function ReportEditor() {
   }, []);
 
   const calculateTotal = () => {
-    // 临时加印_自留 is a sub-allocation of 临时加印, not additional
+    // Exclude sub-allocations and deprecated extras
+    const excluded = new Set(['临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印']);
     return entries
-      .filter(e => e.sub_category !== '临时加印_自留')
+      .filter(e => !excluded.has(e.sub_category))
       .reduce((sum, entry) => sum + entry.value, 0);
   };
 
@@ -286,9 +287,9 @@ export default function ReportEditor() {
   };
 
   const calculateCategoryTotal = (categoryEntries: ReportEntry[]) => {
-    // 临时加印 is displayed separately at top; 临时加印_自留 is its sub-allocation
+    // Exclude items managed separately (temp print + deprecated department extras)
     return categoryEntries
-      .filter(e => e.sub_category !== '临时加印' && e.sub_category !== '临时加印_自留')
+      .filter(e => !EXTRA_ITEMS.includes(e.sub_category))
       .reduce((sum, entry) => sum + entry.value, 0);
   };
 
@@ -690,9 +691,8 @@ export default function ReportEditor() {
                 e => !EXTRA_ITEMS.includes(e.sub_category) &&
                      !compositeSubCategories.has(e.sub_category)
               );
-              const extraItems = allSocialEntries.filter(
-                e => EXTRA_ITEMS.includes(e.sub_category) && e.sub_category !== '临时加印' && e.sub_category !== '临时加印_自留'
-              );
+              // All extra items are hidden (managed by temp print details or shown at top)
+              const extraItems: ReportEntry[] = [];
               const subtotal = calculateCategoryTotal(allSocialEntries);
 
               // Render composite group (auto-summing sub-items)
