@@ -49,7 +49,10 @@ CELL_MAPPING: dict[tuple[str, str], list[tuple[str, str]]] = {
     ("social_use", "财经中心加印"): [("社用报`", "B24")],
     ("social_use", "中经未来"): [("社用报`", "B25")],
     ("social_use", "产经中心加印"): [("社用报`", "B26")],
-    ("social_use", "临时加印"): [("社用报`", "B27")],
+    # 临时加印: split into 自留 (收发室) and 快递 (社用报) — handled specially in export
+    # ("social_use", "临时加印") — 快递部分 = 总数 - 自留, written to 社用报` B27
+    # ("social_use", "临时加印_自留") — written to 收发室自留分发（需打印） B18
+    ("social_use", "临时加印_自留"): [("收发室自留分发（需打印）", "B18")],
     # 合订本 → 3 locations (社用报` B17, 北京印厂 C11, 人民日报印厂` I14)
     ("binding", "合订本（印厂留存）"): [
         ("社用报`", "B17"),
@@ -98,7 +101,8 @@ PREV_CELL_MAPPING: dict[tuple[str, str], list[tuple[str, str]]] = {
     ("social_use", "财经中心加印"): [("社用报`", "C24")],
     ("social_use", "中经未来"): [("社用报`", "C25")],
     ("social_use", "产经中心加印"): [("社用报`", "C26")],
-    ("social_use", "临时加印"): [("社用报`", "C27")],
+    # 临时加印 快递部分 handled specially
+    ("social_use", "临时加印_自留"): [("收发室自留分发（需打印）", "C18")],
 }
 
 
@@ -177,8 +181,10 @@ def _fill_prev_issue_aggregates(
         + get(("social_use", "营报传媒_备用报"), 0)
         + get(("binding", "合订本（印厂留存）"), 0)
     )
-    # D16: 上期临时加印
-    ws["D16"] = get(("social_use", "临时加印"), 0)
+    # D16: 上期临时加印（快递部分）
+    prev_temp_total_d16 = get(("social_use", "临时加印"), 0)
+    prev_temp_self_d16 = get(("social_use", "临时加印_自留"), 0)
+    ws["D16"] = prev_temp_total_d16 - prev_temp_self_d16
     # D4: 上期北京印厂印数 (total of all above)
     ws["D4"] = sum(
         (ws[f"D{r}"].value or 0) for r in range(8, 17)
@@ -226,6 +232,13 @@ def export_report_excel(issue_id: int, db: Session) -> io.BytesIO:
                 if sheet_name in wb.sheetnames:
                     wb[sheet_name][cell_ref] = value
 
+    # 临时加印 快递部分 = 总数 - 自留
+    temp_total = entry_map.get(("social_use", "临时加印"), 0)
+    temp_self = entry_map.get(("social_use", "临时加印_自留"), 0)
+    temp_express = temp_total - temp_self
+    if "社用报`" in wb.sheetnames:
+        wb["社用报`"]["B27"] = temp_express
+
     # --- Fill previous issue data (上期 columns) ---
     prev_issue = _get_prev_issue(issue, db)
     if prev_issue:
@@ -240,6 +253,13 @@ def export_report_excel(issue_id: int, db: Session) -> io.BytesIO:
                 for sheet_name, cell_ref in cells:
                     if sheet_name in wb.sheetnames:
                         wb[sheet_name][cell_ref] = value
+
+        # 上期临时加印 快递部分
+        prev_temp_total = prev_map.get(("social_use", "临时加印"), 0)
+        prev_temp_self = prev_map.get(("social_use", "临时加印_自留"), 0)
+        prev_temp_express = prev_temp_total - prev_temp_self
+        if "社用报`" in wb.sheetnames:
+            wb["社用报`"]["C27"] = prev_temp_express
 
         _fill_prev_issue_aggregates(wb, prev_map)
 

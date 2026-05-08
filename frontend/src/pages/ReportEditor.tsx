@@ -48,7 +48,7 @@ const categoryFrequency: Record<string, string> = {
 };
 
 // Items that are "加印" extras, grouped at bottom of social_use
-const EXTRA_ITEMS = ['营报传媒加印', '财经中心加印', '中经未来', '产经中心加印', '临时加印'];
+const EXTRA_ITEMS = ['营报传媒加印', '财经中心加印', '中经未来', '产经中心加印', '临时加印', '临时加印_自留'];
 
 // Composite groups: parent label → sub_category prefixes
 const COMPOSITE_GROUPS: { label: string; prefix: string; items: string[] }[] = [
@@ -275,6 +275,8 @@ export default function ReportEditor() {
 
   // Extract 临时加印 from social_use for prominent display at top
   const tempEntry = entries.find(e => e.category === 'social_use' && e.sub_category === '临时加印');
+  const tempSelfEntry = entries.find(e => e.category === 'social_use' && e.sub_category === '临时加印_自留');
+  const tempExpressValue = (tempEntry?.value ?? 0) - (tempSelfEntry?.value ?? 0);
 
   // Render value: plain text when confirmed, InputNumber when editing
   const renderValue = (entry: ReportEntry, opts?: { width?: number; size?: 'mini' | 'small' | 'default' | 'large' }) => {
@@ -422,6 +424,33 @@ export default function ReportEditor() {
             </Space>
             {renderValue(tempEntry, { width: 160, size: 'large' })}
           </div>
+          {/* Allocation: 自留分发 vs 北京快递 */}
+          {tempEntry.value > 0 && tempSelfEntry && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0', display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#86868b' }}>分配：</span>
+              <Space size="small" style={{ alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#424245' }}>自留分发</span>
+                {isConfirmed ? (
+                  <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{tempSelfEntry.value.toLocaleString()} 份</span>
+                ) : (
+                  <InputNumber
+                    value={tempSelfEntry.value}
+                    onChange={(value) => handleValueChange(tempSelfEntry.id, value)}
+                    min={0}
+                    max={tempEntry.value}
+                    precision={0}
+                    style={{ width: 120 }}
+                    suffix="份"
+                    size="small"
+                  />
+                )}
+              </Space>
+              <Space size="small" style={{ alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#424245' }}>北京快递</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{tempExpressValue.toLocaleString()} 份</span>
+              </Space>
+            </div>
+          )}
         </Card>
       )}
 
