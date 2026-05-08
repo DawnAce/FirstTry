@@ -88,26 +88,36 @@ export default function ReportEditor() {
     enabled: !!issueId,
   });
 
-  const { isLoading: reportLoading } = useQuery({
+  const { data: report, isLoading: reportLoading } = useQuery({
     queryKey: ['report', issueId],
     queryFn: async () => {
       const res = await getReport(Number(issueId));
       return res.data;
     },
     enabled: !!issueId,
-    select: (data) => {
-      // Refresh entries on initial load or after revoke (status changed from confirmed to draft)
-      if (entries.length === 0 || (confirmedRef.current === true && data.entries.length > 0)) {
-        setEntries(data.entries);
-        entriesRef.current = data.entries;
-      }
-      return data;
-    },
   });
 
   const loading = issueLoading || reportLoading;
   const isConfirmed = issue?.status === 'confirmed';
-  confirmedRef.current = isConfirmed ?? null;
+
+  // Sync entries from server data on initial load or after revoke
+  useEffect(() => {
+    if (!report) return;
+    if (entries.length === 0) {
+      setEntries(report.entries);
+      entriesRef.current = report.entries;
+    }
+  }, [report]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After revoke (confirmed → draft), refresh entries from server
+  useEffect(() => {
+    if (isConfirmed === false && confirmedRef.current === true && report) {
+      setEntries(report.entries);
+      entriesRef.current = report.entries;
+      setSaveStatus('idle');
+    }
+    confirmedRef.current = isConfirmed ?? null;
+  }, [isConfirmed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch revision history
   const { data: revisions } = useQuery({
