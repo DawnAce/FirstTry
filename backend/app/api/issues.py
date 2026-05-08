@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.database import get_db
 from app.cache import invalidate_dashboard_cache
 from app.models import Issue
-from app.schemas.issue import IssueCreate, IssueOut, NextIssueInfo
+from app.schemas.issue import IssueCreate, IssueOut, IssueUpdate, NextIssueInfo
 from app.services.issue_service import get_next_issue_info, get_available_issues, create_issue_with_data
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
@@ -45,4 +45,18 @@ def get_issue(issue_id: int, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
+    return issue
+
+
+@router.patch("/{issue_id}", response_model=IssueOut)
+def update_issue(issue_id: int, data: IssueUpdate, db: Session = Depends(get_db)):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if data.page_count is not None:
+        issue.page_count = data.page_count
+    if data.notes is not None:
+        issue.notes = data.notes
+    db.commit()
+    db.refresh(issue)
     return issue

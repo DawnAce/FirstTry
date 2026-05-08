@@ -16,7 +16,7 @@ import {
   IconDownload,
   IconArrowLeft,
 } from '@arco-design/web-react/icon';
-import { getIssue } from '../api/issues';
+import { getIssue, updateIssue } from '../api/issues';
 import type { ReportEntry } from '../api/reports';
 import { getReport, updateReport, confirmReport } from '../api/reports';
 
@@ -268,9 +268,29 @@ export default function ReportEditor() {
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1d1d1f' }}>
             2026年《中国经营报》第{issue.issue_number}期 报数表
           </h2>
-          <span style={{ fontSize: 13, color: '#86868b' }}>
-            人民日报印厂 · 出版日期 {issue.publish_date}
-          </span>
+          <Space size="medium" style={{ marginTop: 4 }}>
+            <span style={{ fontSize: 13, color: '#86868b' }}>
+              人民日报印厂 · 出版日期 {issue.publish_date}
+            </span>
+            <span style={{ fontSize: 13, color: '#86868b' }}>
+              版数：
+              <InputNumber
+                size="mini"
+                value={issue.page_count ?? 24}
+                min={4}
+                step={8}
+                precision={0}
+                style={{ width: 64, display: 'inline-block' }}
+                onChange={(val) => {
+                  if (val && val !== issue.page_count) {
+                    updateIssue(Number(issueId), { page_count: val }).then(() => {
+                      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+                    });
+                  }
+                }}
+              />
+            </span>
+          </Space>
         </div>
         <Space size="medium">
           {/* Auto-save status indicator */}

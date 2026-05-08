@@ -18,6 +18,7 @@ class Issue(Base):
     issue_number = Column(Integer, nullable=False, unique=True)
     publish_date = Column(Date, nullable=False)
     status = Column(SAEnum(IssueStatus), default=IssueStatus.draft, nullable=False)
+    page_count = Column(Integer, default=24, nullable=False, server_default="24")
     notes = Column(Text)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

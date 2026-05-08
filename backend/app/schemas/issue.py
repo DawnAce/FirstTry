@@ -10,10 +10,16 @@ class IssueCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class IssueUpdate(BaseModel):
+    page_count: Optional[int] = None
+    notes: Optional[str] = None
+
+
 class IssueOut(BaseModel):
     id: int
     issue_number: int
     publish_date: date
+    page_count: int = 24
     status: IssueStatus
     notes: Optional[str]
     created_at: Optional[datetime]

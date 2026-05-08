@@ -245,7 +245,8 @@ def export_report_excel(issue_id: int, db: Session) -> io.BytesIO:
 
     # --- Update header in 北京印厂 ---
     d = issue.publish_date
-    header = f"期数：{issue.issue_number}   版数：24    出版日期：{d.year}年{d.month}月{d.day}日"
+    page_count = issue.page_count if issue.page_count else 24
+    header = f"期数：{issue.issue_number}   版数：{page_count}    出版日期：{d.year}年{d.month}月{d.day}日"
     wb["北京印厂"]["A3"] = header
     # 制表时间 = 出版日期的上一周周五 (weekday: Mon=0 ... Fri=4)
     days_since_friday = (d.weekday() - 4) % 7 or 7

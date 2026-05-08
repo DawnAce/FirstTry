@@ -4,6 +4,7 @@ export interface Issue {
   id: number;
   issue_number: number;
   publish_date: string;
+  page_count: number;
   status: 'draft' | 'confirmed' | 'exported';
   notes: string | null;
   created_at: string;
@@ -40,3 +41,6 @@ export const createIssue = (data: { issue_number: number; publish_date: string }
 
 export const getIssue = (id: number) =>
   api.get<Issue>(`/issues/${id}`);
+
+export const updateIssue = (id: number, data: { page_count?: number; notes?: string }) =>
+  api.patch<Issue>(`/issues/${id}`, data);
