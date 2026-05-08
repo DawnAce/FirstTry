@@ -23,7 +23,8 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         .order_by(ReportEntry.category, ReportEntry.id)
         .all()
     )
-    total = sum(e.value for e in entries)
+    # 临时加印_自留 is a sub-allocation of 临时加印, not an additional count
+    total = sum(e.value for e in entries if e.sub_category != '临时加印_自留')
     return ReportDataOut(
         issue_id=issue.id,
         issue_number=issue.issue_number,

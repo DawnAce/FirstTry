@@ -283,7 +283,10 @@ export default function ReportEditor() {
   };
 
   const calculateCategoryTotal = (categoryEntries: ReportEntry[]) => {
-    return categoryEntries.reduce((sum, entry) => sum + entry.value, 0);
+    // 临时加印_自留 is a sub-allocation of 临时加印, not additional count
+    return categoryEntries
+      .filter(e => e.sub_category !== '临时加印_自留')
+      .reduce((sum, entry) => sum + entry.value, 0);
   };
 
   const handleConfirm = async () => {
