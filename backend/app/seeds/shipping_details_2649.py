@@ -49,44 +49,82 @@ def _is_summary_row(phone_val: Any) -> bool:
     return _str(phone_val) == "合计"
 
 
+def _classify_weekly_corporate(name: str | None, address: str | None, notes: str | None) -> tuple[str, str]:
+    """Return (channel, transport) for 每周（对公） rows."""
+    if name == "马飞":
+        return "库房留存", "库房留存"
+    if not name or name == "(未填写)":
+        if address and "中通库房" in address:
+            return "库房留存", "库房留存"
+    if notes:
+        if "广州日报" in notes or "杂志铺" in notes:
+            return "渠道订阅", "中通物流"
+        if "社用报" in notes:
+            return "报社留存", "包车运输"
+    if name in ("李广", "纪玉文", "党鹏", "王金龙"):
+        return "记者站", "中通物流"
+    # Fallback based on name
+    if name == "叶剑":
+        return "渠道订阅", "中通物流"
+    if name == "肖波":
+        return "渠道订阅", "中通物流"
+    if name == "程先生":
+        return "报社留存", "包车运输"
+    return "对公订阅", "中通物流"
+
+
 def _parse_weekly_corporate(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
     """Parse 每周（对公） sheet: rows 3-11, 6 columns."""
     records = []
     for row in ws.iter_rows(min_row=3, max_row=11, max_col=6, values_only=True):
-        name, address, phone, qty, publication, notes = row
+        name_val, address, phone, qty, publication, notes = row
         if _is_summary_row(phone):
             continue
-        # Skip completely empty rows
         if not any(row):
             continue
+        name = _str(name_val) or "(未填写)"
+        notes_s = _str(notes)
+        address_s = _str(address)
+        channel, transport = _classify_weekly_corporate(name, address_s, notes_s)
         records.append({
             "sheet_name": "每周（对公）",
-            "name": _str(name) or "(未填写)",
-            "address": _str(address),
+            "channel": channel,
+            "transport": transport,
+            "frequency": "每周",
+            "status": "正常",
+            "name": name,
+            "address": address_s,
             "phone": _str(phone),
             "quantity": _int(qty),
-            "publication": _str(publication),
-            "notes": _str(notes),
+            "notes": notes_s,
         })
     return records
 
 
 def _parse_weekly_reader(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
-    """Parse 每周（读者） sheet: rows 3-31, 8 columns."""
+    """Parse 每周（读者） sheet: rows 3-31, 8 columns.
+    First 5 data rows (rows 3-7) are 监管赠阅, rest are 个人订户.
+    """
     records = []
+    data_index = 0
     for row in ws.iter_rows(min_row=3, max_row=31, max_col=8, values_only=True):
         name, address, phone, qty, publication, deadline, notes, extra = row
         if _is_summary_row(phone):
             continue
         if not any(row):
             continue
+        channel = "监管赠阅" if data_index < 5 else "个人订户"
+        data_index += 1
         records.append({
             "sheet_name": "每周（读者）",
+            "channel": channel,
+            "transport": "中通物流",
+            "frequency": "每周",
+            "status": "正常",
             "name": _str(name) or "(未填写)",
             "address": _str(address),
             "phone": _str(phone),
             "quantity": _int(qty),
-            "publication": _str(publication),
             "deadline": _deadline_str(deadline),
             "notes": _str(notes),
             "extra_info": _str(extra),
@@ -107,6 +145,10 @@ def _parse_high_speed_rail(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[d
             current_city = _str(city)
         records.append({
             "sheet_name": "高铁展示",
+            "channel": "对公订阅",
+            "transport": "中通物流",
+            "frequency": "每周",
+            "status": "正常",
             "name": _str(contact) or "(未填写)",
             "city": current_city,
             "seq_number": _int(seq),
@@ -131,14 +173,19 @@ def _parse_shangyou(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
             continue
         if not any(row):
             continue
+        notes_s = _str(notes)
+        transport = "邮政物流" if notes_s and "邮政" in notes_s else "中通物流"
         records.append({
             "sheet_name": "上犹",
+            "channel": "政府赠阅",
+            "transport": transport,
+            "frequency": "每周",
+            "status": "正常",
             "name": _str(name) or "(未填写)",
             "address": _str(address),
             "phone": _str(phone),
             "quantity": _int(qty),
-            "publication": _str(publication),
-            "notes": _str(notes),
+            "notes": notes_s,
         })
     return records
 
@@ -154,12 +201,15 @@ def _parse_biweekly_suspended(ws: openpyxl.worksheet.worksheet.Worksheet) -> lis
             continue
         records.append({
             "sheet_name": "停发-双周（读者）",
+            "channel": "个人订户",
+            "transport": "中通物流",
+            "frequency": "双周",
+            "status": "停发",
             "name": _str(name) or "(未填写)",
             "address": _str(address),
             "phone": _str(phone),
             "period_count": _int(period),
             "quantity": _int(qty),
-            "publication": _str(publication),
             "deadline": _deadline_str(deadline),
             "notes": _str(notes),
         })
@@ -167,24 +217,38 @@ def _parse_biweekly_suspended(ws: openpyxl.worksheet.worksheet.Worksheet) -> lis
 
 
 def _parse_monthly(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
-    """Parse 月底-整月 sheet: rows 3-22, 9 columns."""
+    """Parse 月底-整月 sheet: rows 3-22, 9 columns.
+    First 4 data rows are 监管赠阅, row with 国图贸 in notes is 渠道订阅, rest are 个人订户.
+    """
     records = []
+    data_index = 0
     for row in ws.iter_rows(min_row=3, max_row=22, max_col=9, values_only=True):
         name, address, phone, period, qty, publication, deadline, notes, extra = row
         if _is_summary_row(phone):
             continue
         if not any(row):
             continue
+        notes_s = _str(notes)
+        if data_index < 4:
+            channel = "监管赠阅"
+        elif notes_s and "国图贸" in notes_s:
+            channel = "渠道订阅"
+        else:
+            channel = "个人订户"
+        data_index += 1
         records.append({
             "sheet_name": "月底-整月",
+            "channel": channel,
+            "transport": "中通物流",
+            "frequency": "月底整月",
+            "status": "正常",
             "name": _str(name) or "(未填写)",
             "address": _str(address),
             "phone": _str(phone),
             "period_count": _int(period),
             "quantity": _int(qty),
-            "publication": _str(publication),
             "deadline": _deadline_str(deadline),
-            "notes": _str(notes),
+            "notes": notes_s,
             "extra_info": _str(extra),
         })
     return records

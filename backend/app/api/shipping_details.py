@@ -13,7 +13,10 @@ router = APIRouter(prefix="/api/shipping-details", tags=["shipping-details"])
 @router.get("", response_model=List[ShippingDetailOut])
 def list_shipping_details(
     issue_number: Optional[int] = None,
-    sheet_name: Optional[str] = None,
+    channel: Optional[str] = None,
+    transport: Optional[str] = None,
+    frequency: Optional[str] = None,
+    status: Optional[str] = None,
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 200,
@@ -22,22 +25,17 @@ def list_shipping_details(
     query = db.query(ShippingDetail)
     if issue_number is not None:
         query = query.filter(ShippingDetail.issue_number == issue_number)
-    if sheet_name:
-        query = query.filter(ShippingDetail.sheet_name == sheet_name)
+    if channel:
+        query = query.filter(ShippingDetail.channel == channel)
+    if transport:
+        query = query.filter(ShippingDetail.transport == transport)
+    if frequency:
+        query = query.filter(ShippingDetail.frequency == frequency)
+    if status:
+        query = query.filter(ShippingDetail.status == status)
     if search:
         query = query.filter(ShippingDetail.name.contains(search))
     return query.order_by(ShippingDetail.id).offset(skip).limit(limit).all()
-
-
-@router.get("/sheets", response_model=List[str])
-def list_sheets(
-    issue_number: Optional[int] = None,
-    db: Session = Depends(get_db),
-):
-    query = db.query(ShippingDetail.sheet_name).distinct()
-    if issue_number is not None:
-        query = query.filter(ShippingDetail.issue_number == issue_number)
-    return [row[0] for row in query.all()]
 
 
 @router.post("", response_model=ShippingDetailOut, status_code=201)
