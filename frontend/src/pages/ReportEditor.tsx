@@ -8,7 +8,6 @@ import {
   Tag,
   Space,
   Spin,
-  Popconfirm,
   Message,
   Modal,
   Input,
@@ -319,19 +318,17 @@ export default function ReportEditor() {
       Message.success('确认成功');
       navigate('/');
     } catch (err: any) {
-      if (err.response?.data?.detail) {
-        const details = err.response.data.detail;
-        if (Array.isArray(details)) {
-          details.forEach((error: any) => {
-            Message.error(error.msg || JSON.stringify(error));
-          });
+      const msg = err.response?.data?.detail;
+      if (msg) {
+        if (Array.isArray(msg)) {
+          msg.forEach((e: any) => Message.error(e.msg || JSON.stringify(e)));
         } else {
-          Message.error(details);
+          Message.error(String(msg));
         }
       } else {
-        Message.error('确认失败');
+        Message.error('确认失败：' + (err.message || '未知错误'));
       }
-      console.error(err);
+      console.error('Confirm failed:', err);
     } finally {
       setSaving(false);
     }
@@ -484,15 +481,18 @@ export default function ReportEditor() {
               <Button icon={<IconDownload />} onClick={handleExport}>
                 导出
               </Button>
-              <Popconfirm
-                title="确认报数"
-                content="确认后将无法再修改，是否继续？"
-                onOk={() => { handleConfirm(); }}
+              <Button
+                type="primary"
+                icon={<IconCheck />}
+                loading={saving}
+                onClick={() => {
+                  if (window.confirm('确认后将无法再修改，是否继续？')) {
+                    handleConfirm();
+                  }
+                }}
               >
-                <Button type="primary" icon={<IconCheck />} loading={saving}>
-                  确认报数
-                </Button>
-              </Popconfirm>
+                确认报数
+              </Button>
             </>
           )}
         </Space>
