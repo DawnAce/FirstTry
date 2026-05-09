@@ -8,6 +8,7 @@
 - 前端：Vite 开发服务器运行在 `http://localhost:5173`
 - 后端：FastAPI 服务运行在 `http://localhost:8000`
 - 前端通过 CORS 跨域请求后端 API
+- 一键启动脚本：`dev.ps1`（Windows PowerShell）、`dev.bat`（Windows CMD）、`dev.sh`（macOS / Linux）
 
 ### 生产模式
 - 前端构建为静态文件（`frontend/dist`）
@@ -365,6 +366,10 @@ FirstTry/
 - 前端通过 localStorage 存储令牌
 - 所有需要认证的 API 通过 axios 拦截器自动附加 `Authorization: Bearer <token>` 请求头
 - 令牌过期或无效时返回 401，前端自动跳转到登录页面
+- **所有业务 API 均需认证**：在 `main.py` 中通过 `dependencies=[Depends(get_current_user)]` 对所有业务路由强制认证，仅 `/api/auth/login` 为公开接口
+- `/api/admin/seed` 需要管理员权限（`require_admin`）
+- 前端启动时无论 localStorage 是否有缓存用户，都会调用 `/api/auth/me` 验证 token 有效性
+- axios 全局超时设置为 120 秒（`timeout: 120000`），适配远程数据库延迟
 
 ### 4.2 系统管理
 
@@ -1077,6 +1082,8 @@ alembic downgrade -1
 - 组件库（Arco Design）
 
 ### 8.4 安全性
+- **JWT 认证**：所有业务路由均通过 `get_current_user` 依赖强制认证
+- **管理员权限**：种子数据等管理接口通过 `require_admin` 限制
 - Excel 密码保护（openpyxl）
 - 环境变量管理（python-dotenv）
 - SQL 注入防护（SQLAlchemy ORM）
@@ -1104,7 +1111,7 @@ mysqldump -u user -p database_name > backup.sql
 
 ## 10. 未来扩展
 
-- [ ] 用户认证与权限管理
+- [x] 用户认证与权限管理
 - [ ] 数据统计与报表分析
 - [ ] 自动发送邮件通知
 - [ ] 移动端适配

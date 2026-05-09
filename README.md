@@ -28,7 +28,11 @@ MYSQL_DATABASE=your_database
 ```bash
 cd backend
 python -m venv venv
-venv\Scripts\activate  # Windows
+# Windows
+venv\Scripts\activate
+# macOS / Linux
+source venv/bin/activate
+
 pip install -r requirements.txt
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
@@ -50,6 +54,14 @@ npm run dev
 ```bash
 curl -X POST http://localhost:8000/api/admin/seed
 ```
+
+### 一键启动（推荐）
+
+| 系统 | 命令 |
+|------|------|
+| Windows PowerShell | `.\dev.ps1` |
+| Windows CMD | `dev.bat` |
+| macOS / Linux | `./dev.sh` |
 
 ### 7. 生产部署
 ```bash

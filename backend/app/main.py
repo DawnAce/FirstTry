@@ -20,6 +20,7 @@ from app.api.exports import router as exports_router
 from app.api.templates import router as templates_router
 from app.api.auth import router as auth_router
 from app.api.shipping_details import router as shipping_details_router
+from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule
 
 app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
@@ -40,15 +41,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(schedule_router)
-app.include_router(issues_router)
-app.include_router(reports_router)
-app.include_router(recipients_router)
-app.include_router(shipping_router)
-app.include_router(exports_router)
-app.include_router(templates_router)
+app.include_router(schedule_router, dependencies=[Depends(get_current_user)])
+app.include_router(issues_router, dependencies=[Depends(get_current_user)])
+app.include_router(reports_router, dependencies=[Depends(get_current_user)])
+app.include_router(recipients_router, dependencies=[Depends(get_current_user)])
+app.include_router(shipping_router, dependencies=[Depends(get_current_user)])
+app.include_router(exports_router, dependencies=[Depends(get_current_user)])
+app.include_router(templates_router, dependencies=[Depends(get_current_user)])
 app.include_router(auth_router)
-app.include_router(shipping_details_router)
+app.include_router(shipping_details_router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/api/health")
@@ -57,7 +58,7 @@ def health_check():
 
 
 @app.get("/api/dashboard")
-def dashboard_data(db: Session = Depends(get_db)):
+def dashboard_data(db: Session = Depends(get_db), _user = Depends(get_current_user)):
     """Combined endpoint for Dashboard — cached with 30s TTL."""
     cached = get_dashboard_cache()
     if cached is not None:
@@ -121,7 +122,7 @@ def dashboard_data(db: Session = Depends(get_db)):
 
 
 @app.post("/api/admin/seed")
-def run_seeds():
+def run_seeds(_user = Depends(require_admin)):
     db = SessionLocal()
     try:
         schedule_count = seed_publication_schedule_2026(db)

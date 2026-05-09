@@ -27,14 +27,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token && !user) {
+    if (token) {
+      // Always validate token with backend on startup
       getMe().then(res => {
         setUser(res.data);
         localStorage.setItem('user', JSON.stringify(res.data));
       }).catch(() => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        setUser(null);
       });
+    } else {
+      // No token — clear any stale user data
+      localStorage.removeItem('user');
+      setUser(null);
     }
   }, []);
 
