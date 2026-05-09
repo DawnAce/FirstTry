@@ -1,0 +1,5 @@
+{
+  "name": "playwright-visual-check",
+  "version": "1.0.0",
+  "description": "Skill for visually inspecting web pages using Playwright CLI screenshots"
+}

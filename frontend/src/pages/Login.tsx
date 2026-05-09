@@ -46,7 +46,7 @@ export default function Login() {
         <p style={{ textAlign: 'center', color: '#86868b', marginBottom: 32, fontSize: 14 }}>
           中国经营报
         </p>
-        <Form onSubmit={handleSubmit} autoComplete="off" layout="vertical" style={{ width: '100%' }}>
+        <Form onFinish={handleSubmit} autoComplete="off" layout="vertical" style={{ width: '100%' }}>
           <Form.Item field="username" rules={[{ required: true, message: '请输入用户名' }]}>
             <Input prefix={<IconUser />} placeholder="用户名" size="large" />
           </Form.Item>
