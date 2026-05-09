@@ -34,95 +34,91 @@ body {
 /* ===== Layout Overrides ===== */
 
 
-.arco-layout-sider {
+.ant-layout-sider {
   background: var(--color-card) !important;
   border-right: 1px solid var(--color-border) !important;
   box-shadow: none !important;
 }
 
-.arco-layout-sider .arco-layout-sider-children {
+.ant-layout-sider .ant-layout-sider-children {
   background: var(--color-card) !important;
 }
 
-.arco-layout-content {
+.ant-layout-content {
   background: var(--color-bg) !important;
 }
 
 /* ===== Menu (Light Sidebar) ===== */
-.arco-menu {
+.ant-menu {
   background: var(--color-card) !important;
 }
 
-.arco-menu-inner {
-  background: var(--color-card) !important;
-}
-
-.arco-menu-item {
+.ant-menu-item {
   border-radius: var(--radius-input) !important;
   margin: 2px 8px !important;
 }
 
-.arco-menu-item.arco-menu-selected {
+.ant-menu-item-selected {
   background: rgba(0, 113, 227, 0.08) !important;
   color: var(--color-accent) !important;
   font-weight: 500 !important;
 }
 
-.arco-menu-item.arco-menu-selected .arco-icon {
+.ant-menu-item-selected .anticon {
   color: var(--color-accent) !important;
 }
 
 /* ===== Cards ===== */
-.arco-card {
+.ant-card {
   border: none !important;
   border-radius: var(--radius-card) !important;
   box-shadow: var(--shadow-card) !important;
   transition: box-shadow var(--transition) !important;
 }
 
-.arco-card:hover {
+.ant-card:hover {
   box-shadow: var(--shadow-card-hover) !important;
 }
 
-.arco-card-header {
+.ant-card-head {
   border-bottom: 1px solid var(--color-divider) !important;
 }
 
-.arco-card-header-title {
+.ant-card-head-title {
   font-weight: 600 !important;
   font-size: 15px !important;
   color: var(--color-text-primary) !important;
 }
 
 /* ===== Buttons ===== */
-.arco-btn {
+.ant-btn {
   border-radius: var(--radius-button) !important;
   font-weight: 500 !important;
   transition: all var(--transition) !important;
 }
 
-.arco-btn-primary {
+.ant-btn-primary {
   background: var(--color-accent) !important;
   border-color: var(--color-accent) !important;
 }
 
-.arco-btn-primary:hover {
+.ant-btn-primary:hover {
   background: var(--color-accent-hover) !important;
   border-color: var(--color-accent-hover) !important;
 }
 
-.arco-btn-outline {
+.ant-btn-default {
   border-color: var(--color-border) !important;
   color: var(--color-text-primary) !important;
 }
 
-.arco-btn-outline:hover {
+.ant-btn-default:hover {
   border-color: var(--color-accent) !important;
   color: var(--color-accent) !important;
 }
 
 /* ===== Tags ===== */
-.arco-tag {
+.ant-tag {
   border-radius: var(--radius-tag) !important;
   border: none !important;
   font-weight: 500 !important;
@@ -131,16 +127,16 @@ body {
 }
 
 /* ===== Tables ===== */
-.arco-table {
+.ant-table {
   border-radius: var(--radius-card) !important;
   overflow: hidden !important;
 }
 
-.arco-table-border .arco-table-container {
+.ant-table-container {
   border: none !important;
 }
 
-.arco-table-th {
+.ant-table-thead th {
   background: #fafafa !important;
   border-bottom: 1px solid var(--color-divider) !important;
   font-weight: 600 !important;
@@ -150,106 +146,106 @@ body {
   letter-spacing: 0.02em !important;
 }
 
-.arco-table-td {
+.ant-table-tbody td {
   border-bottom: 1px solid var(--color-divider) !important;
   padding: 14px 16px !important;
 }
 
-.arco-table-tr:hover .arco-table-td {
+.ant-table-tbody tr:hover td {
   background: rgba(0, 0, 0, 0.01) !important;
 }
 
 /* ===== Inputs ===== */
-.arco-input,
-.arco-input-inner-wrapper,
-.arco-select .arco-select-view,
-.arco-input-number,
-.arco-picker {
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-input-number,
+.ant-picker {
   border-radius: var(--radius-input) !important;
   border-color: var(--color-border) !important;
 }
 
-.arco-input:focus,
-.arco-input-inner-wrapper:focus-within,
-.arco-select.arco-select-focused .arco-select-view {
+.ant-input:focus,
+.ant-input-affix-wrapper:focus-within,
+.ant-select-focused .ant-select-selector {
   border-color: var(--color-accent) !important;
   box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.12) !important;
 }
 
 /* ===== Tabs ===== */
-.arco-tabs-header-nav-line .arco-tabs-header-ink-bar {
+.ant-tabs-ink-bar {
   background: var(--color-accent) !important;
 }
 
-.arco-tabs-header-title-active {
+.ant-tabs-tab-active {
   color: var(--color-accent) !important;
   font-weight: 600 !important;
 }
 
 /* ===== Statistic ===== */
-.arco-statistic-title {
+.ant-statistic-title {
   color: var(--color-text-secondary) !important;
   font-size: 13px !important;
   font-weight: 500 !important;
 }
 
-.arco-statistic-value {
+.ant-statistic-content-value {
   font-weight: 700 !important;
   color: var(--color-text-primary) !important;
 }
 
 /* ===== List ===== */
-.arco-list-item {
+.ant-list-item {
   border-bottom: 1px solid var(--color-divider) !important;
   padding: 16px 0 !important;
 }
 
 /* ===== Divider ===== */
-.arco-divider {
+.ant-divider {
   border-color: var(--color-divider) !important;
 }
 
 /* ===== Spin ===== */
-.arco-spin .arco-spin-icon {
+.ant-spin .ant-spin-dot {
   color: var(--color-accent) !important;
 }
 
 /* ===== Modal ===== */
-.arco-modal-content {
+.ant-modal-content {
   border-radius: var(--radius-card) !important;
 }
 
 /* ===== Drawer ===== */
-.arco-drawer-content {
+.ant-drawer-content {
   border-radius: var(--radius-card) 0 0 var(--radius-card) !important;
 }
 
 /* ===== Timeline ===== */
-.arco-timeline-item-dot {
+.ant-timeline-item-head {
   background: var(--color-accent) !important;
   border-color: var(--color-accent) !important;
 }
 
 /* ===== Pagination ===== */
-.arco-pagination-item {
+.ant-pagination-item {
   border-radius: var(--radius-input) !important;
   border: none !important;
   background: transparent !important;
   color: var(--color-text-primary) !important;
 }
 
-.arco-pagination-item:hover {
+.ant-pagination-item:hover {
   background: rgba(0, 0, 0, 0.04) !important;
   color: var(--color-text-primary) !important;
 }
 
-.arco-pagination-item-active {
+.ant-pagination-item-active {
   background: rgba(0, 113, 227, 0.08) !important;
   color: var(--color-accent) !important;
   font-weight: 500 !important;
 }
 
-.arco-pagination-item-active:hover {
+.ant-pagination-item-active:hover {
   background: rgba(0, 113, 227, 0.12) !important;
   color: var(--color-accent) !important;
 }

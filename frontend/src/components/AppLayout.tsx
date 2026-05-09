@@ -1,10 +1,16 @@
-import { Layout, Menu, Button, Space } from '@arco-design/web-react';
-import { IconDashboard, IconUser, IconHistory, IconSettings, IconExport } from '@arco-design/web-react/icon';
+import { Layout, Menu, Button, Space } from 'antd';
+import { DashboardOutlined, UserOutlined, HistoryOutlined, SettingOutlined, LogoutOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const { Sider, Content } = Layout;
-const MenuItem = Menu.Item;
+
+const menuItems = [
+  { key: '/', icon: <DashboardOutlined />, label: '印数报数管理' },
+  { key: '/recipients', icon: <UserOutlined />, label: '收件人管理' },
+  { key: '/history', icon: <HistoryOutlined />, label: '历史记录' },
+  { key: '/templates', icon: <SettingOutlined />, label: '模板管理' },
+];
 
 export default function AppLayout() {
   const navigate = useNavigate();
@@ -69,21 +75,9 @@ export default function AppLayout() {
           <div style={{ flex: 1, padding: '12px 8px', overflow: 'auto' }}>
             <Menu
               selectedKeys={[getSelectedKey()]}
-              onClickMenuItem={(key) => navigate(key)}
-            >
-              <MenuItem key="/">
-                <IconDashboard /> 印数报数管理
-              </MenuItem>
-              <MenuItem key="/recipients">
-                <IconUser /> 收件人管理
-              </MenuItem>
-              <MenuItem key="/history">
-                <IconHistory /> 历史记录
-              </MenuItem>
-              <MenuItem key="/templates">
-                <IconSettings /> 模板管理
-              </MenuItem>
-            </Menu>
+              onClick={({key}) => navigate(key)}
+              items={menuItems}
+            />
           </div>
           {/* User info pinned at bottom */}
           <div style={{
@@ -98,8 +92,8 @@ export default function AppLayout() {
                   {user?.role === 'admin' ? '管理员' : '操作员'}
                 </span>
               </span>
-              <Button size="mini" type="text" onClick={logout} style={{ padding: 0, color: '#86868b' }}>
-                <IconExport /> 退出登录
+              <Button size="small" type="text" onClick={logout} style={{ padding: 0, color: '#86868b' }}>
+                <LogoutOutlined /> 退出登录
               </Button>
             </Space>
           </div>

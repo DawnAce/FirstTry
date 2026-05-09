@@ -4,7 +4,7 @@
 
 ## 技术栈
 - **后端**: Python / FastAPI / SQLAlchemy / openpyxl
-- **前端**: React / TypeScript / Vite / Arco Design
+- **前端**: React / TypeScript / Vite / Ant Design
 - **数据库**: MySQL
 
 ## 快速开始

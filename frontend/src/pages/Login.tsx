@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Message } from '@arco-design/web-react';
-import { IconUser, IconLock } from '@arco-design/web-react/icon';
+import { Form, Input, Button, message } from 'antd';
+import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { login } from '../api/auth';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -16,10 +16,10 @@ export default function Login() {
       const res = await login(values);
       const { access_token, username, role } = res.data;
       setAuth(access_token, { id: 0, username, role });
-      Message.success(`欢迎，${username}`);
+      message.success(`欢迎，${username}`);
       navigate('/');
     } catch (err: any) {
-      Message.error(err.response?.data?.detail || '登录失败');
+      message.error(err.response?.data?.detail || '登录失败');
     } finally {
       setLoading(false);
     }
@@ -46,15 +46,15 @@ export default function Login() {
         <p style={{ textAlign: 'center', color: '#86868b', marginBottom: 32, fontSize: 14 }}>
           中国经营报
         </p>
-        <Form onSubmit={handleSubmit} autoComplete="off" layout="vertical" style={{ width: '100%' }}>
-          <Form.Item field="username" rules={[{ required: true, message: '请输入用户名' }]}>
-            <Input prefix={<IconUser />} placeholder="用户名" size="large" />
+        <Form onFinish={handleSubmit} autoComplete="off" layout="vertical" style={{ width: '100%' }}>
+          <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
+            <Input prefix={<UserOutlined />} placeholder="用户名" size="large" />
           </Form.Item>
-          <Form.Item field="password" rules={[{ required: true, message: '请输入密码' }]}>
-            <Input.Password prefix={<IconLock />} placeholder="密码" size="large" />
+          <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="密码" size="large" />
           </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
-            <Button type="primary" htmlType="submit" long size="large" loading={loading}>
+            <Button type="primary" htmlType="submit" block size="large" loading={loading}>
               登录
             </Button>
           </Form.Item>

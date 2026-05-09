@@ -5,7 +5,7 @@
 This is the **每周印数报数系统** (Weekly Print Report System) for 《中国经营报》(China Business Journal).
 
 - **Backend**: FastAPI (Python) — `backend/`
-- **Frontend**: React + TypeScript + Vite + Arco Design + TanStack Query — `frontend/`
+- **Frontend**: React + TypeScript + Vite + Ant Design + TanStack Query — `frontend/`
 - **Database**: MySQL (remote Tencent Cloud)
 - **Excel Export**: openpyxl (template-driven)
 
@@ -30,7 +30,7 @@ dev.bat     # CMD
 
 - **Python**: Use type hints. Follow existing SQLAlchemy model patterns in `backend/app/models/`.
 - **TypeScript**: Use `import type` for type-only imports (`verbatimModuleSyntax` is enabled).
-- **Arco Design**: `Form.Item` uses `field` (not `name`), `Modal`/`Drawer` use `visible` (not `open`), `Table` uses `data` (not `dataSource`), `Popconfirm` uses `onOk` (not `onConfirm`).
+- **Ant Design**: `Form.Item` uses `name` (not `field`), `Modal`/`Drawer` use `open` (not `visible`), `Table` uses `dataSource` (not `data`), `Popconfirm` uses `onConfirm` (not `onOk`). Use `Menu` with `items` prop instead of `Menu.Item` children.
 - **Data fetching**: Use TanStack Query (`useQuery`) with appropriate query keys. Mutations must call `queryClient.invalidateQueries()` to update related caches.
 - **Styling**: Apple-like minimalist theme defined in `frontend/src/index.css` with CSS variables. Use existing variables (`--color-accent`, `--color-bg`, `--radius-card`, etc.) instead of hardcoded values.
 - **Git commits**: Always include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer.

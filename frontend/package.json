@@ -10,8 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@arco-design/web-react": "^2.66.14",
+    "@ant-design/icons": "^6.2.2",
     "@tanstack/react-query": "^5.100.9",
+    "antd": "^6.3.7",
     "axios": "^1.15.2",
     "dayjs": "^1.11.20",
     "react": "^19.2.5",

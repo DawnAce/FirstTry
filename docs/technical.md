@@ -1079,7 +1079,7 @@ alembic downgrade -1
 - 函数式组件 + Hooks
 - 客户端路由（react-router-dom）
 - 类型安全（TypeScript）
-- 组件库（Arco Design）
+- 组件库（Ant Design）
 
 ### 8.4 安全性
 - **JWT 认证**：所有业务路由均通过 `get_current_user` 依赖强制认证
