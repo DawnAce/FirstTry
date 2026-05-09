@@ -90,6 +90,8 @@ export default function ReportEditor() {
   const [revoking, setRevoking] = useState(false);
   const [tempDetails, setTempDetails] = useState<TempPrintDetail[]>([]);
   const [tempDetailsLoaded, setTempDetailsLoaded] = useState(false);
+  const tempDetailsRef = useRef<TempPrintDetail[]>([]);
+  const tempDetailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: issue, isLoading: issueLoading } = useQuery({
     queryKey: ['issue', issueId],
@@ -154,15 +156,15 @@ export default function ReportEditor() {
   useEffect(() => {
     if (tempDetailsData && !tempDetailsLoaded) {
       setTempDetails(tempDetailsData);
+      tempDetailsRef.current = tempDetailsData;
       setTempDetailsLoaded(true);
     }
   }, [tempDetailsData]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const saveTempDetails = useCallback(async (details: TempPrintDetail[]) => {
-    if (!issueId) return;
+  const saveTempDetails = useCallback(async () => {
+    if (!issueId || tempDetailsRef.current.length === 0) return;
     try {
-      const res = await updateTempPrintDetails(Number(issueId), details);
-      setTempDetails(res.data);
+      await updateTempPrintDetails(Number(issueId), tempDetailsRef.current);
       queryClient.invalidateQueries({ queryKey: ['tempDetails', issueId] });
       queryClient.invalidateQueries({ queryKey: ['report', issueId] });
     } catch (err: any) {
@@ -178,13 +180,15 @@ export default function ReportEditor() {
     };
     const updated = [...tempDetails, newDetail];
     setTempDetails(updated);
-    saveTempDetails(updated);
+    tempDetailsRef.current = updated;
+    saveTempDetails();
   };
 
   const handleRemoveTempDetail = (index: number) => {
     const updated = tempDetails.filter((_, i) => i !== index);
     setTempDetails(updated);
-    saveTempDetails(updated);
+    tempDetailsRef.current = updated;
+    saveTempDetails();
   };
 
   const handleTempDetailChange = (index: number, field: keyof TempPrintDetail, value: any) => {
@@ -202,7 +206,11 @@ export default function ReportEditor() {
       return newD;
     });
     setTempDetails(updated);
-    saveTempDetails(updated);
+    tempDetailsRef.current = updated;
+
+    // Debounced save to avoid race conditions with rapid keystrokes
+    if (tempDetailTimerRef.current) clearTimeout(tempDetailTimerRef.current);
+    tempDetailTimerRef.current = setTimeout(() => saveTempDetails(), 1500);
   };
 
   const handleRevoke = async () => {
@@ -259,10 +267,11 @@ export default function ReportEditor() {
     saveTimerRef.current = setTimeout(() => doSave(), 1500);
   };
 
-  // Cleanup timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (tempDetailTimerRef.current) clearTimeout(tempDetailTimerRef.current);
     };
   }, []);
 
@@ -423,11 +432,11 @@ export default function ReportEditor() {
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1d1d1f' }}>
             2026年《中国经营报》第{issue.issue_number}期 报数表
           </h2>
-          <Space size="middle" style={{ marginTop: 4 }}>
+          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 16 }}>
             <span style={{ fontSize: 13, color: '#86868b' }}>
               人民日报印厂 · 出版日期 {issue.publish_date}
             </span>
-            <span style={{ fontSize: 13, color: '#86868b' }}>
+            <span style={{ fontSize: 13, color: '#86868b', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               版数：{isConfirmed ? (
                 <span style={{ color: '#1d1d1f', fontWeight: 500 }}>{issue.page_count ?? 24}</span>
               ) : (
@@ -437,7 +446,7 @@ export default function ReportEditor() {
                   min={4}
                   step={4}
                   precision={0}
-                  style={{ width: 64, display: 'inline-block' }}
+                  style={{ width: 64 }}
                   onChange={(val) => {
                     if (val && val !== issue.page_count) {
                       updateIssue(Number(issueId), { page_count: val }).then(() => {
@@ -448,7 +457,7 @@ export default function ReportEditor() {
                 />
               )}
             </span>
-          </Space>
+          </div>
         </div>
         <Space size="middle">
           {isConfirmed ? (
@@ -911,6 +920,7 @@ export default function ReportEditor() {
         onCancel={() => setRevokeModalVisible(false)}
         confirmLoading={revoking}
         okText="确认作废"
+        cancelText="取消"
         okButtonProps={{ danger: true }}
       >
         <p style={{ marginBottom: 12, color: '#424245' }}>

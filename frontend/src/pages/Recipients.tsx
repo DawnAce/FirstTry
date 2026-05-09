@@ -16,6 +16,7 @@ import {
   Popconfirm,
   Card,
   Tabs,
+  Tooltip,
 } from 'antd';
 import { PlusOutlined, PauseCircleOutlined, CaretRightOutlined, SearchOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -141,50 +142,70 @@ function ShippingDetailsTab() {
     }
   };
 
+  const transportColors: Record<string, string> = {
+    '中通物流': 'blue',
+    '邮政物流': 'green',
+    '包车运输': 'orange',
+    '库房留存': 'default',
+  };
+
   const shippingColumns: TableColumnsType<ShippingDetail> = [
-    { title: '姓名', dataIndex: 'name', key: 'name' },
+    { title: '姓名', dataIndex: 'name', key: 'name', width: 80 },
     {
       title: '渠道',
       dataIndex: 'channel',
       key: 'channel',
-      width: 110,
+      width: 100,
       render: (v: string) => v ? <Tag color={channelColors[v] || 'gray'}>{v}</Tag> : '-',
     },
     {
       title: '地址',
       dataIndex: 'address',
       key: 'address',
+      width: 180,
       ellipsis: true,
       render: (v: string | null) => v ?? '-',
     },
-    { title: '电话', dataIndex: 'phone', key: 'phone', width: 130, render: (v: string | null) => v ?? '-' },
-    { title: '份数', dataIndex: 'quantity', key: 'quantity', width: 70, render: (v: number) => v ?? '-' },
-    { title: '频率', dataIndex: 'frequency', key: 'frequency', width: 90, render: (v: string | null) => v ?? '-' },
-    { title: '运输方式', dataIndex: 'transport', key: 'transport', width: 100, render: (v: string | null) => v ?? '-' },
-    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 100, render: (v: string | null) => v ?? '-' },
+    { title: '电话', dataIndex: 'phone', key: 'phone', width: 120, render: (v: string | null) => v ?? '-' },
+    { title: '份数', dataIndex: 'quantity', key: 'quantity', width: 60, render: (v: number) => v ?? '-' },
+    { title: '频率', dataIndex: 'frequency', key: 'frequency', width: 60, render: (v: string | null) => v ?? '-' },
+    {
+      title: '运输方式',
+      dataIndex: 'transport',
+      key: 'transport',
+      width: 100,
+      render: (v: string | null) => v ? <Tag color={transportColors[v] || 'default'}>{v}</Tag> : '-',
+    },
+    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 90, render: (v: string | null) => v ?? '-' },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 80,
+      width: 70,
       render: (v: string) => v ? <Tag color={v === '正常' ? 'green' : 'red'}>{v}</Tag> : '-',
     },
     {
       title: '备注',
       dataIndex: 'notes',
       key: 'notes',
+      width: 100,
       ellipsis: true,
       render: (v: string | null) => v ?? '-',
     },
     {
       title: '操作',
       key: 'actions',
-      width: 120,
+      width: 70,
+      fixed: 'end',
       render: (_: any, record: ShippingDetail) => (
-        <Space>
-          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+        <Space size="small">
+          <Tooltip title="编辑">
+            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+          </Tooltip>
           <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
-            <Button type="text" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+            <Tooltip title="删除">
+              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -263,7 +284,8 @@ function ShippingDetailsTab() {
           columns={shippingColumns}
           dataSource={details}
           rowKey="id"
-          pagination={{ pageSize: 20 }}
+          scroll={{ x: 'max-content' }}
+          pagination={{ pageSize: 20, showTotal: (total) => `共 ${total} 条记录` }}
         />
       </Card>
 
