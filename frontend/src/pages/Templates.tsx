@@ -9,13 +9,13 @@ import {
   Select,
   Switch,
   Space,
-  Message,
+  message,
   Popconfirm,
   Tag,
-} from '@arco-design/web-react';
-import { IconPlus, IconEdit, IconDelete } from '@arco-design/web-react/icon';
+} from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ColumnProps } from '@arco-design/web-react/es/Table';
+import type { TableColumnsType } from 'antd';
 import type { Template, TemplateCreate } from '../api/templates';
 import {
   getTemplates,
@@ -73,14 +73,14 @@ export default function Templates() {
 
   const handleSave = async () => {
     try {
-      const values = await form.validate();
+      const values = await form.validateFields();
       setSaving(true);
       if (editing) {
         await updateTemplate(editing.id, values);
-        Message.success('模板已更新');
+        message.success('模板已更新');
       } else {
         await createTemplate(values as TemplateCreate);
-        Message.success('模板已创建');
+        message.success('模板已创建');
       }
       queryClient.invalidateQueries({ queryKey: ['templates'] });
       setModalVisible(false);
@@ -94,24 +94,23 @@ export default function Templates() {
   const handleDelete = async (id: number) => {
     try {
       await deleteTemplate(id);
-      Message.success('模板已删除');
+      message.success('模板已删除');
       queryClient.invalidateQueries({ queryKey: ['templates'] });
     } catch {
-      Message.error('删除失败');
+      message.error('删除失败');
     }
   };
 
-  const columns: ColumnProps<Template>[] = [
+  const columns: TableColumnsType<Template> = [
     {
       title: '类别',
       dataIndex: 'category',
       width: 160,
       render: (val: string) => (
-        <Tag color="arcoblue">{categoryLabels[val] || val}</Tag>
+        <Tag color="blue">{categoryLabels[val] || val}</Tag>
       ),
       filters: categoryOptions.map((o) => ({ text: o.label, value: o.value })),
-      onFilter: (values: string[], record: Template) =>
-        values.length === 0 || values.includes(record.category),
+      onFilter: (value, record) => record.category === String(value),
     },
     {
       title: '子类别',
@@ -154,14 +153,14 @@ export default function Templates() {
           <Button
             type="text"
             size="small"
-            icon={<IconEdit />}
+            icon={<EditOutlined />}
             onClick={() => openEdit(record)}
           />
           <Popconfirm
             title="确定删除此模板？"
-            onOk={() => handleDelete(record.id)}
+            onConfirm={() => handleDelete(record.id)}
           >
-            <Button type="text" size="small" status="danger" icon={<IconDelete />} />
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
@@ -172,7 +171,7 @@ export default function Templates() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1d1d1f' }}>模板管理</h2>
-        <Button type="primary" icon={<IconPlus />} onClick={openCreate}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           新增项目
         </Button>
       </div>
@@ -180,7 +179,7 @@ export default function Templates() {
       <Table
         rowKey="id"
         columns={columns}
-        data={templates || []}
+        dataSource={templates || []}
         loading={isLoading}
         pagination={{ pageSize: 50 }}
         scroll={{ y: 'calc(100vh - 240px)' }}
@@ -189,51 +188,50 @@ export default function Templates() {
 
       <Modal
         title={editing ? '编辑模板' : '新增模板'}
-        visible={modalVisible}
+        open={modalVisible}
         onOk={handleSave}
         confirmLoading={saving}
         onCancel={() => setModalVisible(false)}
-        autoFocus={false}
-        unmountOnExit
+        destroyOnClose
       >
         <Form form={form} layout="vertical">
           <Form.Item
-            field="category"
+            name="category"
             label="类别"
             rules={[{ required: true, message: '请选择或输入类别' }]}
           >
             <Select
               placeholder="选择或输入类别"
-              allowCreate
+              mode="tags"
               options={categoryOptions}
             />
           </Form.Item>
           <Form.Item
-            field="sub_category"
+            name="sub_category"
             label="子类别"
             rules={[{ required: true, message: '请输入子类别' }]}
           >
             <Input placeholder="例如: 外埠、本市" />
           </Form.Item>
           <Form.Item
-            field="display_name"
+            name="display_name"
             label="显示名称"
             rules={[{ required: true, message: '请输入显示名称' }]}
           >
             <Input placeholder="报表中显示的名称" />
           </Form.Item>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-            <Form.Item field="default_value" label="默认值">
+            <Form.Item name="default_value" label="默认值">
               <InputNumber placeholder="0" style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item
-              field="is_variable"
+              name="is_variable"
               label="变动项"
-              triggerPropName="checked"
+              valuePropName="checked"
             >
               <Switch />
             </Form.Item>
-            <Form.Item field="sort_order" label="排序">
+            <Form.Item name="sort_order" label="排序">
               <InputNumber placeholder="0" style={{ width: '100%' }} />
             </Form.Item>
           </div>

@@ -9,20 +9,18 @@ import {
   Space,
   Spin,
   Card,
-  Message,
-} from '@arco-design/web-react';
+  message,
+} from 'antd';
 import {
-  IconArrowLeft,
-  IconRefresh,
-  IconDownload,
-} from '@arco-design/web-react/icon';
-import type { ColumnProps } from '@arco-design/web-react/es/Table';
+  ArrowLeftOutlined,
+  ReloadOutlined,
+  DownloadOutlined,
+} from '@ant-design/icons';
+import type { TableColumnsType } from 'antd';
 import { getIssue } from '../api/issues';
 import type { Issue } from '../api/issues';
 import { getShipping, regenerateShipping } from '../api/shipping';
 import type { ShippingRecord } from '../api/shipping';
-
-const TabPane = Tabs.TabPane;
 
 const TYPE_LABELS: Record<string, string> = {
   corporate: '对公',
@@ -68,9 +66,9 @@ export default function ShippingPreview() {
     try {
       const res = await regenerateShipping(issueId);
       queryClient.setQueryData(['shipping', id], res.data);
-      Message.success('发货明细已重新生成');
+      message.success('发货明细已重新生成');
     } catch (error) {
-      Message.error('重新生成失败');
+      message.error('重新生成失败');
       console.error(error);
     } finally {
       setRegenerating(false);
@@ -132,7 +130,7 @@ export default function ShippingPreview() {
     return shippingRecords.reduce((sum, record) => sum + record.quantity, 0);
   };
 
-  const columns: ColumnProps<ShippingRecord>[] = [
+  const columns: TableColumnsType<ShippingRecord> = [
     {
       title: '序号',
       render: (_col: unknown, _record: ShippingRecord, index: number) => index + 1,
@@ -174,7 +172,7 @@ export default function ShippingPreview() {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
-        <Spin size={40} />
+        <Spin size="large" />
       </div>
     );
   }
@@ -184,7 +182,7 @@ export default function ShippingPreview() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
         <Button
-          icon={<IconArrowLeft />}
+          icon={<ArrowLeftOutlined />}
           onClick={() => navigate('/')}
           style={{ borderRadius: 8 }}
         />
@@ -223,16 +221,16 @@ export default function ShippingPreview() {
         <Space>
           <Button
             type="primary"
-            icon={<IconRefresh />}
+            icon={<ReloadOutlined />}
             onClick={handleRegenerate}
             loading={regenerating}
           >
             重新生成
           </Button>
-          <Button icon={<IconDownload />} onClick={handleExportFiltered}>
+          <Button icon={<DownloadOutlined />} onClick={handleExportFiltered}>
             导出当前
           </Button>
-          <Button icon={<IconDownload />} onClick={handleExportAll}>
+          <Button icon={<DownloadOutlined />} onClick={handleExportAll}>
             导出全部
           </Button>
         </Space>
@@ -240,40 +238,40 @@ export default function ShippingPreview() {
 
       {/* Tabs with Tables */}
       <Card>
-        <Tabs activeTab={activeTab} onChange={setActiveTab}>
-          <TabPane key="all" title="全部">
+        <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+          { key: 'all', label: '全部', children: (
             <Table
               columns={columns}
-              data={getFilteredRecords()}
+              dataSource={getFilteredRecords()}
               rowKey="id"
               pagination={{ pageSize: 20 }}
             />
-          </TabPane>
-          <TabPane key="corporate" title="对公">
+          )},
+          { key: 'corporate', label: '对公', children: (
             <Table
               columns={columns}
-              data={getFilteredRecords()}
+              dataSource={getFilteredRecords()}
               rowKey="id"
               pagination={{ pageSize: 20 }}
             />
-          </TabPane>
-          <TabPane key="reader" title="读者">
+          )},
+          { key: 'reader', label: '读者', children: (
             <Table
               columns={columns}
-              data={getFilteredRecords()}
+              dataSource={getFilteredRecords()}
               rowKey="id"
               pagination={{ pageSize: 20 }}
             />
-          </TabPane>
-          <TabPane key="sample" title="样报">
+          )},
+          { key: 'sample', label: '样报', children: (
             <Table
               columns={columns}
-              data={getFilteredRecords()}
+              dataSource={getFilteredRecords()}
               rowKey="id"
               pagination={{ pageSize: 20 }}
             />
-          </TabPane>
-        </Tabs>
+          )},
+        ]} />
       </Card>
     </div>
   );

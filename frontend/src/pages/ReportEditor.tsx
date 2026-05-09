@@ -8,20 +8,20 @@ import {
   Tag,
   Space,
   Spin,
-  Message,
+  message,
   Modal,
   Input,
   Timeline,
   Select,
-} from '@arco-design/web-react';
+} from 'antd';
 import {
-  IconCheck,
-  IconDownload,
-  IconArrowLeft,
-  IconUndo,
-  IconPlus,
-  IconDelete,
-} from '@arco-design/web-react/icon';
+  CheckOutlined,
+  DownloadOutlined,
+  ArrowLeftOutlined,
+  UndoOutlined,
+  PlusOutlined,
+  DeleteOutlined,
+} from '@ant-design/icons';
 import { getIssue, updateIssue } from '../api/issues';
 import type { ReportEntry, TempPrintDetail } from '../api/reports';
 import { getReport, updateReport, confirmReport, revokeReport, getRevisions, getTempPrintDetails, updateTempPrintDetails } from '../api/reports';
@@ -166,7 +166,7 @@ export default function ReportEditor() {
       queryClient.invalidateQueries({ queryKey: ['tempDetails', issueId] });
       queryClient.invalidateQueries({ queryKey: ['report', issueId] });
     } catch (err: any) {
-      Message.error(err.response?.data?.detail || '保存明细失败');
+      message.error(err.response?.data?.detail || '保存明细失败');
     }
   }, [issueId, queryClient]);
 
@@ -210,7 +210,7 @@ export default function ReportEditor() {
     setRevoking(true);
     try {
       await revokeReport(Number(issueId), revokeReason || undefined);
-      Message.success('已作废，可重新编辑');
+      message.success('已作废，可重新编辑');
       setRevokeModalVisible(false);
       setRevokeReason('');
       setSaveStatus('idle');
@@ -218,7 +218,7 @@ export default function ReportEditor() {
       queryClient.invalidateQueries({ queryKey: ['revisions', issueId] });
       queryClient.invalidateQueries({ queryKey: ['report', issueId] });
     } catch (err: any) {
-      Message.error(err.response?.data?.detail || '作废失败');
+      message.error(err.response?.data?.detail || '作废失败');
     } finally {
       setRevoking(false);
     }
@@ -315,18 +315,18 @@ export default function ReportEditor() {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
-      Message.success('确认成功');
+      message.success('确认成功');
       navigate('/');
     } catch (err: any) {
       const msg = err.response?.data?.detail;
       if (msg) {
         if (Array.isArray(msg)) {
-          msg.forEach((e: any) => Message.error(e.msg || JSON.stringify(e)));
+          msg.forEach((e: any) => message.error(e.msg || JSON.stringify(e)));
         } else {
-          Message.error(String(msg));
+          message.error(String(msg));
         }
       } else {
-        Message.error('确认失败：' + (err.message || '未知错误'));
+        message.error('确认失败：' + (err.message || '未知错误'));
       }
       console.error('Confirm failed:', err);
     } finally {
@@ -342,7 +342,7 @@ export default function ReportEditor() {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
-        <Spin size={40} />
+        <Spin size="large" />
       </div>
     );
   }
@@ -375,8 +375,8 @@ export default function ReportEditor() {
         min={0}
         precision={0}
         style={{ width: opts?.width ?? 140 }}
-        suffix="份"
-        size={opts?.size}
+        addonAfter="份"
+        size={opts?.size === 'mini' ? 'small' : opts?.size}
       />
     );
   };
@@ -397,9 +397,9 @@ export default function ReportEditor() {
             <span style={{ fontSize: 14, color: isExtra ? '#424245' : '#1d1d1f' }}>
               {entry.sub_category}
             </span>
-            {entry.is_variable && !isExtra && <Tag size="small" color="arcoblue">变动</Tag>}
+            {entry.is_variable && !isExtra && <Tag color="blue">变动</Tag>}
             {showTags?.freq && entry.is_variable && !isExtra && (
-              <Tag size="small" color="orangered">{showTags.freq}</Tag>
+              <Tag color="orange">{showTags.freq}</Tag>
             )}
           </Space>
         </td>
@@ -415,7 +415,7 @@ export default function ReportEditor() {
       {/* Header */}
       <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
         <Button
-          icon={<IconArrowLeft />}
+          icon={<ArrowLeftOutlined />}
           onClick={() => navigate('/')}
           style={{ borderRadius: 8 }}
         />
@@ -423,7 +423,7 @@ export default function ReportEditor() {
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1d1d1f' }}>
             2026年《中国经营报》第{issue.issue_number}期 报数表
           </h2>
-          <Space size="medium" style={{ marginTop: 4 }}>
+          <Space size="middle" style={{ marginTop: 4 }}>
             <span style={{ fontSize: 13, color: '#86868b' }}>
               人民日报印厂 · 出版日期 {issue.publish_date}
             </span>
@@ -432,7 +432,7 @@ export default function ReportEditor() {
                 <span style={{ color: '#1d1d1f', fontWeight: 500 }}>{issue.page_count ?? 24}</span>
               ) : (
                 <InputNumber
-                  size="mini"
+                  size="small"
                   value={issue.page_count ?? 24}
                   min={4}
                   step={4}
@@ -450,23 +450,22 @@ export default function ReportEditor() {
             </span>
           </Space>
         </div>
-        <Space size="medium">
+        <Space size="middle">
           {isConfirmed ? (
             <>
-              <Tag color="green" size="large" style={{ fontSize: 13, padding: '4px 12px' }}>
+              <Tag color="green" style={{ fontSize: 13, padding: '4px 12px' }}>
                 ✅ 已确认报数
               </Tag>
               {isAdmin && (
                 <Button
-                  type="outline"
-                  status="warning"
-                  icon={<IconUndo />}
+                  danger
+                  icon={<UndoOutlined />}
                   onClick={() => setRevokeModalVisible(true)}
                 >
                   作废
                 </Button>
               )}
-              <Button icon={<IconDownload />} onClick={handleExport}>
+              <Button icon={<DownloadOutlined />} onClick={handleExport}>
                 导出
               </Button>
             </>
@@ -478,12 +477,12 @@ export default function ReportEditor() {
                 {saveStatus === 'saved' && '✅ 已自动保存'}
                 {saveStatus === 'error' && '❌ 保存失败，请重试'}
               </span>
-              <Button icon={<IconDownload />} onClick={handleExport}>
+              <Button icon={<DownloadOutlined />} onClick={handleExport}>
                 导出
               </Button>
               <Button
                 type="primary"
-                icon={<IconCheck />}
+                icon={<CheckOutlined />}
                 loading={saving}
                 onClick={() => {
                   if (window.confirm('确认后将无法再修改，是否继续？')) {
@@ -504,7 +503,7 @@ export default function ReportEditor() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Space size="small">
               <span style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>临时加印</span>
-              <Tag size="small" color="orangered">变动</Tag>
+              <Tag color="orange">变动</Tag>
             </Space>
             {renderValue(tempEntry, { width: 160, size: 'large' })}
           </div>
@@ -528,7 +527,7 @@ export default function ReportEditor() {
                     max={tempEntry.value}
                     precision={0}
                     style={{ width: 120 }}
-                    suffix="份"
+                    addonAfter="份"
                     size="small"
                   />
                 )}
@@ -552,9 +551,8 @@ export default function ReportEditor() {
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#424245' }}>归属明细</span>
                 {!isConfirmed && (
                   <Button
-                    size="mini"
-                    type="outline"
-                    icon={<IconPlus />}
+                    size="small"
+                    icon={<PlusOutlined />}
                     onClick={handleAddTempDetail}
                   >
                     添加
@@ -581,9 +579,9 @@ export default function ReportEditor() {
                           {isConfirmed ? (
                             <span>{detail.department === '其他' ? (detail.custom_name || '其他') : detail.department}</span>
                           ) : (
-                            <Space size="mini">
+                            <Space size="small">
                               <Select
-                                size="mini"
+                                size="small"
                                 value={detail.department}
                                 options={DEPARTMENT_OPTIONS}
                                 onChange={(val) => handleTempDetailChange(idx, 'department', val)}
@@ -591,10 +589,10 @@ export default function ReportEditor() {
                               />
                               {detail.department === '其他' && (
                                 <Input
-                                  size="mini"
+                                  size="small"
                                   placeholder="名称"
                                   value={detail.custom_name || ''}
-                                  onChange={(val) => handleTempDetailChange(idx, 'custom_name', val)}
+                                  onChange={(e) => handleTempDetailChange(idx, 'custom_name', e.target.value)}
                                   style={{ width: 80 }}
                                 />
                               )}
@@ -606,7 +604,7 @@ export default function ReportEditor() {
                             <span>{detail.quantity}</span>
                           ) : (
                             <InputNumber
-                              size="mini"
+                              size="small"
                               value={detail.quantity}
                               onChange={(val) => handleTempDetailChange(idx, 'quantity', val ?? 0)}
                               min={0}
@@ -620,7 +618,7 @@ export default function ReportEditor() {
                             <span>{detail.self_quantity}</span>
                           ) : (
                             <InputNumber
-                              size="mini"
+                              size="small"
                               value={detail.self_quantity}
                               onChange={(val) => handleTempDetailChange(idx, 'self_quantity', val ?? 0)}
                               min={0}
@@ -636,10 +634,10 @@ export default function ReportEditor() {
                         {!isConfirmed && (
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             <Button
-                              size="mini"
+                              size="small"
                               type="text"
-                              status="danger"
-                              icon={<IconDelete />}
+                              danger
+                              icon={<DeleteOutlined />}
                               onClick={() => handleRemoveTempDetail(idx)}
                             />
                           </td>
@@ -711,7 +709,7 @@ export default function ReportEditor() {
                           <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>
                             {group.label}
                           </span>
-                          <Tag size="small" color="arcoblue">变动</Tag>
+                          <Tag color="blue">变动</Tag>
                           <span style={{ fontSize: 12, color: '#86868b' }}>
                             (自动合计)
                           </span>
@@ -737,7 +735,7 @@ export default function ReportEditor() {
                             <span style={{ fontSize: 13, color: '#424245' }}>
                               ├ {entry.sub_category.replace(group.prefix, '')}
                             </span>
-                            {entry.is_variable && <Tag size="small" color="arcoblue">变动</Tag>}
+                            {entry.is_variable && <Tag color="blue">变动</Tag>}
                           </Space>
                         </td>
                         <td style={{ padding: '6px 16px', textAlign: 'right' }}>
@@ -805,8 +803,8 @@ export default function ReportEditor() {
                     <td colSpan={2} style={{ padding: '10px 16px', fontWeight: 600, fontSize: 14, color: '#1d1d1f' }}>
                       <Space size="small">
                         {categoryLabels[category]}
-                        {entry.is_variable && <Tag size="small" color="arcoblue">变动</Tag>}
-                        {freq && <Tag size="small" color="orangered">{freq}</Tag>}
+                        {entry.is_variable && <Tag color="blue">变动</Tag>}
+                        {freq && <Tag color="orange">{freq}</Tag>}
                       </Space>
                     </td>
                     <td style={{ padding: '8px 16px', textAlign: 'right' }}>
@@ -848,8 +846,8 @@ export default function ReportEditor() {
                     <td style={{ padding: '8px 16px' }}>
                       <Space size="small">
                         <span style={{ fontSize: 14 }}>{entry.sub_category}</span>
-                        {entry.is_variable && <Tag size="small" color="arcoblue">变动</Tag>}
-                        {freq && <Tag size="small" color="orangered">{freq}</Tag>}
+                        {entry.is_variable && <Tag color="blue">变动</Tag>}
+                        {freq && <Tag color="orange">{freq}</Tag>}
                       </Space>
                     </td>
                     <td style={{ padding: '8px 16px', textAlign: 'right' }}>
@@ -908,12 +906,12 @@ export default function ReportEditor() {
       {/* Revoke Modal */}
       <Modal
         title="作废确认"
-        visible={revokeModalVisible}
+        open={revokeModalVisible}
         onOk={() => { handleRevoke(); }}
         onCancel={() => setRevokeModalVisible(false)}
         confirmLoading={revoking}
         okText="确认作废"
-        okButtonProps={{ status: 'warning' }}
+        okButtonProps={{ danger: true }}
       >
         <p style={{ marginBottom: 12, color: '#424245' }}>
           作废后该期报数将恢复为可编辑状态，此操作将被记录。
@@ -921,7 +919,7 @@ export default function ReportEditor() {
         <Input.TextArea
           placeholder="作废原因（可选）"
           value={revokeReason}
-          onChange={setRevokeReason}
+          onChange={(e) => setRevokeReason(e.target.value)}
           autoSize={{ minRows: 2 }}
         />
       </Modal>

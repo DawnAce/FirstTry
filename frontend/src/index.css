@@ -156,7 +156,7 @@ body {
 }
 
 /* ===== Inputs ===== */
-.ant-input,
+.ant-input:not(.ant-input-affix-wrapper .ant-input),
 .ant-input-affix-wrapper,
 .ant-select-selector,
 .ant-input-number,
@@ -165,7 +165,7 @@ body {
   border-color: var(--color-border) !important;
 }
 
-.ant-input:focus,
+.ant-input:focus:not(.ant-input-affix-wrapper .ant-input),
 .ant-input-affix-wrapper:focus-within,
 .ant-select-focused .ant-select-selector {
   border-color: var(--color-accent) !important;

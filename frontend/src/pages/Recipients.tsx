@@ -8,7 +8,7 @@ import {
   Select,
   Tag,
   Space,
-  Message,
+  message,
   Drawer,
   Timeline,
   DatePicker,
@@ -16,10 +16,10 @@ import {
   Popconfirm,
   Card,
   Tabs,
-} from '@arco-design/web-react';
-import { IconPlus, IconStop, IconPlayArrow, IconSearch, IconDelete, IconEdit } from '@arco-design/web-react/icon';
+} from 'antd';
+import { PlusOutlined, PauseCircleOutlined, CaretRightOutlined, SearchOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ColumnProps } from '@arco-design/web-react/es/Table';
+import type { TableColumnsType } from 'antd';
 import type { Recipient, Subscription } from '../api/recipients';
 import type { ShippingDetail, ShippingDetailCreate, ShippingDetailUpdate } from '../api/shippingDetails';
 import {
@@ -52,7 +52,7 @@ const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
 
 const channelColors: Record<string, string> = {
   '渠道订阅': 'blue',
-  '对公订阅': 'arcoblue',
+  '对公订阅': 'blue',
   '个人订户': 'green',
   '记者站': 'purple',
   '监管赠阅': 'orange',
@@ -99,10 +99,10 @@ function ShippingDetailsTab() {
   const handleDelete = async (id: number) => {
     try {
       await deleteShippingDetail(id);
-      Message.success('删除成功');
+      message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
     } catch {
-      Message.error('删除失败');
+      message.error('删除失败');
     }
   };
 
@@ -120,11 +120,11 @@ function ShippingDetailsTab() {
 
   const handleSubmit = async () => {
     try {
-      const values = await form.validate();
+      const values = await form.validateFields();
       if (editingRecord) {
         const updateData: ShippingDetailUpdate = { ...values };
         await updateShippingDetail(editingRecord.id, updateData);
-        Message.success('更新成功');
+        message.success('更新成功');
       } else {
         const createData: ShippingDetailCreate = {
           ...values,
@@ -132,16 +132,16 @@ function ShippingDetailsTab() {
           sheet_name: '手动添加',
         };
         await createShippingDetail(createData);
-        Message.success('创建成功');
+        message.success('创建成功');
       }
       handleCloseModal();
       queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
     } catch {
-      Message.error('操作失败');
+      message.error('操作失败');
     }
   };
 
-  const shippingColumns: ColumnProps<ShippingDetail>[] = [
+  const shippingColumns: TableColumnsType<ShippingDetail> = [
     { title: '姓名', dataIndex: 'name', key: 'name' },
     {
       title: '渠道',
@@ -182,9 +182,9 @@ function ShippingDetailsTab() {
       width: 120,
       render: (_: any, record: ShippingDetail) => (
         <Space>
-          <Button type="text" size="small" icon={<IconEdit />} onClick={() => handleEdit(record)}>编辑</Button>
-          <Popconfirm title="确认删除？" onOk={() => handleDelete(record.id)}>
-            <Button type="text" size="small" status="danger" icon={<IconDelete />}>删除</Button>
+          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+          <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
+            <Button type="text" size="small" danger icon={<DeleteOutlined />}>删除</Button>
           </Popconfirm>
         </Space>
       ),
@@ -248,11 +248,11 @@ function ShippingDetailsTab() {
           placeholder="搜索姓名"
           style={{ width: 200 }}
           allowClear
-          prefix={<IconSearch />}
-          onChange={(value) => setShippingFilters((f) => ({ ...f, search: value }))}
+          prefix={<SearchOutlined />}
+          onChange={(e) => setShippingFilters((f) => ({ ...f, search: e.target.value }))}
         />
         <div style={{ flex: 1 }} />
-        <Button type="primary" icon={<IconPlus />} onClick={handleOpenCreate}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
           新增
         </Button>
       </div>
@@ -261,7 +261,7 @@ function ShippingDetailsTab() {
         <Table
           loading={isLoading}
           columns={shippingColumns}
-          data={details}
+          dataSource={details}
           rowKey="id"
           pagination={{ pageSize: 20 }}
         />
@@ -269,57 +269,55 @@ function ShippingDetailsTab() {
 
       <Modal
         title={editingRecord ? '编辑记录' : '新增记录'}
-        visible={modalVisible}
+        open={modalVisible}
         onOk={handleSubmit}
         onCancel={handleCloseModal}
-        autoFocus={false}
-        focusLock={true}
       >
         <Form form={form} layout="vertical">
-          <Form.Item label="姓名" field="name" rules={[{ required: true, message: '请输入姓名' }]}>
+          <Form.Item label="姓名" name="name" rules={[{ required: true, message: '请输入姓名' }]}>
             <Input placeholder="请输入姓名" />
           </Form.Item>
-          <Form.Item label="渠道" field="channel" rules={[{ required: true, message: '请选择渠道' }]}>
+          <Form.Item label="渠道" name="channel" rules={[{ required: true, message: '请选择渠道' }]}>
             <Select placeholder="请选择渠道">
               {CHANNEL_OPTIONS.map((ch) => (
                 <Select.Option key={ch} value={ch}>{ch}</Select.Option>
               ))}
             </Select>
           </Form.Item>
-          <Form.Item label="地址" field="address">
+          <Form.Item label="地址" name="address">
             <Input placeholder="请输入地址" />
           </Form.Item>
-          <Form.Item label="电话" field="phone">
+          <Form.Item label="电话" name="phone">
             <Input placeholder="请输入电话" />
           </Form.Item>
-          <Form.Item label="份数" field="quantity">
+          <Form.Item label="份数" name="quantity">
             <InputNumber placeholder="请输入份数" style={{ width: '100%' }} min={0} />
           </Form.Item>
-          <Form.Item label="频率" field="frequency">
+          <Form.Item label="频率" name="frequency">
             <Select placeholder="请选择频率" allowClear>
               {FREQUENCY_OPTIONS.map((fr) => (
                 <Select.Option key={fr} value={fr}>{fr}</Select.Option>
               ))}
             </Select>
           </Form.Item>
-          <Form.Item label="运输方式" field="transport">
+          <Form.Item label="运输方式" name="transport">
             <Select placeholder="请选择运输方式" allowClear>
               {TRANSPORT_OPTIONS.map((tr) => (
                 <Select.Option key={tr} value={tr}>{tr}</Select.Option>
               ))}
             </Select>
           </Form.Item>
-          <Form.Item label="截止日期" field="deadline">
+          <Form.Item label="截止日期" name="deadline">
             <Input placeholder="请输入截止日期（如：长期、2025-12-31）" />
           </Form.Item>
-          <Form.Item label="状态" field="status">
+          <Form.Item label="状态" name="status">
             <Select placeholder="请选择状态" allowClear>
               {SHIPPING_STATUS_OPTIONS.map((st) => (
                 <Select.Option key={st} value={st}>{st}</Select.Option>
               ))}
             </Select>
           </Form.Item>
-          <Form.Item label="备注" field="notes">
+          <Form.Item label="备注" name="notes">
             <Input.TextArea placeholder="请输入备注" rows={3} />
           </Form.Item>
         </Form>
@@ -374,18 +372,18 @@ export default function Recipients() {
 
   const handleSubmit = async () => {
     try {
-      const values = await form.validate();
+      const values = await form.validateFields();
       if (editingRecipient) {
         await updateRecipient(editingRecipient.id, values);
-        Message.success('更新成功');
+        message.success('更新成功');
       } else {
         await createRecipient(values);
-        Message.success('创建成功');
+        message.success('创建成功');
       }
       handleCloseModal();
       queryClient.invalidateQueries({ queryKey: ['recipients'] });
     } catch (error) {
-      Message.error('操作失败');
+      message.error('操作失败');
     }
   };
 
@@ -393,10 +391,10 @@ export default function Recipients() {
     const newStatus = recipient.status === 'active' ? 'suspended' : 'active';
     try {
       await updateRecipientStatus(recipient.id, newStatus);
-      Message.success(newStatus === 'active' ? '已恢复发送' : '已停止发送');
+      message.success(newStatus === 'active' ? '已恢复发送' : '已停止发送');
       queryClient.invalidateQueries({ queryKey: ['recipients'] });
     } catch (error) {
-      Message.error('状态更新失败');
+      message.error('状态更新失败');
     }
   };
 
@@ -408,7 +406,7 @@ export default function Recipients() {
       const response = await getSubscriptions(recipient.id);
       setSubscriptions(response.data);
     } catch (error) {
-      Message.error('加载订阅记录失败');
+      message.error('加载订阅记录失败');
     } finally {
       setSubLoading(false);
     }
@@ -434,14 +432,14 @@ export default function Recipients() {
   const handleSubmitSubscription = async () => {
     if (!currentRecipient) return;
     try {
-      const values = await subForm.validate();
+      const values = await subForm.validateFields();
       const data = {
         ...values,
         start_date: values.start_date ? dayjs(values.start_date).format('YYYY-MM-DD') : undefined,
         end_date: values.end_date ? dayjs(values.end_date).format('YYYY-MM-DD') : undefined,
       };
       await createSubscription(currentRecipient.id, data);
-      Message.success('订阅创建成功');
+      message.success('订阅创建成功');
       handleCloseSubModal();
       // Refresh subscriptions
       const response = await getSubscriptions(currentRecipient.id);
@@ -449,11 +447,11 @@ export default function Recipients() {
       // Refresh recipients list to update active_subscription_end
       queryClient.invalidateQueries({ queryKey: ['recipients'] });
     } catch (error) {
-      Message.error('订阅创建失败');
+      message.error('订阅创建失败');
     }
   };
 
-  const columns: ColumnProps<Recipient>[] = [
+  const columns: TableColumnsType<Recipient> = [
     {
       title: '姓名',
       dataIndex: 'name',
@@ -506,13 +504,13 @@ export default function Recipients() {
           </Button>
           <Popconfirm
             title={record.status === 'active' ? '确认停发？' : '确认恢复？'}
-            onOk={() => handleToggleStatus(record)}
+            onConfirm={() => handleToggleStatus(record)}
           >
             <Button
               type="text"
               size="small"
-              status={record.status === 'active' ? 'warning' : 'success'}
-              icon={record.status === 'active' ? <IconStop /> : <IconPlayArrow />}
+              danger={record.status === 'active'}
+              icon={record.status === 'active' ? <PauseCircleOutlined /> : <CaretRightOutlined />}
             >
               {record.status === 'active' ? '停发' : '恢复'}
             </Button>
@@ -534,8 +532,12 @@ export default function Recipients() {
         收件人管理
       </h2>
 
-      <Tabs defaultActiveTab="recipients" size="large">
-        <Tabs.TabPane key="recipients" title="收件人">
+      <Tabs defaultActiveKey="recipients" size="large" items={[
+        {
+          key: 'recipients',
+          label: '收件人',
+          children: (
+            <>
       <div style={{
         marginBottom: 20,
         display: 'flex',
@@ -571,12 +573,12 @@ export default function Recipients() {
           placeholder="搜索姓名"
           style={{ width: 200 }}
           allowClear
-          onChange={(value) => setFilters({ ...filters, name: value })}
+          onChange={(e) => setFilters({ ...filters, name: e.target.value })}
         />
         
         <div style={{ flex: 1 }} />
         
-        <Button type="primary" icon={<IconPlus />} onClick={() => handleOpenModal()}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
           新增收件人
         </Button>
       </div>
@@ -585,7 +587,7 @@ export default function Recipients() {
         <Table
           loading={loading}
           columns={columns}
-          data={recipients}
+          dataSource={recipients}
           rowKey="id"
           pagination={{ pageSize: 20 }}
         />
@@ -594,22 +596,20 @@ export default function Recipients() {
       {/* Create/Edit Modal */}
       <Modal
         title={editingRecipient ? '编辑收件人' : '新增收件人'}
-        visible={modalVisible}
+        open={modalVisible}
         onOk={handleSubmit}
         onCancel={handleCloseModal}
-        autoFocus={false}
-        focusLock={true}
       >
         <Form form={form} layout="vertical">
-          <Form.Item label="姓名" field="name" rules={[{ required: true, message: '请输入姓名' }]}>
+          <Form.Item label="姓名" name="name" rules={[{ required: true, message: '请输入姓名' }]}>
             <Input placeholder="请输入姓名" />
           </Form.Item>
           
-          <Form.Item label="电话" field="phone">
+          <Form.Item label="电话" name="phone">
             <Input placeholder="请输入电话" />
           </Form.Item>
           
-          <Form.Item label="类型" field="type" rules={[{ required: true }]}>
+          <Form.Item label="类型" name="type" rules={[{ required: true }]}>
             <Select>
               <Select.Option value="corporate">对公</Select.Option>
               <Select.Option value="reader">读者</Select.Option>
@@ -617,7 +617,7 @@ export default function Recipients() {
             </Select>
           </Form.Item>
           
-          <Form.Item label="频率" field="frequency" rules={[{ required: true }]}>
+          <Form.Item label="频率" name="frequency" rules={[{ required: true }]}>
             <Select>
               <Select.Option value="weekly">周</Select.Option>
               <Select.Option value="biweekly">半月</Select.Option>
@@ -625,19 +625,19 @@ export default function Recipients() {
             </Select>
           </Form.Item>
           
-          <Form.Item label="省份" field="province">
+          <Form.Item label="省份" name="province">
             <Input placeholder="请输入省份" />
           </Form.Item>
           
-          <Form.Item label="城市" field="city">
+          <Form.Item label="城市" name="city">
             <Input placeholder="请输入城市" />
           </Form.Item>
           
-          <Form.Item label="地址" field="address">
+          <Form.Item label="地址" name="address">
             <Input.TextArea placeholder="请输入详细地址" rows={3} />
           </Form.Item>
           
-          <Form.Item label="备注" field="notes">
+          <Form.Item label="备注" name="notes">
             <Input.TextArea placeholder="请输入备注" rows={3} />
           </Form.Item>
         </Form>
@@ -647,10 +647,10 @@ export default function Recipients() {
       <Drawer
         width={500}
         title={`订阅记录 - ${currentRecipient?.name}`}
-        visible={drawerVisible}
-        onCancel={handleCloseDrawer}
+        open={drawerVisible}
+        onClose={handleCloseDrawer}
         footer={
-          <Button type="primary" icon={<IconPlus />} onClick={handleOpenSubModal}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenSubModal}>
             新增订阅/续订
           </Button>
         }
@@ -689,47 +689,48 @@ export default function Recipients() {
       {/* Subscription Modal */}
       <Modal
         title="新增订阅/续订"
-        visible={subModalVisible}
+        open={subModalVisible}
         onOk={handleSubmitSubscription}
         onCancel={handleCloseSubModal}
-        autoFocus={false}
-        focusLock={true}
       >
         <Form form={subForm} layout="vertical">
-          <Form.Item label="类型" field="type" rules={[{ required: true }]}>
+          <Form.Item label="类型" name="type" rules={[{ required: true }]}>
             <Select>
               <Select.Option value="new">新订</Select.Option>
               <Select.Option value="renewal">续订</Select.Option>
             </Select>
           </Form.Item>
           
-          <Form.Item label="开始日期" field="start_date" rules={[{ required: true, message: '请选择开始日期' }]}>
+          <Form.Item label="开始日期" name="start_date" rules={[{ required: true, message: '请选择开始日期' }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           
-          <Form.Item label="结束日期" field="end_date" rules={[{ required: true, message: '请选择结束日期' }]}>
+          <Form.Item label="结束日期" name="end_date" rules={[{ required: true, message: '请选择结束日期' }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           
-          <Form.Item label="时长(月)" field="duration_months">
+          <Form.Item label="时长(月)" name="duration_months">
             <InputNumber placeholder="例如: 12" style={{ width: '100%' }} min={1} />
           </Form.Item>
           
-          <Form.Item label="数量" field="quantity" rules={[{ required: true }]}>
+          <Form.Item label="数量" name="quantity" rules={[{ required: true }]}>
             <InputNumber placeholder="发送数量" style={{ width: '100%' }} min={1} />
           </Form.Item>
           
-          <Form.Item label="备注" field="notes">
+          <Form.Item label="备注" name="notes">
             <Input.TextArea placeholder="请输入备注" rows={3} />
           </Form.Item>
         </Form>
       </Modal>
-        </Tabs.TabPane>
-
-        <Tabs.TabPane key="shipping" title="中通发货明细">
-          <ShippingDetailsTab />
-        </Tabs.TabPane>
-      </Tabs>
+            </>
+          ),
+        },
+        {
+          key: 'shipping',
+          label: '中通发货明细',
+          children: <ShippingDetailsTab />,
+        },
+      ]} />
     </div>
   );
 }

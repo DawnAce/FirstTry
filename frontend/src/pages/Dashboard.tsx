@@ -3,20 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Card,
-  Grid,
+  Row,
+  Col,
   Statistic,
   Button,
   Tag,
   Space,
-  Message,
+  message,
   Select,
-} from '@arco-design/web-react';
-import { IconPlus, IconEdit, IconSend } from '@arco-design/web-react/icon';
+} from 'antd';
+import { PlusOutlined, EditOutlined, SendOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getDashboard, createIssue } from '../api/issues';
 import type { Issue, NextIssueInfo } from '../api/issues';
-
-const { Row, Col } = Grid;
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -60,12 +59,12 @@ export default function Dashboard() {
         issue_number: chosen.issue_number,
         publish_date: chosen.publish_date,
       });
-      Message.success(`报数第 ${res.data.issue_number} 期创建成功`);
+      message.success(`报数第 ${res.data.issue_number} 期创建成功`);
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
       navigate(`/report/${res.data.id}`);
     } catch (error: any) {
-      Message.error(error.response?.data?.detail || '创建失败');
+      message.error(error.response?.data?.detail || '创建失败');
     } finally {
       setCreating(false);
     }
@@ -113,7 +112,7 @@ export default function Dashboard() {
           {nextIssue && (
             <Button
               type="primary"
-              icon={<IconPlus />}
+              icon={<PlusOutlined />}
               onClick={() => handleCreateIssue(nextIssue.issue_number)}
               loading={creating && selectedIssue === String(nextIssue?.issue_number)}
               size="large"
@@ -145,8 +144,7 @@ export default function Dashboard() {
                 ))}
               </Select>
               <Button
-                type="outline"
-                icon={<IconPlus />}
+                icon={<PlusOutlined />}
                 onClick={() => handleCreateIssue()}
                 loading={creating}
                 disabled={!selectedIssue}
@@ -198,7 +196,7 @@ export default function Dashboard() {
               <Space>
                 <Button
                   type="text"
-                  icon={<IconEdit />}
+                  icon={<EditOutlined />}
                   onClick={() => navigate(`/report/${item.id}`)}
                   style={{ color: '#86868b' }}
                 >
@@ -206,7 +204,7 @@ export default function Dashboard() {
                 </Button>
                 <Button
                   type="text"
-                  icon={<IconSend />}
+                  icon={<SendOutlined />}
                   onClick={() => navigate(`/shipping/${item.id}`)}
                   style={{ color: '#86868b' }}
                 >
