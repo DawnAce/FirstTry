@@ -19,7 +19,7 @@ CELL_MAPPING: dict[tuple[str, str], list[tuple[str, str]]] = {
     ("retail", "西部"): [("零售渠道`", "B5")],
     ("guangzhou", "零售"): [("零售渠道`", "B6")],
     # 订阅 → 订阅渠道`
-    ("guangzhou", "订户"): [("订阅渠道`", "B6")],
+    ("guangzhou", "订阅"): [("订阅渠道`", "B6")],
     ("guotumao", "国图贸"): [("订阅渠道`", "B5")],
     ("chengdu", "成都杂志铺"): [("订阅渠道`", "B7")],
     # 收发室部门 → 收发室自留分发（需打印）B column
@@ -69,7 +69,7 @@ PREV_CELL_MAPPING: dict[tuple[str, str], list[tuple[str, str]]] = {
     ("guangzhou", "零售"): [("零售渠道`", "C6")],
     # 订阅渠道` C column
     ("guotumao", "国图贸"): [("订阅渠道`", "C5")],
-    ("guangzhou", "订户"): [("订阅渠道`", "C6")],
+    ("guangzhou", "订阅"): [("订阅渠道`", "C6")],
     ("chengdu", "成都杂志铺"): [("订阅渠道`", "C7")],
     # 社用报` C column
     ("social_use", "营报传媒_读者"): [("社用报`", "C4")],
@@ -139,10 +139,10 @@ def _fill_prev_issue_aggregates(
         + get(("social_use", "西安站用"), 0)
         + get(("social_use", "成都站用"), 0)
     )
-    # D13: 上期发行商订阅 = 国图贸 + 广州订户 + 杂志铺
+    # D13: 上期发行商订阅 = 国图贸 + 广州订阅 + 杂志铺
     ws["D13"] = (
         get(("guotumao", "国图贸"), 0)
-        + get(("guangzhou", "订户"), 0)
+        + get(("guangzhou", "订阅"), 0)
         + get(("chengdu", "成都杂志铺"), 0)
     )
     # D14: 上期报社订阅/展示 = 上犹 + 高铁展示

@@ -8,7 +8,7 @@ TEMPLATES = [
     ("retail", "东部", "北京报零-东部", 460, True, 30),
     ("retail", "西部", "北京报零-西部", 592, True, 40),
     ("guangzhou", "零售", "广州日报-零售", 500, True, 50),
-    ("guangzhou", "订户", "广州日报-订户", 31, True, 60),
+    ("guangzhou", "订阅", "广州日报-订阅", 31, True, 60),
     ("other", "杂志铺", "杂志铺", 375, False, 70),
     ("other", "国图贸", "国图贸", 1, False, 80),
     ("other", "合订本", "合订本", 15, False, 90),
