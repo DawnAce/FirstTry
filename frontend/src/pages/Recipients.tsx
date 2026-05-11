@@ -265,7 +265,7 @@ function ShippingDetailsTab() {
       render: (_: any, record: ShippingDetail) => (
         <Space size="small">
           <Tooltip title="编辑">
-            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+            <Button type="text" size="small" icon={<EditOutlined style={{ color: '#52c41a' }} />} onClick={() => handleEdit(record)} />
           </Tooltip>
           <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
             <Tooltip title="删除">
