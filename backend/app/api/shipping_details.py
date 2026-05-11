@@ -9,6 +9,7 @@ from app.auth import get_current_user
 from app.schemas.shipping_detail import (
     ShippingDetailCreate, ShippingDetailUpdate, ShippingDetailOut,
 )
+from app.services.address_service import normalize_address
 
 router = APIRouter(prefix="/api/shipping-details", tags=["shipping-details"])
 
@@ -98,7 +99,13 @@ def create_shipping_detail(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    detail = ShippingDetail(**data.model_dump())
+    dump = data.model_dump()
+    if dump.get("address"):
+        parsed = normalize_address(dump["address"])
+        dump["address"] = parsed["address"]
+        if not dump.get("city") and parsed["city"]:
+            dump["city"] = parsed["city"]
+    detail = ShippingDetail(**dump)
     db.add(detail)
     db.flush()  # get the id before commit
     log = OperationLog(
@@ -128,6 +135,11 @@ def update_shipping_detail(
         raise HTTPException(status_code=404, detail="Shipping detail not found")
     old_snapshot = _snapshot(detail)
     update_data = data.model_dump(exclude_unset=True)
+    if update_data.get("address"):
+        parsed = normalize_address(update_data["address"])
+        update_data["address"] = parsed["address"]
+        if not update_data.get("city") and parsed["city"]:
+            update_data["city"] = parsed["city"]
     for key, value in update_data.items():
         setattr(detail, key, value)
     new_snapshot = _snapshot(detail)
@@ -170,3 +182,31 @@ def delete_shipping_detail(
     db.delete(detail)
     db.commit()
     return {"message": "Deleted"}
+
+
+@router.post("/normalize-addresses")
+def normalize_all_addresses(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Batch normalize all shipping detail addresses using cpca."""
+    details = db.query(ShippingDetail).filter(
+        ShippingDetail.address.isnot(None),
+        ShippingDetail.address != "",
+    ).all()
+
+    updated = 0
+    for detail in details:
+        parsed = normalize_address(detail.address)
+        changed = False
+        if parsed["address"] != detail.address:
+            detail.address = parsed["address"]
+            changed = True
+        if parsed["city"] and not detail.city:
+            detail.city = parsed["city"]
+            changed = True
+        if changed:
+            updated += 1
+
+    db.commit()
+    return {"message": f"Normalized {updated} addresses out of {len(details)} total"}

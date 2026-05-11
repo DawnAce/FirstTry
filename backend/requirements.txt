@@ -10,3 +10,5 @@ pandas==2.2.2
 pydantic==2.9.0
 pydantic-settings==2.5.0
 python-multipart==0.0.9
+cpca>=0.5.5
+setuptools<81

@@ -9,6 +9,7 @@ from app.schemas.recipient import (
     RecipientCreate, RecipientUpdate, RecipientOut,
     SubscriptionCreate, SubscriptionOut, StatusUpdate,
 )
+from app.services.address_service import normalize_address
 
 router = APIRouter(prefix="/api/recipients", tags=["recipients"])
 
@@ -51,7 +52,15 @@ def list_recipients(
 
 @router.post("", response_model=RecipientOut, status_code=201)
 def create_recipient(data: RecipientCreate, db: Session = Depends(get_db)):
-    recipient = Recipient(**data.model_dump())
+    dump = data.model_dump()
+    if dump.get("address"):
+        parsed = normalize_address(dump["address"])
+        dump["address"] = parsed["address"]
+        if not dump.get("province") and parsed["province"]:
+            dump["province"] = parsed["province"]
+        if not dump.get("city") and parsed["city"]:
+            dump["city"] = parsed["city"]
+    recipient = Recipient(**dump)
     db.add(recipient)
     db.commit()
     db.refresh(recipient)
@@ -63,7 +72,15 @@ def update_recipient(recipient_id: int, data: RecipientUpdate, db: Session = Dep
     recipient = db.query(Recipient).filter(Recipient.id == recipient_id).first()
     if not recipient:
         raise HTTPException(status_code=404, detail="Recipient not found")
-    for key, value in data.model_dump().items():
+    update_data = data.model_dump()
+    if update_data.get("address"):
+        parsed = normalize_address(update_data["address"])
+        update_data["address"] = parsed["address"]
+        if not update_data.get("province") and parsed["province"]:
+            update_data["province"] = parsed["province"]
+        if not update_data.get("city") and parsed["city"]:
+            update_data["city"] = parsed["city"]
+    for key, value in update_data.items():
         setattr(recipient, key, value)
     db.commit()
     db.refresh(recipient)
