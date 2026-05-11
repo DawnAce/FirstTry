@@ -112,7 +112,7 @@ def _parse_weekly_corporate(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[
 
 def _parse_weekly_reader(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
     """Parse 每周（读者） sheet: rows 3-31, 8 columns.
-    First 5 data rows (rows 3-7) are 监管赠阅, rest are 个人订阅.
+    First 5 data rows (rows 3-7) are 赠阅(监管), rest are 个人订阅.
     """
     records = []
     data_index = 0
@@ -122,11 +122,17 @@ def _parse_weekly_reader(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dic
             continue
         if not any(row):
             continue
-        channel = "监管赠阅" if data_index < 5 else "个人订阅"
+        if data_index < 5:
+            channel = "赠阅"
+            sub_channel = "监管"
+        else:
+            channel = "个人订阅"
+            sub_channel = None
         data_index += 1
         records.append({
             "sheet_name": "每周（读者）",
             "channel": channel,
+            "sub_channel": sub_channel,
             "transport": "中通物流",
             "frequency": "周",
             "status": "正常",
@@ -187,7 +193,9 @@ def _parse_shangyou(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
         transport = "邮政物流" if notes_s and "邮政" in notes_s else "中通物流"
         records.append({
             "sheet_name": "上犹",
-            "channel": "政府赠阅",
+            "channel": "赠阅",
+            "sub_channel": "政府",
+            "company": "上犹县政府",
             "transport": transport,
             "frequency": "周",
             "status": "正常",
@@ -228,7 +236,7 @@ def _parse_biweekly_suspended(ws: openpyxl.worksheet.worksheet.Worksheet) -> lis
 
 def _parse_monthly(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
     """Parse 月底-整月 sheet: rows 3-22, 9 columns.
-    First 4 data rows are 监管赠阅, row with 国图贸 in notes is 渠道订阅, rest are 个人订阅.
+    First 4 data rows are 赠阅(监管), row with 国图贸 in notes is 渠道订阅, rest are 个人订阅.
     """
     records = []
     data_index = 0
@@ -240,8 +248,10 @@ def _parse_monthly(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
             continue
         notes_s = _str(notes)
         company = None
+        sub_channel = None
         if data_index < 4:
-            channel = "监管赠阅"
+            channel = "赠阅"
+            sub_channel = "监管"
         elif notes_s and "国图贸" in notes_s:
             channel = "渠道订阅"
             company = "国图贸"
@@ -251,6 +261,7 @@ def _parse_monthly(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
         records.append({
             "sheet_name": "月底-整月",
             "channel": channel,
+            "sub_channel": sub_channel,
             "transport": "中通物流",
             "company": company,
             "frequency": "月",

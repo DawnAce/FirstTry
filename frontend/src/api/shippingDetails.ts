@@ -6,6 +6,7 @@ export interface ShippingDetail {
   issue_number: number;
   sheet_name: string;
   channel: string;
+  sub_channel: string | null;
   transport: string;
   frequency: string;
   status: string;
@@ -33,6 +34,7 @@ export interface ShippingDetailCreate {
   issue_number: number;
   sheet_name: string;
   channel: string;
+  sub_channel?: string;
   transport?: string;
   frequency?: string;
   status?: string;
@@ -56,6 +58,7 @@ export interface ShippingDetailCreate {
 
 export interface ShippingDetailUpdate {
   channel?: string;
+  sub_channel?: string;
   transport?: string;
   frequency?: string;
   status?: string;

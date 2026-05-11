@@ -49,13 +49,14 @@ const statusLabels: Record<string, string> = { active: '正常', suspended: '停
 const statusColors: Record<string, string> = { active: 'green', suspended: 'red' };
 const subTypeLabels: Record<string, string> = { new: '新订', renewal: '续订' };
 
-const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '监管赠阅', '政府赠阅', '库房留存', '报社留存'] as const;
+const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '库房留存', '报社留存'] as const;
+const SUB_CHANNEL_OPTIONS = ['监管', '政府'] as const;
 const FREQUENCY_OPTIONS = ['周', '半月', '月'] as const;
 const TRANSPORT_OPTIONS = ['中通物流', '邮政物流', '包车运输', '库房留存'] as const;
 const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
 
 const fieldLabels: Record<string, string> = {
-  issue_number: '期号', sheet_name: '工作表', channel: '渠道', transport: '运输方式',
+  issue_number: '期号', sheet_name: '工作表', channel: '渠道', sub_channel: '子渠道', transport: '运输方式',
   frequency: '频率', status: '状态', name: '姓名', address: '地址', phone: '电话',
   quantity: '份数', deadline: '截止日期', notes: '备注', extra_info: '附加信息',
   city: '城市', station_name: '站点', station_hall: '站厅', contact_person: '联系人',
@@ -68,14 +69,14 @@ const channelColors: Record<string, string> = {
   '对公订阅': 'blue',
   '个人订阅': 'green',
   '记者站': 'purple',
-  '监管赠阅': 'orange',
-  '政府赠阅': 'gold',
+  '赠阅': 'orange',
   '库房留存': 'gray',
   '报社留存': 'cyan',
 };
 
 interface ShippingFilters {
   channel?: string;
+  sub_channel?: string;
   frequency?: string;
   transport?: string;
   status?: string;
@@ -98,6 +99,7 @@ function ShippingDetailsTab() {
     queryFn: async () => {
       const params: Record<string, any> = { issue_number: 2649 };
       if (shippingFilters.channel) params.channel = shippingFilters.channel;
+      if (shippingFilters.sub_channel) params.sub_channel = shippingFilters.sub_channel;
       if (shippingFilters.frequency) params.frequency = shippingFilters.frequency;
       if (shippingFilters.transport) params.transport = shippingFilters.transport;
       if (shippingFilters.status) params.status = shippingFilters.status;
@@ -203,8 +205,15 @@ function ShippingDetailsTab() {
       title: '渠道',
       dataIndex: 'channel',
       key: 'channel',
-      width: 100,
+      width: 80,
       render: (v: string) => v ? <Tag color={channelColors[v] || 'gray'}>{v}</Tag> : '-',
+    },
+    {
+      title: '子渠道',
+      dataIndex: 'sub_channel',
+      key: 'sub_channel',
+      width: 80,
+      render: (v: string | null) => v ? <Tag color={v === '监管' ? 'orange' : 'gold'}>{v}</Tag> : '-',
     },
     {
       title: '签约公司',
@@ -288,12 +297,26 @@ function ShippingDetailsTab() {
           placeholder="渠道"
           style={{ width: 130 }}
           allowClear
-          onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value }))}
+          value={shippingFilters.channel}
+          onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value, sub_channel: undefined }))}
         >
           {CHANNEL_OPTIONS.map((ch) => (
             <Select.Option key={ch} value={ch}>{ch}</Select.Option>
           ))}
         </Select>
+        {shippingFilters.channel === '赠阅' && (
+          <Select
+            placeholder="子渠道"
+            style={{ width: 110 }}
+            allowClear
+            value={shippingFilters.sub_channel}
+            onChange={(value) => setShippingFilters((f) => ({ ...f, sub_channel: value }))}
+          >
+            {SUB_CHANNEL_OPTIONS.map((sc) => (
+              <Select.Option key={sc} value={sc}>{sc}</Select.Option>
+            ))}
+          </Select>
+        )}
         <Select
           mode="multiple"
           placeholder="签约公司"
@@ -379,6 +402,19 @@ function ShippingDetailsTab() {
                 <Select.Option key={ch} value={ch}>{ch}</Select.Option>
               ))}
             </Select>
+          </Form.Item>
+          <Form.Item noStyle dependencies={['channel']}>
+            {({ getFieldValue }) =>
+              getFieldValue('channel') === '赠阅' ? (
+                <Form.Item label="子渠道" name="sub_channel">
+                  <Select placeholder="请选择子渠道" allowClear>
+                    {SUB_CHANNEL_OPTIONS.map((sc) => (
+                      <Select.Option key={sc} value={sc}>{sc}</Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              ) : null
+            }
           </Form.Item>
           <Form.Item label="签约公司" name="company">
             <Input placeholder="请输入签约公司（如：北京悦途出行）" />

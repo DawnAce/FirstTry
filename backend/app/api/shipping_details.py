@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/shipping-details", tags=["shipping-details"])
 
 # Fields to track in operation logs
 _TRACKED_FIELDS = [
-    "issue_number", "sheet_name", "channel", "transport", "frequency",
+    "issue_number", "sheet_name", "channel", "sub_channel", "transport", "frequency",
     "status", "name", "address", "phone", "quantity", "deadline",
     "notes", "extra_info", "city", "station_name", "station_hall",
     "contact_person", "seq_number", "period_count", "confirmation",
@@ -48,6 +48,7 @@ def _diff(old: dict, new: dict) -> dict:
 def list_shipping_details(
     issue_number: Optional[int] = None,
     channel: Optional[str] = None,
+    sub_channel: Optional[str] = None,
     transport: Optional[str] = None,
     frequency: Optional[str] = None,
     status: Optional[str] = None,
@@ -62,6 +63,8 @@ def list_shipping_details(
         query = query.filter(ShippingDetail.issue_number == issue_number)
     if channel:
         query = query.filter(ShippingDetail.channel == channel)
+    if sub_channel:
+        query = query.filter(ShippingDetail.sub_channel == sub_channel)
     if transport:
         query = query.filter(ShippingDetail.transport == transport)
     if frequency:

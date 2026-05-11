@@ -7,6 +7,7 @@ class ShippingDetailCreate(BaseModel):
     issue_number: int
     sheet_name: str
     channel: str
+    sub_channel: Optional[str] = None
     name: str
     transport: str = "中通物流"
     frequency: str = "每周"
@@ -30,6 +31,7 @@ class ShippingDetailCreate(BaseModel):
 
 class ShippingDetailUpdate(BaseModel):
     channel: Optional[str] = None
+    sub_channel: Optional[str] = None
     transport: Optional[str] = None
     frequency: Optional[str] = None
     status: Optional[str] = None
@@ -54,6 +56,7 @@ class ShippingDetailOut(BaseModel):
     issue_number: int
     sheet_name: str
     channel: str
+    sub_channel: Optional[str]
     transport: str
     frequency: str
     status: str

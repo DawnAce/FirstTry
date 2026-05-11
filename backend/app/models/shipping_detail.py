@@ -10,6 +10,7 @@ class ShippingDetail(Base):
     issue_number = Column(Integer, nullable=False, index=True)
     sheet_name = Column(String(50), nullable=False)
     channel = Column(String(20), nullable=False, index=True)
+    sub_channel = Column(String(20), nullable=True, index=True)
     transport = Column(String(20), nullable=False, default="中通物流", index=True)
     frequency = Column(String(20), nullable=False, default="每周", index=True)
     status = Column(String(10), nullable=False, default="正常", index=True)
