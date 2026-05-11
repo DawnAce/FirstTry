@@ -4,6 +4,40 @@ import cpca
 import re
 
 
+def _build_district_lookup() -> dict:
+    """Build a lookup from district short name to (province, city, district) using cpca's internal data."""
+    all_items = {}
+    for _code, info in cpca.ad_2_addr_dict.items():
+        all_items[info.adcode] = info
+
+    lookup = {}
+    for code, info in all_items.items():
+        if info.rank != 2:  # only districts/counties
+            continue
+        city_code = code[:4] + "00"
+        province_code = code[:2] + "0000"
+        city_info = all_items.get(city_code)
+        province_info = all_items.get(province_code)
+        if not city_info or not province_info:
+            continue
+
+        # Store by short name (without 区/县/市 suffix) for fuzzy matching
+        district_name = info.name
+        for suffix in ("区", "县", "市", "旗"):
+            short = district_name.rstrip(suffix)
+            if short != district_name and len(short) >= 2:
+                lookup[short] = (province_info.name, city_info.name, district_name)
+                break
+        # Also store full name
+        lookup[district_name] = (province_info.name, city_info.name, district_name)
+
+    return lookup
+
+
+# Pre-build lookup at module load time
+_DISTRICT_LOOKUP = _build_district_lookup()
+
+
 def normalize_address(address: str) -> dict:
     """Parse a Chinese address and return normalized components.
 
@@ -24,8 +58,18 @@ def normalize_address(address: str) -> dict:
     if city == "市辖区" and province:
         city = province
 
-    # Normalize: only fix the province/city prefix, keep the rest of the address intact
-    normalized = _normalize_prefix(clean, province)
+    # Fallback: if cpca missed city/district, try district lookup
+    if not city or not district:
+        fb_province, fb_city, fb_district = _fallback_lookup(clean, province)
+        if not province and fb_province:
+            province = fb_province
+        if not city and fb_city:
+            city = fb_city
+        if not district and fb_district:
+            district = fb_district
+
+    # Normalize: rebuild address with full province/city/district prefix
+    normalized = _rebuild_address(clean, province, city, district)
 
     return {
         "province": province,
@@ -35,63 +79,98 @@ def normalize_address(address: str) -> dict:
     }
 
 
-def _normalize_prefix(address: str, province: str | None) -> str:
-    """Ensure the address starts with the correct province prefix."""
+def _fallback_lookup(
+    address: str, known_province: str | None
+) -> tuple[str | None, str | None, str | None]:
+    """Try to find city/district by matching district names in the address."""
+    clean = re.sub(r"\s+", "", address)
+
+    # Strip known province prefix for matching
+    if known_province:
+        base = known_province.rstrip("省市")
+        if clean.startswith(known_province):
+            clean = clean[len(known_province):]
+        elif clean.startswith(base):
+            clean = clean[len(base):]
+
+    # Try matching district names (longer names first to avoid false matches)
+    sorted_names = sorted(_DISTRICT_LOOKUP.keys(), key=len, reverse=True)
+    for name in sorted_names:
+        if clean.startswith(name):
+            prov, city, dist = _DISTRICT_LOOKUP[name]
+            # Verify province consistency if known
+            if known_province and prov != known_province:
+                prov_base = known_province.rstrip("省市")
+                if not prov.startswith(prov_base):
+                    continue
+            return prov, city, dist
+
+    return None, None, None
+
+
+def _rebuild_address(
+    address: str,
+    province: str | None,
+    city: str | None,
+    district: str | None,
+) -> str:
+    """Rebuild address with correct province/city/district prefix.
+
+    Preserves the detail portion of the address (after district) as-is.
+    """
     if not province:
         return address
 
     province_base = province.rstrip("省市")
-    # Remove leading spaces in the province/city/district prefix area only
-    # Match the structured prefix part (省 市 区 with optional spaces)
-    addr = address
 
-    # Handle duplicate municipality: "北京 北京市" or "上海市上海市"
+    # Find where the "detail" part starts by stripping known prefix components
+    # Work on the original address to preserve spacing in the detail portion
+    rest = address.lstrip()
+    prefix_ended = False
+
+    # Strip province
+    stripped = _try_strip_prefix(rest, [province, province_base])
+    if stripped is not None:
+        rest = stripped
+
+    # Handle duplicate municipality
     if province_base in ("北京", "上海", "天津", "重庆"):
-        # "北京 北京市 朝阳区 ..." → "北京市朝阳区 ..."
-        m = re.match(
-            rf"^{re.escape(province_base)}\s+{re.escape(province_base)}市\s*",
-            addr,
-        )
-        if m:
-            rest = addr[m.end():]
-            return province_base + "市" + rest
+        stripped = _try_strip_prefix(rest, [province_base + "市", province_base])
+        if stripped is not None:
+            rest = stripped
 
-        # "上海市上海市闵行区..." → "上海市闵行区..."
-        dup = province_base + "市" + province_base + "市"
-        if addr.replace(" ", "").startswith(dup):
-            addr_no_space = addr.replace(" ", "")
-            return province_base + "市" + addr_no_space[len(dup):]
+    # Strip city
+    if city:
+        city_base = city.rstrip("市")
+        stripped = _try_strip_prefix(rest, [city, city_base + "市", city_base])
+        if stripped is not None:
+            rest = stripped
 
-    # Remove spaces only in the structured prefix (省/市/区 part)
-    # Match: optional_province optional_city optional_district
-    m = re.match(
-        r"^(\S{2,4}(?:省|市|自治区))?\s*(\S{2,5}(?:市|地区|州|盟))?\s*"
-        r"(\S{2,5}(?:区|县|旗|市))?\s*(\S{2,5}(?:街道|镇|乡))?\s*",
-        addr,
-    )
-    if m and m.group(0).strip():
-        prefix = "".join(g for g in m.groups() if g)
-        rest = addr[m.end():]
-        addr = prefix + rest
+    # Strip district
+    if district:
+        dist_base = district.rstrip("区县市旗")
+        stripped = _try_strip_prefix(rest, [district, dist_base + "区", dist_base + "县", dist_base])
+        if stripped is not None:
+            rest = stripped
 
-    # Now check if province is present
-    addr_check = addr.replace(" ", "")[:len(province) + 10]
+    # Rebuild: province + city + district + rest (preserving original spacing)
+    parts = [province]
+    if city and city != province:
+        parts.append(city)
+    if district:
+        parts.append(district)
+    parts.append(rest)
 
-    if addr_check.startswith(province):
-        return addr
-    elif addr_check.startswith(province_base) and not addr_check.startswith(province):
-        # "湖北武汉市..." → "湖北省武汉市..."
-        idx = addr.index(province_base) + len(province_base)
-        return province + addr[idx:]
-    elif province_base in ("北京", "上海", "天津", "重庆"):
-        if addr_check.startswith(province_base):
-            # "北京西城区..." → "北京市西城区..."
-            idx = addr.index(province_base) + len(province_base)
-            return province_base + "市" + addr[idx:]
-        else:
-            return province + addr
-    else:
-        return province + addr
+    return "".join(parts)
+
+
+def _try_strip_prefix(text: str, candidates: list[str]) -> str | None:
+    """Try stripping any of the candidate prefixes (with optional leading spaces). Returns remaining text or None."""
+    stripped = text.lstrip()
+    for prefix in candidates:
+        if stripped.startswith(prefix):
+            return stripped[len(prefix):].lstrip() if stripped[len(prefix):].startswith(" ") else stripped[len(prefix):]
+    return None
 
 
 def _strip_suffix(text: str, suffix: str) -> str:
