@@ -51,6 +51,8 @@ export interface ShippingDetailCreate {
   confirmation?: string;
   company?: string;
 }
+
+export interface ShippingDetailUpdate {
   channel?: string;
   transport?: string;
   frequency?: string;
