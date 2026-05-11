@@ -104,7 +104,10 @@ function ShippingDetailsTab() {
 
   const handleEdit = (record: ShippingDetail) => {
     setEditingRecord(record);
-    form.setFieldsValue(record);
+    form.setFieldsValue({
+      ...record,
+      shipped_at: record.shipped_at ? dayjs(record.shipped_at) : null,
+    });
     setModalVisible(true);
   };
 
@@ -134,13 +137,15 @@ function ShippingDetailsTab() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      const shipped_at = values.shipped_at ? dayjs(values.shipped_at).format('YYYY-MM-DD') : null;
       if (editingRecord) {
-        const updateData: ShippingDetailUpdate = { ...values };
+        const updateData: ShippingDetailUpdate = { ...values, shipped_at };
         await updateShippingDetail(editingRecord.id, updateData);
         message.success('更新成功');
       } else {
         const createData: ShippingDetailCreate = {
           ...values,
+          shipped_at,
           issue_number: 2649,
           sheet_name: '手动添加',
         };
@@ -197,6 +202,7 @@ function ShippingDetailsTab() {
       render: (v: string | null) => v ? <Tag color={transportColors[v] || 'default'}>{v}</Tag> : '-',
     },
     { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 90, render: (v: string | null) => v ?? '-' },
+    { title: '发货时间', dataIndex: 'shipped_at', key: 'shipped_at', width: 100, render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD') : '-' },
     {
       title: '状态',
       dataIndex: 'status',
@@ -367,6 +373,9 @@ function ShippingDetailsTab() {
           </Form.Item>
           <Form.Item label="截止日期" name="deadline">
             <Input placeholder="请输入截止日期（如：长期、2025-12-31）" />
+          </Form.Item>
+          <Form.Item label="发货时间" name="shipped_at">
+            <DatePicker placeholder="请选择发货时间" style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="状态" name="status">
             <Select placeholder="请选择状态" allowClear>

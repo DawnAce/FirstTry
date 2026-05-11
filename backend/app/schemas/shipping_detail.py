@@ -25,6 +25,7 @@ class ShippingDetailCreate(BaseModel):
     period_count: Optional[int] = None
     confirmation: Optional[str] = None
     company: Optional[str] = None
+    shipped_at: Optional[str] = None
 
 
 class ShippingDetailUpdate(BaseModel):
@@ -47,8 +48,7 @@ class ShippingDetailUpdate(BaseModel):
     period_count: Optional[int] = None
     confirmation: Optional[str] = None
     company: Optional[str] = None
-
-
+    shipped_at: Optional[str] = None
 class ShippingDetailOut(BaseModel):
     id: int
     issue_number: int
@@ -72,6 +72,7 @@ class ShippingDetailOut(BaseModel):
     period_count: Optional[int]
     confirmation: Optional[str]
     company: Optional[str]
+    shipped_at: Optional[datetime]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 

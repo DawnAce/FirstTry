@@ -304,6 +304,7 @@ FirstTry/
 | period_count | INT | 期数（月用） |
 | confirmation | VARCHAR(20) | 信息确认（高铁展示用） |
 | company | VARCHAR(100) | 签约公司（如：北京悦途出行、广州日报） |
+| shipped_at | DATETIME | 发货时间（可选，手动填写） |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 

@@ -24,6 +24,7 @@ export interface ShippingDetail {
   period_count: number | null;
   confirmation: string | null;
   company: string | null;
+  shipped_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +51,7 @@ export interface ShippingDetailCreate {
   period_count?: number;
   confirmation?: string;
   company?: string;
+  shipped_at?: string;
 }
 
 export interface ShippingDetailUpdate {
@@ -72,6 +74,7 @@ export interface ShippingDetailUpdate {
   period_count?: number;
   confirmation?: string;
   company?: string;
+  shipped_at?: string;
 }
 
 export const getShippingDetails= (params?: Record<string, any>): Promise<AxiosResponse<ShippingDetail[]>> =>
