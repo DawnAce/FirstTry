@@ -3,7 +3,7 @@
 每周五生成下周一出版的《中国经营报》印数报数表和中通快递发货明细的 Web 应用。
 
 ## 技术栈
-- **后端**: Python / FastAPI / SQLAlchemy / openpyxl
+- **后端**: Python / FastAPI / SQLAlchemy / openpyxl / cpca（地址解析）
 - **前端**: React / TypeScript / Vite / Ant Design
 - **数据库**: MySQL
 
