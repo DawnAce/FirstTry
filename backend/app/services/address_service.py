@@ -139,10 +139,15 @@ def _rebuild_address(
         if stripped is not None:
             rest = stripped
 
-    # Strip city
+    # Strip city — but be careful with districts starting with "市" (e.g. 青岛市北区 = 青岛 + 市北区)
     if city:
         city_base = city.rstrip("市")
-        stripped = _try_strip_prefix(rest, [city, city_base + "市", city_base])
+        # If district starts with "市" and city ends with "市", try city_base first
+        # to avoid eating the "市" that belongs to the district
+        if district and district.startswith("市"):
+            stripped = _try_strip_prefix(rest, [city_base])
+        else:
+            stripped = _try_strip_prefix(rest, [city, city_base + "市", city_base])
         if stripped is not None:
             rest = stripped
 
