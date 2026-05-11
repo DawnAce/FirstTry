@@ -20,6 +20,7 @@ from app.api.exports import router as exports_router
 from app.api.templates import router as templates_router
 from app.api.auth import router as auth_router
 from app.api.shipping_details import router as shipping_details_router
+from app.api.operation_logs import router as operation_logs_router
 from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule
 
@@ -50,6 +51,7 @@ app.include_router(exports_router, dependencies=[Depends(get_current_user)])
 app.include_router(templates_router, dependencies=[Depends(get_current_user)])
 app.include_router(auth_router)
 app.include_router(shipping_details_router, dependencies=[Depends(get_current_user)])
+app.include_router(operation_logs_router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/api/health")

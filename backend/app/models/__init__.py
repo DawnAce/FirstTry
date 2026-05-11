@@ -9,6 +9,7 @@ from app.models.user import User, UserRole
 from app.models.report_revision import ReportRevision
 from app.models.temp_print_detail import TempPrintDetail
 from app.models.shipping_detail import ShippingDetail
+from app.models.operation_log import OperationLog
 
 __all__ = [
     "PublicationSchedule",
@@ -22,4 +23,5 @@ __all__ = [
     "ReportRevision",
     "TempPrintDetail",
     "ShippingDetail",
+    "OperationLog",
 ]

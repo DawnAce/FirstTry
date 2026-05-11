@@ -18,7 +18,7 @@ import {
   Tabs,
   Tooltip,
 } from 'antd';
-import { PlusOutlined, PauseCircleOutlined, CaretRightOutlined, SearchOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, PauseCircleOutlined, CaretRightOutlined, SearchOutlined, DeleteOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TableColumnsType } from 'antd';
 import type { Recipient, Subscription } from '../api/recipients';
@@ -38,6 +38,8 @@ import {
   deleteShippingDetail,
   getShippingCompanies,
 } from '../api/shippingDetails';
+import { getOperationLogs } from '../api/operationLogs';
+import type { OperationLog } from '../api/operationLogs';
 import dayjs from 'dayjs';
 
 const typeLabels: Record<string, string> = { corporate: '对公', reader: '读者', sample: '样报' };
@@ -51,6 +53,15 @@ const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者
 const FREQUENCY_OPTIONS = ['周', '半月', '月'] as const;
 const TRANSPORT_OPTIONS = ['中通物流', '邮政物流', '包车运输', '库房留存'] as const;
 const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
+
+const fieldLabels: Record<string, string> = {
+  issue_number: '期号', sheet_name: '工作表', channel: '渠道', transport: '运输方式',
+  frequency: '频率', status: '状态', name: '姓名', address: '地址', phone: '电话',
+  quantity: '份数', deadline: '截止日期', notes: '备注', extra_info: '附加信息',
+  city: '城市', station_name: '站点', station_hall: '站厅', contact_person: '联系人',
+  seq_number: '序号', period_count: '期数', confirmation: '确认', company: '签约公司',
+  shipped_at: '发货时间',
+};
 
 const channelColors: Record<string, string> = {
   '渠道订阅': 'blue',
@@ -78,6 +89,9 @@ function ShippingDetailsTab() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ShippingDetail | null>(null);
   const [form] = Form.useForm();
+  const [logDrawerOpen, setLogDrawerOpen] = useState(false);
+  const [logRecordId, setLogRecordId] = useState<number | null>(null);
+  const [logRecordName, setLogRecordName] = useState<string>('');
 
   const { data: details = [], isLoading } = useQuery({
     queryKey: ['shippingDetails', shippingFilters],
@@ -101,6 +115,22 @@ function ShippingDetailsTab() {
       return res.data;
     },
   });
+
+  const { data: operationLogs = [], isLoading: logsLoading } = useQuery({
+    queryKey: ['operationLogs', logRecordId],
+    queryFn: async () => {
+      if (logRecordId == null) return [];
+      const res = await getOperationLogs({ table_name: 'shipping_details', record_id: logRecordId });
+      return res.data;
+    },
+    enabled: logRecordId != null,
+  });
+
+  const handleShowLogs = (record: ShippingDetail) => {
+    setLogRecordId(record.id);
+    setLogRecordName(record.name);
+    setLogDrawerOpen(true);
+  };
 
   const handleEdit = (record: ShippingDetail) => {
     setEditingRecord(record);
@@ -221,7 +251,7 @@ function ShippingDetailsTab() {
     {
       title: '操作',
       key: 'actions',
-      width: 70,
+      width: 100,
       fixed: 'end',
       render: (_: any, record: ShippingDetail) => (
         <Space size="small">
@@ -233,6 +263,9 @@ function ShippingDetailsTab() {
               <Button type="text" size="small" danger icon={<DeleteOutlined />} />
             </Tooltip>
           </Popconfirm>
+          <Tooltip title="操作日志">
+            <Button type="text" size="small" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)} />
+          </Tooltip>
         </Space>
       ),
     },
@@ -389,6 +422,70 @@ function ShippingDetailsTab() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Drawer
+        title={`操作日志 — ${logRecordName}`}
+        open={logDrawerOpen}
+        onClose={() => { setLogDrawerOpen(false); setLogRecordId(null); }}
+        width={480}
+      >
+        {logsLoading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>加载中...</div>
+        ) : operationLogs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无操作日志</div>
+        ) : (
+          <Timeline
+            items={operationLogs.map((log: OperationLog) => {
+              const actionLabels: Record<string, string> = { create: '新增', update: '编辑', delete: '删除' };
+              const actionColors: Record<string, string> = { create: 'green', update: 'blue', delete: 'red' };
+              return {
+                color: actionColors[log.action] || 'gray',
+                children: (
+                  <div>
+                    <div style={{ marginBottom: 4 }}>
+                      <Tag color={actionColors[log.action]}>{actionLabels[log.action] || log.action}</Tag>
+                      <span style={{ fontWeight: 500 }}>{log.username || '系统'}</span>
+                      <span style={{ color: '#999', marginLeft: 8, fontSize: 12 }}>
+                        {dayjs(log.created_at).format('YYYY-MM-DD HH:mm:ss')}
+                      </span>
+                    </div>
+                    {log.action === 'update' && log.changes && (
+                      <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>
+                        {Object.entries(log.changes).map(([field, val]) => {
+                          const v = val as { old: any; new: any };
+                          return (
+                            <div key={field} style={{ marginBottom: 2 }}>
+                              <span style={{ color: '#888' }}>{fieldLabels[field] || field}：</span>
+                              <span style={{ textDecoration: 'line-through', color: '#999' }}>{v.old ?? '空'}</span>
+                              {' → '}
+                              <span style={{ fontWeight: 500 }}>{v.new ?? '空'}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {log.action === 'create' && log.changes && (
+                      <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>
+                        {Object.entries(log.changes)
+                          .filter(([, v]) => v != null && v !== '' && v !== 0)
+                          .map(([field, v]) => (
+                            <div key={field} style={{ marginBottom: 2 }}>
+                              <span style={{ color: '#888' }}>{fieldLabels[field] || field}：</span>
+                              <span>{String(v)}</span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                    {log.action === 'delete' && (
+                      <div style={{ fontSize: 13, color: '#999', marginTop: 4 }}>记录已删除</div>
+                    )}
+                  </div>
+                ),
+              };
+            })}
+          />
+        )}
+      </Drawer>
     </div>
   );
 }
