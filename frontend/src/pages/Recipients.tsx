@@ -202,7 +202,7 @@ function ShippingDetailsTab() {
       render: (v: string | null) => v ? <Tag color={transportColors[v] || 'default'}>{v}</Tag> : '-',
     },
     { title: '发货时间', dataIndex: 'shipped_at', key: 'shipped_at', width: 100, render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD') : '-' },
-    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 90, render: (v: string | null) => (!v || v === '-' || v === '长期') ? <Tag color="#000" style={{ color: '#fff', borderRadius: 4 }}>长期</Tag> : v },
+    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 90, render: (v: string | null) => (!v || v === '-' || v === '长期') ? <Tag style={{ backgroundColor: '#000', color: '#fff', borderRadius: 4, border: 'none' }}>长期</Tag> : v },
     {
       title: '状态',
       dataIndex: 'status',
