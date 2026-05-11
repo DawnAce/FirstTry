@@ -289,6 +289,7 @@ FirstTry/
 | issue_number | INT | 期号（如 2649） |
 | sheet_name | VARCHAR(50) | 来源 sheet 名（溯源用） |
 | channel | VARCHAR(20) | 渠道类型 |
+| sub_channel | VARCHAR(20) | 子渠道（如赠阅下的"监管"/"政府"） |
 | transport | VARCHAR(20) | 运输方式 |
 | frequency | VARCHAR(20) | 发送频率 |
 | status | VARCHAR(10) | 状态：正常/停发 |
