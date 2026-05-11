@@ -47,7 +47,7 @@ const statusLabels: Record<string, string> = { active: '正常', suspended: '停
 const statusColors: Record<string, string> = { active: 'green', suspended: 'red' };
 const subTypeLabels: Record<string, string> = { new: '新订', renewal: '续订' };
 
-const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订户', '记者站', '监管赠阅', '政府赠阅', '库房留存', '报社留存'] as const;
+const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '监管赠阅', '政府赠阅', '库房留存', '报社留存'] as const;
 const FREQUENCY_OPTIONS = ['周', '半月', '月'] as const;
 const TRANSPORT_OPTIONS = ['中通物流', '邮政物流', '包车运输', '库房留存'] as const;
 const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
@@ -55,7 +55,7 @@ const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
 const channelColors: Record<string, string> = {
   '渠道订阅': 'blue',
   '对公订阅': 'blue',
-  '个人订户': 'green',
+  '个人订阅': 'green',
   '记者站': 'purple',
   '监管赠阅': 'orange',
   '政府赠阅': 'gold',

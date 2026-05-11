@@ -112,7 +112,7 @@ def _parse_weekly_corporate(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[
 
 def _parse_weekly_reader(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
     """Parse 每周（读者） sheet: rows 3-31, 8 columns.
-    First 5 data rows (rows 3-7) are 监管赠阅, rest are 个人订户.
+    First 5 data rows (rows 3-7) are 监管赠阅, rest are 个人订阅.
     """
     records = []
     data_index = 0
@@ -122,7 +122,7 @@ def _parse_weekly_reader(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dic
             continue
         if not any(row):
             continue
-        channel = "监管赠阅" if data_index < 5 else "个人订户"
+        channel = "监管赠阅" if data_index < 5 else "个人订阅"
         data_index += 1
         records.append({
             "sheet_name": "每周（读者）",
@@ -211,7 +211,7 @@ def _parse_biweekly_suspended(ws: openpyxl.worksheet.worksheet.Worksheet) -> lis
             continue
         records.append({
             "sheet_name": "停发-双周（读者）",
-            "channel": "个人订户",
+            "channel": "个人订阅",
             "transport": "中通物流",
             "frequency": "半月",
             "status": "停发",
@@ -228,7 +228,7 @@ def _parse_biweekly_suspended(ws: openpyxl.worksheet.worksheet.Worksheet) -> lis
 
 def _parse_monthly(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
     """Parse 月底-整月 sheet: rows 3-22, 9 columns.
-    First 4 data rows are 监管赠阅, row with 国图贸 in notes is 渠道订阅, rest are 个人订户.
+    First 4 data rows are 监管赠阅, row with 国图贸 in notes is 渠道订阅, rest are 个人订阅.
     """
     records = []
     data_index = 0
@@ -246,7 +246,7 @@ def _parse_monthly(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
             channel = "渠道订阅"
             company = "国图贸"
         else:
-            channel = "个人订户"
+            channel = "个人订阅"
         data_index += 1
         records.append({
             "sheet_name": "月底-整月",
