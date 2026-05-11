@@ -201,8 +201,8 @@ function ShippingDetailsTab() {
       width: 100,
       render: (v: string | null) => v ? <Tag color={transportColors[v] || 'default'}>{v}</Tag> : '-',
     },
-    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 90, render: (v: string | null) => v ?? '-' },
     { title: '发货时间', dataIndex: 'shipped_at', key: 'shipped_at', width: 100, render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD') : '-' },
+    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 90, render: (v: string | null) => v ?? '-' },
     {
       title: '状态',
       dataIndex: 'status',
