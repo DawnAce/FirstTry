@@ -305,6 +305,7 @@ function ShippingDetailsTab() {
           onChange={(e) => setShippingFilters((f) => ({ ...f, search: e.target.value }))}
         />
         <div style={{ flex: 1 }} />
+        <span style={{ color: '#888', fontSize: 14 }}>共 {details.length} 条记录</span>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
           新增
         </Button>
