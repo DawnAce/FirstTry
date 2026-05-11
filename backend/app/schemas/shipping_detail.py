@@ -24,6 +24,7 @@ class ShippingDetailCreate(BaseModel):
     seq_number: Optional[int] = None
     period_count: Optional[int] = None
     confirmation: Optional[str] = None
+    company: Optional[str] = None
 
 
 class ShippingDetailUpdate(BaseModel):
@@ -45,6 +46,7 @@ class ShippingDetailUpdate(BaseModel):
     seq_number: Optional[int] = None
     period_count: Optional[int] = None
     confirmation: Optional[str] = None
+    company: Optional[str] = None
 
 
 class ShippingDetailOut(BaseModel):
@@ -69,6 +71,7 @@ class ShippingDetailOut(BaseModel):
     seq_number: Optional[int]
     period_count: Optional[int]
     confirmation: Optional[str]
+    company: Optional[str]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 

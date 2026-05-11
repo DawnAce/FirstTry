@@ -49,28 +49,36 @@ def _is_summary_row(phone_val: Any) -> bool:
     return _str(phone_val) == "合计"
 
 
-def _classify_weekly_corporate(name: str | None, address: str | None, notes: str | None) -> tuple[str, str]:
-    """Return (channel, transport) for 每周（对公） rows."""
+def _classify_weekly_corporate(name: str | None, address: str | None, notes: str | None) -> tuple[str, str, str | None]:
+    """Return (channel, transport, company) for 每周（对公） rows."""
     if name == "马飞":
-        return "库房留存", "库房留存"
+        return "库房留存", "库房留存", None
     if not name or name == "(未填写)":
         if address and "中通库房" in address:
-            return "库房留存", "库房留存"
+            return "库房留存", "库房留存", None
     if notes:
-        if "广州日报" in notes or "杂志铺" in notes:
-            return "渠道订阅", "中通物流"
+        if "广州日报" in notes:
+            return "渠道订阅", "中通物流", "广州日报"
+        if "杂志铺" in notes:
+            return "渠道订阅", "中通物流", "成都杂志铺"
         if "社用报" in notes:
-            return "报社留存", "包车运输"
-    if name in ("李广", "纪玉文", "党鹏", "王金龙"):
-        return "记者站", "中通物流"
+            return "报社留存", "包车运输", None
+    if name in ("李广",):
+        return "记者站", "中通物流", "上海站"
+    if name in ("纪玉文",):
+        return "记者站", "中通物流", "广州站"
+    if name in ("党鹏",):
+        return "记者站", "中通物流", "成都站"
+    if name in ("王金龙",):
+        return "记者站", "中通物流", "西安站"
     # Fallback based on name
     if name == "叶剑":
-        return "渠道订阅", "中通物流"
+        return "渠道订阅", "中通物流", "广州日报"
     if name == "肖波":
-        return "渠道订阅", "中通物流"
+        return "渠道订阅", "中通物流", "成都杂志铺"
     if name == "程先生":
-        return "报社留存", "包车运输"
-    return "对公订阅", "中通物流"
+        return "报社留存", "包车运输", None
+    return "对公订阅", "中通物流", None
 
 
 def _parse_weekly_corporate(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
@@ -85,11 +93,12 @@ def _parse_weekly_corporate(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[
         name = _str(name_val) or "(未填写)"
         notes_s = _str(notes)
         address_s = _str(address)
-        channel, transport = _classify_weekly_corporate(name, address_s, notes_s)
+        channel, transport, company = _classify_weekly_corporate(name, address_s, notes_s)
         records.append({
             "sheet_name": "每周（对公）",
             "channel": channel,
             "transport": transport,
+            "company": company,
             "frequency": "周",
             "status": "正常",
             "name": name,
@@ -147,6 +156,7 @@ def _parse_high_speed_rail(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[d
             "sheet_name": "高铁展示",
             "channel": "对公订阅",
             "transport": "中通物流",
+            "company": "北京悦途出行",
             "frequency": "周",
             "status": "正常",
             "name": _str(contact) or "(未填写)",
@@ -229,10 +239,12 @@ def _parse_monthly(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
         if not any(row):
             continue
         notes_s = _str(notes)
+        company = None
         if data_index < 4:
             channel = "监管赠阅"
         elif notes_s and "国图贸" in notes_s:
             channel = "渠道订阅"
+            company = "国图贸"
         else:
             channel = "个人订户"
         data_index += 1
@@ -240,6 +252,7 @@ def _parse_monthly(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
             "sheet_name": "月底-整月",
             "channel": channel,
             "transport": "中通物流",
+            "company": company,
             "frequency": "月",
             "status": "正常",
             "name": _str(name) or "(未填写)",

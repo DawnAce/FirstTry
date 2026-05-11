@@ -18,6 +18,7 @@ def list_shipping_details(
     frequency: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
+    company: Optional[str] = None,
     skip: int = 0,
     limit: int = 200,
     db: Session = Depends(get_db),
@@ -35,7 +36,27 @@ def list_shipping_details(
         query = query.filter(ShippingDetail.status == status)
     if search:
         query = query.filter(ShippingDetail.name.contains(search))
+    if company:
+        # Support comma-separated multi-select: "广州日报,成都杂志铺"
+        companies = [c.strip() for c in company.split(",") if c.strip()]
+        if companies:
+            query = query.filter(ShippingDetail.company.in_(companies))
     return query.order_by(ShippingDetail.id).offset(skip).limit(limit).all()
+
+
+@router.get("/companies", response_model=List[str])
+def list_companies(
+    issue_number: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """Return distinct non-null company values for the dropdown filter."""
+    query = db.query(ShippingDetail.company).filter(
+        ShippingDetail.company.isnot(None),
+        ShippingDetail.company != "",
+    ).distinct()
+    if issue_number is not None:
+        query = query.filter(ShippingDetail.issue_number == issue_number)
+    return sorted([row[0] for row in query.all()])
 
 
 @router.post("", response_model=ShippingDetailOut, status_code=201)

@@ -27,5 +27,6 @@ class ShippingDetail(Base):
     seq_number = Column(Integer)
     period_count = Column(Integer)
     confirmation = Column(String(20))
+    company = Column(String(100), nullable=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

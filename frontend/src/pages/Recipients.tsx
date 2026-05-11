@@ -36,6 +36,7 @@ import {
   createShippingDetail,
   updateShippingDetail,
   deleteShippingDetail,
+  getShippingCompanies,
 } from '../api/shippingDetails';
 import dayjs from 'dayjs';
 
@@ -68,6 +69,7 @@ interface ShippingFilters {
   transport?: string;
   status?: string;
   search?: string;
+  company?: string[];
 }
 
 function ShippingDetailsTab() {
@@ -86,7 +88,16 @@ function ShippingDetailsTab() {
       if (shippingFilters.transport) params.transport = shippingFilters.transport;
       if (shippingFilters.status) params.status = shippingFilters.status;
       if (shippingFilters.search) params.search = shippingFilters.search;
+      if (shippingFilters.company?.length) params.company = shippingFilters.company.join(',');
       const res = await getShippingDetails(params);
+      return res.data;
+    },
+  });
+
+  const { data: companyOptions = [] } = useQuery({
+    queryKey: ['shippingCompanies'],
+    queryFn: async () => {
+      const res = await getShippingCompanies({ issue_number: 2649 });
       return res.data;
     },
   });
@@ -102,6 +113,7 @@ function ShippingDetailsTab() {
       await deleteShippingDetail(id);
       message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
     } catch {
       message.error('删除失败');
     }
@@ -137,6 +149,7 @@ function ShippingDetailsTab() {
       }
       handleCloseModal();
       queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
     } catch {
       message.error('操作失败');
     }
@@ -157,6 +170,13 @@ function ShippingDetailsTab() {
       key: 'channel',
       width: 100,
       render: (v: string) => v ? <Tag color={channelColors[v] || 'gray'}>{v}</Tag> : '-',
+    },
+    {
+      title: '签约公司',
+      dataIndex: 'company',
+      key: 'company',
+      width: 120,
+      render: (v: string | null) => v ?? '-',
     },
     {
       title: '地址',
@@ -236,6 +256,18 @@ function ShippingDetailsTab() {
           ))}
         </Select>
         <Select
+          mode="multiple"
+          placeholder="签约公司"
+          style={{ minWidth: 160, maxWidth: 320 }}
+          allowClear
+          maxTagCount="responsive"
+          onChange={(value: string[]) => setShippingFilters((f) => ({ ...f, company: value }))}
+        >
+          {companyOptions.map((c) => (
+            <Select.Option key={c} value={c}>{c}</Select.Option>
+          ))}
+        </Select>
+        <Select
           placeholder="频率"
           style={{ width: 120 }}
           allowClear
@@ -305,6 +337,9 @@ function ShippingDetailsTab() {
                 <Select.Option key={ch} value={ch}>{ch}</Select.Option>
               ))}
             </Select>
+          </Form.Item>
+          <Form.Item label="签约公司" name="company">
+            <Input placeholder="请输入签约公司（如：北京悦途出行）" />
           </Form.Item>
           <Form.Item label="地址" name="address">
             <Input placeholder="请输入地址" />

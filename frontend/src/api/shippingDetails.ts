@@ -23,6 +23,7 @@ export interface ShippingDetail {
   seq_number: number | null;
   period_count: number | null;
   confirmation: string | null;
+  company: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,9 +49,8 @@ export interface ShippingDetailCreate {
   seq_number?: number;
   period_count?: number;
   confirmation?: string;
+  company?: string;
 }
-
-export interface ShippingDetailUpdate {
   channel?: string;
   transport?: string;
   frequency?: string;
@@ -69,9 +69,10 @@ export interface ShippingDetailUpdate {
   seq_number?: number;
   period_count?: number;
   confirmation?: string;
+  company?: string;
 }
 
-export const getShippingDetails = (params?: Record<string, any>): Promise<AxiosResponse<ShippingDetail[]>> =>
+export const getShippingDetails= (params?: Record<string, any>): Promise<AxiosResponse<ShippingDetail[]>> =>
   api.get<ShippingDetail[]>('/shipping-details', { params });
 
 export const createShippingDetail = (data: ShippingDetailCreate): Promise<AxiosResponse<ShippingDetail>> =>
@@ -82,3 +83,6 @@ export const updateShippingDetail = (id: number, data: ShippingDetailUpdate): Pr
 
 export const deleteShippingDetail = (id: number): Promise<AxiosResponse<void>> =>
   api.delete(`/shipping-details/${id}`);
+
+export const getShippingCompanies = (params?: Record<string, any>): Promise<AxiosResponse<string[]>> =>
+  api.get<string[]>('/shipping-details/companies', { params });
