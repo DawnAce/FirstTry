@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Table,
   Button,
@@ -104,7 +104,12 @@ function ShippingDetailsTab() {
       return [...res.data].sort((a: Issue, b: Issue) => b.issue_number - a.issue_number);
     },
   });
-  const currentIssueNumber = selectedIssueNumber ?? issues[0]?.issue_number;
+  const currentIssueNumber = useMemo(() => {
+    if (selectedIssueNumber != null && issues.some((issue) => issue.issue_number === selectedIssueNumber)) {
+      return selectedIssueNumber;
+    }
+    return issues[0]?.issue_number;
+  }, [issues, selectedIssueNumber]);
 
   const { data: details = [], isLoading } = useQuery({
     queryKey: ['shippingDetails', currentIssueNumber, shippingFilters],
@@ -163,8 +168,8 @@ function ShippingDetailsTab() {
     try {
       await deleteShippingDetail(id);
       message.success('删除成功');
-      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
-      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails', currentIssueNumber] });
+      queryClient.invalidateQueries({ queryKey: ['shippingCompanies', currentIssueNumber] });
     } catch {
       message.error('删除失败');
     }
@@ -209,8 +214,8 @@ function ShippingDetailsTab() {
         message.success('创建成功');
       }
       handleCloseModal();
-      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
-      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails', currentIssueNumber] });
+      queryClient.invalidateQueries({ queryKey: ['shippingCompanies', currentIssueNumber] });
     } catch {
       message.error('操作失败');
     }
