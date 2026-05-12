@@ -3,8 +3,8 @@
 每周五生成下周一出版的《中国经营报》印数报数表和中通快递发货明细的 Web 应用。
 
 ## 技术栈
-- **后端**: Python / FastAPI / SQLAlchemy / openpyxl / cpca（地址解析）
-- **前端**: React / TypeScript / Vite / Ant Design
+- **后端**: Python / FastAPI / SQLAlchemy / JWT 认证 / openpyxl / cpca（地址解析）
+- **前端**: React / TypeScript / Vite / Ant Design / TanStack Query
 - **数据库**: MySQL
 
 ## 快速开始
@@ -51,8 +51,10 @@ npm run dev
 - **密码**：`admin123`
 
 ### 6. 初始化数据
-```bash
-curl -X POST http://localhost:8000/api/admin/seed
+管理员登录后调用种子数据接口：
+```powershell
+$token = (Invoke-RestMethod -Method Post http://localhost:8000/api/auth/login -ContentType "application/json" -Body (@{username="admin";password="admin123"} | ConvertTo-Json)).access_token
+Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{Authorization="Bearer $token"}
 ```
 
 ### 一键启动（推荐）
