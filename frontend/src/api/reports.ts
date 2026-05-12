@@ -6,6 +6,12 @@ export interface ReportEntry {
   sub_category: string;
   value: number;
   is_variable: boolean;
+  destination: string | null;
+}
+
+export interface DestinationSummary {
+  destination: string;
+  total: number;
 }
 
 export interface ReportData {
@@ -13,6 +19,16 @@ export interface ReportData {
   issue_number: number;
   entries: ReportEntry[];
   total: number;
+  destination_summary: DestinationSummary[];
+}
+
+export interface ConfirmReportResponse {
+  message: string;
+  issue_number: number;
+  shipping_details_copied?: number;
+  zt_report_total?: number;
+  zt_shipping_total?: number;
+  warning?: string;
 }
 
 export interface RevisionRecord {
@@ -40,7 +56,7 @@ export const updateReport = (issueId: number, entries: { category: string; sub_c
   api.put(`/issues/${issueId}/report`, { entries });
 
 export const confirmReport = (issueId: number) =>
-  api.post(`/issues/${issueId}/report/confirm`);
+  api.post<ConfirmReportResponse>(`/issues/${issueId}/report/confirm`);
 
 export const revokeReport = (issueId: number, reason?: string) =>
   api.post(`/issues/${issueId}/report/revoke`, null, { params: { reason } });
