@@ -57,7 +57,22 @@ def _copy_shipping_details_from_previous(
     previous_issue_number: int,
     user: User,
 ) -> tuple[int, bool]:
-    db.query(Issue.id).filter(Issue.issue_number == issue_number).with_for_update().first()
+    target_issue = (
+        db.query(Issue.id)
+        .filter(Issue.issue_number == issue_number)
+        .with_for_update()
+        .first()
+    )
+    if not target_issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_number} not found")
+
+    previous_issue = (
+        db.query(Issue.id)
+        .filter(Issue.issue_number == previous_issue_number)
+        .first()
+    )
+    if not previous_issue:
+        raise HTTPException(status_code=404, detail=f"Issue {previous_issue_number} not found")
 
     locked_existing_ids = (
         db.query(ShippingDetail.id)
