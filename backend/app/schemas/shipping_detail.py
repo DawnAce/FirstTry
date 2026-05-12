@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from datetime import datetime
 
@@ -51,6 +51,32 @@ class ShippingDetailUpdate(BaseModel):
     confirmation: Optional[str] = None
     company: Optional[str] = None
     shipped_at: Optional[str] = None
+
+
+class ShippingDetailBatchPatch(BaseModel):
+    status: Optional[str] = None
+    deadline: Optional[str] = None
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self):
+        if self.status is None and self.deadline is None:
+            raise ValueError("At least one update field is required")
+        return self
+
+
+class ShippingDetailBatchUpdate(BaseModel):
+    ids: list[int] = Field(min_length=1)
+    updates: ShippingDetailBatchPatch
+
+
+class ShippingDetailBatchDelete(BaseModel):
+    ids: list[int] = Field(min_length=1)
+
+
+class ShippingDetailBatchResult(BaseModel):
+    affected_count: int
+
+
 class ShippingDetailOut(BaseModel):
     id: int
     issue_number: int
