@@ -10,6 +10,7 @@ class ReportEntry(Base):
     issue_id = Column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
     category = Column(String(50), nullable=False)
     sub_category = Column(String(100), nullable=False)
+    destination = Column(String(50), nullable=True)
     value = Column(Integer, default=0)
     is_variable = Column(Boolean, default=False)
 

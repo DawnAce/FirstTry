@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Table,
   Button,
@@ -23,6 +23,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TableColumnsType } from 'antd';
 import type { Recipient, Subscription } from '../api/recipients';
 import type { ShippingDetail, ShippingDetailCreate, ShippingDetailUpdate } from '../api/shippingDetails';
+import type { Issue } from '../api/issues';
 import {
   getRecipients,
   createRecipient,
@@ -38,6 +39,7 @@ import {
   deleteShippingDetail,
   getShippingCompanies,
 } from '../api/shippingDetails';
+import { getIssues } from '../api/issues';
 import { getOperationLogs } from '../api/operationLogs';
 import type { OperationLog } from '../api/operationLogs';
 import dayjs from 'dayjs';
@@ -87,6 +89,7 @@ interface ShippingFilters {
 function ShippingDetailsTab() {
   const queryClient = useQueryClient();
   const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
+  const [selectedIssueNumber, setSelectedIssueNumber] = useState<number>();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ShippingDetail | null>(null);
   const [form] = Form.useForm();
@@ -94,10 +97,25 @@ function ShippingDetailsTab() {
   const [logRecordId, setLogRecordId] = useState<number | null>(null);
   const [logRecordName, setLogRecordName] = useState<string>('');
 
-  const { data: details = [], isLoading } = useQuery({
-    queryKey: ['shippingDetails', shippingFilters],
+  const { data: issues = [], isLoading: issuesLoading } = useQuery({
+    queryKey: ['issues', 'shipping-details'],
     queryFn: async () => {
-      const params: Record<string, any> = { issue_number: 2649 };
+      const res = await getIssues(0, 100);
+      return [...res.data].sort((a: Issue, b: Issue) => b.issue_number - a.issue_number);
+    },
+  });
+  const currentIssueNumber = useMemo(() => {
+    if (selectedIssueNumber != null && issues.some((issue) => issue.issue_number === selectedIssueNumber)) {
+      return selectedIssueNumber;
+    }
+    return issues[0]?.issue_number;
+  }, [issues, selectedIssueNumber]);
+
+  const { data: details = [], isLoading } = useQuery({
+    queryKey: ['shippingDetails', currentIssueNumber, shippingFilters],
+    queryFn: async () => {
+      if (currentIssueNumber == null) return [];
+      const params: Record<string, any> = { issue_number: currentIssueNumber };
       if (shippingFilters.channel) params.channel = shippingFilters.channel;
       if (shippingFilters.sub_channel) params.sub_channel = shippingFilters.sub_channel;
       if (shippingFilters.frequency) params.frequency = shippingFilters.frequency;
@@ -108,14 +126,17 @@ function ShippingDetailsTab() {
       const res = await getShippingDetails(params);
       return res.data;
     },
+    enabled: currentIssueNumber != null,
   });
 
   const { data: companyOptions = [] } = useQuery({
-    queryKey: ['shippingCompanies'],
+    queryKey: ['shippingCompanies', currentIssueNumber],
     queryFn: async () => {
-      const res = await getShippingCompanies({ issue_number: 2649 });
+      if (currentIssueNumber == null) return [];
+      const res = await getShippingCompanies({ issue_number: currentIssueNumber });
       return res.data;
     },
+    enabled: currentIssueNumber != null,
   });
 
   const { data: operationLogs = [], isLoading: logsLoading } = useQuery({
@@ -147,14 +168,18 @@ function ShippingDetailsTab() {
     try {
       await deleteShippingDetail(id);
       message.success('删除成功');
-      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
-      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails', currentIssueNumber] });
+      queryClient.invalidateQueries({ queryKey: ['shippingCompanies', currentIssueNumber] });
     } catch {
       message.error('删除失败');
     }
   };
 
   const handleOpenCreate = () => {
+    if (currentIssueNumber == null) {
+      message.warning('请先选择期号');
+      return;
+    }
     setEditingRecord(null);
     form.resetFields();
     setModalVisible(true);
@@ -175,18 +200,22 @@ function ShippingDetailsTab() {
         await updateShippingDetail(editingRecord.id, updateData);
         message.success('更新成功');
       } else {
+        if (currentIssueNumber == null) {
+          message.warning('请先选择期号');
+          return;
+        }
         const createData: ShippingDetailCreate = {
           ...values,
           shipped_at,
-          issue_number: 2649,
+          issue_number: currentIssueNumber,
           sheet_name: '手动添加',
         };
         await createShippingDetail(createData);
         message.success('创建成功');
       }
       handleCloseModal();
-      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
-      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails', currentIssueNumber] });
+      queryClient.invalidateQueries({ queryKey: ['shippingCompanies', currentIssueNumber] });
     } catch {
       message.error('操作失败');
     }
@@ -294,6 +323,23 @@ function ShippingDetailsTab() {
         boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
       }}>
         <Select
+          placeholder="期号"
+          style={{ width: 120 }}
+          loading={issuesLoading}
+          disabled={issues.length === 0}
+          value={currentIssueNumber}
+          onChange={(value) => {
+            setSelectedIssueNumber(value);
+            setShippingFilters((f) => ({ ...f, company: undefined }));
+          }}
+        >
+          {issues.map((issue) => (
+            <Select.Option key={issue.id} value={issue.issue_number}>
+              第 {issue.issue_number} 期
+            </Select.Option>
+          ))}
+        </Select>
+        <Select
           placeholder="渠道"
           style={{ width: 130 }}
           allowClear
@@ -323,6 +369,7 @@ function ShippingDetailsTab() {
           style={{ minWidth: 160, maxWidth: 320 }}
           allowClear
           maxTagCount="responsive"
+          value={shippingFilters.company}
           onChange={(value: string[]) => setShippingFilters((f) => ({ ...f, company: value }))}
         >
           {companyOptions.map((c) => (
@@ -391,6 +438,7 @@ function ShippingDetailsTab() {
         open={modalVisible}
         onOk={handleSubmit}
         onCancel={handleCloseModal}
+        okButtonProps={{ disabled: currentIssueNumber == null }}
       >
         <Form form={form} layout="vertical">
           <Form.Item label="姓名" name="name" rules={[{ required: true, message: '请输入姓名' }]}>

@@ -6,6 +6,7 @@ class ReportEntryOut(BaseModel):
     id: int
     category: str
     sub_category: str
+    destination: Optional[str] = None
     value: int
     is_variable: bool
 
@@ -18,11 +19,17 @@ class ReportEntryUpdate(BaseModel):
     value: int
 
 
+class DestinationSummary(BaseModel):
+    destination: str
+    total: int
+
+
 class ReportDataOut(BaseModel):
     issue_id: int
     issue_number: int
     entries: List[ReportEntryOut]
     total: int
+    destination_summary: List[DestinationSummary] = []
 
 
 class ReportDataUpdate(BaseModel):

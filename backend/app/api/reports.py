@@ -1,14 +1,106 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from typing import List, Optional
 from datetime import datetime
 from app.database import get_db
-from app.models import Issue, ReportEntry, IssueStatus, ReportRevision, User, TempPrintDetail
-from app.schemas.report import ReportDataOut, ReportDataUpdate, ReportEntryOut, TempPrintDetailIn, TempPrintDetailOut
+from app.models import (
+    Issue,
+    IssueStatus,
+    OperationLog,
+    ReportEntry,
+    ReportRevision,
+    ShippingDetail,
+    TempPrintDetail,
+    User,
+)
+from app.schemas.report import (
+    DestinationSummary,
+    ReportDataOut,
+    ReportDataUpdate,
+    ReportEntryOut,
+    TempPrintDetailIn,
+    TempPrintDetailOut,
+)
 from app.auth import get_current_user, require_admin
+from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 
 router = APIRouter(prefix="/api/issues/{issue_id}/report", tags=["reports"])
+
+_REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES = {
+    '临时加印_自留',
+    '营报传媒加印',
+    '财经中心加印',
+    '中经未来',
+    '产经中心加印',
+}
+
+_SHIPPING_DETAIL_COPY_FIELDS = [
+    "sheet_name", "channel", "sub_channel", "transport", "frequency",
+    "status", "name", "address", "phone", "quantity", "deadline",
+    "notes", "extra_info", "city", "station_name", "station_hall",
+    "contact_person", "seq_number", "period_count", "company",
+]
+
+
+def _copy_previous_shipping_details_for_confirm(
+    db: Session,
+    issue: Issue,
+    user: User,
+) -> int:
+    db.query(Issue.id).filter(Issue.id == issue.id).with_for_update().first()
+    locked_existing_ids = (
+        db.query(ShippingDetail.id)
+        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .with_for_update()
+        .all()
+    )
+    if locked_existing_ids:
+        return 0
+
+    previous_issue = (
+        db.query(Issue)
+        .filter(Issue.issue_number < issue.issue_number)
+        .order_by(desc(Issue.issue_number))
+        .first()
+    )
+    if not previous_issue:
+        return 0
+
+    previous_details = (
+        db.query(ShippingDetail)
+        .filter(ShippingDetail.issue_number == previous_issue.issue_number)
+        .order_by(ShippingDetail.id)
+        .all()
+    )
+    for detail in previous_details:
+        data = {field: getattr(detail, field) for field in _SHIPPING_DETAIL_COPY_FIELDS}
+        db.add(
+            ShippingDetail(
+                **data,
+                issue_number=issue.issue_number,
+                confirmation=None,
+                shipped_at=None,
+            )
+        )
+
+    copied = len(previous_details)
+    db.add(
+        OperationLog(
+            table_name="shipping_details",
+            record_id=0,
+            record_name=f"批量复制到{issue.issue_number}期",
+            action="batch_copy",
+            changes={
+                "from_issue": previous_issue.issue_number,
+                "to_issue": issue.issue_number,
+                "count": copied,
+            },
+            user_id=user.id,
+            username=user.username,
+        )
+    )
+    return copied
 
 
 @router.get("", response_model=ReportDataOut)
@@ -24,13 +116,24 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         .all()
     )
     # Exclude sub-allocations and deprecated department extras from total
-    excluded = {'临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'}
+    excluded = _REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES
     total = sum(e.value for e in entries if e.sub_category not in excluded)
+    destination_totals: dict[str, int] = {}
+    for e in entries:
+        if e.sub_category in excluded:
+            continue
+        destination = resolve_report_destination(e.category, e.sub_category, e.destination)
+        destination_totals[destination] = destination_totals.get(destination, 0) + e.value
+
     return ReportDataOut(
         issue_id=issue.id,
         issue_number=issue.issue_number,
         entries=[ReportEntryOut.model_validate(e) for e in entries],
         total=total,
+        destination_summary=[
+            DestinationSummary(destination=destination, total=destination_total)
+            for destination, destination_total in destination_totals.items()
+        ],
     )
 
 
@@ -62,7 +165,7 @@ def update_report(issue_id: int, data: ReportDataUpdate, db: Session = Depends(g
 
 @router.post("/confirm")
 def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    issue = db.query(Issue).filter(Issue.id == issue_id).with_for_update().first()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
@@ -78,9 +181,35 @@ def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = De
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
+    shipping_details_copied = _copy_previous_shipping_details_for_confirm(db, issue, user)
+    db.flush()
+
+    zt_report_total = sum(
+        e.value for e in entries
+        if e.sub_category not in _REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES
+        and resolve_report_destination(e.category, e.sub_category, e.destination) == DESTINATION_ZTO
+    )
+    zt_shipping_total = (
+        db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
+        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .scalar()
+    )
+
     issue.status = IssueStatus.confirmed
     db.commit()
-    return {"message": "Report confirmed", "issue_number": issue.issue_number}
+    result = {
+        "message": "Report confirmed",
+        "issue_number": issue.issue_number,
+        "shipping_details_copied": shipping_details_copied,
+        "zt_report_total": zt_report_total,
+        "zt_shipping_total": zt_shipping_total,
+    }
+    if zt_report_total != zt_shipping_total:
+        result["warning"] = (
+            f"中通物流份数不一致：报数合计 {zt_report_total} 份，"
+            f"发货明细合计 {zt_shipping_total} 份，请核查"
+        )
+    return result
 
 
 @router.post("/revoke")

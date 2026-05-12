@@ -320,12 +320,24 @@ export default function ReportEditor() {
             value: entry.value,
           }));
       await updateReport(Number(issueId), payload);
-      await confirmReport(Number(issueId));
+      const confirmRes = await confirmReport(Number(issueId));
+      const confirmData = confirmRes.data;
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       message.success('确认成功');
-      navigate('/');
+      if ((confirmData.shipping_details_copied ?? 0) > 0) {
+        message.info(`已从上一期复制 ${confirmData.shipping_details_copied} 条中通发货明细`);
+      }
+      if (confirmData.warning) {
+        Modal.warning({
+          title: '中通发货份数不一致',
+          content: confirmData.warning,
+          onOk: () => navigate('/'),
+        });
+      } else {
+        navigate('/');
+      }
     } catch (err: any) {
       const msg = err.response?.data?.detail;
       if (msg) {
@@ -505,6 +517,24 @@ export default function ReportEditor() {
           )}
         </Space>
       </div>
+
+      {/* Destination summary */}
+      {report?.destination_summary && report.destination_summary.length > 0 && (
+        <Card style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>
+              发货目的地汇总
+            </span>
+            <Space size={[12, 8]} wrap>
+              {report.destination_summary.map((item) => (
+                <Tag key={item.destination} style={{ marginInlineEnd: 0, padding: '4px 10px', fontSize: 13 }}>
+                  {item.destination}：{item.total.toLocaleString()} 份
+                </Tag>
+              ))}
+            </Space>
+          </div>
+        </Card>
+      )}
 
       {/* Prominent 临时加印 at top */}
       {tempEntry && (

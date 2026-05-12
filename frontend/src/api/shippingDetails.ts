@@ -80,6 +80,11 @@ export interface ShippingDetailUpdate {
   shipped_at?: string;
 }
 
+export interface CopyShippingDetailsResult {
+  message: string;
+  copied: number;
+}
+
 export const getShippingDetails= (params?: Record<string, any>): Promise<AxiosResponse<ShippingDetail[]>> =>
   api.get<ShippingDetail[]>('/shipping-details', { params });
 
@@ -94,3 +99,11 @@ export const deleteShippingDetail = (id: number): Promise<AxiosResponse<void>> =
 
 export const getShippingCompanies = (params?: Record<string, any>): Promise<AxiosResponse<string[]>> =>
   api.get<string[]>('/shipping-details/companies', { params });
+
+export const copyShippingDetailsFromPrevious = (
+  issueNumber: number,
+  previousIssueNumber: number,
+): Promise<AxiosResponse<CopyShippingDetailsResult>> =>
+  api.post<CopyShippingDetailsResult>('/shipping-details/copy-from-previous', null, {
+    params: { issue_number: issueNumber, previous_issue_number: previousIssueNumber },
+  });
