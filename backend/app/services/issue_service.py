@@ -78,6 +78,7 @@ def create_issue_with_data(db: Session, issue_number: int, publish_date: date, n
                 issue_id=issue.id,
                 category=entry.category,
                 sub_category=entry.sub_category,
+                destination=entry.destination,
                 value=entry.value,
                 is_variable=entry.is_variable,
             )
@@ -90,6 +91,7 @@ def create_issue_with_data(db: Session, issue_number: int, publish_date: date, n
                 issue_id=issue.id,
                 category=tmpl.category,
                 sub_category=tmpl.sub_category,
+                destination=tmpl.destination,
                 value=tmpl.default_value,
                 is_variable=tmpl.is_variable,
             )

@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 from app.database import get_db
 from app.models import Issue, ReportEntry, IssueStatus, ReportRevision, User, TempPrintDetail
-from app.schemas.report import ReportDataOut, ReportDataUpdate, ReportEntryOut, TempPrintDetailIn, TempPrintDetailOut
+from app.schemas.report import DestinationSummary, ReportDataOut, ReportDataUpdate, ReportEntryOut, TempPrintDetailIn, TempPrintDetailOut
 from app.auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/issues/{issue_id}/report", tags=["reports"])
@@ -26,11 +26,22 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
     # Exclude sub-allocations and deprecated department extras from total
     excluded = {'临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'}
     total = sum(e.value for e in entries if e.sub_category not in excluded)
+    destination_totals: dict[str, int] = {}
+    for e in entries:
+        if e.sub_category in excluded:
+            continue
+        destination = e.destination or "未设置"
+        destination_totals[destination] = destination_totals.get(destination, 0) + e.value
+
     return ReportDataOut(
         issue_id=issue.id,
         issue_number=issue.issue_number,
         entries=[ReportEntryOut.model_validate(e) for e in entries],
         total=total,
+        destination_summary=[
+            DestinationSummary(destination=destination, total=destination_total)
+            for destination, destination_total in destination_totals.items()
+        ],
     )
 
 
