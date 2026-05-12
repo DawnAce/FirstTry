@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
+from app.models import Issue
 from app.models.shipping_detail import ShippingDetail
 from app.models.operation_log import OperationLog
 from app.models.user import User
@@ -20,6 +21,12 @@ _TRACKED_FIELDS = [
     "notes", "extra_info", "city", "station_name", "station_hall",
     "contact_person", "seq_number", "period_count", "confirmation",
     "company", "shipped_at",
+]
+
+_COPY_FIELDS = [
+    field
+    for field in _TRACKED_FIELDS
+    if field not in {"issue_number", "confirmation", "shipped_at"}
 ]
 
 
@@ -42,6 +49,59 @@ def _diff(old: dict, new: dict) -> dict:
         if old[key] != new.get(key):
             changes[key] = {"old": old[key], "new": new.get(key)}
     return changes
+
+
+def _copy_shipping_details_from_previous(
+    db: Session,
+    issue_number: int,
+    previous_issue_number: int,
+    user: User,
+) -> tuple[int, bool]:
+    db.query(Issue.id).filter(Issue.issue_number == issue_number).with_for_update().first()
+
+    locked_existing_ids = (
+        db.query(ShippingDetail.id)
+        .filter(ShippingDetail.issue_number == issue_number)
+        .with_for_update()
+        .all()
+    )
+    if locked_existing_ids:
+        return 0, True
+
+    previous_details = (
+        db.query(ShippingDetail)
+        .filter(ShippingDetail.issue_number == previous_issue_number)
+        .order_by(ShippingDetail.id)
+        .all()
+    )
+    for detail in previous_details:
+        data = {field: getattr(detail, field) for field in _COPY_FIELDS}
+        db.add(
+            ShippingDetail(
+                **data,
+                issue_number=issue_number,
+                confirmation=None,
+                shipped_at=None,
+            )
+        )
+
+    copied = len(previous_details)
+    db.add(
+        OperationLog(
+            table_name="shipping_details",
+            record_id=0,
+            record_name=f"批量复制到{issue_number}期",
+            action="batch_copy",
+            changes={
+                "from_issue": previous_issue_number,
+                "to_issue": issue_number,
+                "count": copied,
+            },
+            user_id=user.id,
+            username=user.username,
+        )
+    )
+    return copied, False
 
 
 @router.get("", response_model=List[ShippingDetailOut])
@@ -94,6 +154,29 @@ def list_companies(
     if issue_number is not None:
         query = query.filter(ShippingDetail.issue_number == issue_number)
     return sorted([row[0] for row in query.all()])
+
+
+@router.post("/copy-from-previous")
+def copy_shipping_details_from_previous(
+    issue_number: int = Query(...),
+    previous_issue_number: int = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    copied, skipped_existing = _copy_shipping_details_from_previous(
+        db=db,
+        issue_number=issue_number,
+        previous_issue_number=previous_issue_number,
+        user=user,
+    )
+    db.commit()
+    if skipped_existing:
+        return {"message": "当期已有发货明细，跳过复制", "copied": 0}
+
+    return {
+        "message": f"已从{previous_issue_number}期复制{copied}条发货明细",
+        "copied": copied,
+    }
 
 
 @router.post("", response_model=ShippingDetailOut, status_code=201)
