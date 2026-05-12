@@ -44,3 +44,6 @@ export const getIssue = (id: number) =>
 
 export const updateIssue = (id: number, data: { page_count?: number; notes?: string }) =>
   api.patch<Issue>(`/issues/${id}`, data);
+
+export const deleteIssue = (id: number) =>
+  api.delete<{ message: string }>(`/issues/${id}`);

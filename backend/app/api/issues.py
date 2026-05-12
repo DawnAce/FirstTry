@@ -4,7 +4,8 @@ from sqlalchemy import desc
 from typing import List, Optional
 from app.database import get_db
 from app.cache import invalidate_dashboard_cache
-from app.models import Issue
+from app.auth import require_admin
+from app.models import Issue, ShippingDetail, User
 from app.schemas.issue import IssueCreate, IssueOut, IssueUpdate, NextIssueInfo
 from app.services.issue_service import get_next_issue_info, get_available_issues, create_issue_with_data
 
@@ -60,3 +61,17 @@ def update_issue(issue_id: int, data: IssueUpdate, db: Session = Depends(get_db)
     db.commit()
     db.refresh(issue)
     return issue
+
+
+@router.delete("/{issue_id}")
+def delete_issue(issue_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    issue_number = issue.issue_number
+    db.query(ShippingDetail).filter(ShippingDetail.issue_number == issue_number).delete()
+    db.delete(issue)
+    db.commit()
+    invalidate_dashboard_cache()
+    return {"message": "Issue deleted"}

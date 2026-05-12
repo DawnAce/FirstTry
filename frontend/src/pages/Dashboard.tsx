@@ -11,10 +11,11 @@ import {
   Space,
   message,
   Select,
+  Popconfirm,
 } from 'antd';
-import { PlusOutlined, EditOutlined, SendOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, SendOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { getDashboard, createIssue } from '../api/issues';
+import { getDashboard, createIssue, deleteIssue } from '../api/issues';
 import type { Issue, NextIssueInfo } from '../api/issues';
 
 export default function Dashboard() {
@@ -67,6 +68,17 @@ export default function Dashboard() {
       message.error(error.response?.data?.detail || '创建失败');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeleteIssue = async (issue: Issue) => {
+    try {
+      await deleteIssue(issue.id);
+      message.success(`第 ${issue.issue_number} 期已删除`);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['issues'] });
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '删除失败');
     }
   };
 
@@ -210,6 +222,22 @@ export default function Dashboard() {
                 >
                   发货
                 </Button>
+                <Popconfirm
+                  title={`确认删除第 ${item.issue_number} 期？`}
+                  description="会同时删除该期报数、发货记录、临时加印和中通发货明细。此操作不可恢复。"
+                  okText="删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => handleDeleteIssue(item)}
+                >
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
               </Space>
             </div>
           ))
