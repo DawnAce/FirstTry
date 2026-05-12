@@ -8,6 +8,7 @@ class ReportItemTemplate(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     category = Column(String(50), nullable=False)
     sub_category = Column(String(100), nullable=False)
+    destination = Column(String(50), nullable=True)
     display_name = Column(String(100), nullable=False)
     default_value = Column(Integer, default=0)
     is_variable = Column(Boolean, default=False, nullable=False)

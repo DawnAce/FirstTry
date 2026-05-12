@@ -135,6 +135,7 @@ FirstTry/
 | id | INT | 主键 |
 | category | VARCHAR | 主类别 |
 | sub_category | VARCHAR | 子类别 |
+| destination | VARCHAR(50) | 发货目的地 |
 | default_value | INT | 默认值 |
 | is_variable | BOOLEAN | 是否为变动项 |
 | excel_sheet | VARCHAR | Excel sheet 名称 |
@@ -165,6 +166,7 @@ FirstTry/
 | issue_id | INT | 外键 → issues.id |
 | category | VARCHAR | 主类别 |
 | sub_category | VARCHAR | 子类别 |
+| destination | VARCHAR(50) | 发货目的地 |
 | value | INT | 数值 |
 | is_variable | BOOLEAN | 是否为变动项 |
 
