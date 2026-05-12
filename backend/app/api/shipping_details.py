@@ -7,7 +7,12 @@ from app.models.operation_log import OperationLog
 from app.models.user import User
 from app.auth import get_current_user
 from app.schemas.shipping_detail import (
-    ShippingDetailCreate, ShippingDetailUpdate, ShippingDetailOut,
+    ShippingDetailBatchDelete,
+    ShippingDetailBatchResult,
+    ShippingDetailBatchUpdate,
+    ShippingDetailCreate,
+    ShippingDetailUpdate,
+    ShippingDetailOut,
 )
 from app.services.address_service import normalize_address
 
@@ -42,6 +47,16 @@ def _diff(old: dict, new: dict) -> dict:
         if old[key] != new.get(key):
             changes[key] = {"old": old[key], "new": new.get(key)}
     return changes
+
+
+def _ensure_all_ids_found(requested_ids: list[int], details: list[ShippingDetail]) -> None:
+    found_ids = {detail.id for detail in details}
+    missing_ids = [detail_id for detail_id in requested_ids if detail_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Shipping detail IDs not found: {', '.join(map(str, missing_ids))}",
+        )
 
 
 @router.get("", response_model=List[ShippingDetailOut])
@@ -126,6 +141,39 @@ def create_shipping_detail(
     return detail
 
 
+@router.post("/batch-update", response_model=ShippingDetailBatchResult)
+def batch_update_shipping_details(
+    data: ShippingDetailBatchUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    details = db.query(ShippingDetail).filter(ShippingDetail.id.in_(data.ids)).all()
+    _ensure_all_ids_found(data.ids, details)
+
+    update_data = data.updates.model_dump(exclude_unset=True)
+    affected_count = 0
+    for detail in details:
+        old_snapshot = _snapshot(detail)
+        for key, value in update_data.items():
+            setattr(detail, key, value)
+        new_snapshot = _snapshot(detail)
+        changes = _diff(old_snapshot, new_snapshot)
+        if changes:
+            affected_count += 1
+            db.add(OperationLog(
+                table_name="shipping_details",
+                record_id=detail.id,
+                record_name=detail.name,
+                action="update",
+                changes=changes,
+                user_id=user.id,
+                username=user.username,
+            ))
+
+    db.commit()
+    return ShippingDetailBatchResult(affected_count=affected_count)
+
+
 @router.put("/{detail_id}", response_model=ShippingDetailOut)
 def update_shipping_detail(
     detail_id: int,
@@ -161,6 +209,31 @@ def update_shipping_detail(
     db.commit()
     db.refresh(detail)
     return detail
+
+
+@router.post("/batch-delete", response_model=ShippingDetailBatchResult)
+def batch_delete_shipping_details(
+    data: ShippingDetailBatchDelete,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    details = db.query(ShippingDetail).filter(ShippingDetail.id.in_(data.ids)).all()
+    _ensure_all_ids_found(data.ids, details)
+
+    for detail in details:
+        db.add(OperationLog(
+            table_name="shipping_details",
+            record_id=detail.id,
+            record_name=detail.name,
+            action="delete",
+            changes=_snapshot(detail),
+            user_id=user.id,
+            username=user.username,
+        ))
+        db.delete(detail)
+
+    db.commit()
+    return ShippingDetailBatchResult(affected_count=len(details))
 
 
 @router.delete("/{detail_id}")

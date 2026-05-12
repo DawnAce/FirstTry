@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { Key } from 'react';
 import {
   Table,
   Button,
@@ -20,7 +21,7 @@ import {
 } from 'antd';
 import { PlusOutlined, PauseCircleOutlined, CaretRightOutlined, SearchOutlined, DeleteOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { TableColumnsType } from 'antd';
+import type { TableColumnsType, TableProps } from 'antd';
 import type { Recipient, Subscription } from '../api/recipients';
 import type { ShippingDetail, ShippingDetailCreate, ShippingDetailUpdate } from '../api/shippingDetails';
 import {
@@ -36,6 +37,8 @@ import {
   createShippingDetail,
   updateShippingDetail,
   deleteShippingDetail,
+  batchUpdateShippingDetails,
+  batchDeleteShippingDetails,
   getShippingCompanies,
 } from '../api/shippingDetails';
 import { getOperationLogs } from '../api/operationLogs';
@@ -93,6 +96,8 @@ function ShippingDetailsTab() {
   const [logDrawerOpen, setLogDrawerOpen] = useState(false);
   const [logRecordId, setLogRecordId] = useState<number | null>(null);
   const [logRecordName, setLogRecordName] = useState<string>('');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
+  const [batchDeadline, setBatchDeadline] = useState<dayjs.Dayjs | null>(null);
 
   const { data: details = [], isLoading } = useQuery({
     queryKey: ['shippingDetails', shippingFilters],
@@ -134,6 +139,12 @@ function ShippingDetailsTab() {
     setLogDrawerOpen(true);
   };
 
+  const refreshShippingDetails = () => {
+    queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+    queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
+    queryClient.invalidateQueries({ queryKey: ['operationLogs'] });
+  };
+
   const handleEdit = (record: ShippingDetail) => {
     setEditingRecord(record);
     form.setFieldsValue({
@@ -147,8 +158,7 @@ function ShippingDetailsTab() {
     try {
       await deleteShippingDetail(id);
       message.success('删除成功');
-      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
-      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
+      refreshShippingDetails();
     } catch {
       message.error('删除失败');
     }
@@ -185,10 +195,55 @@ function ShippingDetailsTab() {
         message.success('创建成功');
       }
       handleCloseModal();
-      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
-      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
+      refreshShippingDetails();
     } catch {
       message.error('操作失败');
+    }
+  };
+
+  const getSelectedIds = () => selectedRowKeys.map((key) => Number(key));
+
+  const handleBatchStatus = async (status: string) => {
+    try {
+      const res = await batchUpdateShippingDetails({
+        ids: getSelectedIds(),
+        updates: { status },
+      });
+      message.success(`已更新 ${res.data.affected_count} 条记录`);
+      setSelectedRowKeys([]);
+      refreshShippingDetails();
+    } catch {
+      message.error('批量修改状态失败');
+    }
+  };
+
+  const handleBatchDeadline = async () => {
+    if (!batchDeadline) {
+      message.warning('请选择截止日期');
+      return;
+    }
+    try {
+      const res = await batchUpdateShippingDetails({
+        ids: getSelectedIds(),
+        updates: { deadline: batchDeadline.format('YYYY-MM-DD') },
+      });
+      message.success(`已更新 ${res.data.affected_count} 条记录`);
+      setBatchDeadline(null);
+      setSelectedRowKeys([]);
+      refreshShippingDetails();
+    } catch {
+      message.error('批量修改截止日期失败');
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    try {
+      const res = await batchDeleteShippingDetails({ ids: getSelectedIds() });
+      message.success(`已删除 ${res.data.affected_count} 条记录`);
+      setSelectedRowKeys([]);
+      refreshShippingDetails();
+    } catch {
+      message.error('批量删除失败');
     }
   };
 
@@ -197,6 +252,11 @@ function ShippingDetailsTab() {
     '邮政物流': 'green',
     '包车运输': 'orange',
     '库房留存': 'default',
+  };
+
+  const rowSelection: TableProps<ShippingDetail>['rowSelection'] = {
+    selectedRowKeys,
+    onChange: (keys) => setSelectedRowKeys(keys),
   };
 
   const shippingColumns: TableColumnsType<ShippingDetail> = [
@@ -375,12 +435,42 @@ function ShippingDetailsTab() {
         </Button>
       </div>
 
+      {selectedRowKeys.length > 0 && (
+        <div style={{
+          marginBottom: 12,
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          padding: '12px 16px',
+          background: '#fff',
+          borderRadius: 12,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
+        }}>
+          <span style={{ color: '#666' }}>已选 {selectedRowKeys.length} 条</span>
+          <Button size="small" onClick={() => handleBatchStatus('正常')}>设为正常</Button>
+          <Button size="small" danger onClick={() => handleBatchStatus('停发')}>设为停发</Button>
+          <DatePicker
+            size="small"
+            placeholder="选择截止日期"
+            value={batchDeadline}
+            onChange={setBatchDeadline}
+          />
+          <Button size="small" onClick={handleBatchDeadline}>修改截止日期</Button>
+          <Popconfirm title={`确认删除选中的 ${selectedRowKeys.length} 条记录？`} onConfirm={handleBatchDelete}>
+            <Button size="small" danger>批量删除</Button>
+          </Popconfirm>
+          <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+        </div>
+      )}
+
       <Card style={{ padding: 0 }}>
         <Table
           loading={isLoading}
           columns={shippingColumns}
           dataSource={details}
           rowKey="id"
+          rowSelection={rowSelection}
           scroll={{ x: 'max-content' }}
           pagination={{ pageSize: 20, showTotal: (total) => `共 ${total} 条记录` }}
         />

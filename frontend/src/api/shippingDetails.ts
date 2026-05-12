@@ -80,6 +80,24 @@ export interface ShippingDetailUpdate {
   shipped_at?: string;
 }
 
+export interface ShippingDetailBatchPatch {
+  status?: string;
+  deadline?: string;
+}
+
+export interface ShippingDetailBatchUpdate {
+  ids: number[];
+  updates: ShippingDetailBatchPatch;
+}
+
+export interface ShippingDetailBatchDelete {
+  ids: number[];
+}
+
+export interface ShippingDetailBatchResult {
+  affected_count: number;
+}
+
 export const getShippingDetails= (params?: Record<string, any>): Promise<AxiosResponse<ShippingDetail[]>> =>
   api.get<ShippingDetail[]>('/shipping-details', { params });
 
@@ -91,6 +109,16 @@ export const updateShippingDetail = (id: number, data: ShippingDetailUpdate): Pr
 
 export const deleteShippingDetail = (id: number): Promise<AxiosResponse<void>> =>
   api.delete(`/shipping-details/${id}`);
+
+export const batchUpdateShippingDetails = (
+  data: ShippingDetailBatchUpdate,
+): Promise<AxiosResponse<ShippingDetailBatchResult>> =>
+  api.post<ShippingDetailBatchResult>('/shipping-details/batch-update', data);
+
+export const batchDeleteShippingDetails = (
+  data: ShippingDetailBatchDelete,
+): Promise<AxiosResponse<ShippingDetailBatchResult>> =>
+  api.post<ShippingDetailBatchResult>('/shipping-details/batch-delete', data);
 
 export const getShippingCompanies = (params?: Record<string, any>): Promise<AxiosResponse<string[]>> =>
   api.get<string[]>('/shipping-details/companies', { params });
