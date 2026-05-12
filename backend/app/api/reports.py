@@ -23,6 +23,7 @@ from app.schemas.report import (
     TempPrintDetailOut,
 )
 from app.auth import get_current_user, require_admin
+from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 
 router = APIRouter(prefix="/api/issues/{issue_id}/report", tags=["reports"])
 
@@ -121,7 +122,7 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
     for e in entries:
         if e.sub_category in excluded:
             continue
-        destination = e.destination or "未设置"
+        destination = resolve_report_destination(e.category, e.sub_category, e.destination)
         destination_totals[destination] = destination_totals.get(destination, 0) + e.value
 
     return ReportDataOut(
@@ -183,14 +184,10 @@ def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = De
     shipping_details_copied = _copy_previous_shipping_details_for_confirm(db, issue, user)
     db.flush()
 
-    zt_report_total = (
-        db.query(func.coalesce(func.sum(ReportEntry.value), 0))
-        .filter(
-            ReportEntry.issue_id == issue_id,
-            ReportEntry.destination == "中通物流公司",
-            ~ReportEntry.sub_category.in_(_REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES),
-        )
-        .scalar()
+    zt_report_total = sum(
+        e.value for e in entries
+        if e.sub_category not in _REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES
+        and resolve_report_destination(e.category, e.sub_category, e.destination) == DESTINATION_ZTO
     )
     zt_shipping_total = (
         db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))

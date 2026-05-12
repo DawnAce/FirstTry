@@ -290,7 +290,7 @@ FirstTry/
 | updated_at | DATETIME | 更新时间 |
 
 ### 3.11 shipping_details（中通发货明细）
-存储中通快递发货明细数据，从 Excel 发货表导入，支持完整 CRUD。数据按 `issue_number` 管理；前端通过期号选择器查看、编辑、复制指定期的明细，不再将业务操作固定到 2649 期。`shipping_details_2649.py` 仅作为初始化种子数据。
+存储中通快递发货明细数据，从 Excel 发货表导入，支持完整 CRUD。数据按 `issue_number` 管理；前端通过期号选择器查看、编辑指定期的明细，不再将业务操作固定到 2649 期。`shipping_details_2649.py` 仅作为初始化种子数据。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|

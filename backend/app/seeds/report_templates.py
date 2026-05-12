@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from app.models import ReportItemTemplate
+from app.services.report_destination_service import resolve_report_destination
 
 TEMPLATES = [
     # (category, sub_category, display_name, default_value, is_variable, sort_order)
@@ -41,6 +42,7 @@ def seed_report_templates(db: Session) -> int:
             default_value=default,
             is_variable=is_var,
             sort_order=sort,
+            destination=resolve_report_destination(cat, sub),
         )
         db.add(tmpl)
         count += 1
