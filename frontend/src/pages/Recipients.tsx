@@ -104,12 +104,31 @@ function ShippingDetailsTab() {
       return [...res.data].sort((a: Issue, b: Issue) => b.issue_number - a.issue_number);
     },
   });
-  const currentIssueNumber = useMemo(() => {
-    if (selectedIssueNumber != null && issues.some((issue) => issue.issue_number === selectedIssueNumber)) {
-      return selectedIssueNumber;
+  const currentIssue = useMemo(() => {
+    if (selectedIssueNumber != null) {
+      const selectedIssue = issues.find((issue) => issue.issue_number === selectedIssueNumber);
+      if (selectedIssue) return selectedIssue;
     }
-    return issues[0]?.issue_number;
+    return issues[0];
   }, [issues, selectedIssueNumber]);
+
+  const currentIssueNumber = currentIssue?.issue_number;
+  const currentIssueDate = currentIssue?.publish_date ? dayjs(currentIssue.publish_date) : null;
+
+  const selectIssue = (issueNumber: number) => {
+    setSelectedIssueNumber(issueNumber);
+    setShippingFilters((f) => ({ ...f, company: undefined }));
+  };
+
+  const handleIssueDateChange = (date: dayjs.Dayjs | null) => {
+    if (!date) return;
+    const issue = issues.find((item) => dayjs(item.publish_date).isSame(date, 'day'));
+    if (!issue) {
+      message.warning('该日期暂无已创建期数');
+      return;
+    }
+    selectIssue(issue.issue_number);
+  };
 
   const { data: details = [], isLoading } = useQuery({
     queryKey: ['shippingDetails', currentIssueNumber, shippingFilters],
@@ -322,20 +341,26 @@ function ShippingDetailsTab() {
         borderRadius: 12,
         boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
       }}>
+        <DatePicker
+          allowClear={false}
+          placeholder="出刊日期"
+          style={{ width: 150 }}
+          loading={issuesLoading}
+          disabled={issues.length === 0}
+          value={currentIssueDate}
+          onChange={handleIssueDateChange}
+        />
         <Select
           placeholder="期号"
           style={{ width: 120 }}
           loading={issuesLoading}
           disabled={issues.length === 0}
           value={currentIssueNumber}
-          onChange={(value) => {
-            setSelectedIssueNumber(value);
-            setShippingFilters((f) => ({ ...f, company: undefined }));
-          }}
+          onChange={selectIssue}
         >
           {issues.map((issue) => (
             <Select.Option key={issue.id} value={issue.issue_number}>
-              第 {issue.issue_number} 期
+              第 {issue.issue_number} 期（{dayjs(issue.publish_date).format('YYYY-MM-DD')}）
             </Select.Option>
           ))}
         </Select>
