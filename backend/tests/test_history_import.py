@@ -96,6 +96,46 @@ def build_report_upload(issue_number: int = 2648) -> bytes:
     return _wb_to_bytes(wb)
 
 
+def build_report_upload_with_blank_publish_date(issue_number: int = 2648) -> bytes:
+    wb = Workbook()
+    basic = wb.active
+    basic.title = "基本信息"
+    basic.append(["字段", "值"])
+    basic.append(["期号", issue_number])
+    basic.append(["出版日期", ""])
+    basic.append(["版数", 24])
+    basic.append(["备注", "测试备注"])
+
+    report = wb.create_sheet("报数项")
+    report.append(["分类编码", "分类名称", "项目名称", "去向", "是否变动", "数值"])
+    report.append(["postal", "北京邮发", "本市", "邮局", "否", 100])
+
+    temp = wb.create_sheet("临时加印明细")
+    temp.append(["部门", "自定义名称", "数量", "自留分发数量"])
+
+    return _wb_to_bytes(wb)
+
+
+def build_report_upload_with_invalid_issue_number(issue_number: str = "第2648期") -> bytes:
+    wb = Workbook()
+    basic = wb.active
+    basic.title = "基本信息"
+    basic.append(["字段", "值"])
+    basic.append(["期号", issue_number])
+    basic.append(["出版日期", "2026-04-20"])
+    basic.append(["版数", 24])
+    basic.append(["备注", "测试备注"])
+
+    report = wb.create_sheet("报数项")
+    report.append(["分类编码", "分类名称", "项目名称", "去向", "是否变动", "数值"])
+    report.append(["postal", "北京邮发", "本市", "邮局", "否", 100])
+
+    temp = wb.create_sheet("临时加印明细")
+    temp.append(["部门", "自定义名称", "数量", "自留分发数量"])
+
+    return _wb_to_bytes(wb)
+
+
 def build_shipping_upload(issue_number: int = 2648) -> bytes:
     wb = Workbook()
     basic = wb.active
@@ -368,6 +408,49 @@ class HistoryImportPreviewTests(unittest.TestCase):
 
         # category_name must NOT be present in the cached payload (replaced by display_name)
         self.assertNotIn("category_name", postal_row)
+        db.close()
+
+    def test_preview_rejects_blank_publish_date(self):
+        db = self.SessionLocal()
+        db.add(ReportItemTemplate(
+            category="postal", sub_category="本市", display_name="北京邮发-本市",
+            default_value=0, is_variable=False, destination="邮局", sort_order=1,
+        ))
+        db.commit()
+
+        result = preview_history_import(
+            db, build_report_upload_with_blank_publish_date(), build_shipping_upload()
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertFalse(result.readiness.can_commit)
+        self.assertTrue(any("出版日期" in e for e in result.errors))
+        db.close()
+
+    def test_preview_rejects_non_numeric_issue_number(self):
+        db = self.SessionLocal()
+        db.add(ReportItemTemplate(
+            category="postal", sub_category="本市", display_name="北京邮发-本市",
+            default_value=0, is_variable=False, destination="邮局", sort_order=1,
+        ))
+        db.commit()
+
+        result = preview_history_import(
+            db, build_report_upload_with_invalid_issue_number(), build_shipping_upload()
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertFalse(result.readiness.can_commit)
+        self.assertTrue(any("期号" in e for e in result.errors))
+        db.close()
+
+    def test_preview_raises_422_for_invalid_workbook_bytes(self):
+        db = self.SessionLocal()
+
+        with self.assertRaises(HTTPException) as ctx:
+            preview_history_import(db, b"not-an-xlsx", build_shipping_upload())
+
+        self.assertEqual(ctx.exception.status_code, 422)
         db.close()
 
 

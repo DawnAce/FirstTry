@@ -2,9 +2,11 @@
 
 import datetime
 import io
+from zipfile import BadZipFile
 
 from fastapi import HTTPException
 from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy.orm import Session
 
 from app.history_import_cache import save_history_import_session, pop_history_import_session
@@ -34,6 +36,25 @@ def _normalize_date(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _parse_issue_number(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_iso_date(value: str) -> bool:
+    if not value:
+        return False
+    try:
+        datetime.date.fromisoformat(value)
+        return True
+    except ValueError:
+        return False
 
 
 def _read_basic_info(wb) -> dict:
@@ -172,31 +193,66 @@ def preview_history_import(
     report_bytes: bytes,
     shipping_bytes: bytes,
 ) -> HistoryImportPreviewOut:
-    report_wb = load_workbook(io.BytesIO(report_bytes), data_only=True)
-    shipping_wb = load_workbook(io.BytesIO(shipping_bytes), data_only=True)
+    try:
+        report_wb = load_workbook(io.BytesIO(report_bytes), data_only=True)
+        shipping_wb = load_workbook(io.BytesIO(shipping_bytes), data_only=True)
+    except (BadZipFile, InvalidFileException, OSError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="无法解析上传的文件，请确保上传的是 .xlsx 格式",
+        ) from exc
 
     report_basic = _read_basic_info(report_wb)
     shipping_basic = _read_basic_info(shipping_wb)
 
     report_issue_raw = report_basic.get("期号")
     shipping_issue_raw = shipping_basic.get("期号")
+    report_issue_number = _parse_issue_number(report_issue_raw)
+    shipping_issue_number = _parse_issue_number(shipping_issue_raw)
     publish_date = _normalize_date(report_basic.get("出版日期"))
 
-    # Validate cross-issue upload
-    if str(report_issue_raw) != str(shipping_issue_raw):
+    if report_issue_number is None:
         readiness = CommitReadiness(
             same_issue=False,
             issue_exists=False,
             can_commit=False,
-            errors=[f"两份文件不是同一期：报数文件为 {report_issue_raw} 期，发货文件为 {shipping_issue_raw} 期"],
+            errors=["报数模板中的期号格式无效，请填写纯数字期号"],
+        )
+        return _error_response(0, publish_date, readiness)
+
+    if shipping_issue_number is None:
+        readiness = CommitReadiness(
+            same_issue=False,
+            issue_exists=False,
+            can_commit=False,
+            errors=["中通模板中的期号格式无效，请填写纯数字期号"],
+        )
+        return _error_response(report_issue_number, publish_date, readiness)
+
+    if not _is_iso_date(publish_date):
+        readiness = CommitReadiness(
+            same_issue=True,
+            issue_exists=False,
+            can_commit=False,
+            errors=["出版日期不能为空，且必须为 YYYY-MM-DD 格式"],
+        )
+        return _error_response(report_issue_number, publish_date, readiness)
+
+    # Validate cross-issue upload
+    if report_issue_number != shipping_issue_number:
+        readiness = CommitReadiness(
+            same_issue=False,
+            issue_exists=False,
+            can_commit=False,
+            errors=[f"两份文件不是同一期：报数文件为 {report_issue_number} 期，发货文件为 {shipping_issue_number} 期"],
         )
         return _error_response(
-            int(report_issue_raw) if report_issue_raw is not None else 0,
+            report_issue_number,
             publish_date,
             readiness,
         )
 
-    issue_number = int(report_issue_raw)  # type: ignore[arg-type]
+    issue_number = report_issue_number
     page_count = int(report_basic.get("版数", 24) or 24)
     notes = str(report_basic.get("备注", "") or "")
 
