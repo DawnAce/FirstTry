@@ -41,9 +41,7 @@ export const previewHistoryImport = (
   const form = new FormData();
   form.append('report_file', reportFile);
   form.append('shipping_file', shippingFile);
-  return api.post<HistoryImportPreview>('/history-import/preview', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  return api.post<HistoryImportPreview>('/history-import/preview', form);
 };
 
 export const commitHistoryImport = (
