@@ -11,7 +11,6 @@ import {
   message,
 } from 'antd';
 import { InboxOutlined, DownloadOutlined } from '@ant-design/icons';
-import type { UploadFile } from 'antd';
 import type { HistoryImportPreview } from '../api/historyImport';
 import {
   downloadReportTemplate,
@@ -34,8 +33,8 @@ function saveBlob(blob: Blob, filename: string) {
 
 export default function HistoryImport() {
   const navigate = useNavigate();
-  const [reportFileList, setReportFileList] = useState<UploadFile[]>([]);
-  const [shippingFileList, setShippingFileList] = useState<UploadFile[]>([]);
+  const [reportFile, setReportFile] = useState<File | null>(null);
+  const [shippingFile, setShippingFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<HistoryImportPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [committing, setCommitting] = useState(false);
@@ -59,8 +58,6 @@ export default function HistoryImport() {
   };
 
   const handlePreview = async () => {
-    const reportFile = reportFileList[0]?.originFileObj;
-    const shippingFile = shippingFileList[0]?.originFileObj;
     if (!reportFile || !shippingFile) {
       message.warning('请先上传报数文件和发货文件');
       return;
@@ -131,9 +128,8 @@ export default function HistoryImport() {
             <Dragger
               accept=".xlsx,.xls"
               maxCount={1}
-              fileList={reportFileList}
               beforeUpload={() => false}
-              onChange={({ fileList }) => setReportFileList(fileList)}
+              onChange={({ fileList }) => setReportFile(fileList[0]?.originFileObj ?? null)}
             >
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">点击或拖拽上传报数文件</p>
@@ -145,9 +141,8 @@ export default function HistoryImport() {
             <Dragger
               accept=".xlsx,.xls"
               maxCount={1}
-              fileList={shippingFileList}
               beforeUpload={() => false}
-              onChange={({ fileList }) => setShippingFileList(fileList)}
+              onChange={({ fileList }) => setShippingFile(fileList[0]?.originFileObj ?? null)}
             >
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">点击或拖拽上传发货文件</p>
