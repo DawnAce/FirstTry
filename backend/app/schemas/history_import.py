@@ -2,9 +2,9 @@ from pydantic import BaseModel
 
 
 class HistoryImportRow(BaseModel):
-    category_code: str
-    category_name: str
-    item_name: str
+    category: str           # matches ReportItemTemplate.category
+    category_name: str      # human-readable label, e.g. "北京邮发"
+    sub_category: str       # matches ReportItemTemplate.sub_category
     destination: str = ""
     is_variable: bool
     value: int
@@ -41,16 +41,19 @@ class ShippingImportRow(BaseModel):
 
 
 class CommitReadiness(BaseModel):
+    same_issue: bool
+    issue_exists: bool
     can_commit: bool
     errors: list[str] = []
 
 
 class HistoryImportPreviewOut(BaseModel):
     issue_number: int
-    publish_date: str
+    publish_date: str           # normalized ISO date YYYY-MM-DD
     report_entry_count: int
     temp_detail_count: int
     shipping_detail_count: int
-    can_commit: bool
+    can_commit: bool            # top-level convenience copy
     import_session_id: str
     errors: list[str] = []
+    readiness: CommitReadiness

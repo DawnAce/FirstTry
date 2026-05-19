@@ -82,22 +82,22 @@ def build_report_import_template(db: Session) -> bytes:
     )
     for template in templates:
         row = HistoryImportRow(
-            category_code=template.category,
+            category=template.category,
             category_name=_get_category_label(
                 template.category,
                 template.sub_category,
                 template.display_name,
             ),
-            item_name=template.sub_category,
+            sub_category=template.sub_category,
             destination=template.destination or "",
             is_variable=bool(template.is_variable),
             value=template.default_value or 0,
         )
         report_sheet.append(
             [
-                row.category_code,
+                row.category,
                 row.category_name,
-                row.item_name,
+                row.sub_category,
                 row.destination,
                 "是" if row.is_variable else "否",
                 row.value,
