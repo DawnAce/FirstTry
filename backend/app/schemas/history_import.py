@@ -2,12 +2,12 @@ from pydantic import BaseModel
 
 
 class HistoryImportRow(BaseModel):
-    category: str
-    sub_category: str
-    display_name: str
-    default_value: int
-    is_variable: bool
+    category_code: str
+    category_name: str
+    item_name: str
     destination: str = ""
+    is_variable: bool
+    value: int
 
 
 class TempPrintDetailRow(BaseModel):

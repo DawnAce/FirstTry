@@ -39,7 +39,61 @@ class HistoryImportTemplateTests(unittest.TestCase):
 
         self.assertEqual(workbook.sheetnames, ["基本信息", "发货明细"])
 
-    def test_report_template_rows_come_from_report_item_templates_in_sort_order(self):
+    def test_report_template_uses_required_headers(self):
+        db = self.SessionLocal()
+
+        template_bytes = build_report_import_template(db)
+        workbook = load_workbook(io.BytesIO(template_bytes))
+
+        self.assertEqual(
+            [cell.value for cell in workbook["基本信息"][1]],
+            ["字段", "值"],
+        )
+        self.assertEqual(
+            [cell.value for cell in workbook["报数项"][1]],
+            ["分类编码", "分类名称", "项目名称", "去向", "是否变动", "数值"],
+        )
+        self.assertEqual(
+            [cell.value for cell in workbook["临时加印明细"][1]],
+            ["部门", "自定义名称", "数量", "自留分发数量"],
+        )
+        db.close()
+
+    def test_shipping_template_uses_required_headers(self):
+        template_bytes = build_shipping_import_template()
+        workbook = load_workbook(io.BytesIO(template_bytes))
+
+        self.assertEqual(
+            [cell.value for cell in workbook["基本信息"][1]],
+            ["字段", "值"],
+        )
+        self.assertEqual(
+            [cell.value for cell in workbook["发货明细"][1]],
+            [
+                "工作表名称",
+                "渠道",
+                "子渠道",
+                "运输方式",
+                "频次",
+                "状态",
+                "姓名",
+                "地址",
+                "电话",
+                "数量",
+                "截止日期",
+                "备注",
+                "附加信息",
+                "城市",
+                "网点名称",
+                "网点大厅",
+                "联系人",
+                "序号",
+                "期数",
+                "公司",
+            ],
+        )
+
+    def test_report_template_rows_keep_category_code_and_label_in_order(self):
         db = self.SessionLocal()
         db.add_all(
             [
@@ -49,6 +103,7 @@ class HistoryImportTemplateTests(unittest.TestCase):
                     display_name="北京报零-西部",
                     default_value=8,
                     is_variable=True,
+                    destination="零售点",
                     sort_order=20,
                 ),
                 ReportItemTemplate(
@@ -57,6 +112,7 @@ class HistoryImportTemplateTests(unittest.TestCase):
                     display_name="北京邮发-本市",
                     default_value=12,
                     is_variable=False,
+                    destination="邮局",
                     sort_order=10,
                 ),
             ]
@@ -66,15 +122,15 @@ class HistoryImportTemplateTests(unittest.TestCase):
         template_bytes = build_report_import_template(db)
         workbook = load_workbook(io.BytesIO(template_bytes))
         rows = [
-            row[:5]
+            row[:6]
             for row in workbook["报数项"].iter_rows(min_row=2, max_row=3, values_only=True)
         ]
 
         self.assertEqual(
             rows,
             [
-                ("北京邮发", "本市", "北京邮发-本市", 12, "否"),
-                ("北京报零", "西部", "北京报零-西部", 8, "是"),
+                ("postal", "北京邮发", "本市", "邮局", "否", 12),
+                ("retail", "北京报零", "西部", "零售点", "是", 8),
             ],
         )
         db.close()

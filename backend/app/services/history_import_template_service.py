@@ -6,6 +6,30 @@ from sqlalchemy.orm import Session
 from app.models import ReportItemTemplate
 from app.schemas.history_import import HistoryImportRow, TempPrintDetailRow
 
+_BASIC_INFO_HEADERS = ["字段", "值"]
+_SHIPPING_DETAIL_HEADERS = [
+    "工作表名称",
+    "渠道",
+    "子渠道",
+    "运输方式",
+    "频次",
+    "状态",
+    "姓名",
+    "地址",
+    "电话",
+    "数量",
+    "截止日期",
+    "备注",
+    "附加信息",
+    "城市",
+    "网点名称",
+    "网点大厅",
+    "联系人",
+    "序号",
+    "期数",
+    "公司",
+]
+
 _CATEGORY_LABELS = {
     "postal": "北京邮发",
     "retail": "北京报零",
@@ -42,14 +66,14 @@ def build_report_import_template(db: Session) -> bytes:
     workbook = Workbook()
     basic_sheet = workbook.active
     basic_sheet.title = "基本信息"
-    basic_sheet.append(["字段", "说明"])
+    basic_sheet.append(_BASIC_INFO_HEADERS)
     basic_sheet.append(["期号", "填写历史期号"])
     basic_sheet.append(["出版日期", "填写为 YYYY-MM-DD"])
     basic_sheet.append(["版数", "可选，默认按 24 版处理"])
     basic_sheet.append(["备注", "可选"])
 
     report_sheet = workbook.create_sheet("报数项")
-    report_sheet.append(["类别", "项目", "显示名称", "默认值", "是否变动", "去向"])
+    report_sheet.append(["分类编码", "分类名称", "项目名称", "去向", "是否变动", "数值"])
 
     templates = (
         db.query(ReportItemTemplate)
@@ -58,25 +82,25 @@ def build_report_import_template(db: Session) -> bytes:
     )
     for template in templates:
         row = HistoryImportRow(
-            category=_get_category_label(
+            category_code=template.category,
+            category_name=_get_category_label(
                 template.category,
                 template.sub_category,
                 template.display_name,
             ),
-            sub_category=template.sub_category,
-            display_name=template.display_name,
-            default_value=template.default_value or 0,
-            is_variable=bool(template.is_variable),
+            item_name=template.sub_category,
             destination=template.destination or "",
+            is_variable=bool(template.is_variable),
+            value=template.default_value or 0,
         )
         report_sheet.append(
             [
-                row.category,
-                row.sub_category,
-                row.display_name,
-                row.default_value,
-                "是" if row.is_variable else "否",
+                row.category_code,
+                row.category_name,
+                row.item_name,
                 row.destination,
+                "是" if row.is_variable else "否",
+                row.value,
             ]
         )
 
@@ -99,13 +123,11 @@ def build_shipping_import_template() -> bytes:
     workbook = Workbook()
     basic_sheet = workbook.active
     basic_sheet.title = "基本信息"
-    basic_sheet.append(["字段", "说明"])
+    basic_sheet.append(_BASIC_INFO_HEADERS)
     basic_sheet.append(["期号", "填写历史期号"])
     basic_sheet.append(["出版日期", "填写为 YYYY-MM-DD"])
 
     detail_sheet = workbook.create_sheet("发货明细")
-    detail_sheet.append(
-        ["分组", "渠道", "子渠道", "运输方式", "收件人", "地址", "电话", "份数", "备注"]
-    )
+    detail_sheet.append(_SHIPPING_DETAIL_HEADERS)
 
     return _to_bytes(workbook)
