@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 class HistoryImportRow(BaseModel):
     category: str           # matches ReportItemTemplate.category
-    category_name: str      # human-readable label, e.g. "北京邮发"
+    display_name: str       # from ReportItemTemplate.display_name (canonical label)
     sub_category: str       # matches ReportItemTemplate.sub_category
     destination: str = ""
     is_variable: bool
@@ -57,3 +57,15 @@ class HistoryImportPreviewOut(BaseModel):
     import_session_id: str
     errors: list[str] = []
     readiness: CommitReadiness
+
+
+class HistoryImportCommitIn(BaseModel):
+    import_session_id: str
+
+
+class HistoryImportCommitOut(BaseModel):
+    issue_id: int
+    issue_number: int
+    report_entry_count: int
+    temp_detail_count: int
+    shipping_detail_count: int

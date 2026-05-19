@@ -1,15 +1,17 @@
-"""Parse uploaded history report/shipping workbooks and produce a preview."""
+"""Parse uploaded history report/shipping workbooks and produce a preview + commit."""
 
 import datetime
 import io
 
+from fastapi import HTTPException
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
-from app.history_import_cache import save_history_import_session
-from app.models import Issue, ReportItemTemplate
+from app.history_import_cache import save_history_import_session, pop_history_import_session
+from app.models import Issue, IssueStatus, ReportEntry, ReportItemTemplate, ShippingDetail, TempPrintDetail
 from app.schemas.history_import import (
     CommitReadiness,
+    HistoryImportCommitOut,
     HistoryImportRow,
     TempPrintDetailRow,
     ShippingImportRow,
@@ -51,13 +53,13 @@ def _read_report_rows(wb) -> list[HistoryImportRow]:
     for row in sheet.iter_rows(min_row=2, values_only=True):
         if not any(row):
             continue
-        cat_code, cat_name, item, dest, is_var, value = (
+        cat_code, _cat_name, item, dest, is_var, value = (
             row[0] or "", row[1] or "", row[2] or "", row[3] or "",
             row[4], row[5],
         )
         rows.append(HistoryImportRow(
             category=str(cat_code),
-            category_name=str(cat_name),
+            display_name="",        # enriched later from template
             sub_category=str(item),
             destination=str(dest),
             is_variable=(str(is_var).strip() == "是"),
@@ -121,23 +123,30 @@ def _read_shipping_rows(wb) -> list[ShippingImportRow]:
     return rows
 
 
-def _validate_report_rows(
+def _validate_and_enrich_report_rows(
     db: Session,
     rows: list[HistoryImportRow],
-) -> list[str]:
-    """Return error messages for rows whose (category, sub_category) is not in any template."""
+) -> tuple[list[str], list[HistoryImportRow]]:
+    """Validate rows against templates and enrich each with display_name from the template.
+
+    Returns (errors, enriched_rows). When no templates are seeded, validation is skipped
+    and rows are returned with empty display_name (preserves existing behavior).
+    """
     templates = db.query(ReportItemTemplate).all()
     if not templates:
-        return []  # no templates seeded — skip validation
-    valid_keys = {(t.category, t.sub_category) for t in templates}
-    errors = []
+        return [], rows
+    template_map = {(t.category, t.sub_category): t for t in templates}
+    errors: list[str] = []
+    enriched: list[HistoryImportRow] = []
     for row in rows:
         key = (row.category, row.sub_category)
-        if key not in valid_keys:
+        if key not in template_map:
             errors.append(
                 f"报数项行不在模板定义中：分类编码={row.category!r}，项目名称={row.sub_category!r}"
             )
-    return errors
+        else:
+            enriched.append(row.model_copy(update={"display_name": template_map[key].display_name}))
+    return errors, enriched
 
 
 def _error_response(
@@ -206,8 +215,8 @@ def preview_history_import(
     temp_rows = _read_temp_rows(report_wb)
     shipping_rows = _read_shipping_rows(shipping_wb)
 
-    # Validate report rows against template structure
-    validation_errors = _validate_report_rows(db, report_rows)
+    # Validate report rows against template structure and enrich with display_name
+    validation_errors, enriched_report_rows = _validate_and_enrich_report_rows(db, report_rows)
     if validation_errors:
         readiness = CommitReadiness(
             same_issue=True,
@@ -222,7 +231,7 @@ def preview_history_import(
         "publish_date": publish_date,
         "page_count": page_count,
         "notes": notes,
-        "report_rows": [r.model_dump() for r in report_rows],
+        "report_rows": [r.model_dump() for r in enriched_report_rows],
         "temp_rows": [r.model_dump() for r in temp_rows],
         "shipping_rows": [r.model_dump() for r in shipping_rows],
     }
@@ -237,11 +246,103 @@ def preview_history_import(
     return HistoryImportPreviewOut(
         issue_number=issue_number,
         publish_date=publish_date,
-        report_entry_count=len(report_rows),
+        report_entry_count=len(enriched_report_rows),
         temp_detail_count=len(temp_rows),
         shipping_detail_count=len(shipping_rows),
         can_commit=True,
         import_session_id=session_id,
         errors=[],
         readiness=readiness,
+    )
+
+
+def commit_history_import(db: Session, import_session_id: str) -> HistoryImportCommitOut:
+    """Persist a previously previewed history import from cache to the database.
+
+    Raises:
+        HTTPException 400: session missing or expired.
+        HTTPException 409: issue_number already exists in the database.
+    """
+    payload = pop_history_import_session(import_session_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"导入会话不存在或已过期：{import_session_id}",
+        )
+
+    issue_number: int = payload["issue_number"]
+    existing = db.query(Issue).filter(Issue.issue_number == issue_number).first()
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该期已存在：第 {issue_number} 期已录入系统，无法重复导入",
+        )
+
+    from datetime import date as _date
+    publish_date_str: str = payload["publish_date"]
+    publish_date = _date.fromisoformat(publish_date_str)
+
+    issue = Issue(
+        issue_number=issue_number,
+        publish_date=publish_date,
+        page_count=payload.get("page_count", 24),
+        notes=payload.get("notes", ""),
+        status=IssueStatus.draft,
+    )
+    db.add(issue)
+    db.flush()  # populate issue.id without committing
+
+    for row in payload.get("report_rows", []):
+        db.add(ReportEntry(
+            issue_id=issue.id,
+            category=row["category"],
+            sub_category=row["sub_category"],
+            destination=row.get("destination", ""),
+            value=row.get("value", 0),
+            is_variable=row.get("is_variable", False),
+        ))
+
+    for row in payload.get("temp_rows", []):
+        db.add(TempPrintDetail(
+            issue_id=issue.id,
+            department=row.get("department", ""),
+            custom_name=row.get("custom_name", ""),
+            quantity=row.get("quantity", 0),
+            self_quantity=row.get("self_quantity", 0),
+        ))
+
+    for row in payload.get("shipping_rows", []):
+        db.add(ShippingDetail(
+            issue_number=issue_number,
+            sheet_name=row.get("sheet_name", ""),
+            channel=row.get("channel", ""),
+            sub_channel=row.get("sub_channel", ""),
+            transport=row.get("transport", ""),
+            frequency=row.get("frequency", ""),
+            status=row.get("status", ""),
+            name=row.get("name", ""),
+            address=row.get("address", ""),
+            phone=row.get("phone", ""),
+            quantity=row.get("quantity", 0),
+            deadline=row.get("deadline", ""),
+            notes=row.get("notes", ""),
+            extra_info=row.get("extra_info", ""),
+            city=row.get("city", ""),
+            station_name=row.get("station_name", ""),
+            station_hall=row.get("station_hall", ""),
+            contact_person=row.get("contact_person", ""),
+            seq_number=row.get("seq_number"),
+            period_count=row.get("period_count"),
+            company=row.get("company", ""),
+        ))
+
+    db.commit()
+    db.refresh(issue)
+
+    return HistoryImportCommitOut(
+        issue_id=issue.id,
+        issue_number=issue.issue_number,
+        report_entry_count=len(payload.get("report_rows", [])),
+        temp_detail_count=len(payload.get("temp_rows", [])),
+        shipping_detail_count=len(payload.get("shipping_rows", [])),
     )

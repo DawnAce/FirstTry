@@ -4,7 +4,7 @@ from openpyxl import Workbook
 from sqlalchemy.orm import Session
 
 from app.models import ReportItemTemplate
-from app.schemas.history_import import HistoryImportRow, TempPrintDetailRow
+from app.schemas.history_import import TempPrintDetailRow
 
 _BASIC_INFO_HEADERS = ["字段", "值"]
 _SHIPPING_DETAIL_HEADERS = [
@@ -81,26 +81,19 @@ def build_report_import_template(db: Session) -> bytes:
         .all()
     )
     for template in templates:
-        row = HistoryImportRow(
-            category=template.category,
-            category_name=_get_category_label(
-                template.category,
-                template.sub_category,
-                template.display_name,
-            ),
-            sub_category=template.sub_category,
-            destination=template.destination or "",
-            is_variable=bool(template.is_variable),
-            value=template.default_value or 0,
+        category_label = _get_category_label(
+            template.category,
+            template.sub_category,
+            template.display_name,
         )
         report_sheet.append(
             [
-                row.category,
-                row.category_name,
-                row.sub_category,
-                row.destination,
-                "是" if row.is_variable else "否",
-                row.value,
+                template.category,
+                category_label,
+                template.sub_category,
+                template.destination or "",
+                "是" if template.is_variable else "否",
+                template.default_value or 0,
             ]
         )
 
