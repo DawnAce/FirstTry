@@ -48,6 +48,7 @@ class ReportShippingChainTests(unittest.TestCase):
         )
         db.commit()
 
+        # Step 1: Confirm the report with shipping_total = 40
         result = confirm_report(
             issue.id,
             db=db,
@@ -56,9 +57,17 @@ class ReportShippingChainTests(unittest.TestCase):
 
         self.assertEqual(result["zt_report_total"], 40)
         self.assertEqual(result["zt_shipping_total"], 40)
+
+        # Step 2: Mutate shipping_details after confirmation
+        shipping_details = db.query(ShippingDetail).filter_by(issue_number=3001).all()
+        shipping_details[0].quantity = 100  # Change 甲 from 15 to 100
+        db.commit()
+
+        # Step 3: Get report and verify confirmation_summary still shows confirmed totals
         report = get_report(issue.id, db=db)
-        self.assertEqual(report.confirmation_summary.shipping_total, 40)
+        self.assertEqual(report.confirmation_summary.shipping_total, 40)  # Persisted snapshot
         self.assertEqual(report.confirmation_summary.is_match, True)
+        # TODO: Later task will add current_shipping_total field showing 125 (100 + 25)
 
     def test_shipping_export_reads_shipping_details_instead_of_shipping_records(self):
         db = self.SessionLocal()
@@ -99,6 +108,7 @@ class ReportShippingChainTests(unittest.TestCase):
         )
         db.commit()
 
+        # Step 1: Confirm the report with mismatch (report=30, shipping=18, delta=12)
         result = confirm_report(
             issue.id,
             db=db,
@@ -106,9 +116,18 @@ class ReportShippingChainTests(unittest.TestCase):
         )
 
         self.assertIn("warning", result)
+
+        # Step 2: Mutate shipping_details after confirmation
+        shipping_detail = db.query(ShippingDetail).filter_by(issue_number=3003).first()
+        shipping_detail.quantity = 50  # Change from 18 to 50
+        db.commit()
+
+        # Step 3: Get report and verify confirmation_summary still shows confirmed delta
         report = get_report(issue.id, db=db)
-        self.assertEqual(report.confirmation_summary.delta, 12)
+        self.assertEqual(report.confirmation_summary.delta, 12)  # Persisted: 30 - 18
         self.assertEqual(report.confirmation_summary.is_match, False)
+        self.assertEqual(report.confirmation_summary.shipping_total, 18)  # Persisted snapshot
+        # TODO: Later task will add current_shipping_total field showing 50
 
 
 if __name__ == "__main__":
