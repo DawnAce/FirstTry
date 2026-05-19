@@ -10,15 +10,17 @@ import {
   Spin,
   Card,
   message,
+  Popconfirm,
 } from 'antd';
 import {
   ArrowLeftOutlined,
   ReloadOutlined,
   DownloadOutlined,
+  EditOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
-import { getIssue } from '../api/issues';
-import type { Issue } from '../api/issues';
+import { getIssue, deleteIssue } from '../api/issues';
 import { getShipping, regenerateShipping } from '../api/shipping';
 import type { ShippingRecord } from '../api/shipping';
 
@@ -35,37 +37,37 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 export default function ShippingPreview() {
-  const { id } = useParams<{ id: string }>();
+  const { issueId: issueIdParam } = useParams<{ issueId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [regenerating, setRegenerating] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
 
-  const issueId = Number(id);
+  const issueId = Number(issueIdParam);
 
   const { data: issue } = useQuery({
-    queryKey: ['issue', id],
+    queryKey: ['issue', issueIdParam],
     queryFn: async () => {
       const res = await getIssue(issueId);
       return res.data;
     },
-    enabled: !!id,
+    enabled: !!issueIdParam,
   });
 
   const { data: shippingRecords = [], isLoading: loading } = useQuery({
-    queryKey: ['shipping', id],
+    queryKey: ['shipping', issueIdParam],
     queryFn: async () => {
       const res = await getShipping(issueId);
       return res.data;
     },
-    enabled: !!id,
+    enabled: !!issueIdParam,
   });
 
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
       const res = await regenerateShipping(issueId);
-      queryClient.setQueryData(['shipping', id], res.data);
+      queryClient.setQueryData(['shipping', issueIdParam], res.data);
       message.success('发货明细已重新生成');
     } catch (error) {
       message.error('重新生成失败');
@@ -128,6 +130,18 @@ export default function ShippingPreview() {
 
   const getTotalCopies = () => {
     return shippingRecords.reduce((sum, record) => sum + record.quantity, 0);
+  };
+
+  const handleDeleteIssue = async () => {
+    try {
+      await deleteIssue(issueId);
+      message.success(`第 ${issue?.issue_number} 期已删除`);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['issues'] });
+      navigate('/');
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '删除失败');
+    }
   };
 
   const columns: TableColumnsType<ShippingRecord> = [
@@ -219,6 +233,9 @@ export default function ShippingPreview() {
         </div>
         <div style={{ flex: 1 }} />
         <Space>
+          <Button icon={<EditOutlined />} onClick={() => navigate(`/report/${issueId}`)}>
+            修改报数
+          </Button>
           <Button
             type="primary"
             icon={<ReloadOutlined />}
@@ -233,6 +250,18 @@ export default function ShippingPreview() {
           <Button icon={<DownloadOutlined />} onClick={handleExportAll}>
             导出全部
           </Button>
+          <Popconfirm
+            title={`确认删除第 ${issue?.issue_number} 期？`}
+            description="会同时删除该期报数、发货记录、临时加印和中通发货明细。此操作不可恢复。"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={handleDeleteIssue}
+          >
+            <Button danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
         </Space>
       </div>
 

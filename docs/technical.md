@@ -72,7 +72,7 @@ FirstTry/
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
 │   │   ├── pages/              # 页面组件
-│   │   │   ├── Dashboard.tsx
+│   │   │   ├── DashboardPage.tsx
 │   │   │   ├── History.tsx
 │   │   │   ├── Login.tsx       # 登录页面
 │   │   │   ├── Recipients.tsx

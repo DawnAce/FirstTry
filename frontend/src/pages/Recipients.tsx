@@ -390,121 +390,120 @@ function ShippingDetailsTab() {
 
   return (
     <div>
-      <div style={{
-        marginBottom: 20,
-        display: 'flex',
-        gap: 12,
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        padding: '16px 20px',
-        background: '#fff',
-        borderRadius: 12,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
-      }}>
-        <DatePicker
-          allowClear={false}
-          placeholder="出刊日期"
-          style={{ width: 150 }}
-          loading={issuesLoading}
-          disabled={issues.length === 0}
-          value={currentIssueDate}
-          onChange={handleIssueDateChange}
-        />
-        <Select
-          placeholder="期号"
-          style={{ width: 120 }}
-          loading={issuesLoading}
-          disabled={issues.length === 0}
-          value={currentIssueNumber}
-          onChange={selectIssue}
-        >
-          {issues.map((issue) => (
-            <Select.Option key={issue.id} value={issue.issue_number}>
-              第 {issue.issue_number} 期（{dayjs(issue.publish_date).format('YYYY-MM-DD')}）
-            </Select.Option>
-          ))}
-        </Select>
-        <Select
-          placeholder="渠道"
-          style={{ width: 130 }}
-          allowClear
-          value={shippingFilters.channel}
-          onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value, sub_channel: undefined }))}
-        >
-          {CHANNEL_OPTIONS.map((ch) => (
-            <Select.Option key={ch} value={ch}>{ch}</Select.Option>
-          ))}
-        </Select>
-        {shippingFilters.channel === '赠阅' && (
+      <div className="shipping-detail-filter-panel">
+        <div className="shipping-detail-filter-row shipping-detail-filter-row--issue">
+          <DatePicker
+            allowClear={false}
+            placeholder="出刊日期"
+            style={{ width: 220 }}
+            disabled={issues.length === 0}
+            value={currentIssueDate}
+            onChange={handleIssueDateChange}
+          />
           <Select
-            placeholder="子渠道"
-            style={{ width: 110 }}
-            allowClear
-            value={shippingFilters.sub_channel}
-            onChange={(value) => setShippingFilters((f) => ({ ...f, sub_channel: value }))}
+            placeholder="期号"
+            style={{ width: 180 }}
+            loading={issuesLoading}
+            disabled={issues.length === 0}
+            value={currentIssueNumber}
+            onChange={selectIssue}
           >
-            {SUB_CHANNEL_OPTIONS.map((sc) => (
-              <Select.Option key={sc} value={sc}>{sc}</Select.Option>
+            {issues.map((issue) => (
+              <Select.Option key={issue.id} value={issue.issue_number}>
+                第 {issue.issue_number} 期（{dayjs(issue.publish_date).format('YYYY-MM-DD')}）
+              </Select.Option>
             ))}
           </Select>
-        )}
-        <Select
-          mode="multiple"
-          placeholder="签约公司"
-          style={{ minWidth: 160, maxWidth: 320 }}
-          allowClear
-          maxTagCount="responsive"
-          value={shippingFilters.company}
-          onChange={(value: string[]) => setShippingFilters((f) => ({ ...f, company: value }))}
-        >
-          {companyOptions.map((c) => (
-            <Select.Option key={c} value={c}>{c}</Select.Option>
-          ))}
-        </Select>
-        <Select
-          placeholder="频率"
-          style={{ width: 120 }}
-          allowClear
-          onChange={(value) => setShippingFilters((f) => ({ ...f, frequency: value }))}
-        >
-          {FREQUENCY_OPTIONS.map((fr) => (
-            <Select.Option key={fr} value={fr}>{fr}</Select.Option>
-          ))}
-        </Select>
-        <Select
-          placeholder="运输方式"
-          style={{ width: 130 }}
-          allowClear
-          onChange={(value) => setShippingFilters((f) => ({ ...f, transport: value }))}
-        >
-          {TRANSPORT_OPTIONS.map((tr) => (
-            <Select.Option key={tr} value={tr}>{tr}</Select.Option>
-          ))}
-        </Select>
-        <Select
-          placeholder="状态"
-          style={{ width: 100 }}
-          allowClear
-          onChange={(value) => setShippingFilters((f) => ({ ...f, status: value }))}
-        >
-          {SHIPPING_STATUS_OPTIONS.map((st) => (
-            <Select.Option key={st} value={st}>{st}</Select.Option>
-          ))}
-        </Select>
-        <Input
-          placeholder="搜索姓名"
-          style={{ width: 200 }}
-          allowClear
-          prefix={<SearchOutlined />}
-          onChange={(e) => setShippingFilters((f) => ({ ...f, search: e.target.value }))}
-        />
-        <div style={{ flex: 1 }} />
-        <span style={{ color: '#888', fontSize: 14 }}>
-          共 {details.length} 条记录，合计 {details.reduce((sum, d) => sum + (d.quantity ?? 0), 0)} 份
-        </span>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
-          新增
-        </Button>
+        </div>
+        <div className="shipping-detail-filter-row shipping-detail-filter-row--channel">
+          <Select
+            placeholder="渠道"
+            style={{ width: 170 }}
+            allowClear
+            value={shippingFilters.channel}
+            onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value, sub_channel: undefined }))}
+          >
+            {CHANNEL_OPTIONS.map((ch) => (
+              <Select.Option key={ch} value={ch}>{ch}</Select.Option>
+            ))}
+          </Select>
+          {shippingFilters.channel === '赠阅' && (
+            <Select
+              placeholder="子渠道"
+              style={{ width: 140 }}
+              allowClear
+              value={shippingFilters.sub_channel}
+              onChange={(value) => setShippingFilters((f) => ({ ...f, sub_channel: value }))}
+            >
+              {SUB_CHANNEL_OPTIONS.map((sc) => (
+                <Select.Option key={sc} value={sc}>{sc}</Select.Option>
+              ))}
+            </Select>
+          )}
+          <Select
+            mode="multiple"
+            placeholder="签约公司"
+            style={{ width: 320, maxWidth: '100%' }}
+            allowClear
+            maxTagCount="responsive"
+            value={shippingFilters.company}
+            onChange={(value: string[]) => setShippingFilters((f) => ({ ...f, company: value }))}
+          >
+            {companyOptions.map((c) => (
+              <Select.Option key={c} value={c}>{c}</Select.Option>
+            ))}
+          </Select>
+        </div>
+        <div className="shipping-detail-filter-row shipping-detail-filter-row--rest">
+          <Select
+            placeholder="频率"
+            style={{ width: 140 }}
+            allowClear
+            onChange={(value) => setShippingFilters((f) => ({ ...f, frequency: value }))}
+          >
+            {FREQUENCY_OPTIONS.map((fr) => (
+              <Select.Option key={fr} value={fr}>{fr}</Select.Option>
+            ))}
+          </Select>
+          <Select
+            placeholder="运输方式"
+            style={{ width: 160 }}
+            allowClear
+            onChange={(value) => setShippingFilters((f) => ({ ...f, transport: value }))}
+          >
+            {TRANSPORT_OPTIONS.map((tr) => (
+              <Select.Option key={tr} value={tr}>{tr}</Select.Option>
+            ))}
+          </Select>
+          <Select
+            placeholder="状态"
+            style={{ width: 140 }}
+            allowClear
+            onChange={(value) => setShippingFilters((f) => ({ ...f, status: value }))}
+          >
+            {SHIPPING_STATUS_OPTIONS.map((st) => (
+              <Select.Option key={st} value={st}>{st}</Select.Option>
+            ))}
+          </Select>
+        </div>
+        <div className="shipping-detail-filter-row shipping-detail-filter-row--footer">
+          <Input
+            className="shipping-detail-filter-search"
+            placeholder="搜索姓名"
+            style={{ width: 280, maxWidth: '100%' }}
+            allowClear
+            prefix={<SearchOutlined />}
+            onChange={(e) => setShippingFilters((f) => ({ ...f, search: e.target.value }))}
+          />
+          <div className="shipping-detail-filter-tail">
+            <span className="shipping-detail-filter-summary">
+              共 {details.length} 条记录，合计 {details.reduce((sum, d) => sum + (d.quantity ?? 0), 0)} 份
+            </span>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
+              新增
+            </Button>
+          </div>
+        </div>
       </div>
 
       {selectedRowKeys.length > 0 && (

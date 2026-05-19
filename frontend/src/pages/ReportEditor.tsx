@@ -13,6 +13,7 @@ import {
   Input,
   Timeline,
   Select,
+  Popconfirm,
 } from 'antd';
 import {
   CheckOutlined,
@@ -21,8 +22,9 @@ import {
   UndoOutlined,
   PlusOutlined,
   DeleteOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
-import { getIssue, updateIssue } from '../api/issues';
+import { getIssue, updateIssue, deleteIssue } from '../api/issues';
 import type { ReportEntry, TempPrintDetail } from '../api/reports';
 import { getReport, updateReport, confirmReport, revokeReport, getRevisions, getTempPrintDetails, updateTempPrintDetails } from '../api/reports';
 import type { RevisionRecord } from '../api/reports';
@@ -253,7 +255,7 @@ export default function ReportEditor() {
     }
   }, [issueId, queryClient]);
 
-  const handleValueChange = (entryId: number, value: number | undefined) => {
+  const handleValueChange = (entryId: number, value: number | null) => {
     if (isConfirmed) return;
     const updated = entries.map(entry =>
       entry.id === entryId ? { ...entry, value: value ?? 0 } : entry
@@ -360,6 +362,19 @@ export default function ReportEditor() {
     window.open(`/api/issues/${issueId}/export/report`, '_blank');
   };
 
+  const handleDeleteIssue = async () => {
+    if (!issueId) return;
+    try {
+      await deleteIssue(Number(issueId));
+      message.success(`第 ${issue?.issue_number} 期已删除`);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['issues'] });
+      navigate('/');
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '删除失败');
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
@@ -381,7 +396,7 @@ export default function ReportEditor() {
   const tempExpressValue = (tempEntry?.value ?? 0) - (tempSelfEntry?.value ?? 0);
 
   // Render value: plain text when confirmed, InputNumber when editing
-  const renderValue = (entry: ReportEntry, opts?: { width?: number; size?: 'mini' | 'small' | 'default' | 'large' }) => {
+  const renderValue = (entry: ReportEntry, opts?: { width?: number; size?: 'mini' | 'small' | 'large' }) => {
     if (isConfirmed) {
       return (
         <span style={{ fontSize: opts?.size === 'large' ? 16 : 14, fontWeight: 500, color: '#1d1d1f' }}>
@@ -477,6 +492,13 @@ export default function ReportEditor() {
               <Tag color="green" style={{ fontSize: 13, padding: '4px 12px' }}>
                 ✅ 已确认报数
               </Tag>
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                onClick={() => navigate(`/shipping/${issueId}`)}
+              >
+                发货
+              </Button>
               {isAdmin && (
                 <Button
                   danger
@@ -489,6 +511,18 @@ export default function ReportEditor() {
               <Button icon={<DownloadOutlined />} onClick={handleExport}>
                 导出
               </Button>
+              <Popconfirm
+                title={`确认删除第 ${issue.issue_number} 期？`}
+                description="会同时删除该期报数、发货记录、临时加印和中通发货明细。此操作不可恢复。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={handleDeleteIssue}
+              >
+                <Button danger icon={<DeleteOutlined />}>
+                  删除
+                </Button>
+              </Popconfirm>
             </>
           ) : (
             <>

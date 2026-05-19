@@ -11,12 +11,11 @@ import {
   Space,
   message,
   Select,
-  Popconfirm,
 } from 'antd';
-import { PlusOutlined, EditOutlined, SendOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { getDashboard, createIssue, deleteIssue } from '../api/issues';
-import type { Issue, NextIssueInfo } from '../api/issues';
+import { getDashboard, createIssue } from '../api/issues';
+import type { Issue } from '../api/issues';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -46,6 +45,7 @@ export default function Dashboard() {
   const nextIssue = data?.next_issue ?? null;
   const availableIssues = data?.available_issues ?? [];
   const recentIssues = data?.recent_issues ?? [];
+  const visibleRecentIssues = recentIssues.slice(0, 3);
   const stats = data?.stats ?? { total: 0, draft: 0 };
 
   const handleCreateIssue = async (issueNum?: number) => {
@@ -68,17 +68,6 @@ export default function Dashboard() {
       message.error(error.response?.data?.detail || '创建失败');
     } finally {
       setCreating(false);
-    }
-  };
-
-  const handleDeleteIssue = async (issue: Issue) => {
-    try {
-      await deleteIssue(issue.id);
-      message.success(`第 ${issue.issue_number} 期已删除`);
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['issues'] });
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || '删除失败');
     }
   };
 
@@ -180,21 +169,24 @@ export default function Dashboard() {
         </h2>
       </div>
       <Card loading={loading}>
-        {recentIssues.length === 0 ? (
+        {visibleRecentIssues.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#86868b' }}>暂无数据</div>
         ) : (
-          recentIssues.map((item, index) => (
+          visibleRecentIssues.map((item, index) => (
             <div
               key={item.id}
+              className="dashboard-issue-row"
+              onClick={() => navigate(`/report/${item.id}`)}
               style={{
                 padding: '16px 4px',
-                borderBottom: index < recentIssues.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none',
+                borderBottom: index < visibleRecentIssues.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                cursor: 'pointer',
               }}
             >
-              <div>
+              <div className="dashboard-issue-row-meta">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
                   <span style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>
                     第 {item.issue_number} 期
@@ -205,40 +197,10 @@ export default function Dashboard() {
                   {dayjs(item.publish_date).format('YYYY-MM-DD')} · 创建于 {dayjs(item.created_at).format('MM-DD HH:mm')}
                 </div>
               </div>
-              <Space>
-                <Button
-                  type="text"
-                  icon={<EditOutlined />}
-                  onClick={() => navigate(`/report/${item.id}`)}
-                  style={{ color: '#86868b' }}
-                >
-                  编辑
-                </Button>
-                <Button
-                  type="text"
-                  icon={<SendOutlined />}
-                  onClick={() => navigate(`/shipping/${item.id}`)}
-                  style={{ color: '#86868b' }}
-                >
-                  发货
-                </Button>
-                <Popconfirm
-                  title={`确认删除第 ${item.issue_number} 期？`}
-                  description="会同时删除该期报数、发货记录、临时加印和中通发货明细。此操作不可恢复。"
-                  okText="删除"
-                  cancelText="取消"
-                  okButtonProps={{ danger: true }}
-                  onConfirm={() => handleDeleteIssue(item)}
-                >
-                  <Button
-                    type="text"
-                    danger
-                    icon={<DeleteOutlined />}
-                  >
-                    删除
-                  </Button>
-                </Popconfirm>
-              </Space>
+              <span style={{ color: '#86868b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                查看详情
+                <RightOutlined />
+              </span>
             </div>
           ))
         )}
