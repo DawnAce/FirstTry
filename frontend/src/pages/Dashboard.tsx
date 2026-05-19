@@ -13,7 +13,7 @@ import {
   Select,
   Popconfirm,
 } from 'antd';
-import { PlusOutlined, EditOutlined, SendOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, SendOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getDashboard, createIssue, deleteIssue } from '../api/issues';
 import type { Issue, NextIssueInfo } from '../api/issues';
@@ -117,6 +117,19 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
+
+      {/* History Import Entry */}
+      <Card style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 2 }}>历史数据导入</div>
+            <div style={{ fontSize: 13, color: '#86868b' }}>通过 Excel 模板批量导入历史期次报数与发货数据</div>
+          </div>
+          <Button icon={<UploadOutlined />} onClick={() => navigate('/history-import')}>
+            导入历史数据
+          </Button>
+        </div>
+      </Card>
 
       {/* Create Issue */}
       <Card loading={loading} style={{ marginBottom: 28 }}>

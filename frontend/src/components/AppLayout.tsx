@@ -20,7 +20,7 @@ export default function AppLayout() {
   // Map sub-routes to their parent menu key
   const getSelectedKey = () => {
     const path = location.pathname;
-    if (path.startsWith('/report/') || path.startsWith('/shipping/')) return '/';
+    if (path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import')) return '/';
     if (path.startsWith('/recipients')) return '/recipients';
     if (path.startsWith('/history')) return '/history';
     if (path.startsWith('/templates')) return '/templates';
