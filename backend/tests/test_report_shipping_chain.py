@@ -33,7 +33,7 @@ class ReportShippingChainTests(unittest.TestCase):
 
         return asyncio.run(_collect_body())
 
-    def test_confirm_uses_shipping_details_total_and_persists_snapshot(self):
+    def test_confirm_uses_shipping_details_total_and_returns_snapshot_and_drift_totals(self):
         db = self.SessionLocal()
         issue = Issue(issue_number=3001, publish_date=date(2026, 5, 25), status=IssueStatus.draft)
         db.add(issue)
@@ -63,11 +63,17 @@ class ReportShippingChainTests(unittest.TestCase):
         shipping_details[0].quantity = 100  # Change 甲 from 15 to 100
         db.commit()
 
-        # Step 3: Get report and verify confirmation_summary still shows confirmed totals
+        # Step 3: Get report and verify confirmation_summary separates confirmed snapshot totals
+        # from current drift totals after the live rows have changed.
         report = get_report(issue.id, db=db)
-        self.assertEqual(report.confirmation_summary.shipping_total, 40)  # Persisted snapshot
-        self.assertEqual(report.confirmation_summary.is_match, True)
-        # TODO: Later task will add current_shipping_total field showing 125 (100 + 25)
+        self.assertEqual(report.confirmation_summary.confirmed_report_total, 40)
+        self.assertEqual(report.confirmation_summary.confirmed_shipping_total, 40)
+        self.assertEqual(report.confirmation_summary.confirmed_delta, 0)
+        self.assertEqual(report.confirmation_summary.confirmed_is_match, True)
+        self.assertEqual(report.confirmation_summary.current_shipping_total, 125)
+        self.assertEqual(report.confirmation_summary.current_delta, -85)
+        self.assertEqual(report.confirmation_summary.current_is_match, False)
+        self.assertEqual(report.confirmation_summary.has_shipping_drift, True)
 
     def test_shipping_export_reads_shipping_details_instead_of_shipping_records(self):
         db = self.SessionLocal()
@@ -95,7 +101,7 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(summary_sheet["B3"].value, "乙")
         self.assertEqual(summary_sheet["E3"].value, 9)
 
-    def test_confirm_mismatch_is_saved_for_future_drift_display(self):
+    def test_confirm_mismatch_returns_snapshot_and_current_drift_values(self):
         db = self.SessionLocal()
         issue = Issue(issue_number=3003, publish_date=date(2026, 6, 8), status=IssueStatus.draft)
         db.add(issue)
@@ -122,12 +128,17 @@ class ReportShippingChainTests(unittest.TestCase):
         shipping_detail.quantity = 50  # Change from 18 to 50
         db.commit()
 
-        # Step 3: Get report and verify confirmation_summary still shows confirmed delta
+        # Step 3: Get report and verify confirmation_summary keeps the confirmed snapshot
+        # while also surfacing the current live totals after drift.
         report = get_report(issue.id, db=db)
-        self.assertEqual(report.confirmation_summary.delta, 12)  # Persisted: 30 - 18
-        self.assertEqual(report.confirmation_summary.is_match, False)
-        self.assertEqual(report.confirmation_summary.shipping_total, 18)  # Persisted snapshot
-        # TODO: Later task will add current_shipping_total field showing 50
+        self.assertEqual(report.confirmation_summary.confirmed_report_total, 30)
+        self.assertEqual(report.confirmation_summary.confirmed_shipping_total, 18)
+        self.assertEqual(report.confirmation_summary.confirmed_delta, 12)
+        self.assertEqual(report.confirmation_summary.confirmed_is_match, False)
+        self.assertEqual(report.confirmation_summary.current_shipping_total, 50)
+        self.assertEqual(report.confirmation_summary.current_delta, -20)
+        self.assertEqual(report.confirmation_summary.current_is_match, False)
+        self.assertEqual(report.confirmation_summary.has_shipping_drift, True)
 
 
 if __name__ == "__main__":
