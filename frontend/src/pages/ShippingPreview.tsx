@@ -18,7 +18,6 @@ import {
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import { getIssue } from '../api/issues';
-import type { Issue } from '../api/issues';
 import { getShipping, regenerateShipping } from '../api/shipping';
 import type { ShippingRecord } from '../api/shipping';
 

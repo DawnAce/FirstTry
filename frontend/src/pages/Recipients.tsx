@@ -405,7 +405,6 @@ function ShippingDetailsTab() {
           allowClear={false}
           placeholder="出刊日期"
           style={{ width: 150 }}
-          loading={issuesLoading}
           disabled={issues.length === 0}
           value={currentIssueDate}
           onChange={handleIssueDateChange}

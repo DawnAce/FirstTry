@@ -16,7 +16,7 @@ import {
 import { PlusOutlined, EditOutlined, SendOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getDashboard, createIssue, deleteIssue } from '../api/issues';
-import type { Issue, NextIssueInfo } from '../api/issues';
+import type { Issue } from '../api/issues';
 
 export default function Dashboard() {
   const navigate = useNavigate();
