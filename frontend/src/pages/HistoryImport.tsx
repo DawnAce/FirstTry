@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -33,6 +34,7 @@ function saveBlob(blob: Blob, filename: string) {
 
 export default function HistoryImport() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [reportFile, setReportFile] = useState<File | null>(null);
   const [shippingFile, setShippingFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<HistoryImportPreview | null>(null);
@@ -80,6 +82,10 @@ export default function HistoryImport() {
     setCommitting(true);
     try {
       const res = await commitHistoryImport(preview.import_session_id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['issues'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      ]);
       message.success(`第 ${res.data.issue_number} 期数据导入成功`);
       navigate(`/report/${res.data.issue_id}`);
     } catch (error: unknown) {
