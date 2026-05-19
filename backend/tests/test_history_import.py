@@ -1,17 +1,73 @@
 import io
 import unittest
+from datetime import date
 
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
-from app.models import ReportItemTemplate
+from app.models import ReportItemTemplate, Issue, IssueStatus
 from app.services.history_import_template_service import (
     build_report_import_template,
     build_shipping_import_template,
 )
+from app.services.history_import_service import preview_history_import
+
+
+_SHIPPING_HEADERS = [
+    "工作表名称", "渠道", "子渠道", "运输方式", "频次", "状态",
+    "姓名", "地址", "电话", "数量", "截止日期", "备注", "附加信息",
+    "城市", "网点名称", "网点大厅", "联系人", "序号", "期数", "公司",
+]
+
+
+def _wb_to_bytes(wb: Workbook) -> bytes:
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def build_report_upload(issue_number: int = 2648) -> bytes:
+    wb = Workbook()
+    basic = wb.active
+    basic.title = "基本信息"
+    basic.append(["字段", "值"])
+    basic.append(["期号", issue_number])
+    basic.append(["出版日期", "2026-04-20"])
+    basic.append(["版数", 24])
+    basic.append(["备注", "测试备注"])
+
+    report = wb.create_sheet("报数项")
+    report.append(["分类编码", "分类名称", "项目名称", "去向", "是否变动", "数值"])
+    report.append(["postal", "北京邮发", "本市", "邮局", "否", 100])
+    report.append(["retail", "北京报零", "西部", "零售点", "是", 50])
+
+    temp = wb.create_sheet("临时加印明细")
+    temp.append(["部门", "自定义名称", "数量", "自留分发数量"])
+    temp.append(["编辑部", "赠送用", 20, 5])
+
+    return _wb_to_bytes(wb)
+
+
+def build_shipping_upload(issue_number: int = 2648) -> bytes:
+    wb = Workbook()
+    basic = wb.active
+    basic.title = "基本信息"
+    basic.append(["字段", "值"])
+    basic.append(["期号", issue_number])
+    basic.append(["出版日期", "2026-04-20"])
+
+    detail = wb.create_sheet("发货明细")
+    detail.append(_SHIPPING_HEADERS)
+    detail.append([
+        "发货明细", "邮发", "本市", "中通物流", "每周", "正常",
+        "张三", "北京市朝阳区xx路1号", "13800138000", 10,
+        "2026-04-19", "", "", "北京", "", "", "", 1, issue_number, "",
+    ])
+
+    return _wb_to_bytes(wb)
 
 
 class HistoryImportTemplateTests(unittest.TestCase):
@@ -133,6 +189,54 @@ class HistoryImportTemplateTests(unittest.TestCase):
                 ("retail", "北京报零", "西部", "零售点", "是", 8),
             ],
         )
+        db.close()
+
+
+class HistoryImportPreviewTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=self.engine)
+        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+
+    def test_preview_returns_counts_and_session_id(self):
+        db = self.SessionLocal()
+
+        result = preview_history_import(db, build_report_upload(), build_shipping_upload())
+
+        self.assertEqual(result.issue_number, 2648)
+        self.assertEqual(result.publish_date, "2026-04-20")
+        self.assertEqual(result.report_entry_count, 2)
+        self.assertEqual(result.temp_detail_count, 1)
+        self.assertEqual(result.shipping_detail_count, 1)
+        self.assertTrue(result.can_commit)
+        self.assertNotEqual(result.import_session_id, "")
+        db.close()
+
+    def test_preview_blocks_duplicate_issue_and_cross_issue_upload(self):
+        db = self.SessionLocal()
+
+        # Seed an existing issue to trigger duplicate check
+        existing = Issue(
+            issue_number=2648,
+            publish_date=date(2026, 4, 20),
+            status=IssueStatus.confirmed,
+        )
+        db.add(existing)
+        db.commit()
+
+        dup_result = preview_history_import(db, build_report_upload(2648), build_shipping_upload(2648))
+        self.assertFalse(dup_result.can_commit)
+        self.assertTrue(any("该期已存在" in e for e in dup_result.errors))
+
+        # Cross-issue: report=2648, shipping=2649
+        cross_result = preview_history_import(db, build_report_upload(2648), build_shipping_upload(2649))
+        self.assertFalse(cross_result.can_commit)
+        self.assertTrue(any("两份文件不是同一期" in e for e in cross_result.errors))
+
         db.close()
 
 
