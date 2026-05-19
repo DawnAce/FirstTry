@@ -126,7 +126,7 @@ export default function Dashboard() {
             <div style={{ fontSize: 13, color: '#86868b' }}>通过 Excel 模板批量导入历史期次报数与发货数据</div>
           </div>
           <Button icon={<UploadOutlined />} onClick={() => navigate('/history-import')}>
-            导入历史数据
+            导入往期数据
           </Button>
         </div>
       </Card>
