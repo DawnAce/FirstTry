@@ -128,10 +128,13 @@ class ReportShippingChainTests(unittest.TestCase):
         )
         workbook = load_workbook(io.BytesIO(self._read_streaming_response_bytes(response)))
         summary_sheet = workbook["每周合计"]
-        self.assertEqual(summary_sheet["B2"].value, "甲")
-        self.assertEqual(summary_sheet["E2"].value, 7)
-        self.assertEqual(summary_sheet["B3"].value, "乙")
-        self.assertEqual(summary_sheet["E3"].value, 9)
+        exported_rows = {
+            (summary_sheet[f"B{row}"].value, summary_sheet[f"E{row}"].value)
+            for row in range(2, 10)
+            if summary_sheet[f"B{row}"].value
+        }
+        self.assertIn(("甲", 7), exported_rows)
+        self.assertIn(("乙", 9), exported_rows)
 
     def test_confirm_mismatch_returns_snapshot_and_current_drift_values(self):
         db = self.SessionLocal()

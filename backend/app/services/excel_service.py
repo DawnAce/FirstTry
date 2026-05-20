@@ -5,7 +5,7 @@ from typing import Optional
 
 from openpyxl import load_workbook, Workbook
 from sqlalchemy.orm import Session
-from app.models import Issue, ReportEntry, ShippingRecord, Recipient
+from app.models import Issue, ReportEntry, ShippingDetail
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 
@@ -285,27 +285,25 @@ def export_shipping_excel(issue_id: int, db: Session) -> io.BytesIO:
     else:
         wb = Workbook()
 
-    # Get shipping records with recipient info
-    records = (
-        db.query(ShippingRecord, Recipient)
-        .join(Recipient, ShippingRecord.recipient_id == Recipient.id)
-        .filter(ShippingRecord.issue_id == issue_id)
+    details = (
+        db.query(ShippingDetail)
+        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .order_by(ShippingDetail.id)
         .all()
     )
 
-    # Group by recipient type for different sheets
-    corporate = [(r, rec) for r, rec in records if rec.type.value == "corporate"]
-    readers = [(r, rec) for r, rec in records if rec.type.value == "reader"]
-    samples = [(r, rec) for r, rec in records if rec.type.value == "sample"]
+    corporate = [detail for detail in details if detail.channel == "对公订阅"]
+    readers = [detail for detail in details if detail.channel in {"个人订阅", "渠道订阅"}]
+    samples = [detail for detail in details if detail.channel in {"赠阅", "记者站", "报社留存", "库房留存"}]
 
     def _write_sheet(ws, items, start_row=2):
-        for i, (record, recipient) in enumerate(items):
+        for i, detail in enumerate(items):
             row = start_row + i
             ws.cell(row=row, column=1, value=i + 1)
-            ws.cell(row=row, column=2, value=recipient.name)
-            ws.cell(row=row, column=3, value=recipient.phone or "")
-            ws.cell(row=row, column=4, value=recipient.address or "")
-            ws.cell(row=row, column=5, value=record.quantity)
+            ws.cell(row=row, column=2, value=detail.name)
+            ws.cell(row=row, column=3, value=detail.phone or "")
+            ws.cell(row=row, column=4, value=detail.address or "")
+            ws.cell(row=row, column=5, value=detail.quantity)
 
     # Write to sheets (create if template doesn't have them)
     sheet_names = ["每周合计", "每周（对公）", "每周（读者）", "样报缴送清单"]
