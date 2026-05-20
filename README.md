@@ -2,6 +2,14 @@
 
 每周五生成下周一出版的《中国经营报》印数报数表和中通快递发货明细的 Web 应用。
 
+当前主链已经收敛为：
+
+- 报数编辑页中的 **中通物流公司合计**
+- 收件人管理中的 **中通发货明细（`shipping_details`）**
+- 报数/发货/打包导出时生成的 **审计快照**
+
+旧的 `/shipping/:issueId` 入口已重定向到当前的「收件人管理 → 中通发货明细」执行面。
+
 ## 技术栈
 - **后端**: Python / FastAPI / SQLAlchemy / JWT 认证 / openpyxl / cpca（地址解析）
 - **前端**: React / TypeScript / Vite / Ant Design / TanStack Query

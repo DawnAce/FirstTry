@@ -14,12 +14,24 @@ export interface DestinationSummary {
   total: number;
 }
 
+export interface ConfirmationSummary {
+  confirmed_report_total: number;
+  confirmed_shipping_total: number;
+  confirmed_delta: number;
+  confirmed_is_match: boolean;
+  current_shipping_total: number;
+  current_delta: number;
+  current_is_match: boolean;
+  has_shipping_drift: boolean;
+}
+
 export interface ReportData {
   issue_id: number;
   issue_number: number;
   entries: ReportEntry[];
   total: number;
   destination_summary: DestinationSummary[];
+  confirmation_summary?: ConfirmationSummary | null;
 }
 
 export interface ConfirmReportResponse {

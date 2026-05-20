@@ -255,7 +255,7 @@ export default function ReportEditor() {
     }
   }, [issueId, queryClient]);
 
-  const handleValueChange = (entryId: number, value: number | null) => {
+  const handleValueChange = (entryId: number, value: number | null | undefined) => {
     if (isConfirmed) return;
     const updated = entries.map(entry =>
       entry.id === entryId ? { ...entry, value: value ?? 0 } : entry
@@ -389,6 +389,7 @@ export default function ReportEditor() {
 
   const groupedEntries = groupEntriesByCategory();
   const sortedCategories = categoryOrder.filter(c => groupedEntries[c]);
+  const confirmationSummary = report?.confirmation_summary;
 
   // Extract 临时加印 from social_use for prominent display at top
   const tempEntry = entries.find(e => e.category === 'social_use' && e.sub_category === '临时加印');
@@ -396,7 +397,8 @@ export default function ReportEditor() {
   const tempExpressValue = (tempEntry?.value ?? 0) - (tempSelfEntry?.value ?? 0);
 
   // Render value: plain text when confirmed, InputNumber when editing
-  const renderValue = (entry: ReportEntry, opts?: { width?: number; size?: 'mini' | 'small' | 'large' }) => {
+  const renderValue = (entry: ReportEntry, opts?: { width?: number; size?: 'mini' | 'small' | 'default' | 'large' }) => {
+    const inputSize = opts?.size === 'mini' || opts?.size === 'default' ? undefined : opts?.size;
     if (isConfirmed) {
       return (
         <span style={{ fontSize: opts?.size === 'large' ? 16 : 14, fontWeight: 500, color: '#1d1d1f' }}>
@@ -412,7 +414,7 @@ export default function ReportEditor() {
         precision={0}
         style={{ width: opts?.width ?? 140 }}
         addonAfter="份"
-        size={opts?.size === 'mini' ? 'small' : opts?.size}
+        size={inputSize}
       />
     );
   };
@@ -566,6 +568,43 @@ export default function ReportEditor() {
                 </Tag>
               ))}
             </Space>
+          </div>
+        </Card>
+      )}
+
+      {confirmationSummary && (
+        <Card style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Space size="small" wrap>
+              <span style={{ fontSize: 15, fontWeight: 600 }}>中通校验追溯</span>
+              <Tag color={confirmationSummary.confirmed_is_match ? 'green' : 'red'}>
+                确认时{confirmationSummary.confirmed_is_match ? '一致' : '不一致'}
+              </Tag>
+              <Tag color={confirmationSummary.current_is_match ? 'green' : 'orange'}>
+                当前{confirmationSummary.current_is_match ? '一致' : '不一致'}
+              </Tag>
+              {confirmationSummary.has_shipping_drift && (
+                <Tag color="gold">确认后明细已变更</Tag>
+              )}
+            </Space>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            <div style={{ padding: 12, borderRadius: 12, background: '#fafafa' }}>
+              <div style={{ fontSize: 13, color: '#86868b', marginBottom: 6 }}>确认时快照</div>
+              <div style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 1.8 }}>
+                <div>报数中通：{confirmationSummary.confirmed_report_total.toLocaleString()} 份</div>
+                <div>发货明细：{confirmationSummary.confirmed_shipping_total.toLocaleString()} 份</div>
+                <div>差值：{confirmationSummary.confirmed_delta.toLocaleString()} 份</div>
+              </div>
+            </div>
+            <div style={{ padding: 12, borderRadius: 12, background: '#fafafa' }}>
+              <div style={{ fontSize: 13, color: '#86868b', marginBottom: 6 }}>当前中通明细</div>
+              <div style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 1.8 }}>
+                <div>当前发货明细：{confirmationSummary.current_shipping_total.toLocaleString()} 份</div>
+                <div>相对报数差值：{confirmationSummary.current_delta.toLocaleString()} 份</div>
+                <div>{confirmationSummary.has_shipping_drift ? '当前数量已偏离确认快照' : '当前数量与确认快照一致'}</div>
+              </div>
+            </div>
           </div>
         </Card>
       )}

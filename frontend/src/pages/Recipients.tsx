@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Key } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Table,
   Button,
@@ -45,6 +46,7 @@ import {
 import { getIssues } from '../api/issues';
 import { getOperationLogs } from '../api/operationLogs';
 import type { OperationLog } from '../api/operationLogs';
+import { getReport } from '../api/reports';
 import dayjs from 'dayjs';
 
 const typeLabels: Record<string, string> = { corporate: '对公', reader: '读者', sample: '样报' };
@@ -89,7 +91,7 @@ interface ShippingFilters {
   company?: string[];
 }
 
-function ShippingDetailsTab() {
+function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   const queryClient = useQueryClient();
   const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number>();
@@ -119,6 +121,16 @@ function ShippingDetailsTab() {
 
   const currentIssueNumber = currentIssue?.issue_number;
   const currentIssueDate = currentIssue?.publish_date ? dayjs(currentIssue.publish_date) : null;
+
+  useEffect(() => {
+    if (initialIssueId == null || selectedIssueNumber != null || issues.length === 0) {
+      return;
+    }
+    const matchedIssue = issues.find((issue) => issue.id === initialIssueId);
+    if (matchedIssue) {
+      setSelectedIssueNumber(matchedIssue.issue_number);
+    }
+  }, [initialIssueId, issues, selectedIssueNumber]);
 
   const selectIssue = (issueNumber: number) => {
     setSelectedIssueNumber(issueNumber);
@@ -163,6 +175,16 @@ function ShippingDetailsTab() {
     enabled: currentIssueNumber != null,
   });
 
+  const { data: report } = useQuery({
+    queryKey: ['report', currentIssue?.id],
+    queryFn: async () => {
+      if (currentIssue?.id == null) return null;
+      const res = await getReport(currentIssue.id);
+      return res.data;
+    },
+    enabled: currentIssue?.id != null,
+  });
+
   const { data: operationLogs = [], isLoading: logsLoading } = useQuery({
     queryKey: ['operationLogs', logRecordId],
     queryFn: async () => {
@@ -183,6 +205,7 @@ function ShippingDetailsTab() {
     queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
     queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
     queryClient.invalidateQueries({ queryKey: ['operationLogs'] });
+    queryClient.invalidateQueries({ queryKey: ['report', currentIssue?.id] });
   };
 
   const handleEdit = (record: ShippingDetail) => {
@@ -306,6 +329,8 @@ function ShippingDetailsTab() {
     selectedRowKeys,
     onChange: (keys) => setSelectedRowKeys(keys),
   };
+  const confirmationSummary = report?.confirmation_summary;
+  const currentShippingTotal = details.reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
 
   const shippingColumns: TableColumnsType<ShippingDetail> = [
     { title: '姓名', dataIndex: 'name', key: 'name', width: 80 },
@@ -506,6 +531,46 @@ function ShippingDetailsTab() {
         </div>
       </div>
 
+      {confirmationSummary && (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Space size="small" wrap>
+              <span style={{ fontSize: 15, fontWeight: 600 }}>当期中通校验状态</span>
+              <Tag color={confirmationSummary.confirmed_is_match ? 'green' : 'red'}>
+                确认时{confirmationSummary.confirmed_is_match ? '一致' : '不一致'}
+              </Tag>
+              <Tag color={confirmationSummary.current_is_match ? 'green' : 'orange'}>
+                当前{confirmationSummary.current_is_match ? '一致' : '不一致'}
+              </Tag>
+              {confirmationSummary.has_shipping_drift && (
+                <Tag color="gold">确认后明细已变更</Tag>
+              )}
+            </Space>
+            <span style={{ color: '#666', fontSize: 13 }}>
+              当前页合计 {currentShippingTotal.toLocaleString()} 份
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            <div style={{ padding: 12, borderRadius: 12, background: '#fafafa' }}>
+              <div style={{ fontSize: 13, color: '#86868b', marginBottom: 6 }}>确认时快照</div>
+              <div style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 1.8 }}>
+                <div>报数中通：{confirmationSummary.confirmed_report_total.toLocaleString()} 份</div>
+                <div>发货明细：{confirmationSummary.confirmed_shipping_total.toLocaleString()} 份</div>
+                <div>差值：{confirmationSummary.confirmed_delta.toLocaleString()} 份</div>
+              </div>
+            </div>
+            <div style={{ padding: 12, borderRadius: 12, background: '#fafafa' }}>
+              <div style={{ fontSize: 13, color: '#86868b', marginBottom: 6 }}>当前状态</div>
+              <div style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 1.8 }}>
+                <div>当前发货明细：{confirmationSummary.current_shipping_total.toLocaleString()} 份</div>
+                <div>相对报数差值：{confirmationSummary.current_delta.toLocaleString()} 份</div>
+                <div>{confirmationSummary.has_shipping_drift ? '当前数量已偏离确认快照' : '当前数量与确认快照一致'}</div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {selectedRowKeys.length > 0 && (
         <div style={{
           marginBottom: 12,
@@ -692,7 +757,11 @@ function ShippingDetailsTab() {
 
 export default function Recipients() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<Record<string, any>>({});
+  const activeTab = searchParams.get('tab') === 'shipping' ? 'shipping' : 'recipients';
+  const issueIdParam = Number(searchParams.get('issueId'));
+  const initialIssueId = Number.isFinite(issueIdParam) ? issueIdParam : undefined;
   
   // Create/Edit modal
   const [modalVisible, setModalVisible] = useState(false);
@@ -896,7 +965,20 @@ export default function Recipients() {
         收件人管理
       </h2>
 
-      <Tabs defaultActiveKey="recipients" size="large" items={[
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => {
+          const nextParams = new URLSearchParams(searchParams);
+          if (key === 'shipping') {
+            nextParams.set('tab', 'shipping');
+          } else {
+            nextParams.delete('tab');
+            nextParams.delete('issueId');
+          }
+          setSearchParams(nextParams);
+        }}
+        size="large"
+        items={[
         {
           key: 'recipients',
           label: '收件人',
@@ -1092,9 +1174,10 @@ export default function Recipients() {
         {
           key: 'shipping',
           label: '中通发货明细',
-          children: <ShippingDetailsTab />,
+          children: <ShippingDetailsTab initialIssueId={initialIssueId} />,
         },
-      ]} />
+      ]}
+      />
     </div>
   );
 }

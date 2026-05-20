@@ -11,10 +11,11 @@ import {
   Space,
   message,
   Select,
+  Popconfirm,
 } from 'antd';
-import { PlusOutlined, RightOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, SendOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { getDashboard, createIssue } from '../api/issues';
+import { getDashboard, createIssue, deleteIssue } from '../api/issues';
 import type { Issue } from '../api/issues';
 
 export default function Dashboard() {
@@ -68,6 +69,17 @@ export default function Dashboard() {
       message.error(error.response?.data?.detail || '创建失败');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeleteIssue = async (issue: Issue) => {
+    try {
+      await deleteIssue(issue.id);
+      message.success(`第 ${issue.issue_number} 期已删除`);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['issues'] });
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '删除失败');
     }
   };
 
@@ -197,10 +209,48 @@ export default function Dashboard() {
                   {dayjs(item.publish_date).format('YYYY-MM-DD')} · 创建于 {dayjs(item.created_at).format('MM-DD HH:mm')}
                 </div>
               </div>
-              <span style={{ color: '#86868b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                查看详情
-                <RightOutlined />
-              </span>
+              <Space>
+                <Button
+                  type="text"
+                  icon={<EditOutlined />}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate(`/report/${item.id}`);
+                  }}
+                  style={{ color: '#86868b' }}
+                >
+                  编辑
+                </Button>
+                <Button
+                  type="text"
+                  icon={<SendOutlined />}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate(`/recipients?tab=shipping&issueId=${item.id}`);
+                  }}
+                  style={{ color: '#86868b' }}
+                >
+                  中通明细
+                </Button>
+                <Popconfirm
+                  title={`确认删除第 ${item.issue_number} 期？`}
+                  description="会同时删除该期报数、发货记录、临时加印和中通发货明细。此操作不可恢复。"
+                  okText="删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => handleDeleteIssue(item)}
+                  onPopupClick={(event) => event.stopPropagation()}
+                >
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
             </div>
           ))
         )}

@@ -1,10 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/AppLayout';
 import Dashboard from './pages/DashboardPage';
 import ReportEditor from './pages/ReportEditor';
 import Recipients from './pages/Recipients';
-import ShippingPreview from './pages/ShippingPreview';
 import History from './pages/History';
 import Templates from './pages/Templates';
 import Login from './pages/Login';
@@ -14,6 +13,12 @@ function RequireAuth({ children }: { children: ReactNode }) {
   const { isLoggedIn } = useAuth();
   if (!isLoggedIn) return <Navigate to="/login" replace />;
   return <>{children}</>;
+}
+
+function LegacyShippingRedirect() {
+  const { issueId } = useParams<{ issueId: string }>();
+  const target = issueId ? `/recipients?tab=shipping&issueId=${issueId}` : '/recipients?tab=shipping';
+  return <Navigate to={target} replace />;
 }
 
 function App() {
@@ -26,7 +31,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/report/:issueId" element={<ReportEditor />} />
             <Route path="/recipients" element={<Recipients />} />
-            <Route path="/shipping/:issueId" element={<ShippingPreview />} />
+            <Route path="/shipping/:issueId" element={<LegacyShippingRedirect />} />
             <Route path="/history" element={<History />} />
             <Route path="/templates" element={<Templates />} />
           </Route>
