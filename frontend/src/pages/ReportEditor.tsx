@@ -409,7 +409,7 @@ export default function ReportEditor() {
     return (
       <InputNumber
         value={entry.value}
-        onChange={(value) => handleValueChange(entry.id, value)}
+        onChange={(value) => handleValueChange(entry.id, value ?? undefined)}
         min={0}
         precision={0}
         style={{ width: opts?.width ?? 140 }}
@@ -634,7 +634,7 @@ export default function ReportEditor() {
                 ) : (
                   <InputNumber
                     value={tempSelfEntry.value}
-                    onChange={(value) => handleValueChange(tempSelfEntry.id, value)}
+                    onChange={(value) => handleValueChange(tempSelfEntry.id, value ?? undefined)}
                     min={0}
                     max={tempEntry.value}
                     precision={0}

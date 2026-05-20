@@ -6,6 +6,7 @@ import ReportEditor from './pages/ReportEditor';
 import Recipients from './pages/Recipients';
 import History from './pages/History';
 import Templates from './pages/Templates';
+import HistoryImport from './pages/HistoryImport';
 import Login from './pages/Login';
 import type { ReactNode } from 'react';
 
@@ -34,6 +35,7 @@ function App() {
             <Route path="/shipping/:issueId" element={<LegacyShippingRedirect />} />
             <Route path="/history" element={<History />} />
             <Route path="/templates" element={<Templates />} />
+            <Route path="/history-import" element={<HistoryImport />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
