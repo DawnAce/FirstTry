@@ -24,7 +24,7 @@ _REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES = {
 }
 
 
-def _persist_shipping_export_snapshot(issue: Issue, db: Session) -> None:
+def _persist_export_snapshot(issue: Issue, snapshot_type: str, db: Session) -> None:
     entries = db.query(ReportEntry).filter(ReportEntry.issue_id == issue.id).all()
     zt_report_total = sum(
         entry.value
@@ -40,7 +40,7 @@ def _persist_shipping_export_snapshot(issue: Issue, db: Session) -> None:
     db.add(
         IssueAuditSnapshot(
             issue_id=issue.id,
-            snapshot_type="shipping_export",
+            snapshot_type=snapshot_type,
             report_total=zt_report_total,
             shipping_total=zt_shipping_total,
             delta=zt_report_total - zt_shipping_total,
@@ -57,6 +57,7 @@ def export_report(issue_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Issue not found")
 
     output = export_report_excel(issue_id, db)
+    _persist_export_snapshot(issue, "report_export", db)
     filename = get_report_filename(issue)
     return StreamingResponse(
         output,
@@ -72,7 +73,7 @@ def export_shipping(issue_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Issue not found")
 
     output = export_shipping_excel(issue_id, db)
-    _persist_shipping_export_snapshot(issue, db)
+    _persist_export_snapshot(issue, "shipping_export", db)
     filename = get_shipping_filename(issue)
     return StreamingResponse(
         output,
