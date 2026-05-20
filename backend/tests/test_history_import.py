@@ -200,6 +200,22 @@ class HistoryImportTemplateTests(unittest.TestCase):
         )
         db.close()
 
+    def test_report_template_includes_basic_info_notes(self):
+        db = self.SessionLocal()
+
+        template_bytes = build_report_import_template(db)
+        workbook = load_workbook(io.BytesIO(template_bytes))
+
+        basic_rows = [
+            [cell.value for cell in row]
+            for row in workbook["基本信息"].iter_rows(values_only=False)
+        ]
+
+        self.assertIn(["填写说明", "1. 只填“值”列；2. 报数项只改“数值”列；3. 临时加印总数填在报数项 sheet。"], basic_rows)
+        self.assertIn(["临时加印说明", "先在报数项 sheet 填“临时加印”总数；再在“临时加印明细” sheet 按行填写部门、数量、自留分发数量；明细数量合计应等于总数。"], basic_rows)
+        self.assertIn(["临时加印示例", "例如总数 20：营报传媒 12、自留 2；财经中心 8、自留 0。没有临时加印时，总数填 0，明细可留空。"], basic_rows)
+        db.close()
+
     def test_shipping_template_uses_required_headers(self):
         template_bytes = build_shipping_import_template()
         workbook = load_workbook(io.BytesIO(template_bytes))

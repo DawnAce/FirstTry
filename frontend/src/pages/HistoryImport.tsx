@@ -44,7 +44,7 @@ export default function HistoryImport() {
   const handleDownloadReport = async () => {
     try {
       const res = await downloadReportTemplate();
-      saveBlob(res.data, '报数导入模板.xlsx');
+      saveBlob(res.data, '印数导入模板.xlsx');
     } catch {
       message.error('下载失败');
     }
@@ -115,7 +115,7 @@ export default function HistoryImport() {
         </div>
         <Space>
           <Button icon={<DownloadOutlined />} onClick={handleDownloadReport}>
-            下载报数导入模板
+            下载印数导入模板
           </Button>
           <Button icon={<DownloadOutlined />} onClick={handleDownloadShipping}>
             下载中通发货导入模板

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import io
+from urllib.parse import quote
 
 from app.database import get_db
 from app.schemas.history_import import (
@@ -30,7 +31,7 @@ def download_report_template(db: Session = Depends(get_db)):
     return StreamingResponse(
         io.BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="history_report_template.xlsx"'},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote('印数导入模板.xlsx')}"},
     )
 
 

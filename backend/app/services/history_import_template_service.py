@@ -71,6 +71,9 @@ def build_report_import_template(db: Session) -> bytes:
     basic_sheet.append(["出版日期", "填写为 YYYY-MM-DD"])
     basic_sheet.append(["版数", "可选，默认按 24 版处理"])
     basic_sheet.append(["备注", "可选"])
+    basic_sheet.append(["填写说明", "1. 只填“值”列；2. 报数项只改“数值”列；3. 临时加印总数填在报数项 sheet。"])
+    basic_sheet.append(["临时加印说明", "先在报数项 sheet 填“临时加印”总数；再在“临时加印明细” sheet 按行填写部门、数量、自留分发数量；明细数量合计应等于总数。"])
+    basic_sheet.append(["临时加印示例", "例如总数 20：营报传媒 12、自留 2；财经中心 8、自留 0。没有临时加印时，总数填 0，明细可留空。"])
 
     report_sheet = workbook.create_sheet("报数项")
     report_sheet.append(["分类编码", "分类名称", "项目名称", "去向", "是否变动", "数值"])
