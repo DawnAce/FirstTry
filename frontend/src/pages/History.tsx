@@ -29,7 +29,7 @@ export default function History() {
     { title: '操作', render: (_, record) => (
       <Space>
         <Button size="small" type="text" icon={<EditOutlined />} onClick={() => navigate(`/report/${record.id}`)}>报数</Button>
-        <Button size="small" type="text" icon={<SendOutlined />} onClick={() => navigate(`/shipping/${record.id}`)}>发货</Button>
+        <Button size="small" type="text" icon={<SendOutlined />} onClick={() => navigate(`/recipients?tab=shipping&issueId=${record.id}`)}>中通明细</Button>
         <Button size="small" type="text" icon={<DownloadOutlined />} onClick={() => window.open(`/api/issues/${record.id}/export/all`, '_blank')}>导出</Button>
       </Space>
     )},

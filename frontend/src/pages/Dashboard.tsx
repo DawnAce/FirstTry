@@ -16,7 +16,7 @@ import {
 import { PlusOutlined, EditOutlined, SendOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getDashboard, createIssue, deleteIssue } from '../api/issues';
-import type { Issue, NextIssueInfo } from '../api/issues';
+import type { Issue } from '../api/issues';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -217,10 +217,10 @@ export default function Dashboard() {
                 <Button
                   type="text"
                   icon={<SendOutlined />}
-                  onClick={() => navigate(`/shipping/${item.id}`)}
+                  onClick={() => navigate(`/recipients?tab=shipping&issueId=${item.id}`)}
                   style={{ color: '#86868b' }}
                 >
-                  发货
+                  中通明细
                 </Button>
                 <Popconfirm
                   title={`确认删除第 ${item.issue_number} 期？`}

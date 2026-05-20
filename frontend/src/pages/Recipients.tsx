@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Key } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Table,
   Button,
@@ -90,7 +91,7 @@ interface ShippingFilters {
   company?: string[];
 }
 
-function ShippingDetailsTab() {
+function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   const queryClient = useQueryClient();
   const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number>();
@@ -120,6 +121,16 @@ function ShippingDetailsTab() {
 
   const currentIssueNumber = currentIssue?.issue_number;
   const currentIssueDate = currentIssue?.publish_date ? dayjs(currentIssue.publish_date) : null;
+
+  useEffect(() => {
+    if (initialIssueId == null || selectedIssueNumber != null || issues.length === 0) {
+      return;
+    }
+    const matchedIssue = issues.find((issue) => issue.id === initialIssueId);
+    if (matchedIssue) {
+      setSelectedIssueNumber(matchedIssue.issue_number);
+    }
+  }, [initialIssueId, issues, selectedIssueNumber]);
 
   const selectIssue = (issueNumber: number) => {
     setSelectedIssueNumber(issueNumber);
@@ -419,7 +430,6 @@ function ShippingDetailsTab() {
           allowClear={false}
           placeholder="出刊日期"
           style={{ width: 150 }}
-          loading={issuesLoading}
           disabled={issues.length === 0}
           value={currentIssueDate}
           onChange={handleIssueDateChange}
@@ -747,7 +757,11 @@ function ShippingDetailsTab() {
 
 export default function Recipients() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<Record<string, any>>({});
+  const activeTab = searchParams.get('tab') === 'shipping' ? 'shipping' : 'recipients';
+  const issueIdParam = Number(searchParams.get('issueId'));
+  const initialIssueId = Number.isFinite(issueIdParam) ? issueIdParam : undefined;
   
   // Create/Edit modal
   const [modalVisible, setModalVisible] = useState(false);
@@ -951,7 +965,20 @@ export default function Recipients() {
         收件人管理
       </h2>
 
-      <Tabs defaultActiveKey="recipients" size="large" items={[
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => {
+          const nextParams = new URLSearchParams(searchParams);
+          if (key === 'shipping') {
+            nextParams.set('tab', 'shipping');
+          } else {
+            nextParams.delete('tab');
+            nextParams.delete('issueId');
+          }
+          setSearchParams(nextParams);
+        }}
+        size="large"
+        items={[
         {
           key: 'recipients',
           label: '收件人',
@@ -1147,9 +1174,10 @@ export default function Recipients() {
         {
           key: 'shipping',
           label: '中通发货明细',
-          children: <ShippingDetailsTab />,
+          children: <ShippingDetailsTab initialIssueId={initialIssueId} />,
         },
-      ]} />
+      ]}
+      />
     </div>
   );
 }
