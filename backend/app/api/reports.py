@@ -6,6 +6,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models import (
     Issue,
+    IssueAuditSnapshot,
     IssueStatus,
     OperationLog,
     ReportEntry,
@@ -195,6 +196,17 @@ def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = De
         .scalar()
     )
 
+    db.add(
+        IssueAuditSnapshot(
+            issue_id=issue.id,
+            snapshot_type="confirm",
+            report_total=zt_report_total,
+            shipping_total=zt_shipping_total,
+            delta=zt_report_total - zt_shipping_total,
+            is_match=zt_report_total == zt_shipping_total,
+            created_by=user.username,
+        )
+    )
     issue.status = IssueStatus.confirmed
     db.commit()
     result = {

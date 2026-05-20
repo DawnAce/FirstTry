@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.exports import export_shipping
 from app.api.reports import confirm_report, get_report
 from app.database import Base
-from app.models import Issue, IssueStatus, ReportEntry, ShippingDetail, User, UserRole
+from app.models import Issue, IssueAuditSnapshot, IssueStatus, ReportEntry, ShippingDetail, User, UserRole
 
 
 class ReportShippingChainTests(unittest.TestCase):
@@ -80,6 +80,32 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(report.confirmation_summary.current_delta, -85)
         self.assertEqual(report.confirmation_summary.current_is_match, False)
         self.assertEqual(report.confirmation_summary.has_shipping_drift, True)
+
+    def test_confirm_report_persists_issue_audit_snapshot_row(self):
+        db = self.SessionLocal()
+        issue = Issue(issue_number=3010, publish_date=date(2026, 7, 20), status=IssueStatus.draft)
+        db.add(issue)
+        db.flush()
+        db.add_all(
+            [
+                ReportEntry(issue_id=issue.id, category="social_use", sub_category="营报传媒_读者", value=22),
+                ShippingDetail(issue_number=3010, sheet_name="测试", channel="渠道订阅", name="甲", quantity=10),
+            ]
+        )
+        db.commit()
+
+        result = confirm_report(
+            issue.id,
+            db=db,
+            user=User(id=1, username="admin", role=UserRole.admin, password_hash="x"),
+        )
+
+        self.assertIn("warning", result)
+        snapshot = db.query(IssueAuditSnapshot).filter_by(issue_id=issue.id, snapshot_type="confirm").one()
+        self.assertEqual(snapshot.report_total, 22)
+        self.assertEqual(snapshot.shipping_total, 10)
+        self.assertEqual(snapshot.delta, 12)
+        self.assertEqual(snapshot.is_match, False)
 
     def test_shipping_export_reads_shipping_details_instead_of_shipping_records(self):
         db = self.SessionLocal()
