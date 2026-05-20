@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import List, Optional
+from app.schemas.audit_snapshot import ConfirmationSummary
 
 
 class ReportEntryOut(BaseModel):
@@ -30,6 +31,7 @@ class ReportDataOut(BaseModel):
     entries: List[ReportEntryOut]
     total: int
     destination_summary: List[DestinationSummary] = []
+    confirmation_summary: Optional[ConfirmationSummary] = None
 
 
 class ReportDataUpdate(BaseModel):
