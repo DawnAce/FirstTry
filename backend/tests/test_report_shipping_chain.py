@@ -136,6 +136,36 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertIn(("甲", 7), exported_rows)
         self.assertIn(("乙", 9), exported_rows)
 
+    def test_shipping_export_persists_export_audit_snapshot(self):
+        db = self.SessionLocal()
+        issue = Issue(issue_number=3004, publish_date=date(2026, 6, 15), status=IssueStatus.confirmed)
+        db.add(issue)
+        db.flush()
+        db.add_all(
+            [
+                ReportEntry(issue_id=issue.id, category="social_use", sub_category="营报传媒_读者", value=30),
+                ShippingDetail(issue_number=3004, sheet_name="测试", channel="渠道订阅", name="甲", quantity=12),
+                ShippingDetail(issue_number=3004, sheet_name="测试", channel="对公订阅", name="乙", quantity=8),
+            ]
+        )
+        db.commit()
+
+        response = export_shipping(issue.id, db=db)
+
+        self.assertIn(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            response.media_type,
+        )
+        snapshot = (
+            db.query(IssueAuditSnapshot)
+            .filter_by(issue_id=issue.id, snapshot_type="shipping_export")
+            .one()
+        )
+        self.assertEqual(snapshot.report_total, 30)
+        self.assertEqual(snapshot.shipping_total, 20)
+        self.assertEqual(snapshot.delta, 10)
+        self.assertEqual(snapshot.is_match, False)
+
     def test_confirm_mismatch_returns_snapshot_and_current_drift_values(self):
         db = self.SessionLocal()
         issue = Issue(issue_number=3003, publish_date=date(2026, 6, 8), status=IssueStatus.draft)

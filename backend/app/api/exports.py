@@ -3,15 +3,51 @@ import zipfile
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Issue
+from app.models import Issue, IssueAuditSnapshot, ReportEntry, ShippingDetail
+from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.services.excel_service import (
     export_report_excel, export_shipping_excel,
     get_report_filename, get_shipping_filename,
 )
 
 router = APIRouter(prefix="/api/issues/{issue_id}/export", tags=["export"])
+
+_REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES = {
+    "临时加印_自留",
+    "营报传媒加印",
+    "财经中心加印",
+    "中经未来",
+    "产经中心加印",
+}
+
+
+def _persist_shipping_export_snapshot(issue: Issue, db: Session) -> None:
+    entries = db.query(ReportEntry).filter(ReportEntry.issue_id == issue.id).all()
+    zt_report_total = sum(
+        entry.value
+        for entry in entries
+        if entry.sub_category not in _REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES
+        and resolve_report_destination(entry.category, entry.sub_category, entry.destination) == DESTINATION_ZTO
+    )
+    zt_shipping_total = (
+        db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
+        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .scalar()
+    )
+    db.add(
+        IssueAuditSnapshot(
+            issue_id=issue.id,
+            snapshot_type="shipping_export",
+            report_total=zt_report_total,
+            shipping_total=zt_shipping_total,
+            delta=zt_report_total - zt_shipping_total,
+            is_match=zt_report_total == zt_shipping_total,
+        )
+    )
+    db.commit()
 
 
 @router.get("/report")
@@ -36,6 +72,7 @@ def export_shipping(issue_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Issue not found")
 
     output = export_shipping_excel(issue_id, db)
+    _persist_shipping_export_snapshot(issue, db)
     filename = get_shipping_filename(issue)
     return StreamingResponse(
         output,
