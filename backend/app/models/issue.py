@@ -26,3 +26,4 @@ class Issue(Base):
     report_entries = relationship("ReportEntry", back_populates="issue", cascade="all, delete-orphan")
     shipping_records = relationship("ShippingRecord", back_populates="issue", cascade="all, delete-orphan")
     temp_print_details = relationship("TempPrintDetail", back_populates="issue", cascade="all, delete-orphan")
+    audit_snapshots = relationship("IssueAuditSnapshot", back_populates="issue", cascade="all, delete-orphan")

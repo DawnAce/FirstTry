@@ -33,6 +33,12 @@ class ReportShippingChainTests(unittest.TestCase):
 
         return asyncio.run(_collect_body())
 
+    def test_issue_audit_snapshot_model_is_wired_to_issue(self):
+        from app.models import IssueAuditSnapshot
+
+        self.assertEqual(IssueAuditSnapshot.__tablename__, "issue_audit_snapshots")
+        self.assertTrue(hasattr(Issue, "audit_snapshots"))
+
     def test_confirm_uses_shipping_details_total_and_returns_snapshot_and_drift_totals(self):
         db = self.SessionLocal()
         issue = Issue(issue_number=3001, publish_date=date(2026, 5, 25), status=IssueStatus.draft)

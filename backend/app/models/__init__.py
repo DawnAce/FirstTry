@@ -10,6 +10,7 @@ from app.models.report_revision import ReportRevision
 from app.models.temp_print_detail import TempPrintDetail
 from app.models.shipping_detail import ShippingDetail
 from app.models.operation_log import OperationLog
+from app.models.issue_audit_snapshot import IssueAuditSnapshot
 
 __all__ = [
     "PublicationSchedule",
@@ -24,4 +25,5 @@ __all__ = [
     "TempPrintDetail",
     "ShippingDetail",
     "OperationLog",
+    "IssueAuditSnapshot",
 ]
