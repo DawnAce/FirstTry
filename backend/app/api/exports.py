@@ -90,6 +90,8 @@ def export_all(issue_id: int, db: Session = Depends(get_db)):
 
     report_bytes = export_report_excel(issue_id, db)
     shipping_bytes = export_shipping_excel(issue_id, db)
+    _persist_export_snapshot(issue, "report_export", db)
+    _persist_export_snapshot(issue, "shipping_export", db)
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
