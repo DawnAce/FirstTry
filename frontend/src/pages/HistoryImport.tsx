@@ -61,7 +61,7 @@ export default function HistoryImport() {
 
   const handlePreview = async () => {
     if (!reportFile || !shippingFile) {
-      message.warning('请先上传报数文件和发货文件');
+      message.warning('请先上传印数文件和发货文件');
       return;
     }
     setPreviewing(true);
@@ -128,9 +128,9 @@ export default function HistoryImport() {
         <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 14 }}>
           第二步：上传填写好的文件
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="history-import-upload-grid">
           <div>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>报数文件</Text>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>印数文件</Text>
             <Dragger
               accept=".xlsx,.xls"
               maxCount={1}
@@ -138,7 +138,7 @@ export default function HistoryImport() {
               onChange={({ fileList }) => setReportFile(fileList[0]?.originFileObj ?? null)}
             >
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖拽上传报数文件</p>
+              <p className="ant-upload-text">点击或拖拽上传印数文件</p>
               <p className="ant-upload-hint">.xlsx / .xls</p>
             </Dragger>
           </div>
@@ -156,7 +156,7 @@ export default function HistoryImport() {
             </Dragger>
           </div>
         </div>
-        <div style={{ marginTop: 20 }}>
+        <div className="history-import-preview-action">
           <Button type="primary" onClick={handlePreview} loading={previewing}>
             预览导入
           </Button>

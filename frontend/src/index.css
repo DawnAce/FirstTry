@@ -311,6 +311,20 @@ body {
   min-width: 0;
 }
 
+.history-import-upload-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.history-import-preview-action {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-divider);
+  display: flex;
+  justify-content: flex-start;
+}
+
 @media (max-width: 1200px) {
   .shipping-detail-filter-row--footer {
     justify-content: flex-start;
@@ -324,5 +338,9 @@ body {
     margin-left: 0;
     width: 100%;
     justify-content: space-between;
+  }
+
+  .history-import-upload-grid {
+    grid-template-columns: 1fr;
   }
 }
