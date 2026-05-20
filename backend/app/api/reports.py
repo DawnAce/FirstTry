@@ -16,6 +16,7 @@ from app.models import (
     User,
 )
 from app.schemas.report import (
+    ConfirmationSummary,
     DestinationSummary,
     ReportDataOut,
     ReportDataUpdate,
@@ -126,6 +127,34 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         destination = resolve_report_destination(e.category, e.sub_category, e.destination)
         destination_totals[destination] = destination_totals.get(destination, 0) + e.value
 
+    latest_confirmation = (
+        db.query(IssueAuditSnapshot)
+        .filter(
+            IssueAuditSnapshot.issue_id == issue.id,
+            IssueAuditSnapshot.snapshot_type == "confirm",
+        )
+        .order_by(IssueAuditSnapshot.created_at.desc(), IssueAuditSnapshot.id.desc())
+        .first()
+    )
+    current_shipping_total = (
+        db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
+        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .scalar()
+    )
+    confirmation_summary = None
+    if latest_confirmation:
+        current_delta = latest_confirmation.report_total - current_shipping_total
+        confirmation_summary = ConfirmationSummary(
+            confirmed_report_total=latest_confirmation.report_total,
+            confirmed_shipping_total=latest_confirmation.shipping_total,
+            confirmed_delta=latest_confirmation.delta,
+            confirmed_is_match=latest_confirmation.is_match,
+            current_shipping_total=current_shipping_total,
+            current_delta=current_delta,
+            current_is_match=current_delta == 0,
+            has_shipping_drift=current_shipping_total != latest_confirmation.shipping_total,
+        )
+
     return ReportDataOut(
         issue_id=issue.id,
         issue_number=issue.issue_number,
@@ -135,6 +164,7 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
             DestinationSummary(destination=destination, total=destination_total)
             for destination, destination_total in destination_totals.items()
         ],
+        confirmation_summary=confirmation_summary,
     )
 
 
