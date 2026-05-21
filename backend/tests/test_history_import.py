@@ -16,6 +16,7 @@ from app.services.history_import_template_service import (
     build_shipping_import_template,
 )
 from app.services.history_import_service import preview_history_import, commit_history_import
+from app.services.raw_report_import_service import parse_raw_report_workbook
 
 
 _SHIPPING_HEADERS = [
@@ -153,6 +154,125 @@ def build_shipping_upload(issue_number: int = 2648) -> bytes:
     ])
 
     return _wb_to_bytes(wb)
+
+
+def build_raw_report_upload() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "北京印厂"
+    ws.append(["中国经营报印数表"])
+    ws.append(["（此表给人民日报印厂邮一科）"])
+    ws.append(["期数：2647   版数：24    出版日期：2026年4月13日"])
+    ws.append(["渠道名称", None, "数量", "插报要求"])
+    ws.append(["北京报刊局\n(邮发）", "本市", 1213, None])
+    ws.append([None, "外埠", 5573, None])
+    ws.append(["报社总部（社用）", None, 200, "早4：00前插报完成"])
+    ws.append(["报社总部（其他）", None, 1212, "早4：00前插报完成"])
+    ws.append(["北京零售公司\n(邮局-快速邮路）", "东部", 460, "早2：30前插报完成"])
+    ws.append([None, "西部", 592, "早2：30前插报完成"])
+    ws.append(["合订本专用", None, 15, "印厂留存"])
+    ws.append(["合计", None, 9265, None])
+
+    retail = wb.create_sheet("零售渠道`")
+    retail.append(["传统零售渠道报数统计"])
+    retail.append(["期数：2647   版数：24    出版日期：2026年4月13日"])
+    retail.append(["渠道名称", "本期印数", "上期印数", "同上期比", "印刷地点"])
+    retail.append(["北京报零", 460, 460, 0, "东部"])
+    retail.append([None, 592, 592, 0, "西部"])
+    retail.append(["广州日报\n（零售）", 500, 500, 0, "北京快递"])
+    retail.append(["报数合计", 1552, 1552, 0, None])
+
+    subscription = wb.create_sheet("订阅渠道`")
+    subscription.append(["订阅渠道报数统计"])
+    subscription.append(["期数：2647   版数：24    出版日期：2026年4月13日"])
+    subscription.append(["渠道名称", "本期印数", "上期印数", "同上期比", "印刷地点"])
+    subscription.append(["北京报刊局\n（邮发）", 6786, 6782, 4, None])
+    subscription.append(["国图贸", 1, 1, 0, "北京快递"])
+    subscription.append(["广州日报\n（订户）", 31, 31, 0, "北京快递"])
+    subscription.append(["杂志铺", 366, 366, 0, "北京快递"])
+    subscription.append(["报数合计", 7184, 7180, 4, None])
+
+    social = wb.create_sheet("社用报`")
+    social.append(["《中国经营报》社用报统计表"])
+    social.append(["期数：2647   版数：24    出版日期：2026年4月13日"])
+    social.append(["地点", "本期印数", "上期印数", "同上期比", "分发地", "印刷地点", None, None, None, None])
+    social.append(["营报传媒", 151, 151, 0, "报社", "北京", None, None, 29, "报社"])
+    social.append(["中经传媒智库", 3, 3, 0, "报社", None, None, None, 50, "读者"])
+    social.append(["新闻中心", 45, 45, 0, "报社", None, None, None, 72, "备用"])
+    social.append(["行政", 4, 4, 0, "报社", None, None, None, None, None])
+    social.append(["财经中心", 15, 24, -9, "报社", None, None, None, None, None])
+    social.append(["产经中心", 5, 5, 0, "报社", None, None, None, None, None])
+    social.append(["出版中心", 10, 10, 0, "报社", None, None, None, None, None])
+    social.append(["品牌中心", 5, 5, 0, "报社", None, None, None, None, None])
+    social.append(["经营网", 7, 7, 0, "报社", None, None, None, None, None])
+    social.append(["法务", 2, 2, 0, "报社", None, None, None, None, None])
+    social.append(["社科院、工经所", 64, 64, 0, "报社", None, None, None, None, None])
+    social.append(["财务", 1, 1, 0, "报社", None, None, None, None, None])
+    social.append(["库房", 10, 10, 0, "报社", None, None, None, None, None])
+    social.append(["印厂留存", 15, 15, 0, "报社", None, None, None, None, None])
+    social.append(["报社订阅自投/展示", 140, 140, 0, "报社", "北京快递", None, None, 30, "上犹"])
+    social.append(["上海站用", 10, 10, 0, "上海", "北京快递", None, None, 110, "高铁展示"])
+    social.append(["广东站用", 30, 30, 0, "广东", "北京快递", None, None, None, None])
+    social.append(["成都站用", 2, 2, 0, "成都", "北京快递", None, None, None, None])
+    social.append(["西安站用", 10, 10, 0, "西安", "北京快递", None, None, None, None])
+    social.append(["营报传媒加印", 0, 0, 0, "报社", "北京", None, None, None, None])
+    social.append(["临时加印", 0, 0, 0, "展示", "北京快递", None, None, None, None])
+    social.append(["合计", 529, 538, -9, None, None, None, None, None, None])
+
+    distribution = wb.create_sheet("收发室自留分发（需打印）")
+    distribution.append([])
+    distribution.append(["《中国经营报》社用报分发表"])
+    distribution.append(["期数：2647   版数：24    出版日期：2026年4月13日"])
+    distribution.append(["部门", "本期印数", "领用人", "备注", "领用人签字"])
+    distribution.append(["营报传媒", 29, "卢娅丽", None, None])
+    distribution.append(["中经传媒智库", 3, "赵震平", None, None])
+    distribution.append(["新闻中心", 45, "翟军", None, None])
+    distribution.append(["行政", 4, "黄鹤", None, None])
+    distribution.append(["财经中心", 15, "齐士娟", None, None])
+    distribution.append(["产经中心", 5, "刘家懿", None, None])
+    distribution.append(["出版中心", 10, "翟军", None, None])
+    distribution.append(["品牌中心", 5, "张威", None, None])
+    distribution.append(["经营网", 7, "孙明胜", None, None])
+    distribution.append(["法务", 2, "张伊萍", None, None])
+    distribution.append(["社科院、工经所", 64, None, "社科院43、工经所21", None])
+    distribution.append(["财务", 1, "王钧", None, None])
+    distribution.append(["库房", 10, None, None, None])
+    distribution.append(["临时加印（报社内存）", 0, None, None, None])
+    distribution.append(["合计", 200, None, None, None])
+
+    return _wb_to_bytes(wb)
+
+
+class RawReportImportParserTests(unittest.TestCase):
+    def test_parses_original_report_metadata_and_mapped_rows(self):
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload()), data_only=True)
+
+        result = parse_raw_report_workbook(workbook)
+
+        self.assertEqual(result.issue_number, 2647)
+        self.assertEqual(result.publish_date, "2026-04-13")
+        self.assertEqual(result.page_count, 24)
+        row_map = {(row.category, row.sub_category): row.value for row in result.report_rows}
+        self.assertEqual(row_map[("postal", "本市")], 1213)
+        self.assertEqual(row_map[("postal", "外埠")], 5573)
+        self.assertEqual(row_map[("retail", "东部")], 460)
+        self.assertEqual(row_map[("retail", "西部")], 592)
+        self.assertEqual(row_map[("guangzhou", "零售")], 500)
+        self.assertEqual(row_map[("guangzhou", "订阅")], 31)
+        self.assertEqual(row_map[("chengdu", "成都杂志铺")], 366)
+        self.assertEqual(row_map[("guotumao", "国图贸")], 1)
+        self.assertEqual(row_map[("social_use", "营报传媒_收发室")], 29)
+        self.assertEqual(row_map[("social_use", "营报传媒_读者")], 50)
+        self.assertEqual(row_map[("social_use", "营报传媒_备用报")], 72)
+        self.assertEqual(row_map[("social_use", "营报传媒_上犹")], 30)
+        self.assertEqual(row_map[("social_use", "高铁展示")], 110)
+        self.assertEqual(row_map[("social_use", "临时加印")], 0)
+        self.assertEqual(row_map[("social_use", "临时加印_自留")], 0)
+        self.assertEqual(row_map[("binding", "合订本（印厂留存）")], 15)
+        self.assertEqual(result.source_total, 9265)
+        self.assertEqual(result.mapped_total, 9265)
+        self.assertEqual(result.unmapped_items, [])
+        workbook.close()
 
 
 class HistoryImportTemplateTests(unittest.TestCase):
