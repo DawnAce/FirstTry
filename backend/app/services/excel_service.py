@@ -9,6 +9,33 @@ from app.models import Issue, ReportEntry, ShippingDetail
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 
+SHIPPING_DETAIL_EXPORT_COLUMNS: list[tuple[str, str | None]] = [
+    ("序号", None),
+    ("期号", "issue_number"),
+    ("原工作表", "sheet_name"),
+    ("渠道", "channel"),
+    ("子渠道", "sub_channel"),
+    ("签约公司", "company"),
+    ("姓名", "name"),
+    ("电话", "phone"),
+    ("地址", "address"),
+    ("份数", "quantity"),
+    ("频率", "frequency"),
+    ("运输方式", "transport"),
+    ("发货时间", "shipped_at"),
+    ("截止日期", "deadline"),
+    ("状态", "status"),
+    ("备注", "notes"),
+    ("附加信息", "extra_info"),
+    ("城市", "city"),
+    ("站点", "station_name"),
+    ("站厅", "station_hall"),
+    ("联系人", "contact_person"),
+    ("高铁序号", "seq_number"),
+    ("期数", "period_count"),
+    ("信息确认", "confirmation"),
+]
+
 # Mapping: (category, sub_category) → list of (sheet_name, cell) to write current value
 CELL_MAPPING: dict[tuple[str, str], list[tuple[str, str]]] = {
     # 邮发 → 人民日报印厂`
@@ -278,12 +305,9 @@ def export_shipping_excel(issue_id: int, db: Session) -> io.BytesIO:
     if not issue:
         raise ValueError("Issue not found")
 
-    template_path = _get_template_path("shipping_template.xlsx")
-
-    if template_path:
-        wb = load_workbook(template_path)
-    else:
-        wb = Workbook()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "中通发货明细"
 
     details = (
         db.query(ShippingDetail)
@@ -292,34 +316,20 @@ def export_shipping_excel(issue_id: int, db: Session) -> io.BytesIO:
         .all()
     )
 
-    corporate = [detail for detail in details if detail.channel == "对公订阅"]
-    readers = [detail for detail in details if detail.channel in {"个人订阅", "渠道订阅"}]
-    samples = [detail for detail in details if detail.channel in {"赠阅", "记者站", "报社留存", "库房留存"}]
+    for col, (header, _) in enumerate(SHIPPING_DETAIL_EXPORT_COLUMNS, start=1):
+        ws.cell(row=1, column=col, value=header)
 
-    def _write_sheet(ws, items, start_row=2):
-        for i, detail in enumerate(items):
-            row = start_row + i
-            ws.cell(row=row, column=1, value=i + 1)
-            ws.cell(row=row, column=2, value=detail.name)
-            ws.cell(row=row, column=3, value=detail.phone or "")
-            ws.cell(row=row, column=4, value=detail.address or "")
-            ws.cell(row=row, column=5, value=detail.quantity)
-
-    # Write to sheets (create if template doesn't have them)
-    sheet_names = ["每周合计", "每周（对公）", "每周（读者）", "样报缴送清单"]
-    sheet_data = [corporate + readers + samples, corporate, readers, samples]
-
-    for name, data in zip(sheet_names, sheet_data):
-        if name in wb.sheetnames:
-            ws = wb[name]
-        else:
-            ws = wb.create_sheet(name)
-            ws.append(["序号", "收件人", "电话", "地址", "份数"])
-        _write_sheet(ws, data)
-
-    # Remove default "Sheet" if it exists and we created other sheets
-    if "Sheet" in wb.sheetnames and len(wb.sheetnames) > 1:
-        del wb["Sheet"]
+    for row_index, detail in enumerate(details, start=2):
+        for col, (_, field_name) in enumerate(SHIPPING_DETAIL_EXPORT_COLUMNS, start=1):
+            if field_name is None:
+                value = row_index - 1
+            else:
+                value = getattr(detail, field_name)
+                if field_name == "shipped_at" and value:
+                    value = value.strftime("%Y-%m-%d")
+                if value is None:
+                    value = ""
+            ws.cell(row=row_index, column=col, value=value)
 
     output = io.BytesIO()
     wb.save(output)

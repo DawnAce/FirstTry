@@ -107,14 +107,37 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(snapshot.delta, 12)
         self.assertEqual(snapshot.is_match, False)
 
-    def test_shipping_export_reads_shipping_details_instead_of_shipping_records(self):
+    def test_shipping_export_writes_single_full_detail_sheet(self):
         db = self.SessionLocal()
         issue = Issue(issue_number=3002, publish_date=date(2026, 6, 1), status=IssueStatus.confirmed)
         db.add(issue)
         db.flush()
         db.add_all(
             [
-                ShippingDetail(issue_number=3002, sheet_name="测试", channel="渠道订阅", name="甲", quantity=7),
+                ShippingDetail(
+                    issue_number=3002,
+                    sheet_name="原始表",
+                    channel="渠道订阅",
+                    sub_channel="监管",
+                    transport="中通物流",
+                    frequency="周",
+                    status="正常",
+                    name="甲",
+                    address="北京市朝阳区测试路1号",
+                    phone="13800000000",
+                    quantity=7,
+                    deadline="长期",
+                    notes="备注",
+                    extra_info="附加信息",
+                    city="北京",
+                    station_name="北京站",
+                    station_hall="A厅",
+                    contact_person="联系人甲",
+                    seq_number=12,
+                    period_count=3,
+                    confirmation="已确认",
+                    company="测试公司",
+                ),
                 ShippingDetail(issue_number=3002, sheet_name="测试", channel="对公订阅", name="乙", quantity=9),
             ]
         )
@@ -127,14 +150,69 @@ class ReportShippingChainTests(unittest.TestCase):
             response.media_type,
         )
         workbook = load_workbook(io.BytesIO(self._read_streaming_response_bytes(response)))
-        summary_sheet = workbook["每周合计"]
-        exported_rows = {
-            (summary_sheet[f"B{row}"].value, summary_sheet[f"E{row}"].value)
-            for row in range(2, 10)
-            if summary_sheet[f"B{row}"].value
-        }
-        self.assertIn(("甲", 7), exported_rows)
-        self.assertIn(("乙", 9), exported_rows)
+        self.assertEqual(workbook.sheetnames, ["中通发货明细"])
+
+        sheet = workbook["中通发货明细"]
+        headers = [sheet.cell(row=1, column=col).value for col in range(1, 25)]
+        self.assertEqual(
+            headers,
+            [
+                "序号",
+                "期号",
+                "原工作表",
+                "渠道",
+                "子渠道",
+                "签约公司",
+                "姓名",
+                "电话",
+                "地址",
+                "份数",
+                "频率",
+                "运输方式",
+                "发货时间",
+                "截止日期",
+                "状态",
+                "备注",
+                "附加信息",
+                "城市",
+                "站点",
+                "站厅",
+                "联系人",
+                "高铁序号",
+                "期数",
+                "信息确认",
+            ],
+        )
+        first_row = [sheet.cell(row=2, column=col).value for col in range(1, 25)]
+        self.assertEqual(
+            first_row,
+            [
+                1,
+                3002,
+                "原始表",
+                "渠道订阅",
+                "监管",
+                "测试公司",
+                "甲",
+                "13800000000",
+                "北京市朝阳区测试路1号",
+                7,
+                "周",
+                "中通物流",
+                None,
+                "长期",
+                "正常",
+                "备注",
+                "附加信息",
+                "北京",
+                "北京站",
+                "A厅",
+                "联系人甲",
+                12,
+                3,
+                "已确认",
+            ],
+        )
 
     def test_shipping_export_persists_export_audit_snapshot(self):
         db = self.SessionLocal()
