@@ -437,6 +437,55 @@ class HistoryImportPreviewTests(unittest.TestCase):
         ])
         db.commit()
 
+    def _seed_raw_report_templates(self, db) -> None:
+        rows = [
+            ("postal", "本市", "北京邮发-本市"),
+            ("postal", "外埠", "北京邮发-外埠"),
+            ("retail", "东部", "北京报零-东部"),
+            ("retail", "西部", "北京报零-西部"),
+            ("guangzhou", "零售", "广州日报-零售"),
+            ("guangzhou", "订阅", "广州日报-订阅"),
+            ("chengdu", "成都杂志铺", "成都杂志铺"),
+            ("guotumao", "国图贸", "国图贸"),
+            ("social_use", "营报传媒_收发室", "营报传媒-收发室"),
+            ("social_use", "营报传媒_读者", "营报传媒-读者"),
+            ("social_use", "营报传媒_备用报", "营报传媒-备用报"),
+            ("social_use", "营报传媒_上犹", "营报传媒-上犹"),
+            ("social_use", "中经传媒智库", "中经传媒智库"),
+            ("social_use", "新闻中心", "新闻中心"),
+            ("social_use", "行政", "行政"),
+            ("social_use", "财经中心", "财经中心"),
+            ("social_use", "产经中心", "产经中心"),
+            ("social_use", "出版中心", "出版中心"),
+            ("social_use", "品牌中心", "品牌中心"),
+            ("social_use", "经营网", "经营网"),
+            ("social_use", "法务", "法务"),
+            ("social_use", "社科院、工经所", "社科院、工经所"),
+            ("social_use", "财务", "财务"),
+            ("social_use", "库房", "库房"),
+            ("social_use", "高铁展示", "高铁展示"),
+            ("social_use", "上海站用", "上海站用"),
+            ("social_use", "广东站用", "广东站用"),
+            ("social_use", "成都站用", "成都站用"),
+            ("social_use", "西安站用", "西安站用"),
+            ("social_use", "临时加印", "临时加印"),
+            ("social_use", "临时加印_自留", "临时加印（自留）"),
+            ("binding", "合订本（印厂留存）", "合订本（印厂留存）"),
+        ]
+        db.add_all([
+            ReportItemTemplate(
+                category=category,
+                sub_category=sub_category,
+                display_name=display_name,
+                default_value=0,
+                is_variable=True,
+                destination="",
+                sort_order=index,
+            )
+            for index, (category, sub_category, display_name) in enumerate(rows, start=1)
+        ])
+        db.commit()
+
     def test_preview_returns_counts_and_session_id(self):
         db = self.SessionLocal()
         self._seed_upload_templates(db)
@@ -456,6 +505,30 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertFalse(result.readiness.issue_exists)
         self.assertTrue(result.readiness.can_commit)
         self.assertEqual(result.readiness.errors, [])
+        db.close()
+
+    def test_preview_accepts_original_report_workbook_with_template_shipping_file(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+
+        result = preview_history_import(db, build_raw_report_upload(), build_shipping_upload(2647))
+
+        self.assertEqual(result.issue_number, 2647)
+        self.assertEqual(result.publish_date, "2026-04-13")
+        self.assertEqual(result.report_entry_count, 32)
+        self.assertEqual(result.temp_detail_count, 0)
+        self.assertEqual(result.shipping_detail_count, 1)
+        self.assertTrue(result.can_commit)
+
+        payload = get_history_import_session(result.import_session_id)
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["page_count"], 24)
+        row_map = {
+            (row["category"], row["sub_category"]): row["value"]
+            for row in payload["report_rows"]
+        }
+        self.assertEqual(row_map[("chengdu", "成都杂志铺")], 366)
+        self.assertEqual(row_map[("binding", "合订本（印厂留存）")], 15)
         db.close()
 
     def test_preview_blocks_duplicate_issue_and_cross_issue_upload(self):

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.history_import_cache import save_history_import_session, pop_history_import_session
 from app.models import Issue, IssueStatus, ReportEntry, ReportItemTemplate, ShippingDetail, TempPrintDetail
+from app.services.raw_report_import_service import parse_raw_report_workbook
 from app.schemas.history_import import (
     CommitReadiness,
     HistoryImportCommitOut,
@@ -109,6 +110,10 @@ def _read_temp_rows(wb) -> list[TempPrintDetailRow]:
     return rows
 
 
+def _is_template_report_workbook(wb) -> bool:
+    return {"基本信息", "报数项", "临时加印明细"}.issubset(set(wb.sheetnames))
+
+
 def _read_shipping_rows(wb) -> list[ShippingImportRow]:
     sheet = wb["发货明细"]
     rows: list[ShippingImportRow] = []
@@ -202,7 +207,14 @@ def preview_history_import(
             detail="无法解析上传的文件，请确保上传的是 .xlsx 格式",
         ) from exc
 
-    report_basic = _read_basic_info(report_wb)
+    uses_template_report = _is_template_report_workbook(report_wb)
+    raw_report = None if uses_template_report else parse_raw_report_workbook(report_wb)
+    report_basic = _read_basic_info(report_wb) if uses_template_report else {
+        "期号": raw_report.issue_number,
+        "出版日期": raw_report.publish_date,
+        "版数": raw_report.page_count,
+        "备注": "",
+    }
     shipping_basic = _read_basic_info(shipping_wb)
 
     report_issue_raw = report_basic.get("期号")
@@ -267,8 +279,12 @@ def preview_history_import(
         )
         return _error_response(issue_number, publish_date, readiness)
 
-    report_rows = _read_report_rows(report_wb)
-    temp_rows = _read_temp_rows(report_wb)
+    if raw_report is None:
+        report_rows = _read_report_rows(report_wb)
+        temp_rows = _read_temp_rows(report_wb)
+    else:
+        report_rows = raw_report.report_rows
+        temp_rows = []
     shipping_rows = _read_shipping_rows(shipping_wb)
 
     # Validate report rows against template structure and enrich with display_name
