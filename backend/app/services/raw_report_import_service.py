@@ -92,6 +92,12 @@ def _set(entries: dict[tuple[str, str], int], category: str, sub_category: str, 
     entries[(category, sub_category)] = _int(value)
 
 
+def _add_unmapped(unmapped_items: list[str], sheet_name: str, label: str, value: Any) -> None:
+    quantity = _int(value)
+    if label and quantity > 0:
+        unmapped_items.append(f"{sheet_name}：{label}（{quantity}份）")
+
+
 def _last_number(cells: list[Any], max_columns: int = 8) -> int:
     for cell in reversed(cells[:max_columns]):
         if isinstance(cell, (int, float)):
@@ -120,7 +126,7 @@ def _parse_print_factory(sheet, entries: dict[tuple[str, str], int]) -> int:
     return source_total
 
 
-def _parse_retail(sheet, entries: dict[tuple[str, str], int]) -> None:
+def _parse_retail(sheet, entries: dict[tuple[str, str], int], unmapped_items: list[str]) -> None:
     current_col = _find_current_col(sheet)
     print_location_col = _find_optional_header_col(sheet, "印刷地点")
     last_label = ""
@@ -137,9 +143,11 @@ def _parse_retail(sheet, entries: dict[tuple[str, str], int]) -> None:
             _set(entries, "retail", print_location, value)
         elif "广州日报" in label and "零售" in label:
             _set(entries, "guangzhou", "零售", value)
+        elif label:
+            _add_unmapped(unmapped_items, sheet.title, label, value)
 
 
-def _parse_subscription(sheet, entries: dict[tuple[str, str], int]) -> None:
+def _parse_subscription(sheet, entries: dict[tuple[str, str], int], unmapped_items: list[str]) -> None:
     current_col = _find_current_col(sheet)
     for row in sheet.iter_rows(min_row=4, values_only=True):
         cells = _row_values(row)
@@ -149,10 +157,14 @@ def _parse_subscription(sheet, entries: dict[tuple[str, str], int]) -> None:
         value = cells[current_col] if current_col < len(cells) else None
         if label == "国图贸":
             _set(entries, "guotumao", "国图贸", value)
+        elif "北京报刊局" in label:
+            pass
         elif "广州日报" in label and ("订户" in label or "订阅" in label):
             _set(entries, "guangzhou", "订阅", value)
         elif label in {"杂志铺", "成都杂志铺"}:
             _set(entries, "chengdu", "成都杂志铺", value)
+        elif label:
+            _add_unmapped(unmapped_items, sheet.title, label, value)
 
 
 _SOCIAL_ROW_MAP = {
@@ -184,7 +196,7 @@ def _parse_side_value(cells: list[Any], side_label: str) -> int | None:
     return None
 
 
-def _parse_social(sheet, entries: dict[tuple[str, str], int]) -> None:
+def _parse_social(sheet, entries: dict[tuple[str, str], int], unmapped_items: list[str]) -> None:
     current_col = _find_current_col(sheet)
     for row in sheet.iter_rows(min_row=4, values_only=True):
         cells = _row_values(row)
@@ -196,6 +208,10 @@ def _parse_social(sheet, entries: dict[tuple[str, str], int]) -> None:
             _set(entries, "social_use", _SOCIAL_ROW_MAP[label], value)
         elif label == "临时加印":
             _set(entries, "social_use", "临时加印", value)
+        elif label in {"营报传媒", "印厂留存", "报社订阅自投/展示"}:
+            pass
+        else:
+            _add_unmapped(unmapped_items, sheet.title, label, value)
         if (report_value := _parse_side_value(cells, "报社")) is not None:
             _set(entries, "social_use", "营报传媒_收发室", report_value)
         if (reader_value := _parse_side_value(cells, "读者")) is not None:
@@ -208,7 +224,7 @@ def _parse_social(sheet, entries: dict[tuple[str, str], int]) -> None:
             _set(entries, "social_use", "高铁展示", rail_value)
 
 
-def _parse_distribution(sheet, entries: dict[tuple[str, str], int]) -> None:
+def _parse_distribution(sheet, entries: dict[tuple[str, str], int], unmapped_items: list[str]) -> None:
     current_col = _find_current_col(sheet)
     for row in sheet.iter_rows(min_row=5, values_only=True):
         cells = _row_values(row)
@@ -218,23 +234,26 @@ def _parse_distribution(sheet, entries: dict[tuple[str, str], int]) -> None:
         value = cells[current_col] if current_col < len(cells) else None
         if label == "临时加印（报社内存）":
             _set(entries, "social_use", "临时加印_自留", value)
+        elif label not in _SOCIAL_ROW_MAP and label != "营报传媒":
+            _add_unmapped(unmapped_items, sheet.title, label, value)
 
 
 def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
     issue_number, publish_date, page_count = _parse_metadata(workbook)
     entries: dict[tuple[str, str], int] = {}
+    unmapped_items: list[str] = []
     source_total = 0
 
     if "北京印厂" in workbook.sheetnames:
         source_total = _parse_print_factory(workbook["北京印厂"], entries)
     if "零售渠道`" in workbook.sheetnames:
-        _parse_retail(workbook["零售渠道`"], entries)
+        _parse_retail(workbook["零售渠道`"], entries, unmapped_items)
     if "订阅渠道`" in workbook.sheetnames:
-        _parse_subscription(workbook["订阅渠道`"], entries)
+        _parse_subscription(workbook["订阅渠道`"], entries, unmapped_items)
     if "社用报`" in workbook.sheetnames:
-        _parse_social(workbook["社用报`"], entries)
+        _parse_social(workbook["社用报`"], entries, unmapped_items)
     if "收发室自留分发（需打印）" in workbook.sheetnames:
-        _parse_distribution(workbook["收发室自留分发（需打印）"], entries)
+        _parse_distribution(workbook["收发室自留分发（需打印）"], entries, unmapped_items)
 
     entries.setdefault(("social_use", "临时加印"), 0)
     entries.setdefault(("social_use", "临时加印_自留"), 0)
@@ -259,5 +278,5 @@ def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
         report_rows=report_rows,
         source_total=source_total,
         mapped_total=mapped_total,
-        unmapped_items=[],
+        unmapped_items=unmapped_items,
     )

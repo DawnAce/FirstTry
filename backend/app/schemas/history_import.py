@@ -37,6 +37,7 @@ class ShippingImportRow(BaseModel):
     contact_person: str = ""
     seq_number: int | None = None
     period_count: int | None = None
+    confirmation: str = ""
     company: str = ""
 
 

@@ -156,6 +156,53 @@ def build_shipping_upload(issue_number: int = 2648) -> bytes:
     return _wb_to_bytes(wb)
 
 
+def build_original_zto_shipping_upload(issue_number: int = 2648) -> bytes:
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "每周合计"
+    summary.append([f"2026年4月20日《中国经营报》中通发货表", f"总第{issue_number}期"])
+    summary.append(["各渠道统计合计"])
+
+    weekly_corporate = wb.create_sheet("每周（对公）")
+    weekly_corporate.append([f"2026年4月20日《中国经营报》中通发货表", "", f"总第{issue_number}期"])
+    weekly_corporate.append(["姓名", "地址", "电话", "份数", "刊物", "渠道", "子渠道", "签约公司", "频率", "运输方式", "城市", "备注"])
+    weekly_corporate.append(["叶剑", "广州市白云区增槎路1113号广州日报印务中心北门", "13556046615", 531, "中国经营报", "渠道订阅", "", "广州日报", "周", "中通物流", "广州", "广州日报，要求务必打电话通知！"])
+    weekly_corporate.append(["", "", "合计", 531])
+
+    weekly_reader = wb.create_sheet("每周（读者）")
+    weekly_reader.append([f"2026年4月20日《中国经营报》中通发货表", "", f"总第{issue_number}期"])
+    weekly_reader.append(["姓名", "地址", "电话", "份数", "刊物", "截止日期", "渠道", "子渠道", "签约公司", "频率", "运输方式", "城市", "备注", "附加信息"])
+    weekly_reader.append(["黄雪", "北京市海淀区杏石口路5号", "15110271926", 1, "中国经营报", "长期", "赠阅", "监管", "", "周", "中通物流", "北京", "", ""])
+    weekly_reader.append(["", "", "合计", 1])
+
+    rail = wb.create_sheet("高铁展示")
+    rail.append([f"2026年4月20日《中国经营报》中通发货表", "", "", "", f"总第{issue_number}期"])
+    rail.append(["《中国经营报》《商学院》高铁贵宾厅投放站点信息统计表"])
+    rail.append(["城市", "序号", "站名", "站厅名称", "联系人", "联系电话", "收货地址", "投放数量", "信息确认", "附加信息", "渠道", "子渠道", "签约公司", "频率", "运输方式"])
+    rail.append(["北京", 1, "北京站", "商务座候车区（北京站）", "赵叶", "15810698235", "北京市东城区北京站广场西侧", 5, "☑", "", "对公订阅", "", "北京悦途出行", "周", "中通物流"])
+    rail.append(["", 2, "北京南站", "商务座候车区（北京南站）", "李四", "15810698236", "北京市丰台区北京南站", 5, "☑", "", "对公订阅", "", "北京悦途出行", "周", "中通物流"])
+
+    shangyou = wb.create_sheet("上犹")
+    shangyou.append([f"2026年4月20日《中国经营报》中通发货表", "", f"总第{issue_number}期"])
+    shangyou.append(["姓名", "地址", "电话", "份数", "刊物", "渠道", "子渠道", "签约公司", "频率", "运输方式", "城市", "备注"])
+    shangyou.append(["上犹县政府办", "江西省赣州市上犹县东山镇犹江大道16号", "0797-8542306", 10, "中国经营报", "赠阅", "政府", "上犹县政府", "周", "邮政物流", "赣州", "政府赠报，邮政"])
+    shangyou.append(["", "", "合计", 10])
+
+    suspended = wb.create_sheet("停发-双周（读者）")
+    suspended.append([f"2026年4月上半月《中国经营报》中通发货表", "", f"总第{issue_number}期"])
+    suspended.append(["姓名", "地址", "电话", "期数", "份数", "刊物", "截止日期", "备注"])
+    suspended.append(["丁联诚", "上海市普陀区长寿路1086号", "13319400970", 2, 1, "中国经营报", _dt(2026, 5, 1), "5-13开始停发"])
+    suspended.append(["", "", "合计", "", 1])
+
+    monthly = wb.create_sheet("月底-整月")
+    monthly.append([f"2026年4月《中国经营报》中通发货表", "", f"总 第{issue_number - 3}期、第{issue_number - 2}期 第{issue_number - 1}期、第{issue_number}期"])
+    monthly.append(["姓名", "地址", "电话", "期数", "份数", "刊物", "截止日期", "渠道", "子渠道", "签约公司", "频率", "运输方式", "城市", "备注", "附加信息"])
+    monthly.append(["宣传部5号格", "北京市通州区运河东大街56号院", "", 5, 3, "中国经营报", "", "赠阅", "监管", "", "月", "中通物流", "北京", "", ""])
+    monthly.append(["", "", "合计", "", 3])
+
+    return _wb_to_bytes(wb)
+
+
 def build_raw_report_upload() -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -243,6 +290,48 @@ def build_raw_report_upload() -> bytes:
     return _wb_to_bytes(wb)
 
 
+def build_raw_report_upload_with_temp_print() -> bytes:
+    wb = load_workbook(io.BytesIO(build_raw_report_upload()))
+    ws = wb["社用报`"]
+    ws["B24"] = 12
+    ws["B25"] = 8
+    ws["B26"] = 4
+    ws["B27"] = 24
+    ws["B28"] = 553
+    return _wb_to_bytes(wb)
+
+
+def build_raw_report_upload_with_total_mismatch() -> bytes:
+    wb = load_workbook(io.BytesIO(build_raw_report_upload()))
+    wb["北京印厂"]["C12"] = 9999
+    return _wb_to_bytes(wb)
+
+
+def build_raw_report_upload_with_unmapped_item() -> bytes:
+    wb = load_workbook(io.BytesIO(build_raw_report_upload()))
+    ws = wb["订阅渠道`"]
+    ws.insert_rows(8)
+    ws["A8"] = "神秘渠道"
+    ws["B8"] = 12
+    return _wb_to_bytes(wb)
+
+
+def build_raw_report_upload_with_unmapped_distribution_item() -> bytes:
+    wb = load_workbook(io.BytesIO(build_raw_report_upload()))
+    ws = wb["收发室自留分发（需打印）"]
+    ws.insert_rows(18)
+    ws["A18"] = "临时新增部门"
+    ws["B18"] = 6
+    return _wb_to_bytes(wb)
+
+
+def build_raw_report_upload_with_resolved_temp_print() -> bytes:
+    wb = load_workbook(io.BytesIO(build_raw_report_upload_with_temp_print()))
+    wb["收发室自留分发（需打印）"]["B18"] = 12
+    wb["北京印厂"]["C12"] = 9289
+    return _wb_to_bytes(wb)
+
+
 class RawReportImportParserTests(unittest.TestCase):
     def test_parses_original_report_metadata_and_mapped_rows(self):
         workbook = load_workbook(io.BytesIO(build_raw_report_upload()), data_only=True)
@@ -272,6 +361,22 @@ class RawReportImportParserTests(unittest.TestCase):
         self.assertEqual(result.source_total, 9265)
         self.assertEqual(result.mapped_total, 9265)
         self.assertEqual(result.unmapped_items, [])
+        workbook.close()
+
+    def test_detects_unmapped_original_report_rows(self):
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload_with_unmapped_item()), data_only=True)
+
+        result = parse_raw_report_workbook(workbook)
+
+        self.assertEqual(result.unmapped_items, ["订阅渠道`：神秘渠道（12份）"])
+        workbook.close()
+
+    def test_detects_unmapped_distribution_rows(self):
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload_with_unmapped_distribution_item()), data_only=True)
+
+        result = parse_raw_report_workbook(workbook)
+
+        self.assertEqual(result.unmapped_items, ["收发室自留分发（需打印）：临时新增部门（6份）"])
         workbook.close()
 
 
@@ -531,6 +636,128 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertEqual(row_map[("binding", "合订本（印厂留存）")], 15)
         db.close()
 
+    def test_preview_blocks_original_report_with_unresolved_temp_print(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+
+        result = preview_history_import(
+            db,
+            build_raw_report_upload_with_temp_print(),
+            build_shipping_upload(2647),
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertTrue(any("临时加印未处理" in error for error in result.errors))
+        db.close()
+
+    def test_preview_allows_original_report_when_temp_print_is_fully_resolved(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+
+        result = preview_history_import(
+            db,
+            build_raw_report_upload_with_resolved_temp_print(),
+            build_shipping_upload(2647),
+        )
+
+        self.assertTrue(result.can_commit)
+        self.assertEqual(result.errors, [])
+        db.close()
+
+    def test_preview_blocks_original_report_when_totals_do_not_match(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+
+        result = preview_history_import(
+            db,
+            build_raw_report_upload_with_total_mismatch(),
+            build_shipping_upload(2647),
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertTrue(any("原表总印数 9999" in error and "映射后总数 9265" in error for error in result.errors))
+        db.close()
+
+    def test_preview_raw_report_errors_include_actionable_counts(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+
+        result = preview_history_import(
+            db,
+            build_raw_report_upload_with_temp_print(),
+            build_shipping_upload(2647),
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertIn(
+            "临时加印未处理：原表临时加印 12 份，其中自留分发 0 份，待手工确认 12 份",
+            result.errors,
+        )
+
+        mismatch_result = preview_history_import(
+            db,
+            build_raw_report_upload_with_total_mismatch(),
+            build_shipping_upload(2647),
+        )
+
+        self.assertIn(
+            "原表总印数 9999 与映射后总数 9265 不一致，相差 734 份",
+            mismatch_result.errors,
+        )
+        db.close()
+
+    def test_preview_blocks_original_report_with_unmapped_items(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+
+        result = preview_history_import(
+            db,
+            build_raw_report_upload_with_unmapped_item(),
+            build_shipping_upload(2647),
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertTrue(any("未命中映射项" in error and "神秘渠道" in error for error in result.errors))
+        db.close()
+
+    def test_preview_accepts_original_zto_shipping_workbook(self):
+        db = self.SessionLocal()
+        self._seed_upload_templates(db)
+
+        result = preview_history_import(
+            db,
+            build_report_upload(),
+            build_original_zto_shipping_upload(),
+        )
+
+        self.assertEqual(result.issue_number, 2648)
+        self.assertEqual(result.publish_date, "2026-04-20")
+        self.assertEqual(result.shipping_detail_count, 7)
+        self.assertTrue(result.can_commit)
+
+        payload = get_history_import_session(result.import_session_id)
+        self.assertIsNotNone(payload)
+        rows = payload["shipping_rows"]
+        row_map = {
+            (row["sheet_name"], row["name"]): row
+            for row in rows
+        }
+        self.assertEqual(row_map[("每周（对公）", "叶剑")]["channel"], "渠道订阅")
+        self.assertEqual(row_map[("每周（对公）", "叶剑")]["company"], "广州日报")
+        self.assertEqual(row_map[("每周（对公）", "叶剑")]["quantity"], 531)
+        self.assertEqual(row_map[("每周（读者）", "黄雪")]["channel"], "赠阅")
+        self.assertEqual(row_map[("每周（读者）", "黄雪")]["sub_channel"], "监管")
+        self.assertEqual(row_map[("高铁展示", "赵叶")]["company"], "北京悦途出行")
+        self.assertEqual(row_map[("高铁展示", "赵叶")]["quantity"], 5)
+        self.assertEqual(row_map[("上犹", "上犹县政府办")]["channel"], "赠阅")
+        self.assertEqual(row_map[("上犹", "上犹县政府办")]["company"], "上犹县政府")
+        self.assertEqual(row_map[("停发-双周（读者）", "丁联诚")]["status"], "停发")
+        self.assertEqual(row_map[("停发-双周（读者）", "丁联诚")]["quantity"], 1)
+        self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["channel"], "赠阅")
+        self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["sub_channel"], "监管")
+        self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["quantity"], 3)
+        db.close()
+
     def test_preview_blocks_duplicate_issue_and_cross_issue_upload(self):
         db = self.SessionLocal()
 
@@ -724,6 +951,34 @@ class HistoryImportCommitTests(unittest.TestCase):
         self.assertEqual(result.shipping_detail_count, 1)
         self.assertEqual(result.issue_number, 2648)
         self.assertIsNotNone(result.issue_id)
+        db.close()
+
+    def test_commit_persists_original_zto_shipping_fields(self):
+        db = self.SessionLocal()
+        self._seed_templates(db)
+
+        preview = preview_history_import(
+            db,
+            build_report_upload(),
+            build_original_zto_shipping_upload(),
+        )
+        self.assertTrue(preview.can_commit)
+
+        result = commit_history_import(db, preview.import_session_id)
+
+        shipping = db.query(ShippingDetail).filter(ShippingDetail.issue_number == 2648).all()
+        self.assertEqual(len(shipping), 7)
+        by_name = {row.name: row for row in shipping}
+        self.assertEqual(by_name["叶剑"].channel, "渠道订阅")
+        self.assertEqual(by_name["叶剑"].company, "广州日报")
+        self.assertEqual(by_name["赵叶"].station_name, "北京站")
+        self.assertEqual(by_name["赵叶"].city, "北京")
+        self.assertEqual(by_name["赵叶"].confirmation, "☑")
+        self.assertEqual(by_name["李四"].city, "北京")
+        self.assertEqual(by_name["丁联诚"].period_count, 2)
+        self.assertEqual(by_name["丁联诚"].deadline, "2026-05-01")
+        self.assertEqual(by_name["宣传部5号格"].frequency, "月")
+        self.assertEqual(result.shipping_detail_count, 7)
         db.close()
 
     def test_commit_raises_400_for_missing_session(self):

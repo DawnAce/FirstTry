@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.history_import_cache import save_history_import_session, pop_history_import_session
 from app.models import Issue, IssueStatus, ReportEntry, ReportItemTemplate, ShippingDetail, TempPrintDetail
+from app.services.original_zto_shipping_import_service import (
+    is_original_zto_shipping_workbook,
+    read_original_zto_shipping_basic_info,
+    read_original_zto_shipping_rows,
+)
 from app.services.raw_report_import_service import parse_raw_report_workbook
 from app.schemas.history_import import (
     CommitReadiness,
@@ -114,6 +119,10 @@ def _is_template_report_workbook(wb) -> bool:
     return {"基本信息", "报数项", "临时加印明细"}.issubset(set(wb.sheetnames))
 
 
+def _is_template_shipping_workbook(wb) -> bool:
+    return {"基本信息", "发货明细"}.issubset(set(wb.sheetnames))
+
+
 def _read_shipping_rows(wb) -> list[ShippingImportRow]:
     sheet = wb["发货明细"]
     rows: list[ShippingImportRow] = []
@@ -193,6 +202,22 @@ def _error_response(
     )
 
 
+def _raw_report_validation_errors(raw_report) -> list[str]:
+    errors: list[str] = []
+    row_map = {(row.category, row.sub_category): row.value for row in raw_report.report_rows}
+    temp_total = row_map.get(("social_use", "临时加印"), 0)
+    temp_self = row_map.get(("social_use", "临时加印_自留"), 0)
+    pending_temp = max(temp_total - temp_self, 0)
+    if pending_temp > 0:
+        errors.append(f"临时加印未处理：原表临时加印 {temp_total} 份，其中自留分发 {temp_self} 份，待手工确认 {pending_temp} 份")
+    if raw_report.source_total != raw_report.mapped_total:
+        diff = abs(raw_report.source_total - raw_report.mapped_total)
+        errors.append(f"原表总印数 {raw_report.source_total} 与映射后总数 {raw_report.mapped_total} 不一致，相差 {diff} 份")
+    if raw_report.unmapped_items:
+        errors.append(f"未命中映射项：{'；'.join(raw_report.unmapped_items)}")
+    return errors
+
+
 def preview_history_import(
     db: Session,
     report_bytes: bytes,
@@ -208,6 +233,8 @@ def preview_history_import(
         ) from exc
 
     uses_template_report = _is_template_report_workbook(report_wb)
+    uses_template_shipping = _is_template_shipping_workbook(shipping_wb)
+    uses_original_zto_shipping = is_original_zto_shipping_workbook(shipping_wb)
     raw_report = None if uses_template_report else parse_raw_report_workbook(report_wb)
     report_basic = _read_basic_info(report_wb) if uses_template_report else {
         "期号": raw_report.issue_number,
@@ -215,7 +242,24 @@ def preview_history_import(
         "版数": raw_report.page_count,
         "备注": "",
     }
-    shipping_basic = _read_basic_info(shipping_wb)
+    if uses_template_shipping:
+        shipping_basic = _read_basic_info(shipping_wb)
+    elif uses_original_zto_shipping:
+        shipping_basic = read_original_zto_shipping_basic_info(shipping_wb)
+    else:
+        report_issue_raw = report_basic.get("期号")
+        report_issue_number = _parse_issue_number(report_issue_raw) or 0
+        readiness = CommitReadiness(
+            same_issue=False,
+            issue_exists=False,
+            can_commit=False,
+            errors=["中通发货文件格式不支持，请上传系统发货明细模板或原始中通多工作表文件"],
+        )
+        return _error_response(
+            report_issue_number,
+            _normalize_date(report_basic.get("出版日期")),
+            readiness,
+        )
 
     report_issue_raw = report_basic.get("期号")
     shipping_issue_raw = shipping_basic.get("期号")
@@ -285,7 +329,22 @@ def preview_history_import(
     else:
         report_rows = raw_report.report_rows
         temp_rows = []
-    shipping_rows = _read_shipping_rows(shipping_wb)
+    shipping_rows = (
+        _read_shipping_rows(shipping_wb)
+        if uses_template_shipping
+        else read_original_zto_shipping_rows(shipping_wb)
+    )
+
+    if raw_report is not None:
+        validation_errors = _raw_report_validation_errors(raw_report)
+        if validation_errors:
+            readiness = CommitReadiness(
+                same_issue=True,
+                issue_exists=False,
+                can_commit=False,
+                errors=validation_errors,
+            )
+            return _error_response(issue_number, publish_date, readiness)
 
     # Validate report rows against template structure and enrich with display_name
     validation_errors, enriched_report_rows = _validate_and_enrich_report_rows(db, report_rows)
@@ -405,6 +464,7 @@ def commit_history_import(db: Session, import_session_id: str) -> HistoryImportC
             contact_person=row.get("contact_person", ""),
             seq_number=row.get("seq_number"),
             period_count=row.get("period_count"),
+            confirmation=row.get("confirmation", ""),
             company=row.get("company", ""),
         ))
 
