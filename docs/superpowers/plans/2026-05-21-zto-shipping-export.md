@@ -4,7 +4,7 @@
 
 **Goal:** Add a direct export button on the 中通发货明细 page that downloads the selected issue's full 中通发货明细 Excel.
 
-**Architecture:** Reuse the existing backend export endpoint `/api/issues/{issue_id}/export/shipping` and existing Excel generation service. The frontend only adds a UI entry point in `ShippingDetailsTab`, using the already-loaded `currentIssue.id` for the selected issue. Documentation updates describe the new user-facing workflow.
+**Architecture:** Reuse the existing backend export endpoint `/api/issues/{issue_id}/export/shipping` and existing Excel generation service. Add a small tested frontend export URL helper, then add a UI entry point in `ShippingDetailsTab` using the already-loaded `currentIssue.id` for the selected issue. Documentation updates describe the new user-facing workflow.
 
 **Tech Stack:** React 19, TypeScript, Ant Design 6, TanStack Query, FastAPI, openpyxl.
 
@@ -12,13 +12,93 @@
 
 ## File Structure
 
+- Modify `frontend/package.json` and `frontend/package-lock.json`: add Vitest and a `test` script.
+- Create `frontend/src/api/exports.test.ts`: test the 中通发货明细 export URL helper.
+- Create `frontend/src/api/exports.ts`: provide the tested `getIssueShippingExportUrl()` helper.
 - Modify `frontend/src/pages/Recipients.tsx`: add `DownloadOutlined`, add `handleExportShipping`, and render a “导出” button next to “新增”.
 - Modify `docs/user-guide.md`: document exporting from the 中通发货明细 tab.
 - No backend changes: `backend/app/api/exports.py` and `backend/app/services/excel_service.py` already implement the required export.
 
 ---
 
-### Task 1: Add the export button to 中通发货明细
+### Task 1: Add frontend test framework and tested export URL helper
+
+**Files:**
+- Modify: `frontend/package.json`
+- Modify: `frontend/package-lock.json`
+- Create: `frontend/src/api/exports.test.ts`
+- Create: `frontend/src/api/exports.ts`
+
+- [ ] **Step 1: Install Vitest**
+
+Run:
+
+```powershell
+cd frontend
+npm install --save-dev vitest
+```
+
+Expected: `package.json` and `package-lock.json` are updated.
+
+- [ ] **Step 2: Add the test script**
+
+In `frontend/package.json`, add:
+
+```json
+"test": "vitest run"
+```
+
+inside `scripts`, after the existing `preview` script with a comma before it.
+
+- [ ] **Step 3: Write the failing test**
+
+Create `frontend/src/api/exports.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { getIssueShippingExportUrl } from './exports';
+
+describe('getIssueShippingExportUrl', () => {
+  it('builds the existing shipping export endpoint for an issue', () => {
+    expect(getIssueShippingExportUrl(2649)).toBe('/api/issues/2649/export/shipping');
+  });
+});
+```
+
+- [ ] **Step 4: Run the test and verify it fails**
+
+Run:
+
+```powershell
+cd frontend
+npm test -- exports.test.ts
+```
+
+Expected: FAIL because `./exports` does not exist or does not export `getIssueShippingExportUrl`.
+
+- [ ] **Step 5: Add the minimal helper**
+
+Create `frontend/src/api/exports.ts`:
+
+```ts
+export const getIssueShippingExportUrl = (issueId: number) =>
+  `/api/issues/${issueId}/export/shipping`;
+```
+
+- [ ] **Step 6: Run the test and verify it passes**
+
+Run:
+
+```powershell
+cd frontend
+npm test -- exports.test.ts
+```
+
+Expected: PASS for `getIssueShippingExportUrl`.
+
+---
+
+### Task 2: Add the export button to 中通发货明细
 
 **Files:**
 - Modify: `frontend/src/pages/Recipients.tsx`
@@ -48,6 +128,12 @@ import {
 
 - [ ] **Step 2: Add the export handler**
 
+Add this import near existing API imports:
+
+```tsx
+import { getIssueShippingExportUrl } from '../api/exports';
+```
+
 In `ShippingDetailsTab`, after `handleIssueDateChange`, add:
 
 ```tsx
@@ -56,7 +142,7 @@ In `ShippingDetailsTab`, after `handleIssueDateChange`, add:
       message.warning('请先选择期号');
       return;
     }
-    window.open(`/api/issues/${currentIssue.id}/export/shipping`, '_blank');
+    window.open(getIssueShippingExportUrl(currentIssue.id), '_blank');
   };
 ```
 
@@ -87,31 +173,32 @@ with:
             </Space>
 ```
 
-- [ ] **Step 4: Run frontend type check**
+- [ ] **Step 4: Run frontend test and type check**
 
 Run:
 
 ```powershell
 cd frontend
+npm test -- exports.test.ts
 npx tsc --noEmit
 ```
 
-Expected: exits successfully with no TypeScript errors.
+Expected: test passes and TypeScript exits successfully with no errors.
 
 - [ ] **Step 5: Commit the UI change**
 
 Run:
 
 ```powershell
-git add frontend\src\pages\Recipients.tsx
+git add frontend\src\api\exports.test.ts frontend\src\api\exports.ts frontend\src\pages\Recipients.tsx frontend\package.json frontend\package-lock.json
 git commit -m "feat: add zto shipping export button" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
 
-Expected: commit succeeds and includes only `frontend/src/pages/Recipients.tsx`.
+Expected: commit succeeds and includes only frontend test framework, export helper, test, and UI files.
 
 ---
 
-### Task 2: Update user documentation
+### Task 3: Update user documentation
 
 **Files:**
 - Modify: `docs/user-guide.md`
@@ -124,12 +211,13 @@ In `docs/user-guide.md`, under `### 2.5 检查发货明细`, add this workflow i
 6. 如需导出当前期的完整中通发货明细，点击筛选面板右侧的“导出”按钮；导出内容为所选期号的全部中通发货明细，不受当前筛选条件或勾选记录影响
 ```
 
-- [ ] **Step 2: Run frontend type check again**
+- [ ] **Step 2: Run frontend test and type check again**
 
 Run:
 
 ```powershell
 cd frontend
+npm test -- exports.test.ts
 npx tsc --noEmit
 ```
 
@@ -148,22 +236,23 @@ Expected: commit succeeds and includes only `docs/user-guide.md`.
 
 ---
 
-### Task 3: Final verification
+### Task 4: Final verification
 
 **Files:**
 - Verify: `frontend/src/pages/Recipients.tsx`
 - Verify: `docs/user-guide.md`
 
-- [ ] **Step 1: Run final type check**
+- [ ] **Step 1: Run final frontend checks**
 
 Run:
 
 ```powershell
 cd frontend
+npm test -- exports.test.ts
 npx tsc --noEmit
 ```
 
-Expected: exits successfully with no TypeScript errors.
+Expected: test passes and TypeScript exits successfully with no errors.
 
 - [ ] **Step 2: Review git status**
 
