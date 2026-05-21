@@ -13,7 +13,6 @@ import {
   Input,
   Timeline,
   Select,
-  Popconfirm,
 } from 'antd';
 import {
   CheckOutlined,
@@ -29,6 +28,7 @@ import type { ReportEntry, TempPrintDetail } from '../api/reports';
 import { getReport, updateReport, confirmReport, revokeReport, getRevisions, getTempPrintDetails, updateTempPrintDetails } from '../api/reports';
 import type { RevisionRecord } from '../api/reports';
 import { useAuth } from '../contexts/AuthContext';
+import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton';
 
 const categoryLabels: Record<string, string> = {
   postal: '北京邮发',
@@ -513,18 +513,10 @@ export default function ReportEditor() {
               <Button icon={<DownloadOutlined />} onClick={handleExport}>
                 导出
               </Button>
-              <Popconfirm
-                title={`确认删除第 ${issue.issue_number} 期？`}
-                description="会同时删除该期报数、发货记录、临时加印和中通发货明细。此操作不可恢复。"
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
+              <IssueDeleteConfirmButton
+                issueNumber={issue.issue_number}
                 onConfirm={handleDeleteIssue}
-              >
-                <Button danger icon={<DeleteOutlined />}>
-                  删除
-                </Button>
-              </Popconfirm>
+              />
             </>
           ) : (
             <>

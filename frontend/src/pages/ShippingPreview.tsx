@@ -10,19 +10,18 @@ import {
   Spin,
   Card,
   message,
-  Popconfirm,
 } from 'antd';
 import {
   ArrowLeftOutlined,
   ReloadOutlined,
   DownloadOutlined,
   EditOutlined,
-  DeleteOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import { getIssue, deleteIssue } from '../api/issues';
 import { getShipping, regenerateShipping } from '../api/shipping';
 import type { ShippingRecord } from '../api/shipping';
+import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton';
 
 const TYPE_LABELS: Record<string, string> = {
   corporate: '对公',
@@ -250,18 +249,12 @@ export default function ShippingPreview() {
           <Button icon={<DownloadOutlined />} onClick={handleExportAll}>
             导出全部
           </Button>
-          <Popconfirm
-            title={`确认删除第 ${issue?.issue_number} 期？`}
-            description="会同时删除该期报数、发货记录、临时加印和中通发货明细。此操作不可恢复。"
-            okText="删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-            onConfirm={handleDeleteIssue}
-          >
-            <Button danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
+          {issue && (
+            <IssueDeleteConfirmButton
+              issueNumber={issue.issue_number}
+              onConfirm={handleDeleteIssue}
+            />
+          )}
         </Space>
       </div>
 

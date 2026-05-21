@@ -10,6 +10,7 @@ _KNOWN_SHEETS = {
     "每周（对公）",
     "每周（读者）",
     "高铁展示",
+    "北京悦途出行（高铁）",
     "上犹",
     "停发-双周（读者）",
     "月底-整月",
@@ -37,6 +38,23 @@ def _deadline_str(value: Any) -> str:
     if isinstance(value, datetime.date):
         return value.isoformat()
     return _str(value)
+
+
+def _city_for_row(row: dict[str, Any]) -> str:
+    city = _str(row.get("city"))
+    if city:
+        return city
+
+    name = _str(row.get("name"))
+    transport = _str(row.get("transport"))
+    row_text = " ".join(
+        _str(row.get(field))
+        for field in ("address", "channel", "sub_channel", "company", "notes", "extra_info")
+    )
+    if name == "马飞" and transport == "库房留存" and "中通库房" in row_text:
+        return "北京"
+
+    return ""
 
 
 def _is_summary_row(phone_value: Any) -> bool:
@@ -101,7 +119,7 @@ def _row_to_import_row(sheet_name: str, row: dict[str, Any]) -> ShippingImportRo
         deadline=_deadline_str(row.get("deadline")),
         notes=_str(row.get("notes")),
         extra_info=_str(row.get("extra_info")),
-        city=_str(row.get("city")),
+        city=_city_for_row(row),
         station_name=_str(row.get("station_name")),
         station_hall=_str(row.get("station_hall")),
         contact_person=_str(row.get("contact_person")),
@@ -253,7 +271,15 @@ def _parse_monthly(ws) -> list[ShippingImportRow]:
 
 
 def _parse_weekly_corporate(ws) -> list[ShippingImportRow]:
-    return _parse_table_sheet(ws, "每周（对公）", 3, 13)
+    rows = _parse_table_sheet(ws, "每周（对公）", 3, 13)
+    return [
+        row for row in rows
+        if not (
+            row.quantity == 0
+            and row.name == "(未填写)"
+            and "加印" in row.notes
+        )
+    ]
 
 
 def _parse_shangyou(ws) -> list[ShippingImportRow]:
@@ -264,6 +290,7 @@ _SHEET_PARSERS: dict[str, Callable[[Any], list[ShippingImportRow]]] = {
     "每周（对公）": _parse_weekly_corporate,
     "每周（读者）": _parse_weekly_reader,
     "高铁展示": _parse_high_speed_rail,
+    "北京悦途出行（高铁）": _parse_high_speed_rail,
     "上犹": _parse_shangyou,
     "停发-双周（读者）": _parse_suspended_biweekly,
     "月底-整月": _parse_monthly,

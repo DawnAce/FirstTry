@@ -6,7 +6,7 @@ from app.models import Issue
 from app.models.shipping_detail import ShippingDetail
 from app.models.operation_log import OperationLog
 from app.models.user import User
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin
 from app.schemas.shipping_detail import (
     ShippingDetailBatchDelete,
     ShippingDetailBatchResult,
@@ -332,6 +332,41 @@ def batch_delete_shipping_details(
 
     db.commit()
     return ShippingDetailBatchResult(affected_count=len(details))
+
+
+@router.delete("/by-issue/{issue_number}", response_model=ShippingDetailBatchResult)
+def clear_shipping_details_by_issue(
+    issue_number: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    issue = db.query(Issue.id).filter(Issue.issue_number == issue_number).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_number} not found")
+
+    details = (
+        db.query(ShippingDetail)
+        .filter(ShippingDetail.issue_number == issue_number)
+        .all()
+    )
+    affected_count = len(details)
+    db.add(OperationLog(
+        table_name="shipping_details",
+        record_id=0,
+        record_name=f"清空{issue_number}期发货明细",
+        action="batch_delete_issue",
+        changes={
+            "issue_number": issue_number,
+            "count": affected_count,
+        },
+        user_id=_user.id,
+        username=_user.username,
+    ))
+    for detail in details:
+        db.delete(detail)
+
+    db.commit()
+    return ShippingDetailBatchResult(affected_count=affected_count)
 
 
 @router.delete("/{detail_id}")

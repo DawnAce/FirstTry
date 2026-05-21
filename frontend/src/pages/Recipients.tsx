@@ -50,6 +50,7 @@ import {
   deleteShippingDetail,
   batchUpdateShippingDetails,
   batchDeleteShippingDetails,
+  clearShippingDetailsByIssue,
   getShippingCompanies,
 } from '../api/shippingDetails';
 import { getIssues } from '../api/issues';
@@ -62,6 +63,8 @@ import {
   resolveDownloadFilename,
 } from '../api/exports';
 import dayjs from 'dayjs';
+import { useAuth } from '../contexts/AuthContext';
+import { shippingDetailDisplayColumns } from './recipientShippingColumns';
 
 const typeLabels: Record<string, string> = { corporate: '对公', reader: '读者', sample: '样报' };
 const typeColors: Record<string, string> = { corporate: 'blue', reader: 'green', sample: 'purple' };
@@ -85,16 +88,6 @@ const fieldLabels: Record<string, string> = {
   shipped_at: '发货时间',
 };
 
-const channelColors: Record<string, string> = {
-  '渠道订阅': 'blue',
-  '对公订阅': 'blue',
-  '个人订阅': 'green',
-  '记者站': 'purple',
-  '赠阅': 'orange',
-  '库房留存': 'gray',
-  '报社留存': 'cyan',
-};
-
 interface ShippingFilters {
   channel?: string;
   sub_channel?: string;
@@ -107,6 +100,7 @@ interface ShippingFilters {
 
 function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number>();
   const [modalVisible, setModalVisible] = useState(false);
@@ -118,6 +112,7 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [batchDeadline, setBatchDeadline] = useState<dayjs.Dayjs | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [clearingIssue, setClearingIssue] = useState(false);
 
   const { data: issues = [], isLoading: issuesLoading } = useQuery({
     queryKey: ['issues', 'shipping-details'],
@@ -360,11 +355,22 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
     }
   };
 
-  const transportColors: Record<string, string> = {
-    '中通物流': 'blue',
-    '邮政物流': 'green',
-    '包车运输': 'orange',
-    '库房留存': 'default',
+  const handleClearCurrentIssueShippingDetails = async () => {
+    if (currentIssueNumber == null) {
+      message.warning('请先选择期号');
+      return;
+    }
+    setClearingIssue(true);
+    try {
+      const res = await clearShippingDetailsByIssue(currentIssueNumber);
+      message.success(`已清空第 ${currentIssueNumber} 期 ${res.data.affected_count} 条中通发货明细`);
+      setSelectedRowKeys([]);
+      refreshShippingDetails();
+    } catch {
+      message.error('清空本期发货明细失败');
+    } finally {
+      setClearingIssue(false);
+    }
   };
 
   const rowSelection: TableProps<ShippingDetail>['rowSelection'] = {
@@ -375,63 +381,7 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   const currentShippingTotal = details.reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
 
   const shippingColumns: TableColumnsType<ShippingDetail> = [
-    { title: '姓名', dataIndex: 'name', key: 'name', width: 80 },
-    {
-      title: '渠道',
-      dataIndex: 'channel',
-      key: 'channel',
-      width: 80,
-      render: (v: string) => v ? <Tag color={channelColors[v] || 'gray'}>{v}</Tag> : '-',
-    },
-    {
-      title: '子渠道',
-      dataIndex: 'sub_channel',
-      key: 'sub_channel',
-      width: 80,
-      render: (v: string | null) => v ? <Tag color={v === '监管' ? 'orange' : 'gold'}>{v}</Tag> : '-',
-    },
-    {
-      title: '签约公司',
-      dataIndex: 'company',
-      key: 'company',
-      width: 120,
-      render: (v: string | null) => v ?? '-',
-    },
-    {
-      title: '地址',
-      dataIndex: 'address',
-      key: 'address',
-      width: 180,
-      ellipsis: true,
-      render: (v: string | null) => v ?? '-',
-    },
-    { title: '电话', dataIndex: 'phone', key: 'phone', width: 120, render: (v: string | null) => v ?? '-' },
-    { title: '份数', dataIndex: 'quantity', key: 'quantity', width: 60, render: (v: number) => v ?? '-' },
-    { title: '频率', dataIndex: 'frequency', key: 'frequency', width: 60, render: (v: string | null) => v ?? '-' },
-    {
-      title: '运输方式',
-      dataIndex: 'transport',
-      key: 'transport',
-      width: 100,
-      render: (v: string | null) => v ? <Tag color={transportColors[v] || 'default'}>{v}</Tag> : '-',
-    },
-    { title: '发货时间', dataIndex: 'shipped_at', key: 'shipped_at', width: 100, render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD') : '-' },
-    { title: '截止日期', dataIndex: 'deadline', key: 'deadline', width: 90, render: (v: string | null) => (!v || v === '-' || v === '长期') ? <Tag style={{ backgroundColor: '#000', color: '#fff', borderRadius: 4, border: 'none' }}>长期</Tag> : v },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 70,
-      render: (v: string) => v ? <Tag color={v === '正常' ? 'green' : 'red'}>{v}</Tag> : '-',
-    },
-    {
-      title: '备注',
-      dataIndex: 'notes',
-      key: 'notes',
-      width: 100,
-      ellipsis: true,
-      render: (v: string | null) => v ?? '-',
-    },
+    ...shippingDetailDisplayColumns,
     {
       title: '操作',
       key: 'actions',
@@ -575,6 +525,20 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
               >
                 导出
               </Button>
+              {isAdmin && (
+                <Popconfirm
+                  title={`确认清空第 ${currentIssueNumber ?? '-'} 期中通发货明细？`}
+                  description="只删除该期中通发货明细，不会删除期号和报数数据。此操作不可恢复。"
+                  okText="清空"
+                  cancelText="取消"
+                  onConfirm={handleClearCurrentIssueShippingDetails}
+                  disabled={currentIssueNumber == null}
+                >
+                  <Button danger loading={clearingIssue} disabled={currentIssueNumber == null}>
+                    清空本期
+                  </Button>
+                </Popconfirm>
+              )}
               <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
                 新增
               </Button>

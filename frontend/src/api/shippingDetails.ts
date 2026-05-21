@@ -125,6 +125,11 @@ export const batchDeleteShippingDetails = (
 ): Promise<AxiosResponse<ShippingDetailBatchResult>> =>
   api.post<ShippingDetailBatchResult>('/shipping-details/batch-delete', data);
 
+export const clearShippingDetailsByIssue = (
+  issueNumber: number,
+): Promise<AxiosResponse<ShippingDetailBatchResult>> =>
+  api.delete<ShippingDetailBatchResult>(`/shipping-details/by-issue/${issueNumber}`);
+
 export const getShippingCompanies = (params?: Record<string, any>): Promise<AxiosResponse<string[]>> =>
   api.get<string[]>('/shipping-details/companies', { params });
 

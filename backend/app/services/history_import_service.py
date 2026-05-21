@@ -17,6 +17,7 @@ from app.services.original_zto_shipping_import_service import (
     read_original_zto_shipping_rows,
 )
 from app.services.raw_report_import_service import parse_raw_report_workbook
+from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.schemas.history_import import (
     CommitReadiness,
     HistoryImportCommitOut,
@@ -218,6 +219,26 @@ def _raw_report_validation_errors(raw_report) -> list[str]:
     return errors
 
 
+def _zto_total_validation_errors(
+    report_rows: list[HistoryImportRow],
+    shipping_rows: list[ShippingImportRow],
+) -> list[str]:
+    report_total = sum(
+        row.value or 0
+        for row in report_rows
+        if resolve_report_destination(row.category, row.sub_category, row.destination) == DESTINATION_ZTO
+    )
+    if report_total == 0:
+        return []
+    shipping_total = sum(row.quantity or 0 for row in shipping_rows)
+    if report_total == shipping_total:
+        return []
+    diff = abs(report_total - shipping_total)
+    return [
+        f"中通物流份数不一致：报数合计 {report_total} 份，发货明细合计 {shipping_total} 份，相差 {diff} 份。请先核对导入文件后再提交。"
+    ]
+
+
 def preview_history_import(
     db: Session,
     report_bytes: bytes,
@@ -354,6 +375,16 @@ def preview_history_import(
             issue_exists=False,
             can_commit=False,
             errors=validation_errors,
+        )
+        return _error_response(issue_number, publish_date, readiness)
+
+    total_validation_errors = _zto_total_validation_errors(enriched_report_rows, shipping_rows)
+    if total_validation_errors:
+        readiness = CommitReadiness(
+            same_issue=True,
+            issue_exists=False,
+            can_commit=False,
+            errors=total_validation_errors,
         )
         return _error_response(issue_number, publish_date, readiness)
 

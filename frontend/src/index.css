@@ -318,7 +318,7 @@ body {
 }
 
 .history-import-preview-action {
-  margin-top: 24px;
+  margin-top: 44px;
   padding-top: 20px;
   border-top: 1px solid var(--color-divider);
   display: flex;

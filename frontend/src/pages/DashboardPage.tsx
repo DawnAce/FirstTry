@@ -11,12 +11,12 @@ import {
   Space,
   message,
   Select,
-  Popconfirm,
 } from 'antd';
-import { PlusOutlined, EditOutlined, SendOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, SendOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getDashboard, createIssue, deleteIssue } from '../api/issues';
 import type { Issue } from '../api/issues';
+import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -245,24 +245,14 @@ export default function Dashboard() {
                 >
                   中通明细
                 </Button>
-                <Popconfirm
-                  title={`确认删除第 ${item.issue_number} 期？`}
-                  description="会同时删除该期报数、发货记录、临时加印和中通发货明细。此操作不可恢复。"
-                  okText="删除"
-                  cancelText="取消"
-                  okButtonProps={{ danger: true }}
+                <IssueDeleteConfirmButton
+                  issueNumber={item.issue_number}
                   onConfirm={() => handleDeleteIssue(item)}
-                  onPopupClick={(event) => event.stopPropagation()}
-                >
-                  <Button
-                    type="text"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    删除
-                  </Button>
-                </Popconfirm>
+                  buttonProps={{
+                    type: 'text',
+                    onClick: (event) => event.stopPropagation(),
+                  }}
+                />
               </Space>
             </div>
           ))
