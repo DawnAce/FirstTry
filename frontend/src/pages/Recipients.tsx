@@ -56,7 +56,11 @@ import { getIssues } from '../api/issues';
 import { getOperationLogs } from '../api/operationLogs';
 import type { OperationLog } from '../api/operationLogs';
 import { getReport } from '../api/reports';
-import { getIssueShippingExportUrl } from '../api/exports';
+import {
+  downloadIssueShippingExport,
+  getIssueShippingExportFallbackFilename,
+  resolveDownloadFilename,
+} from '../api/exports';
 import dayjs from 'dayjs';
 
 const typeLabels: Record<string, string> = { corporate: '对公', reader: '读者', sample: '样报' };
@@ -113,6 +117,7 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   const [logRecordName, setLogRecordName] = useState<string>('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [batchDeadline, setBatchDeadline] = useState<dayjs.Dayjs | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const { data: issues = [], isLoading: issuesLoading } = useQuery({
     queryKey: ['issues', 'shipping-details'],
@@ -157,12 +162,31 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
     selectIssue(issue.issue_number);
   };
 
-  const handleExportShipping = () => {
+  const handleExportShipping = async () => {
     if (currentIssue?.id == null) {
       message.warning('请先选择期号');
       return;
     }
-    window.open(getIssueShippingExportUrl(currentIssue.id), '_blank');
+    setExporting(true);
+    try {
+      const res = await downloadIssueShippingExport(currentIssue.id);
+      const contentDisposition = res.headers['content-disposition'];
+      const fallback = getIssueShippingExportFallbackFilename(currentIssue);
+      const filename = resolveDownloadFilename(
+        typeof contentDisposition === 'string' ? contentDisposition : undefined,
+        fallback,
+      );
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      message.error('导出失败');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const { data: details = [], isLoading } = useQuery({
@@ -547,6 +571,7 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
                 icon={<DownloadOutlined />}
                 onClick={handleExportShipping}
                 disabled={currentIssue?.id == null}
+                loading={exporting}
               >
                 导出
               </Button>
