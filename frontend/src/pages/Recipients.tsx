@@ -20,7 +20,16 @@ import {
   Tabs,
   Tooltip,
 } from 'antd';
-import { PlusOutlined, PauseCircleOutlined, CaretRightOutlined, SearchOutlined, DeleteOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  PauseCircleOutlined,
+  CaretRightOutlined,
+  SearchOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  HistoryOutlined,
+  DownloadOutlined,
+} from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TableColumnsType, TableProps } from 'antd';
 import type { Recipient, Subscription } from '../api/recipients';
@@ -47,6 +56,7 @@ import { getIssues } from '../api/issues';
 import { getOperationLogs } from '../api/operationLogs';
 import type { OperationLog } from '../api/operationLogs';
 import { getReport } from '../api/reports';
+import { getIssueShippingExportUrl } from '../api/exports';
 import dayjs from 'dayjs';
 
 const typeLabels: Record<string, string> = { corporate: '对公', reader: '读者', sample: '样报' };
@@ -145,6 +155,14 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
       return;
     }
     selectIssue(issue.issue_number);
+  };
+
+  const handleExportShipping = () => {
+    if (currentIssue?.id == null) {
+      message.warning('请先选择期号');
+      return;
+    }
+    window.open(getIssueShippingExportUrl(currentIssue.id), '_blank');
   };
 
   const { data: details = [], isLoading } = useQuery({
@@ -524,9 +542,18 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
             <span className="shipping-detail-filter-summary">
               共 {details.length} 条记录，合计 {details.reduce((sum, d) => sum + (d.quantity ?? 0), 0)} 份
             </span>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
-              新增
-            </Button>
+            <Space size="small">
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={handleExportShipping}
+                disabled={currentIssue?.id == null}
+              >
+                导出
+              </Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
+                新增
+              </Button>
+            </Space>
           </div>
         </div>
       </div>
