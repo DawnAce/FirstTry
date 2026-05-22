@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from app.models import Issue, PublicationScheduleUploadStatus
+from app.models import (
+    Issue,
+    PublicationSchedule,
+    PublicationScheduleUpload,
+    PublicationScheduleUploadStatus,
+)
 from app.services.publication_schedule_parser import (
     ParsedSchedule,
     ScheduleRowDraft,
@@ -437,3 +442,147 @@ def test_create_preview_upload_rolls_back_and_deletes_file_on_add_failure(
     assert exc.value is db.add_error
     assert db.rolled_back is True
     assert not (upload_root / "2026" / "stored.pdf").exists()
+
+
+class FakeCommitQuery:
+    def __init__(self, db, model):
+        self.db = db
+        self.model = model
+
+    def filter(self, *args):
+        return self
+
+    def first(self):
+        if self.model is PublicationScheduleUpload:
+            return self.db.upload
+        raise AssertionError(f"unexpected first() for {self.model}")
+
+    def delete(self):
+        if self.model is not PublicationSchedule:
+            raise AssertionError(f"unexpected delete() for {self.model}")
+        self.db.deleted_schedule_years.append(self.db.upload.year)
+        return 1
+
+
+class FakeCommitDb:
+    def __init__(self, upload=None):
+        self.upload = upload
+        self.added = []
+        self.committed = False
+        self.commit_count = 0
+        self.refreshed = None
+        self.deleted_schedule_years = []
+
+    def query(self, model):
+        return FakeCommitQuery(self, model)
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    def commit(self):
+        self.committed = True
+        self.commit_count += 1
+
+    def refresh(self, obj):
+        self.refreshed = obj
+
+
+def make_upload(summary_json=None):
+    return PublicationScheduleUpload(
+        id=10,
+        year=2026,
+        original_filename="schedule.pdf",
+        stored_path="uploads/publication_schedules/2026/schedule.pdf",
+        status=PublicationScheduleUploadStatus.previewed,
+        summary_json=summary_json,
+        error_json=[],
+        uploaded_by="alice",
+        raw_text="raw text",
+    )
+
+
+def test_commit_schedule_upload_missing_upload_raises_value_error():
+    with pytest.raises(ValueError) as exc:
+        service.commit_schedule_upload(FakeCommitDb(upload=None), 10, [])
+
+    assert str(exc.value) == "上传记录不存在"
+
+
+def test_commit_schedule_upload_validation_errors_mark_failed_and_commit(monkeypatch):
+    upload = make_upload()
+    db = FakeCommitDb(upload=upload)
+    errors = ["出版日期年份必须为 2026：2027-01-05", "同一年内出版日期重复：2026-01-05"]
+    monkeypatch.setattr(service, "validate_schedule_rows", lambda year, rows: errors, raising=False)
+
+    with pytest.raises(ValueError) as exc:
+        service.commit_schedule_upload(
+            db,
+            upload.id,
+            [ScheduleRowDraft(date(2027, 1, 5), 2635, False)],
+        )
+
+    assert str(exc.value) == "；".join(errors)
+    assert upload.status == PublicationScheduleUploadStatus.failed
+    assert upload.error_json == errors
+    assert db.commit_count == 1
+
+
+def test_commit_schedule_upload_replaces_schedule_rows_and_invalidates_cache(monkeypatch):
+    upload = make_upload(summary_json={"remarks": "春节休刊"})
+    db = FakeCommitDb(upload=upload)
+    safe_calls = []
+    invalidated = []
+    rows = [
+        ScheduleRowDraft(date(2026, 1, 12), 2636, False),
+        ScheduleRowDraft(date(2026, 1, 5), 2635, False),
+        ScheduleRowDraft(date(2026, 1, 19), 9999, True),
+    ]
+    monkeypatch.setattr(service, "validate_schedule_rows", lambda year, rows: [], raising=False)
+    monkeypatch.setattr(
+        service,
+        "ensure_commit_is_safe",
+        lambda db_arg, year, rows_arg: safe_calls.append((db_arg, year, rows_arg)),
+    )
+    monkeypatch.setattr(
+        service, "invalidate_dashboard_cache", lambda: invalidated.append(True), raising=False
+    )
+
+    result = service.commit_schedule_upload(db, upload.id, rows)
+
+    assert result is upload
+    assert safe_calls == [(db, 2026, rows)]
+    assert db.deleted_schedule_years == [2026]
+    assert [schedule.publish_date for schedule in db.added] == [
+        date(2026, 1, 5),
+        date(2026, 1, 12),
+        date(2026, 1, 19),
+    ]
+    assert [schedule.issue_number for schedule in db.added] == [2635, 2636, None]
+    assert all(schedule.year == 2026 for schedule in db.added)
+    assert upload.status == PublicationScheduleUploadStatus.committed
+    assert upload.error_json == []
+    assert upload.committed_at is not None
+    assert upload.summary_json["remarks"] == "春节休刊"
+    assert upload.summary_json["total_rows"] == 3
+    assert upload.summary_json["suspended_count"] == 1
+    assert db.commit_count == 1
+    assert db.refreshed is upload
+    assert invalidated == [True]
+
+
+def test_commit_schedule_upload_writes_suspended_rows_without_issue_number(monkeypatch):
+    upload = make_upload()
+    db = FakeCommitDb(upload=upload)
+    monkeypatch.setattr(service, "validate_schedule_rows", lambda year, rows: [], raising=False)
+    monkeypatch.setattr(service, "ensure_commit_is_safe", lambda db, year, rows: None)
+    monkeypatch.setattr(service, "invalidate_dashboard_cache", lambda: None, raising=False)
+
+    service.commit_schedule_upload(
+        db,
+        upload.id,
+        [ScheduleRowDraft(date(2026, 2, 16), 8888, True)],
+    )
+
+    assert len(db.added) == 1
+    assert db.added[0].is_suspended is True
+    assert db.added[0].issue_number is None

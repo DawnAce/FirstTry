@@ -1,20 +1,24 @@
 from dataclasses import asdict
 from contextlib import suppress
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 import re
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.cache import invalidate_dashboard_cache
 from app.models import (
     Issue,
+    PublicationSchedule,
     PublicationScheduleUpload,
     PublicationScheduleUploadStatus,
 )
 from app.services.publication_schedule_parser import (
     ScheduleRowDraft,
     parse_schedule_pdf,
+    summarize_rows,
+    validate_schedule_rows,
 )
 
 
@@ -150,3 +154,49 @@ def ensure_commit_is_safe(db: Session, year: int, rows: list[ScheduleRowDraft]) 
             raise ValueError(
                 f"第 {issue.issue_number} 期已创建，不能将出版日期从 {issue.publish_date} 改为 {row.publish_date}"
             )
+
+
+def commit_schedule_upload(
+    db: Session,
+    upload_id: int,
+    rows: list[ScheduleRowDraft],
+) -> PublicationScheduleUpload:
+    upload = (
+        db.query(PublicationScheduleUpload)
+        .filter(PublicationScheduleUpload.id == upload_id)
+        .first()
+    )
+    if upload is None:
+        raise ValueError("上传记录不存在")
+
+    errors = validate_schedule_rows(upload.year, rows)
+    if errors:
+        upload.status = PublicationScheduleUploadStatus.failed
+        upload.error_json = errors
+        db.commit()
+        raise ValueError("；".join(errors))
+
+    ensure_commit_is_safe(db, upload.year, rows)
+
+    db.query(PublicationSchedule).filter(PublicationSchedule.year == upload.year).delete()
+    for row in sorted(rows, key=lambda item: item.publish_date):
+        db.add(
+            PublicationSchedule(
+                year=upload.year,
+                issue_number=None if row.is_suspended else row.issue_number,
+                publish_date=row.publish_date,
+                is_suspended=row.is_suspended,
+            )
+        )
+
+    upload.status = PublicationScheduleUploadStatus.committed
+    upload.summary_json = asdict(
+        summarize_rows(rows, (upload.summary_json or {}).get("remarks"))
+    )
+    upload.error_json = []
+    upload.committed_at = datetime.now()
+
+    db.commit()
+    db.refresh(upload)
+    invalidate_dashboard_cache()
+    return upload
