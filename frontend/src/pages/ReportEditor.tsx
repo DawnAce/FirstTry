@@ -30,6 +30,8 @@ import { getReport, updateReport, confirmReport, revokeReport, getRevisions, get
 import type { RevisionRecord } from '../api/reports';
 import { useAuth } from '../contexts/AuthContext';
 import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton';
+import { sortVisibleSocialUseEntries } from './reportOrder';
+import { formatIssueReportTitle } from './reportTitle';
 
 const categoryLabels: Record<string, string> = {
   postal: '北京邮发',
@@ -54,12 +56,6 @@ const categoryFrequency: Record<string, string> = {
 
 // Items hidden from social_use display (shown separately or managed by temp print details)
 const EXTRA_ITEMS = ['临时加印', '临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'];
-
-export function formatIssueReportTitle(issue: Pick<Issue, 'issue_number' | 'publish_date' | 'year_issue_label'>) {
-  const yearIssuePart = issue.year_issue_label ? ` 第${issue.year_issue_label}期` : '';
-  const publishYear = issue.publish_date.slice(0, 4);
-  return `${publishYear}年《中国经营报》第${issue.issue_number}期${yearIssuePart} 报数表`;
-}
 
 // Composite groups: parent label → sub_category prefixes
 const COMPOSITE_GROUPS: { label: string; prefix: string; items: string[] }[] = [
@@ -796,10 +792,10 @@ export default function ReportEditor() {
               const compositeSubCategories = new Set<string>();
               COMPOSITE_GROUPS.forEach(g => g.items.forEach(i => compositeSubCategories.add(i)));
 
-              const mainItems = allSocialEntries.filter(
+              const mainItems = sortVisibleSocialUseEntries(allSocialEntries.filter(
                 e => !EXTRA_ITEMS.includes(e.sub_category) &&
                      !compositeSubCategories.has(e.sub_category)
-              );
+              ));
               // All extra items are hidden (managed by temp print details or shown at top)
               const extraItems: ReportEntry[] = [];
               const subtotal = calculateCategoryTotal(allSocialEntries);
