@@ -212,7 +212,13 @@ def commit_schedule_upload(
     if upload.error_json:
         raise ValueError("；".join(upload.error_json))
 
-    rows = _deserialize_rows(upload.rows_json)
+    try:
+        rows = _deserialize_rows(upload.rows_json)
+    except ValueError as exc:
+        upload.status = PublicationScheduleUploadStatus.failed
+        upload.error_json = [str(exc)]
+        db.commit()
+        raise
 
     errors = validate_schedule_rows(upload.year, rows)
     if errors:

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 from pathlib import Path
 
@@ -230,6 +231,26 @@ def test_create_preview_upload_rejects_oversized_pdf_before_parsing_or_writing(
 
     assert str(exc.value) == "PDF 文件不能超过 10 MB"
     assert not upload_root.exists()
+
+
+def test_read_limited_upload_rejects_oversized_pdf_after_bounded_read():
+    from app.api import schedule as schedule_api
+
+    class FakeUploadFile:
+        def __init__(self):
+            self.requested_sizes = []
+
+        async def read(self, size=-1):
+            self.requested_sizes.append(size)
+            return b"x" * size
+
+    file = FakeUploadFile()
+
+    with pytest.raises(ValueError) as exc:
+        asyncio.run(schedule_api.read_limited_upload(file))
+
+    assert str(exc.value) == "PDF 文件不能超过 10 MB"
+    assert file.requested_sizes == [service.MAX_PDF_UPLOAD_BYTES + 1]
 
 
 class FakeWriteDb:
@@ -597,6 +618,45 @@ def test_commit_schedule_upload_validation_errors_mark_failed_and_commit(monkeyp
     assert upload.status == PublicationScheduleUploadStatus.failed
     assert upload.error_json == errors
     assert db.commit_count == 1
+
+
+@pytest.mark.parametrize(
+    ("rows_json", "expected_error"),
+    [
+        (None, "上传记录缺少预览行"),
+        (
+            [{"publish_date": "not-a-date", "issue_number": 2635, "is_suspended": False}],
+            "上传记录预览行格式无效",
+        ),
+    ],
+)
+def test_commit_schedule_upload_malformed_preview_rows_mark_failed_without_replacement(
+    monkeypatch, rows_json, expected_error
+):
+    upload = make_upload()
+    upload.rows_json = rows_json
+    db = FakeCommitDb(upload=upload)
+    monkeypatch.setattr(
+        service,
+        "validate_schedule_rows",
+        lambda year, rows: pytest.fail("invalid stored rows should fail before validation"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        service,
+        "ensure_commit_is_safe",
+        lambda db_arg, year, rows_arg: pytest.fail("invalid stored rows should fail before safety checks"),
+    )
+
+    with pytest.raises(ValueError) as exc:
+        service.commit_schedule_upload(db, upload.id)
+
+    assert str(exc.value) == expected_error
+    assert upload.status == PublicationScheduleUploadStatus.failed
+    assert upload.error_json == [expected_error]
+    assert db.commit_count == 1
+    assert db.deleted_schedule_years == []
+    assert db.added == []
 
 
 @pytest.mark.parametrize(

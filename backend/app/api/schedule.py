@@ -13,11 +13,20 @@ from app.schemas.publication_schedule_upload import (
 )
 from app.schemas.schedule import ScheduleEntry
 from app.services.publication_schedule_upload_service import (
+    MAX_PDF_UPLOAD_BYTES,
+    MAX_PDF_UPLOAD_MB,
     commit_schedule_upload,
     create_preview_upload,
 )
 
 router = APIRouter(prefix="/api/schedule", tags=["schedule"])
+
+
+async def read_limited_upload(file: UploadFile) -> bytes:
+    content = await file.read(MAX_PDF_UPLOAD_BYTES + 1)
+    if len(content) > MAX_PDF_UPLOAD_BYTES:
+        raise ValueError(f"PDF 文件不能超过 {MAX_PDF_UPLOAD_MB} MB")
+    return content
 
 
 @router.get("", response_model=List[ScheduleEntry])
@@ -49,7 +58,7 @@ async def preview_schedule_upload(
 ):
     """Upload a PDF and parse schedule rows without writing final schedule data."""
     try:
-        content = await file.read()
+        content = await read_limited_upload(file)
         upload, rows = create_preview_upload(
             db,
             file.filename or "publication_schedule.pdf",
