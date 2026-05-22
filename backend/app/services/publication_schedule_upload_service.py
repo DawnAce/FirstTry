@@ -24,9 +24,12 @@ UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "publication_sch
 def _safe_filename(filename: str) -> str:
     path = Path(filename)
     suffix = path.suffix.lower() or ".pdf"
+    unique_token = uuid4().hex
     stem = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]", "_", path.stem)
     stem = stem.strip("._") or "publication_schedule"
-    return f"{stem}_{uuid4().hex}{suffix}"
+    max_stem_length = max(0, 255 - len("_") - len(unique_token) - len(suffix))
+    stem = stem[:max_stem_length]
+    return f"{stem}_{unique_token}{suffix}"
 
 
 def store_uploaded_pdf(year: int, filename: str, content: bytes) -> str:
@@ -91,9 +94,10 @@ def create_preview_upload(
         raw_text=parsed.raw_text,
     )
 
-    db.add(upload)
     try:
+        db.add(upload)
         db.commit()
+        db.refresh(upload)
     except Exception:
         rollback = getattr(db, "rollback", None)
         if rollback is not None:
@@ -104,7 +108,6 @@ def create_preview_upload(
             if stored_file.exists():
                 stored_file.unlink()
         raise
-    db.refresh(upload)
 
     return upload, parsed.rows
 

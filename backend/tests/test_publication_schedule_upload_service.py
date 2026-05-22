@@ -85,6 +85,18 @@ def test_safe_filename_sanitizes_unsafe_characters_and_preserves_pdf_suffix(monk
     assert filename == "刊期表_最终_abc123.pdf"
 
 
+def test_safe_filename_caps_final_basename_length_for_long_pdf_name(monkeypatch):
+    class FakeUuid:
+        hex = "a" * 32
+
+    monkeypatch.setattr(service, "uuid4", lambda: FakeUuid())
+
+    filename = service._safe_filename(f"{'x' * 251}.PDF")
+
+    assert len(filename) <= 255
+    assert filename.endswith(f"_{FakeUuid.hex}.pdf")
+
+
 def test_store_uploaded_pdf_writes_bytes_and_returns_relative_upload_path(tmp_path, monkeypatch):
     upload_root = tmp_path / "uploads" / "publication_schedules"
     monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
@@ -317,6 +329,16 @@ class FailingCommitDb(FakeWriteDb):
         raise self.commit_error
 
 
+class FailingAddDb(FakeWriteDb):
+    def __init__(self):
+        super().__init__()
+        self.rolled_back = False
+        self.add_error = RuntimeError("add failed")
+
+    def add(self, obj):
+        raise self.add_error
+
+
 def test_create_preview_upload_rolls_back_and_deletes_file_on_commit_failure(
     tmp_path, monkeypatch
 ):
@@ -337,5 +359,29 @@ def test_create_preview_upload_rolls_back_and_deletes_file_on_commit_failure(
         )
 
     assert exc.value is db.commit_error
+    assert db.rolled_back is True
+    assert not (upload_root / "2026" / "stored.pdf").exists()
+
+
+def test_create_preview_upload_rolls_back_and_deletes_file_on_add_failure(
+    tmp_path, monkeypatch
+):
+    parsed = make_parsed_schedule()
+    upload_root = tmp_path / "uploads" / "publication_schedules"
+    monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(service, "_safe_filename", lambda filename: "stored.pdf")
+    monkeypatch.setattr(service, "parse_schedule_pdf", lambda content: parsed)
+    db = FailingAddDb()
+
+    with pytest.raises(RuntimeError) as exc:
+        service.create_preview_upload(
+            db,
+            "schedule.pdf",
+            "application/pdf",
+            b"pdf-content",
+            "alice",
+        )
+
+    assert exc.value is db.add_error
     assert db.rolled_back is True
     assert not (upload_root / "2026" / "stored.pdf").exists()
