@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -95,6 +96,22 @@ def test_safe_filename_caps_final_basename_length_for_long_pdf_name(monkeypatch)
 
     assert len(filename) <= 255
     assert filename.endswith(f"_{FakeUuid.hex}.pdf")
+
+
+def test_safe_filename_caps_final_basename_utf8_bytes_for_long_chinese_pdf_name(
+    monkeypatch,
+):
+    class FakeUuid:
+        hex = "a" * 32
+
+    monkeypatch.setattr(service, "uuid4", lambda: FakeUuid())
+
+    filename = service._safe_filename(f"{'刊' * 251}.PDF")
+    basename = Path(filename).name
+
+    assert len(basename.encode("utf-8")) <= 255
+    assert filename.endswith(f"_{FakeUuid.hex}.pdf")
+    assert Path(filename).suffix == ".pdf"
 
 
 def test_store_uploaded_pdf_writes_bytes_and_returns_relative_upload_path(tmp_path, monkeypatch):
@@ -339,6 +356,16 @@ class FailingAddDb(FakeWriteDb):
         raise self.add_error
 
 
+class FailingRefreshDb(FakeWriteDb):
+    def __init__(self):
+        super().__init__()
+        self.rolled_back = False
+        self.refresh_error = RuntimeError("refresh failed")
+
+    def refresh(self, obj):
+        raise self.refresh_error
+
+
 def test_create_preview_upload_rolls_back_and_deletes_file_on_commit_failure(
     tmp_path, monkeypatch
 ):
@@ -361,6 +388,31 @@ def test_create_preview_upload_rolls_back_and_deletes_file_on_commit_failure(
     assert exc.value is db.commit_error
     assert db.rolled_back is True
     assert not (upload_root / "2026" / "stored.pdf").exists()
+
+
+def test_create_preview_upload_keeps_file_and_does_not_rollback_on_refresh_failure(
+    tmp_path, monkeypatch
+):
+    parsed = make_parsed_schedule()
+    upload_root = tmp_path / "uploads" / "publication_schedules"
+    monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(service, "_safe_filename", lambda filename: "stored.pdf")
+    monkeypatch.setattr(service, "parse_schedule_pdf", lambda content: parsed)
+    db = FailingRefreshDb()
+
+    with pytest.raises(RuntimeError) as exc:
+        service.create_preview_upload(
+            db,
+            "schedule.pdf",
+            "application/pdf",
+            b"pdf-content",
+            "alice",
+        )
+
+    assert exc.value is db.refresh_error
+    assert db.committed is True
+    assert db.rolled_back is False
+    assert (upload_root / "2026" / "stored.pdf").read_bytes() == b"pdf-content"
 
 
 def test_create_preview_upload_rolls_back_and_deletes_file_on_add_failure(

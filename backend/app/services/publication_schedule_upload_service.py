@@ -19,6 +19,19 @@ from app.services.publication_schedule_parser import (
 
 
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "publication_schedules"
+MAX_FILENAME_BYTES = 255
+
+
+def _truncate_utf8(value: str, max_bytes: int) -> str:
+    result: list[str] = []
+    used_bytes = 0
+    for character in value:
+        character_bytes = len(character.encode("utf-8"))
+        if used_bytes + character_bytes > max_bytes:
+            break
+        result.append(character)
+        used_bytes += character_bytes
+    return "".join(result)
 
 
 def _safe_filename(filename: str) -> str:
@@ -27,8 +40,9 @@ def _safe_filename(filename: str) -> str:
     unique_token = uuid4().hex
     stem = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]", "_", path.stem)
     stem = stem.strip("._") or "publication_schedule"
-    max_stem_length = max(0, 255 - len("_") - len(unique_token) - len(suffix))
-    stem = stem[:max_stem_length]
+    suffix_bytes = len(suffix.encode("utf-8"))
+    max_stem_bytes = max(0, MAX_FILENAME_BYTES - len("_") - len(unique_token) - suffix_bytes)
+    stem = _truncate_utf8(stem, max_stem_bytes)
     return f"{stem}_{unique_token}{suffix}"
 
 
@@ -97,7 +111,6 @@ def create_preview_upload(
     try:
         db.add(upload)
         db.commit()
-        db.refresh(upload)
     except Exception:
         rollback = getattr(db, "rollback", None)
         if rollback is not None:
@@ -109,6 +122,7 @@ def create_preview_upload(
                 stored_file.unlink()
         raise
 
+    db.refresh(upload)
     return upload, parsed.rows
 
 
