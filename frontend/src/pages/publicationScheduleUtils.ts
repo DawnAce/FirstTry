@@ -8,6 +8,8 @@ export interface ScheduleMonthGroup<T> {
 
 type RowWithDate = { publish_date: string };
 
+type IssueRange = Pick<ScheduleSummary, 'first_issue_number' | 'last_issue_number'>;
+
 export function groupScheduleRowsByMonth<T extends RowWithDate>(rows: T[]): ScheduleMonthGroup<T>[] {
   const groups = new Map<number, T[]>();
   [...rows]
@@ -33,6 +35,12 @@ export function summarizeScheduleRows(rows: Array<ScheduleDraftRow | ScheduleEnt
     first_issue_number: issueNumbers.length > 0 ? Math.min(...issueNumbers) : null,
     last_issue_number: issueNumbers.length > 0 ? Math.max(...issueNumbers) : null,
   };
+}
+
+export function formatIssueRange(summary: IssueRange): string {
+  return summary.first_issue_number === null || summary.last_issue_number === null
+    ? '-'
+    : `${summary.first_issue_number} - ${summary.last_issue_number}`;
 }
 
 export function rowHasError(row: ScheduleDraftRow, errors: string[]): boolean {

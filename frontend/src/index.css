@@ -325,6 +325,10 @@ body {
   justify-content: flex-start;
 }
 
+.schedule-preview-row-error td {
+  background: rgba(255, 77, 79, 0.08) !important;
+}
+
 @media (max-width: 1200px) {
   .shipping-detail-filter-row--footer {
     justify-content: flex-start;

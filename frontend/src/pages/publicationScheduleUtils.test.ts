@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatIssueRange,
   groupScheduleRowsByMonth,
   rowHasError,
   summarizeScheduleRows,
@@ -42,6 +43,12 @@ describe('publicationScheduleUtils', () => {
       first_issue_number: 2635,
       last_issue_number: 2641,
     });
+  });
+
+  it('formats issue ranges and uses a dash when either boundary is missing', () => {
+    expect(formatIssueRange({ first_issue_number: 2635, last_issue_number: 2683 })).toBe('2635 - 2683');
+    expect(formatIssueRange({ first_issue_number: null, last_issue_number: 2683 })).toBe('-');
+    expect(formatIssueRange({ first_issue_number: 2635, last_issue_number: null })).toBe('-');
   });
 
   it('detects errors that mention a row date', () => {
