@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build an admin workflow to upload an annual publication schedule PDF, preview and correct parsed rows, then save structured schedule data that drives issue creation.
+**Goal:** Build an admin workflow to upload an annual publication schedule PDF, review parsed rows, then save structured schedule data that drives issue creation.
 
-**Architecture:** Keep `publication_schedule` as the canonical schedule table and add `publication_schedule_uploads` as an audit/source table for uploaded PDFs and parse metadata. Add a focused parser service that converts extractable PDF text into validated schedule rows, then expose preview/commit endpoints. Add a React management page that uploads PDFs, shows an editable preview, commits corrected rows, and invalidates schedule/dashboard caches.
+**Architecture:** Keep `publication_schedule` as the canonical schedule table and add `publication_schedule_uploads` as an audit/source table for uploaded PDFs and parse metadata. Add a focused parser service that converts extractable PDF text into validated schedule rows, then expose preview/commit endpoints. Add a React management page that automatically previews selected PDFs, shows review-only parsed rows, commits the parsed rows, and invalidates schedule/dashboard caches.
 
 **Tech Stack:** FastAPI, SQLAlchemy, Alembic, Pydantic v2, pypdf, React, TypeScript, Ant Design, TanStack Query, Vitest, open existing MySQL-backed development setup.
 
@@ -1255,18 +1255,15 @@ import {
   Alert,
   Button,
   Card,
-  DatePicker,
-  InputNumber,
   Select,
   Space,
   Statistic,
-  Switch,
   Table,
   Tag,
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined, UploadOutlined } from '@ant-design/icons';
+import { InboxOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
 import type { ScheduleDraftRow, ScheduleEntry, SchedulePreview } from '../api/schedule';
@@ -1284,9 +1281,7 @@ const { Dragger } = Upload;
 export default function PublicationScheduleManager() {
   const currentYear = dayjs().year();
   const [year, setYear] = useState(2026);
-  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
-  const [previewRows, setPreviewRows] = useState<ScheduleDraftRow[]>([]);
   const [previewing, setPreviewing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const { isAdmin } = useAuth();
@@ -1304,22 +1299,16 @@ export default function PublicationScheduleManager() {
 
   const finalRows = scheduleQuery.data ?? [];
   const displaySummary = preview
-    ? summarizeScheduleRows(previewRows)
+    ? summarizeScheduleRows(preview.rows)
     : summarizeScheduleRows(finalRows);
 
-  const handlePreview = async () => {
-    if (!file) {
-      message.warning('请先选择刊期表 PDF');
-      return;
-    }
+  const handlePreviewUpload = async (file: File) => {
     setPreviewing(true);
     setPreview(null);
-    setPreviewRows([]);
     try {
       const res = await previewScheduleUpload(file);
       setYear(res.data.year);
       setPreview(res.data);
-      setPreviewRows(res.data.rows);
       message.success('刊期表解析完成，请核对预览');
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };
@@ -1327,25 +1316,14 @@ export default function PublicationScheduleManager() {
     } finally {
       setPreviewing(false);
     }
-  };
-
-  const handleRowChange = (index: number, nextRow: Partial<ScheduleDraftRow>) => {
-    setPreviewRows((rows) => rows.map((row, rowIndex) => (
-      rowIndex === index
-        ? {
-            ...row,
-            ...nextRow,
-            issue_number: nextRow.is_suspended ? null : (nextRow.issue_number ?? row.issue_number),
-          }
-        : row
-    )));
+    return false;
   };
 
   const handleCommit = async () => {
     if (!preview) return;
     setCommitting(true);
     try {
-      await commitScheduleUpload(preview.upload_id, previewRows);
+      await commitScheduleUpload(preview.upload_id, preview.rows);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['schedule'] }),
         queryClient.invalidateQueries({ queryKey: ['scheduleUploads'] }),
@@ -1353,8 +1331,6 @@ export default function PublicationScheduleManager() {
         queryClient.invalidateQueries({ queryKey: ['issues'] }),
       ]);
       setPreview(null);
-      setPreviewRows([]);
-      setFile(null);
       message.success(`${year} 年刊期表已保存`);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };
@@ -1377,45 +1353,20 @@ export default function PublicationScheduleManager() {
     },
   ];
 
-  const previewColumns: ColumnsType<ScheduleDraftRow & { rowIndex: number }> = [
+  const previewColumns: ColumnsType<ScheduleDraftRow> = [
     {
       title: '出版日期',
       dataIndex: 'publish_date',
-      render: (value: string, row) => (
-        <DatePicker
-          value={dayjs(value)}
-          onChange={(nextDate) => handleRowChange(row.rowIndex, { publish_date: nextDate?.format('YYYY-MM-DD') ?? value })}
-        />
-      ),
-    },
-    {
-      title: '休刊',
-      dataIndex: 'is_suspended',
-      render: (value: boolean, row) => (
-        <Switch
-          checked={value}
-          checkedChildren="休刊"
-          unCheckedChildren="出版"
-          onChange={(checked) => handleRowChange(row.rowIndex, { is_suspended: checked })}
-        />
-      ),
+      render: (value: string) => dayjs(value).format('YYYY-MM-DD'),
     },
     {
       title: '期号',
       dataIndex: 'issue_number',
-      render: (value: number | null, row) => (
-        <InputNumber
-          min={1}
-          disabled={row.is_suspended}
-          value={value}
-          onChange={(nextValue) => handleRowChange(row.rowIndex, { issue_number: nextValue })}
-        />
-      ),
+      render: (value: number | null, row) => row.is_suspended ? <Tag color="default">休刊</Tag> : `第 ${value} 期`,
     },
   ];
 
-  const previewRowsWithIndex = previewRows.map((row, rowIndex) => ({ ...row, rowIndex }));
-  const rowsForDisplay = preview ? previewRowsWithIndex : finalRows;
+  const rowsForDisplay = preview ? preview.rows : finalRows;
   const monthGroups = groupScheduleRowsByMonth(rowsForDisplay);
 
   return (
@@ -1439,7 +1390,6 @@ export default function PublicationScheduleManager() {
             onChange={(value) => {
               setYear(value);
               setPreview(null);
-              setPreviewRows([]);
             }}
             options={[currentYear - 1, currentYear, currentYear + 1, 2026]
               .filter((value, index, arr) => arr.indexOf(value) === index)
@@ -1470,22 +1420,14 @@ export default function PublicationScheduleManager() {
           <Dragger
             accept=".pdf,application/pdf"
             maxCount={1}
-            beforeUpload={() => false}
-            onChange={({ fileList }) => setFile(fileList[0]?.originFileObj ?? null)}
+            beforeUpload={handlePreviewUpload}
+            disabled={previewing || committing}
+            showUploadList={false}
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
             <p className="ant-upload-text">点击或拖拽上传年度刊期表 PDF</p>
-            <p className="ant-upload-hint">上传后先预览，确认无误再保存</p>
+            <p className="ant-upload-hint">选择文件后将自动解析并生成预览，不会直接写入正式刊期表</p>
           </Dragger>
-          <Button
-            type="primary"
-            icon={<UploadOutlined />}
-            style={{ marginTop: 16 }}
-            onClick={handlePreview}
-            loading={previewing}
-          >
-            解析并预览
-          </Button>
         </Card>
       )}
 
@@ -1514,7 +1456,7 @@ export default function PublicationScheduleManager() {
       {monthGroups.map((group) => (
         <Card key={group.month} title={`${group.month}月`} style={{ marginBottom: 20 }}>
           <Table
-            rowKey={(row) => `${row.publish_date}-${'rowIndex' in row ? row.rowIndex : row.id}`}
+            rowKey={(row) => `${row.publish_date}-${'id' in row ? row.id : row.issue_number ?? 'suspended'}`}
             dataSource={group.rows}
             columns={preview ? previewColumns : finalColumns}
             pagination={false}
@@ -1618,7 +1560,7 @@ Add a short section after the initialization/import workflow:
 ```markdown
 ## 年度刊期表管理
 
-管理员可在「刊期表管理」中上传年度刊期表 PDF。系统会先解析 PDF 并展示可编辑预览，确认无误后保存为结构化刊期数据；保存后的刊期表会驱动首页的下一期创建和补录期次选择。上传原始 PDF 会保留在后端用于追溯。
+管理员可在「刊期表管理」中上传年度刊期表 PDF。选择或拖拽 PDF 后，系统会自动解析并展示只读预览；确认无误后可保存为结构化刊期数据。若预览内容有误，应修正或 OCR 原始 PDF 后重新上传。保存后的刊期表会驱动首页的下一期创建和补录期次选择。上传原始 PDF 会保留在后端用于追溯。
 ```
 
 - [ ] **Step 2: Update technical documentation**
@@ -1660,7 +1602,8 @@ In `docs/requirements.md`, add:
 ## 年度刊期表管理
 
 - 管理员可以上传年度刊期表 PDF。
-- 系统解析年份、出版日期、期号和休刊状态，并生成可编辑预览。
+- 系统解析年份、出版日期、期号和休刊状态，并生成只读预览。
+- 如预览内容有误，用户应修正或 OCR 原始 PDF 后重新上传。
 - 用户确认保存后，结构化刊期数据进入 `publication_schedule`。
 - 休刊周不占用期号，非休刊期号必须连续递增。
 - 当某年已有报数期次时，系统禁止覆盖会改变既有期号或出版日期的数据。
