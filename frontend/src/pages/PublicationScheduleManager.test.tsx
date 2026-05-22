@@ -95,7 +95,7 @@ vi.mock('antd', async () => {
       return React.createElement('div', null, title, description, children);
     },
     Row: passthrough,
-    Select: () => React.createElement('div'),
+    Select: ({ disabled }: { disabled?: boolean }) => React.createElement('select', { disabled }),
     Space: passthrough,
     Statistic: ({ title, value, suffix }: {
       title?: React.ReactNode;
@@ -106,7 +106,9 @@ vi.mock('antd', async () => {
     Tag: passthrough,
     Typography: { Text: passthrough },
     Upload: Object.assign(passthrough, {
-      Dragger: passthrough,
+      Dragger: ({ children, disabled }: { children?: React.ReactNode; disabled?: boolean }) => (
+        React.createElement('div', { 'data-testid': 'schedule-upload-dragger', 'data-disabled': disabled ? 'true' : 'false' }, children)
+      ),
       LIST_IGNORE: 'LIST_IGNORE',
     }),
     message: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
@@ -175,6 +177,16 @@ describe('PublicationScheduleManager', () => {
     const html = renderToString(<PublicationScheduleManager />);
 
     expect(html).toContain('<button disabled="">确认保存</button>');
+  });
+
+  it('disables upload and year selection while committing a preview', () => {
+    state.isAdmin = true;
+    state.reactStateValues = [2026, preview, false, true, null, 'schedule.pdf'];
+
+    const html = renderToString(<PublicationScheduleManager />);
+
+    expect(html).toContain('data-testid="schedule-upload-dragger" data-disabled="true"');
+    expect(html).toContain('<select disabled=""></select>');
   });
 
   it('commits preview rows and clears preview state after confirmation succeeds', async () => {

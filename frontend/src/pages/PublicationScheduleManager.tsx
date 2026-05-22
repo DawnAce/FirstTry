@@ -226,7 +226,13 @@ export default function PublicationScheduleManager() {
               查看年度出版计划和刊期表上传记录
             </p>
           </div>
-          <Select value={year} options={yearOptions} onChange={handleYearChange} style={{ width: 140 }} />
+          <Select
+            value={year}
+            options={yearOptions}
+            onChange={handleYearChange}
+            disabled={committing}
+            style={{ width: 140 }}
+          />
         </div>
 
         {scheduleQuery.isError && (
@@ -239,7 +245,7 @@ export default function PublicationScheduleManager() {
               <Dragger
                 accept=".pdf,application/pdf"
                 beforeUpload={handlePreviewUpload}
-                disabled={previewing}
+                disabled={previewing || committing}
                 maxCount={1}
                 showUploadList={false}
               >
