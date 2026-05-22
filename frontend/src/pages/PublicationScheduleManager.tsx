@@ -133,7 +133,7 @@ export default function PublicationScheduleManager() {
 
     setCommitting(true);
     try {
-      await commitScheduleUpload(preview.upload_id, preview.rows);
+      await commitScheduleUpload(preview.upload_id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['schedule', preview.year] }),
         queryClient.invalidateQueries({ queryKey: ['scheduleUploads', preview.year] }),

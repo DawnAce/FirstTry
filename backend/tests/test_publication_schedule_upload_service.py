@@ -208,6 +208,30 @@ def test_create_preview_upload_rejects_empty_pdf_content():
     assert str(exc.value) == "上传文件为空"
 
 
+def test_create_preview_upload_rejects_oversized_pdf_before_parsing_or_writing(
+    tmp_path, monkeypatch
+):
+    upload_root = tmp_path / "uploads" / "publication_schedules"
+    monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(
+        service,
+        "parse_schedule_pdf",
+        lambda content: pytest.fail("oversized content must be rejected before parsing"),
+    )
+
+    with pytest.raises(ValueError) as exc:
+        service.create_preview_upload(
+            FakeDb([]),
+            "schedule.pdf",
+            "application/pdf",
+            b"x" * (10 * 1024 * 1024 + 1),
+            "alice",
+        )
+
+    assert str(exc.value) == "PDF 文件不能超过 10 MB"
+    assert not upload_root.exists()
+
+
 class FakeWriteDb:
     def __init__(self):
         self.added = None
@@ -228,15 +252,18 @@ class FakeWriteDb:
 
 
 def make_parsed_schedule():
-    rows = [ScheduleRowDraft(date(2026, 1, 5), 2635, False)]
+    rows = [
+        ScheduleRowDraft(date(2026, 1, 5), 2635, False),
+        ScheduleRowDraft(date(2026, 2, 16), None, True),
+    ]
     return ParsedSchedule(
         year=2026,
         raw_text="raw text",
         rows=rows,
         summary=ScheduleSummary(
-            total_rows=1,
+            total_rows=2,
             published_count=1,
-            suspended_count=0,
+            suspended_count=1,
             first_issue_number=2635,
             last_issue_number=2635,
             remarks=None,
@@ -270,13 +297,17 @@ def test_create_preview_upload_creates_preview_record(tmp_path, monkeypatch):
     assert upload.stored_path.endswith("2026/stored.pdf")
     assert upload.status == PublicationScheduleUploadStatus.previewed
     assert upload.summary_json == {
-        "total_rows": 1,
+        "total_rows": 2,
         "published_count": 1,
-        "suspended_count": 0,
+        "suspended_count": 1,
         "first_issue_number": 2635,
         "last_issue_number": 2635,
         "remarks": None,
     }
+    assert upload.rows_json == [
+        {"publish_date": "2026-01-05", "issue_number": 2635, "is_suspended": False},
+        {"publish_date": "2026-02-16", "issue_number": None, "is_suspended": True},
+    ]
     assert upload.error_json == ["warning"]
     assert upload.uploaded_by == "alice"
     assert upload.raw_text == "raw text"
@@ -493,7 +524,13 @@ class FakeCommitDb:
         self.rollback_count += 1
 
 
-def make_upload(summary_json=None):
+def serialized_rows():
+    return [
+        {"publish_date": "2026-01-05", "issue_number": 2635, "is_suspended": False},
+    ]
+
+
+def make_upload(summary_json=None, rows_json=None):
     return PublicationScheduleUpload(
         id=10,
         year=2026,
@@ -504,14 +541,47 @@ def make_upload(summary_json=None):
         error_json=[],
         uploaded_by="alice",
         raw_text="raw text",
+        rows_json=serialized_rows() if rows_json is None else rows_json,
     )
 
 
 def test_commit_schedule_upload_missing_upload_raises_value_error():
     with pytest.raises(ValueError) as exc:
-        service.commit_schedule_upload(FakeCommitDb(upload=None), 10, [])
+        service.commit_schedule_upload(FakeCommitDb(upload=None), 10)
 
     assert str(exc.value) == "上传记录不存在"
+
+
+def test_commit_schedule_upload_rejects_preview_errors_before_validation(monkeypatch):
+    upload = make_upload()
+    upload.error_json = ["preview error"]
+    db = FakeCommitDb(upload=upload)
+    monkeypatch.setattr(
+        service,
+        "validate_schedule_rows",
+        lambda year, rows: pytest.fail("stored preview errors should block commit before validation"),
+        raising=False,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        service.commit_schedule_upload(db, upload.id)
+
+    assert str(exc.value) == "preview error"
+    assert db.deleted_schedule_years == []
+    assert db.added == []
+    assert db.commit_count == 0
+
+
+def test_commit_schedule_upload_does_not_accept_client_rows():
+    upload = make_upload()
+    db = FakeCommitDb(upload=upload)
+
+    with pytest.raises(TypeError):
+        service.commit_schedule_upload(
+            db,
+            upload.id,
+            [ScheduleRowDraft(date(2026, 1, 5), 9999, False)],
+        )
 
 
 def test_commit_schedule_upload_validation_errors_mark_failed_and_commit(monkeypatch):
@@ -521,11 +591,7 @@ def test_commit_schedule_upload_validation_errors_mark_failed_and_commit(monkeyp
     monkeypatch.setattr(service, "validate_schedule_rows", lambda year, rows: errors, raising=False)
 
     with pytest.raises(ValueError) as exc:
-        service.commit_schedule_upload(
-            db,
-            upload.id,
-            [ScheduleRowDraft(date(2027, 1, 5), 2635, False)],
-        )
+        service.commit_schedule_upload(db, upload.id)
 
     assert str(exc.value) == "；".join(errors)
     assert upload.status == PublicationScheduleUploadStatus.failed
@@ -554,11 +620,7 @@ def test_commit_schedule_upload_rejects_non_previewed_upload_without_replacement
     )
 
     with pytest.raises(ValueError) as exc:
-        service.commit_schedule_upload(
-            db,
-            upload.id,
-            [ScheduleRowDraft(date(2026, 1, 5), 2635, False)],
-        )
+        service.commit_schedule_upload(db, upload.id)
 
     assert str(exc.value) == "只有待确认的刊期表上传记录可以提交"
     assert db.deleted_schedule_years == []
@@ -580,11 +642,7 @@ def test_commit_schedule_upload_safety_error_marks_failed_commits_and_reraises(
     monkeypatch.setattr(service, "ensure_commit_is_safe", fail_safety)
 
     with pytest.raises(ValueError) as exc:
-        service.commit_schedule_upload(
-            db,
-            upload.id,
-            [ScheduleRowDraft(date(2026, 1, 5), 2635, False)],
-        )
+        service.commit_schedule_upload(db, upload.id)
 
     assert exc.value is safety_error
     assert upload.status == PublicationScheduleUploadStatus.failed
@@ -602,7 +660,7 @@ def test_commit_schedule_upload_replaces_schedule_rows_and_invalidates_cache(mon
     rows = [
         ScheduleRowDraft(date(2026, 1, 12), 2636, False),
         ScheduleRowDraft(date(2026, 1, 5), 2635, False),
-        ScheduleRowDraft(date(2026, 1, 19), 9999, True),
+        ScheduleRowDraft(date(2026, 1, 19), None, True),
     ]
     monkeypatch.setattr(service, "validate_schedule_rows", lambda year, rows: [], raising=False)
     monkeypatch.setattr(
@@ -614,7 +672,15 @@ def test_commit_schedule_upload_replaces_schedule_rows_and_invalidates_cache(mon
         service, "invalidate_dashboard_cache", lambda: invalidated.append(True), raising=False
     )
 
-    result = service.commit_schedule_upload(db, upload.id, rows)
+    upload.rows_json = [
+        {
+            "publish_date": row.publish_date.isoformat(),
+            "issue_number": row.issue_number,
+            "is_suspended": row.is_suspended,
+        }
+        for row in rows
+    ]
+    result = service.commit_schedule_upload(db, upload.id)
 
     assert result is upload
     assert safe_calls == [(db, 2026, rows)]
@@ -657,11 +723,7 @@ def test_commit_schedule_upload_final_commit_failure_rolls_back_and_reraises(
     monkeypatch.setattr(service, "ensure_commit_is_safe", lambda db, year, rows: None)
 
     with pytest.raises(RuntimeError) as exc:
-        service.commit_schedule_upload(
-            db,
-            upload.id,
-            [ScheduleRowDraft(date(2026, 1, 5), 2635, False)],
-        )
+        service.commit_schedule_upload(db, upload.id)
 
     assert exc.value is db.commit_error
     assert db.rollback_count == 1
@@ -697,11 +759,7 @@ def test_commit_schedule_upload_invalidates_cache_after_commit_before_refresh_fa
     )
 
     with pytest.raises(RuntimeError) as exc:
-        service.commit_schedule_upload(
-            db,
-            upload.id,
-            [ScheduleRowDraft(date(2026, 1, 5), 2635, False)],
-        )
+        service.commit_schedule_upload(db, upload.id)
 
     assert exc.value is db.refresh_error
     assert db.events == ["commit", "invalidate", "refresh"]
@@ -715,11 +773,8 @@ def test_commit_schedule_upload_writes_suspended_rows_without_issue_number(monke
     monkeypatch.setattr(service, "ensure_commit_is_safe", lambda db, year, rows: None)
     monkeypatch.setattr(service, "invalidate_dashboard_cache", lambda: None, raising=False)
 
-    service.commit_schedule_upload(
-        db,
-        upload.id,
-        [ScheduleRowDraft(date(2026, 2, 16), 8888, True)],
-    )
+    upload.rows_json = [{"publish_date": "2026-02-16", "issue_number": None, "is_suspended": True}]
+    service.commit_schedule_upload(db, upload.id)
 
     assert len(db.added) == 1
     assert db.added[0].is_suspended is True

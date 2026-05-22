@@ -36,9 +36,5 @@ class ScheduleUploadOut(BaseModel):
     uploaded_by: str | None
     created_at: datetime | None
     committed_at: datetime | None
-
     model_config = {"from_attributes": True}
-
-
-class ScheduleCommitIn(BaseModel):
-    rows: list[ScheduleRowIn]
+    model_config = {"from_attributes": True}

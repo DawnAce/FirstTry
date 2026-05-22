@@ -24,6 +24,8 @@ from app.services.publication_schedule_parser import (
 
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "publication_schedules"
 MAX_FILENAME_BYTES = 255
+MAX_PDF_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_PDF_UPLOAD_MB = MAX_PDF_UPLOAD_BYTES // (1024 * 1024)
 
 
 def _truncate_utf8(value: str, max_bytes: int) -> str:
@@ -85,8 +87,45 @@ def _validate_preview_upload(
     if not content:
         raise ValueError("上传文件为空")
 
+    if len(content) > MAX_PDF_UPLOAD_BYTES:
+        raise ValueError(f"PDF 文件不能超过 {MAX_PDF_UPLOAD_MB} MB")
+
     if username is not None and len(username) > 50:
         raise ValueError("上传用户名不能超过 50 个字符")
+
+
+def _serialize_rows(rows: list[ScheduleRowDraft]) -> list[dict[str, object]]:
+    return [
+        {
+            "publish_date": row.publish_date.isoformat(),
+            "issue_number": row.issue_number,
+            "is_suspended": row.is_suspended,
+        }
+        for row in rows
+    ]
+
+
+def _deserialize_rows(rows_json: object) -> list[ScheduleRowDraft]:
+    if not isinstance(rows_json, list):
+        raise ValueError("上传记录缺少预览行")
+
+    rows: list[ScheduleRowDraft] = []
+    try:
+        for row in rows_json:
+            if not isinstance(row, dict):
+                raise ValueError
+            issue_number = row.get("issue_number")
+            rows.append(
+                ScheduleRowDraft(
+                    publish_date=date.fromisoformat(str(row["publish_date"])),
+                    issue_number=None if issue_number is None else int(issue_number),
+                    is_suspended=bool(row["is_suspended"]),
+                )
+            )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("上传记录预览行格式无效") from exc
+
+    return rows
 
 
 def create_preview_upload(
@@ -107,6 +146,7 @@ def create_preview_upload(
         stored_path=stored_path,
         status=PublicationScheduleUploadStatus.previewed,
         summary_json=asdict(parsed.summary),
+        rows_json=_serialize_rows(parsed.rows),
         error_json=parsed.errors,
         uploaded_by=username,
         raw_text=parsed.raw_text,
@@ -159,7 +199,6 @@ def ensure_commit_is_safe(db: Session, year: int, rows: list[ScheduleRowDraft]) 
 def commit_schedule_upload(
     db: Session,
     upload_id: int,
-    rows: list[ScheduleRowDraft],
 ) -> PublicationScheduleUpload:
     upload = (
         db.query(PublicationScheduleUpload)
@@ -170,6 +209,10 @@ def commit_schedule_upload(
         raise ValueError("上传记录不存在")
     if upload.status != PublicationScheduleUploadStatus.previewed:
         raise ValueError("只有待确认的刊期表上传记录可以提交")
+    if upload.error_json:
+        raise ValueError("；".join(upload.error_json))
+
+    rows = _deserialize_rows(upload.rows_json)
 
     errors = validate_schedule_rows(upload.year, rows)
     if errors:

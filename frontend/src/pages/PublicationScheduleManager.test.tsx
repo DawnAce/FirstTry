@@ -1,4 +1,4 @@
-﻿import { renderToString } from 'react-dom/server';
+import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { message } from 'antd';
 import { commitScheduleUpload } from '../api/schedule';
@@ -209,7 +209,7 @@ describe('PublicationScheduleManager', () => {
     renderToString(<PublicationScheduleManager />);
     await state.popconfirmOnConfirm?.();
 
-    expect(commitScheduleUpload).toHaveBeenCalledWith(preview.upload_id, preview.rows);
+    expect(commitScheduleUpload).toHaveBeenCalledWith(preview.upload_id);
     expect(state.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['schedule', preview.year] });
     expect(state.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['scheduleUploads', preview.year] });
     expect(state.reactSetters[0]).toHaveBeenCalledWith(preview.year);

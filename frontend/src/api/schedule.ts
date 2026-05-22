@@ -56,5 +56,5 @@ export const previewScheduleUpload = (file: File) => {
   return api.post<SchedulePreview>('/schedule/uploads/preview', form);
 };
 
-export const commitScheduleUpload = (uploadId: number, rows: ScheduleDraftRow[]) =>
-  api.post<ScheduleUpload>(`/schedule/uploads/${uploadId}/commit`, { rows });
+export const commitScheduleUpload = (uploadId: number) =>
+  api.post<ScheduleUpload>(`/schedule/uploads/${uploadId}/commit`);

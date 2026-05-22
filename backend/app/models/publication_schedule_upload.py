@@ -24,6 +24,7 @@ class PublicationScheduleUpload(Base):
         index=True,
     )
     summary_json = Column(JSON, nullable=True)
+    rows_json = Column(JSON, nullable=True)
     error_json = Column(JSON, nullable=True)
     uploaded_by = Column(String(50), nullable=True)
     raw_text = Column(Text, nullable=True)

@@ -612,8 +612,7 @@ class ScheduleUploadOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ScheduleCommitIn(BaseModel):
-    rows: list[ScheduleRowIn]
+# Commit requests intentionally have no body; rows are read from the saved upload.
 ```
 
 - [ ] **Step 5: Verify migration imports**
@@ -908,7 +907,6 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import PublicationSchedule, PublicationScheduleUpload, User
 from app.schemas.publication_schedule_upload import (
-    ScheduleCommitIn,
     SchedulePreviewOut,
     ScheduleRowIn,
     ScheduleSummaryOut,
@@ -986,21 +984,12 @@ async def preview_schedule_upload(
 @router.post("/uploads/{upload_id}/commit", response_model=ScheduleUploadOut)
 def commit_schedule_upload_endpoint(
     upload_id: int,
-    body: ScheduleCommitIn,
     db: Session = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """Persist confirmed schedule rows from an upload into publication_schedule."""
-    rows = [
-        ScheduleRowDraft(
-            publish_date=row.publish_date,
-            issue_number=None if row.is_suspended else row.issue_number,
-            is_suspended=row.is_suspended,
-        )
-        for row in body.rows
-    ]
     try:
-        return commit_schedule_upload(db, upload_id, rows)
+        return commit_schedule_upload(db, upload_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 ```
@@ -1106,8 +1095,8 @@ export const previewScheduleUpload = (file: File) => {
   return api.post<SchedulePreview>('/schedule/uploads/preview', form);
 };
 
-export const commitScheduleUpload = (uploadId: number, rows: ScheduleDraftRow[]) =>
-  api.post<ScheduleUpload>(`/schedule/uploads/${uploadId}/commit`, { rows });
+export const commitScheduleUpload = (uploadId: number) =>
+  api.post<ScheduleUpload>(`/schedule/uploads/${uploadId}/commit`);
 ```
 
 - [ ] **Step 2: Create testable helper functions**
@@ -1323,7 +1312,7 @@ export default function PublicationScheduleManager() {
     if (!preview) return;
     setCommitting(true);
     try {
-      await commitScheduleUpload(preview.upload_id, preview.rows);
+      await commitScheduleUpload(preview.upload_id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['schedule'] }),
         queryClient.invalidateQueries({ queryKey: ['scheduleUploads'] }),
