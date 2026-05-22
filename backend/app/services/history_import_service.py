@@ -202,20 +202,18 @@ def _error_response(
     )
 
 
-def _raw_report_validation_errors(raw_report) -> list[str]:
+def _raw_report_validation_result(raw_report) -> tuple[list[str], int, int]:
     errors: list[str] = []
     row_map = {(row.category, row.sub_category): row.value for row in raw_report.report_rows}
     temp_total = row_map.get(("social_use", "临时加印"), 0)
     temp_self = row_map.get(("social_use", "临时加印_自留"), 0)
     pending_temp = max(temp_total - temp_self, 0)
-    if pending_temp > 0:
-        errors.append(f"临时加印未处理：原表临时加印 {temp_total} 份，其中自留分发 {temp_self} 份，待手工确认 {pending_temp} 份")
     if raw_report.source_total != raw_report.mapped_total:
         diff = abs(raw_report.source_total - raw_report.mapped_total)
         errors.append(f"原表总印数 {raw_report.source_total} 与映射后总数 {raw_report.mapped_total} 不一致，相差 {diff} 份")
     if raw_report.unmapped_items:
         errors.append(f"未命中映射项：{'；'.join(raw_report.unmapped_items)}")
-    return errors
+    return errors, pending_temp, temp_self
 
 
 def _zto_total_validation_errors(
@@ -355,8 +353,16 @@ def preview_history_import(
         else read_original_zto_shipping_rows(shipping_wb)
     )
 
+    manual_temp_print_required_quantity = 0
+    manual_temp_print_self_quantity = 0
+    manual_temp_rows: list[TempPrintDetailRow] = []
     if raw_report is not None:
-        validation_errors = _raw_report_validation_errors(raw_report)
+        (
+            validation_errors,
+            manual_temp_print_required_quantity,
+            manual_temp_print_self_quantity,
+        ) = _raw_report_validation_result(raw_report)
+        manual_temp_rows = raw_report.temp_print_rows
         if validation_errors:
             readiness = CommitReadiness(
                 same_issue=True,
@@ -395,6 +401,9 @@ def preview_history_import(
         "report_rows": [r.model_dump() for r in enriched_report_rows],
         "temp_rows": [r.model_dump() for r in temp_rows],
         "shipping_rows": [r.model_dump() for r in shipping_rows],
+        "manual_temp_print_required_quantity": manual_temp_print_required_quantity,
+        "manual_temp_print_self_quantity": manual_temp_print_self_quantity,
+        "manual_temp_rows": [r.model_dump() for r in manual_temp_rows],
     }
     session_id = save_history_import_session(payload)
 
@@ -410,14 +419,46 @@ def preview_history_import(
         report_entry_count=len(enriched_report_rows),
         temp_detail_count=len(temp_rows),
         shipping_detail_count=len(shipping_rows),
-        can_commit=True,
+        can_commit=manual_temp_print_required_quantity == 0,
         import_session_id=session_id,
         errors=[],
         readiness=readiness,
+        manual_temp_print_required_quantity=manual_temp_print_required_quantity,
+        manual_temp_print_self_quantity=manual_temp_print_self_quantity,
+        manual_temp_rows=manual_temp_rows,
     )
 
 
-def commit_history_import(db: Session, import_session_id: str) -> HistoryImportCommitOut:
+def _validate_manual_temp_rows(
+    required_quantity: int,
+    rows: list[TempPrintDetailRow] | None,
+) -> list[dict]:
+    if required_quantity <= 0:
+        return [] if rows is None else [row.model_dump() for row in rows]
+    if not rows:
+        raise HTTPException(
+            status_code=422,
+            detail=f"临时加印需要补充分配明细，合计应为 {required_quantity} 份",
+        )
+    total = sum(row.quantity for row in rows)
+    if total != required_quantity:
+        raise HTTPException(
+            status_code=422,
+            detail=f"临时加印明细合计 {total} 份，应等于待手工确认 {required_quantity} 份",
+        )
+    for row in rows:
+        if row.quantity < 0 or row.self_quantity < 0:
+            raise HTTPException(status_code=422, detail="临时加印明细数量不能为负数")
+        if row.self_quantity > row.quantity:
+            raise HTTPException(status_code=422, detail="临时加印明细自留分发数量不能大于加印数量")
+    return [row.model_dump() for row in rows]
+
+
+def commit_history_import(
+    db: Session,
+    import_session_id: str,
+    manual_temp_rows: list[TempPrintDetailRow] | None = None,
+) -> HistoryImportCommitOut:
     """Persist a previously previewed history import from cache to the database.
 
     Raises:
@@ -438,6 +479,10 @@ def commit_history_import(db: Session, import_session_id: str) -> HistoryImportC
             status_code=409,
             detail=f"该期已存在：第 {issue_number} 期已录入系统，无法重复导入",
         )
+
+    required_temp_quantity = int(payload.get("manual_temp_print_required_quantity", 0) or 0)
+    if required_temp_quantity > 0 or manual_temp_rows is not None:
+        payload["temp_rows"] = _validate_manual_temp_rows(required_temp_quantity, manual_temp_rows)
 
     from datetime import date as _date
     publish_date_str: str = payload["publish_date"]

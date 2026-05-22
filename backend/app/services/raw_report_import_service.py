@@ -7,7 +7,7 @@ from typing import Any
 
 from openpyxl.workbook.workbook import Workbook
 
-from app.schemas.history_import import HistoryImportRow
+from app.schemas.history_import import HistoryImportRow, TempPrintDetailRow
 
 
 @dataclass
@@ -19,6 +19,7 @@ class RawReportParseResult:
     source_total: int
     mapped_total: int
     unmapped_items: list[str]
+    temp_print_rows: list[TempPrintDetailRow]
 
 
 def _norm(value: Any) -> str:
@@ -90,6 +91,11 @@ def _find_optional_header_col(sheet, header_name: str) -> int | None:
 
 def _set(entries: dict[tuple[str, str], int], category: str, sub_category: str, value: Any) -> None:
     entries[(category, sub_category)] = _int(value)
+
+
+def _add(entries: dict[tuple[str, str], int], category: str, sub_category: str, value: Any) -> None:
+    key = (category, sub_category)
+    entries[key] = entries.get(key, 0) + _int(value)
 
 
 def _add_unmapped(unmapped_items: list[str], sheet_name: str, label: str, value: Any) -> None:
@@ -196,7 +202,27 @@ def _parse_side_value(cells: list[Any], side_label: str) -> int | None:
     return None
 
 
-def _parse_social(sheet, entries: dict[tuple[str, str], int], unmapped_items: list[str]) -> None:
+def _parse_add_print_row(label: str, value: Any) -> TempPrintDetailRow | None:
+    quantity = _int(value)
+    if not label.endswith("加印") or quantity <= 0:
+        return None
+    department_name = label.removesuffix("加印")
+    if department_name in {"营报传媒", "财经中心", "中经未来", "产经中心"}:
+        return TempPrintDetailRow(department=department_name, quantity=quantity, self_quantity=0)
+    return TempPrintDetailRow(
+        department="其他",
+        custom_name=department_name,
+        quantity=quantity,
+        self_quantity=0,
+    )
+
+
+def _parse_social(
+    sheet,
+    entries: dict[tuple[str, str], int],
+    unmapped_items: list[str],
+    temp_print_rows: list[TempPrintDetailRow],
+) -> None:
     current_col = _find_current_col(sheet)
     for row in sheet.iter_rows(min_row=4, values_only=True):
         cells = _row_values(row)
@@ -208,6 +234,9 @@ def _parse_social(sheet, entries: dict[tuple[str, str], int], unmapped_items: li
             _set(entries, "social_use", _SOCIAL_ROW_MAP[label], value)
         elif label == "临时加印":
             _set(entries, "social_use", "临时加印", value)
+        elif add_print_row := _parse_add_print_row(label, value):
+            temp_print_rows.append(add_print_row)
+            _add(entries, "social_use", "临时加印", add_print_row.quantity)
         elif label in {"营报传媒", "印厂留存", "报社订阅自投/展示"}:
             pass
         else:
@@ -242,6 +271,7 @@ def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
     issue_number, publish_date, page_count = _parse_metadata(workbook)
     entries: dict[tuple[str, str], int] = {}
     unmapped_items: list[str] = []
+    temp_print_rows: list[TempPrintDetailRow] = []
     source_total = 0
 
     if "北京印厂" in workbook.sheetnames:
@@ -251,7 +281,7 @@ def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
     if "订阅渠道`" in workbook.sheetnames:
         _parse_subscription(workbook["订阅渠道`"], entries, unmapped_items)
     if "社用报`" in workbook.sheetnames:
-        _parse_social(workbook["社用报`"], entries, unmapped_items)
+        _parse_social(workbook["社用报`"], entries, unmapped_items, temp_print_rows)
     if "收发室自留分发（需打印）" in workbook.sheetnames:
         _parse_distribution(workbook["收发室自留分发（需打印）"], entries, unmapped_items)
 
@@ -279,4 +309,5 @@ def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
         source_total=source_total,
         mapped_total=mapped_total,
         unmapped_items=unmapped_items,
+        temp_print_rows=temp_print_rows,
     )

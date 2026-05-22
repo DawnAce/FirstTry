@@ -57,10 +57,14 @@ class HistoryImportPreviewOut(BaseModel):
     import_session_id: str
     errors: list[str] = []
     readiness: CommitReadiness
+    manual_temp_print_required_quantity: int = 0
+    manual_temp_print_self_quantity: int = 0
+    manual_temp_rows: list[TempPrintDetailRow] = []
 
 
 class HistoryImportCommitIn(BaseModel):
     import_session_id: str
+    manual_temp_rows: list[TempPrintDetailRow] | None = None
 
 
 class HistoryImportCommitOut(BaseModel):

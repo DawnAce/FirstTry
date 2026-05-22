@@ -18,6 +18,16 @@ export interface HistoryImportPreview {
   errors: string[];
   can_commit: boolean;
   import_session_id: string;
+  manual_temp_print_required_quantity: number;
+  manual_temp_print_self_quantity: number;
+  manual_temp_rows: TempPrintDetailDraft[];
+}
+
+export interface TempPrintDetailDraft {
+  department: string;
+  custom_name?: string | null;
+  quantity: number;
+  self_quantity: number;
 }
 
 export interface HistoryImportCommitResult {
@@ -46,7 +56,9 @@ export const previewHistoryImport = (
 
 export const commitHistoryImport = (
   importSessionId: string,
+  manualTempRows?: TempPrintDetailDraft[],
 ): Promise<AxiosResponse<HistoryImportCommitResult>> =>
   api.post<HistoryImportCommitResult>('/history-import/commit', {
     import_session_id: importSessionId,
+    manual_temp_rows: manualTempRows,
   });

@@ -18,6 +18,7 @@ from app.services.history_import_template_service import (
 from app.services.history_import_service import preview_history_import, commit_history_import
 from app.services.original_zto_shipping_import_service import read_original_zto_shipping_rows
 from app.services.raw_report_import_service import parse_raw_report_workbook
+from app.schemas.history_import import TempPrintDetailRow
 
 
 _SHIPPING_HEADERS = [
@@ -193,8 +194,7 @@ def build_original_zto_shipping_upload(issue_number: int = 2648, high_speed_shee
     suspended = wb.create_sheet("停发-双周（读者）")
     suspended.append([f"2026年4月上半月《中国经营报》中通发货表", "", f"总第{issue_number}期"])
     suspended.append(["姓名", "地址", "电话", "期数", "份数", "刊物", "截止日期", "备注"])
-    suspended.append(["丁联诚", "上海市普陀区长寿路1086号", "13319400970", 2, 1, "中国经营报", _dt(2026, 5, 1), "5-13开始停发"])
-    suspended.append(["", "", "合计", "", 1])
+    suspended.append(["", "", "合计", "", 0])
 
     monthly = wb.create_sheet("月底-整月")
     monthly.append([f"2026年4月《中国经营报》中通发货表", "", f"总 第{issue_number - 3}期、第{issue_number - 2}期 第{issue_number - 1}期、第{issue_number}期"])
@@ -325,6 +325,16 @@ def build_raw_report_upload_with_unmapped_distribution_item() -> bytes:
     ws["A18"] = "临时新增部门"
     ws["B18"] = 6
     return _wb_to_bytes(wb)
+    return _wb_to_bytes(wb)
+
+def build_raw_report_upload_with_department_add_print() -> bytes:
+    wb = load_workbook(io.BytesIO(build_raw_report_upload()))
+    ws = wb["社用报`"]
+    ws["A24"] = "财经中心加印"
+    ws["B24"] = 200
+    ws["B28"] = 729
+    wb["北京印厂"]["C12"] = 9465
+    return _wb_to_bytes(wb)
 
 
 def build_raw_report_upload_with_resolved_temp_print() -> bytes:
@@ -379,6 +389,20 @@ class RawReportImportParserTests(unittest.TestCase):
         result = parse_raw_report_workbook(workbook)
 
         self.assertEqual(result.unmapped_items, ["收发室自留分发（需打印）：临时新增部门（6份）"])
+        workbook.close()
+
+    def test_treats_department_add_print_rows_as_manual_temp_print(self):
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload_with_department_add_print()), data_only=True)
+
+        result = parse_raw_report_workbook(workbook)
+
+        row_map = {(row.category, row.sub_category): row.value for row in result.report_rows}
+        self.assertEqual(row_map[("social_use", "临时加印")], 200)
+        self.assertEqual(result.mapped_total, 9465)
+        self.assertEqual(result.unmapped_items, [])
+        self.assertEqual(len(result.temp_print_rows), 1)
+        self.assertEqual(result.temp_print_rows[0].department, "财经中心")
+        self.assertEqual(result.temp_print_rows[0].quantity, 200)
         workbook.close()
 
 
@@ -648,18 +672,112 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertTrue(any("报数合计 1412 份" in error and "发货明细合计 10 份" in error for error in result.errors))
         db.close()
 
-    def test_preview_blocks_original_report_with_unresolved_temp_print(self):
+    def test_preview_requires_manual_edit_for_unresolved_temp_print(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload_with_temp_print()))
+        workbook["北京印厂"]["C12"] = 9277
+
+        result = preview_history_import(
+            db,
+            _wb_to_bytes(workbook),
+            build_shipping_upload(2647, quantity=1424),
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.manual_temp_print_required_quantity, 12)
+        db.close()
+
+    def test_preview_exposes_unresolved_temp_print_for_manual_edit(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload_with_temp_print()))
+        workbook["北京印厂"]["C12"] = 9277
+
+        result = preview_history_import(
+            db,
+            _wb_to_bytes(workbook),
+            build_shipping_upload(2647, quantity=1424),
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.manual_temp_print_required_quantity, 12)
+        self.assertEqual(result.manual_temp_print_self_quantity, 0)
+        self.assertEqual(result.temp_detail_count, 0)
+        self.assertNotEqual(result.import_session_id, "")
+        self.assertTrue(result.readiness.can_commit)
+        self.assertEqual(result.readiness.errors, [])
+        db.close()
+
+    def test_preview_prefills_department_add_print_as_manual_temp_row(self):
         db = self.SessionLocal()
         self._seed_raw_report_templates(db)
 
         result = preview_history_import(
             db,
-            build_raw_report_upload_with_temp_print(),
-            build_shipping_upload(2647),
+            build_raw_report_upload_with_department_add_print(),
+            build_shipping_upload(2647, quantity=1612),
         )
 
         self.assertFalse(result.can_commit)
-        self.assertTrue(any("临时加印未处理" in error for error in result.errors))
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.manual_temp_print_required_quantity, 200)
+        self.assertEqual(len(result.manual_temp_rows), 1)
+        self.assertEqual(result.manual_temp_rows[0].department, "财经中心")
+        self.assertEqual(result.manual_temp_rows[0].quantity, 200)
+        db.close()
+
+    def test_commit_accepts_manual_temp_print_rows_from_preview(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload_with_temp_print()))
+        workbook["北京印厂"]["C12"] = 9277
+        preview = preview_history_import(
+            db,
+            _wb_to_bytes(workbook),
+            build_shipping_upload(2647, quantity=1424),
+        )
+
+        result = commit_history_import(
+            db,
+            preview.import_session_id,
+            manual_temp_rows=[
+                TempPrintDetailRow(department="财经中心", quantity=6, self_quantity=0),
+                TempPrintDetailRow(department="产经中心", quantity=6, self_quantity=0),
+            ],
+        )
+
+        self.assertEqual(result.issue_number, 2647)
+        self.assertEqual(result.temp_detail_count, 2)
+        issue = db.query(Issue).filter(Issue.issue_number == 2647).one()
+        temp_rows = db.query(TempPrintDetail).filter(TempPrintDetail.issue_id == issue.id).all()
+        self.assertEqual(sum(row.quantity for row in temp_rows), 12)
+        db.close()
+
+    def test_commit_rejects_manual_temp_print_total_mismatch(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload_with_temp_print()))
+        workbook["北京印厂"]["C12"] = 9277
+        preview = preview_history_import(
+            db,
+            _wb_to_bytes(workbook),
+            build_shipping_upload(2647, quantity=1424),
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            commit_history_import(
+                db,
+                preview.import_session_id,
+                manual_temp_rows=[
+                    TempPrintDetailRow(department="财经中心", quantity=6, self_quantity=0),
+                ],
+            )
+
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertIn("临时加印明细合计", ctx.exception.detail)
         db.close()
 
     def test_preview_allows_original_report_when_temp_print_is_fully_resolved(self):
@@ -693,18 +811,18 @@ class HistoryImportPreviewTests(unittest.TestCase):
     def test_preview_raw_report_errors_include_actionable_counts(self):
         db = self.SessionLocal()
         self._seed_raw_report_templates(db)
+        workbook = load_workbook(io.BytesIO(build_raw_report_upload_with_temp_print()))
+        workbook["北京印厂"]["C12"] = 9277
 
         result = preview_history_import(
             db,
-            build_raw_report_upload_with_temp_print(),
-            build_shipping_upload(2647),
+            _wb_to_bytes(workbook),
+            build_shipping_upload(2647, quantity=1424),
         )
 
         self.assertFalse(result.can_commit)
-        self.assertIn(
-            "临时加印未处理：原表临时加印 12 份，其中自留分发 0 份，待手工确认 12 份",
-            result.errors,
-        )
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.manual_temp_print_required_quantity, 12)
 
         mismatch_result = preview_history_import(
             db,
@@ -744,7 +862,7 @@ class HistoryImportPreviewTests(unittest.TestCase):
 
         self.assertEqual(result.issue_number, 2648)
         self.assertEqual(result.publish_date, "2026-04-20")
-        self.assertEqual(result.shipping_detail_count, 7)
+        self.assertEqual(result.shipping_detail_count, 6)
         self.assertTrue(result.can_commit)
 
         payload = get_history_import_session(result.import_session_id)
@@ -763,8 +881,7 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertEqual(row_map[("高铁展示", "赵叶")]["quantity"], 5)
         self.assertEqual(row_map[("上犹", "上犹县政府办")]["channel"], "赠阅")
         self.assertEqual(row_map[("上犹", "上犹县政府办")]["company"], "上犹县政府")
-        self.assertEqual(row_map[("停发-双周（读者）", "丁联诚")]["status"], "停发")
-        self.assertEqual(row_map[("停发-双周（读者）", "丁联诚")]["quantity"], 1)
+        self.assertNotIn(("停发-双周（读者）", "丁联诚"), row_map)
         self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["channel"], "赠阅")
         self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["sub_channel"], "监管")
         self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["quantity"], 3)
@@ -1035,16 +1152,15 @@ class HistoryImportCommitTests(unittest.TestCase):
         result = commit_history_import(db, preview.import_session_id)
 
         shipping = db.query(ShippingDetail).filter(ShippingDetail.issue_number == 2648).all()
-        self.assertEqual(len(shipping), 7)
+        self.assertEqual(len(shipping), 6)
         by_name = {row.name: row for row in shipping}
         self.assertEqual(by_name["叶剑"].channel, "渠道订阅")
         self.assertEqual(by_name["叶剑"].company, "广州日报")
         self.assertEqual(by_name["赵叶"].station_name, "北京站")
         self.assertEqual(by_name["赵叶"].confirmation, "☑")
-        self.assertEqual(by_name["丁联诚"].period_count, 2)
-        self.assertEqual(by_name["丁联诚"].deadline, "2026-05-01")
+        self.assertNotIn("丁联诚", by_name)
         self.assertEqual(by_name["宣传部5号格"].frequency, "月")
-        self.assertEqual(result.shipping_detail_count, 7)
+        self.assertEqual(result.shipping_detail_count, 6)
         db.close()
 
     def test_commit_raises_400_for_missing_session(self):

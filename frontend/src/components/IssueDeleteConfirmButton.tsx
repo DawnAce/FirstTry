@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Input, Modal, Typography } from 'antd';
 import type { ButtonProps } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
-import { isIssueNumberConfirmationValid } from './dangerConfirm';
+import { isIssueNumberConfirmationValid, stopIssueDeleteModalPropagation } from './dangerConfirm';
 
 interface IssueDeleteConfirmButtonProps {
   issueNumber: number;
@@ -62,6 +62,14 @@ export function IssueDeleteConfirmButton({
         confirmLoading={confirming}
         onOk={handleConfirm}
         onCancel={close}
+        modalRender={(node) => (
+          <div
+            onClick={stopIssueDeleteModalPropagation}
+            onMouseDown={stopIssueDeleteModalPropagation}
+          >
+            {node}
+          </div>
+        )}
       >
         <Alert
           type="error"

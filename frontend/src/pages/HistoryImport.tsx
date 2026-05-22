@@ -6,13 +6,16 @@ import {
   Button,
   Card,
   Divider,
+  Input,
+  InputNumber,
+  Select,
   Space,
   Typography,
   Upload,
   message,
 } from 'antd';
 import { InboxOutlined, DownloadOutlined } from '@ant-design/icons';
-import type { HistoryImportPreview } from '../api/historyImport';
+import type { HistoryImportPreview, TempPrintDetailDraft } from '../api/historyImport';
 import {
   downloadReportTemplate,
   downloadShippingTemplate,
@@ -22,6 +25,14 @@ import {
 
 const { Text } = Typography;
 const { Dragger } = Upload;
+
+const DEPARTMENT_OPTIONS = [
+  { label: '营报传媒', value: '营报传媒' },
+  { label: '财经中心', value: '财经中心' },
+  { label: '中经未来', value: '中经未来' },
+  { label: '产经中心', value: '产经中心' },
+  { label: '其他', value: '其他' },
+];
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -38,6 +49,7 @@ export default function HistoryImport() {
   const [reportFile, setReportFile] = useState<File | null>(null);
   const [shippingFile, setShippingFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<HistoryImportPreview | null>(null);
+  const [manualTempRows, setManualTempRows] = useState<TempPrintDetailDraft[]>([]);
   const [previewing, setPreviewing] = useState(false);
   const [committing, setCommitting] = useState(false);
 
@@ -66,9 +78,24 @@ export default function HistoryImport() {
     }
     setPreviewing(true);
     setPreview(null);
+    setManualTempRows([]);
     try {
       const res = await previewHistoryImport(reportFile, shippingFile);
       setPreview(res.data);
+      setManualTempRows(
+        res.data.manual_temp_print_required_quantity > 0
+          ? (
+              res.data.manual_temp_rows.length > 0
+                ? res.data.manual_temp_rows
+                : [{
+                    department: '营报传媒',
+                    custom_name: null,
+                    quantity: res.data.manual_temp_print_required_quantity,
+                    self_quantity: res.data.manual_temp_print_self_quantity,
+                  }]
+            )
+          : [],
+      );
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };
       message.error(err.response?.data?.detail || '预览失败');
@@ -77,11 +104,48 @@ export default function HistoryImport() {
     }
   };
 
+  const manualTempTotal = manualTempRows.reduce((sum, row) => sum + row.quantity, 0);
+  const manualTempSelfTotal = manualTempRows.reduce((sum, row) => sum + row.self_quantity, 0);
+  const manualTempRequired = preview?.manual_temp_print_required_quantity ?? 0;
+  const manualTempValid = manualTempRequired === 0 || manualTempTotal === manualTempRequired;
+
+  const handleAddManualTempRow = () => {
+    setManualTempRows([
+      ...manualTempRows,
+      { department: '营报传媒', custom_name: null, quantity: 0, self_quantity: 0 },
+    ]);
+  };
+
+  const handleManualTempChange = (
+    index: number,
+    field: keyof TempPrintDetailDraft,
+    value: string | number | null,
+  ) => {
+    setManualTempRows((rows) => rows.map((row, rowIndex) => {
+      if (rowIndex !== index) return row;
+      const next = { ...row, [field]: value };
+      if (field === 'department' && value !== '其他') {
+        next.custom_name = null;
+      }
+      if (field === 'quantity' && next.self_quantity > Number(value ?? 0)) {
+        next.self_quantity = Number(value ?? 0);
+      }
+      return next;
+    }));
+  };
+
+  const handleRemoveManualTempRow = (index: number) => {
+    setManualTempRows(manualTempRows.filter((_, rowIndex) => rowIndex !== index));
+  };
+
   const handleCommit = async () => {
-    if (!preview?.can_commit) return;
+    if (!preview || !preview.readiness.can_commit || !manualTempValid) return;
     setCommitting(true);
     try {
-      const res = await commitHistoryImport(preview.import_session_id);
+      const res = await commitHistoryImport(
+        preview.import_session_id,
+        preview.manual_temp_print_required_quantity > 0 ? manualTempRows : undefined,
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['issues'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -211,6 +275,84 @@ export default function HistoryImport() {
             </div>
           </div>
 
+          {manualTempRequired > 0 && (
+            <Alert
+              type={manualTempValid ? 'warning' : 'error'}
+              message={`临时加印需要手动分配：共 ${manualTempRequired} 份`}
+              description={
+                <div>
+                  <div style={{ marginBottom: 12 }}>
+                    已分配 {manualTempTotal} 份，自留 {manualTempSelfTotal} 份，快递 {manualTempTotal - manualTempSelfTotal} 份。
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: 6 }}>部门</th>
+                        <th style={{ textAlign: 'right', padding: 6 }}>份数</th>
+                        <th style={{ textAlign: 'right', padding: 6 }}>自留</th>
+                        <th style={{ textAlign: 'right', padding: 6 }}>快递</th>
+                        <th style={{ textAlign: 'center', padding: 6 }}>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {manualTempRows.map((row, index) => (
+                        <tr key={index}>
+                          <td style={{ padding: 6 }}>
+                            <Space size="small">
+                              <Select
+                                size="small"
+                                value={row.department}
+                                options={DEPARTMENT_OPTIONS}
+                                onChange={(value) => handleManualTempChange(index, 'department', value)}
+                                style={{ width: 110 }}
+                              />
+                              {row.department === '其他' && (
+                                <Input
+                                  size="small"
+                                  placeholder="名称"
+                                  value={row.custom_name ?? ''}
+                                  onChange={(event) => handleManualTempChange(index, 'custom_name', event.target.value)}
+                                  style={{ width: 120 }}
+                                />
+                              )}
+                            </Space>
+                          </td>
+                          <td style={{ padding: 6, textAlign: 'right' }}>
+                            <InputNumber
+                              size="small"
+                              value={row.quantity}
+                              min={0}
+                              precision={0}
+                              onChange={(value) => handleManualTempChange(index, 'quantity', value ?? 0)}
+                              style={{ width: 90 }}
+                            />
+                          </td>
+                          <td style={{ padding: 6, textAlign: 'right' }}>
+                            <InputNumber
+                              size="small"
+                              value={row.self_quantity}
+                              min={0}
+                              max={row.quantity}
+                              precision={0}
+                              onChange={(value) => handleManualTempChange(index, 'self_quantity', value ?? 0)}
+                              style={{ width: 90 }}
+                            />
+                          </td>
+                          <td style={{ padding: 6, textAlign: 'right' }}>{row.quantity - row.self_quantity}</td>
+                          <td style={{ padding: 6, textAlign: 'center' }}>
+                            <Button size="small" danger onClick={() => handleRemoveManualTempRow(index)}>删除</Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <Button size="small" style={{ marginTop: 8 }} onClick={handleAddManualTempRow}>添加一行</Button>
+                </div>
+              }
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
           {preview.errors.length > 0 ? (
             <Alert
               type="error"
@@ -222,13 +364,13 @@ export default function HistoryImport() {
               }
               style={{ marginBottom: 16 }}
             />
-          ) : (
+          ) : manualTempRequired === 0 ? (
             <Alert
               type="success"
               message="数据验证通过，可以提交导入"
               style={{ marginBottom: 16 }}
             />
-          )}
+          ) : null}
 
           <Divider />
 
@@ -237,7 +379,7 @@ export default function HistoryImport() {
               type="primary"
               onClick={handleCommit}
               loading={committing}
-              disabled={!preview.can_commit}
+              disabled={!preview.readiness.can_commit || !manualTempValid}
             >
               确认导入
             </Button>

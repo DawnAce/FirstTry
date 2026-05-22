@@ -64,4 +64,4 @@ def commit_import(
     db: Session = Depends(get_db),
 ):
     """Persist a previously previewed import from the cache session to the database."""
-    return commit_history_import(db, body.import_session_id)
+    return commit_history_import(db, body.import_session_id, body.manual_temp_rows)
