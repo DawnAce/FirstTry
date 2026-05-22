@@ -1,10 +1,10 @@
 ﻿import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Card, Col, Row, Select, Space, Statistic, Table, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, Card, Col, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Typography, Upload, message } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import type { TableProps, UploadProps } from 'antd';
 import dayjs from 'dayjs';
-import { getSchedule, getScheduleUploads, previewScheduleUpload } from '../api/schedule';
+import { commitScheduleUpload, getSchedule, getScheduleUploads, previewScheduleUpload } from '../api/schedule';
 import type { ScheduleDraftRow, ScheduleEntry, SchedulePreview, ScheduleUpload } from '../api/schedule';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -44,9 +44,9 @@ function renderStatus(status: ScheduleUpload['status']) {
   return <Tag color={colorMap[status]}>{labelMap[status]}</Tag>;
 }
 
-function getPreviewErrorMessage(error: unknown) {
+function getApiErrorMessage(error: unknown, fallback: string) {
   const err = error as { response?: { data?: { detail?: string } }; message?: string };
-  return err.response?.data?.detail || err.message || '刊期表预览失败，请稍后重试';
+  return err.response?.data?.detail || err.message || fallback;
 }
 
 export default function PublicationScheduleManager() {
@@ -55,6 +55,7 @@ export default function PublicationScheduleManager() {
   const [year, setYear] = useState(DEFAULT_YEAR);
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [committing, setCommitting] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewFileName, setPreviewFileName] = useState<string | null>(null);
   const yearOptions = useMemo(() => buildYearOptions(year), [year]);
@@ -106,7 +107,7 @@ export default function PublicationScheduleManager() {
       await queryClient.invalidateQueries({ queryKey: ['scheduleUploads', res.data.year] });
       message.success('刊期表解析预览已生成');
     } catch (error: unknown) {
-      const errorMessage = getPreviewErrorMessage(error);
+      const errorMessage = getApiErrorMessage(error, '刊期表预览失败，请稍后重试');
       setPreviewError(errorMessage);
       message.error(errorMessage);
     } finally {
@@ -121,6 +122,33 @@ export default function PublicationScheduleManager() {
     setPreview(null);
     setPreviewError(null);
     setPreviewFileName(null);
+  };
+
+  const handleCommitPreview = async () => {
+    if (!preview) return;
+    if (!preview.can_commit) {
+      message.warning('当前预览存在校验问题，暂不能保存');
+      return;
+    }
+
+    setCommitting(true);
+    try {
+      await commitScheduleUpload(preview.upload_id, preview.rows);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['schedule', preview.year] }),
+        queryClient.invalidateQueries({ queryKey: ['scheduleUploads', preview.year] }),
+      ]);
+      setYear(preview.year);
+      setPreview(null);
+      setPreviewError(null);
+      setPreviewFileName(null);
+      message.success(`${preview.year} 年刊期表已保存`);
+    } catch (error: unknown) {
+      const errorMessage = getApiErrorMessage(error, '刊期表保存失败，请稍后重试');
+      message.error(errorMessage);
+    } finally {
+      setCommitting(false);
+    }
   };
 
   const scheduleColumns: TableProps<ScheduleEntry>['columns'] = [
@@ -237,9 +265,24 @@ export default function PublicationScheduleManager() {
                   <Alert
                     type={preview.can_commit ? 'success' : 'warning'}
                     showIcon
-                    message={preview.can_commit ? '解析完成，可在下一步确认保存' : '解析完成，但存在需要处理的问题'}
-                    description="确认保存将在下一步提供；本次操作仅生成预览，不会修改正式刊期表。"
+                    message={preview.can_commit ? '解析完成，可确认保存' : '解析完成，但存在需要处理的问题'}
+                    description={preview.can_commit
+                      ? '确认保存后将替换该年份的正式刊期表。'
+                      : '请处理校验问题后再保存；本次预览尚未修改正式刊期表。'}
                   />
+
+                  <Popconfirm
+                    title="确认保存刊期表？"
+                    description={`保存后将替换 ${preview.year} 年正式刊期表。`}
+                    okText="确认保存"
+                    cancelText="取消"
+                    disabled={!preview.can_commit || committing}
+                    onConfirm={handleCommitPreview}
+                  >
+                    <Button type="primary" loading={committing} disabled={!preview.can_commit || committing}>
+                      确认保存
+                    </Button>
+                  </Popconfirm>
 
                   <Row gutter={[16, 16]}>
                     <Col xs={24} sm={12} lg={4}>
