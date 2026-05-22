@@ -7,14 +7,15 @@ from app.cache import invalidate_dashboard_cache
 from app.auth import require_admin
 from app.models import Issue, ShippingDetail, User
 from app.schemas.issue import IssueCreate, IssueOut, IssueUpdate, NextIssueInfo
-from app.services.issue_service import get_next_issue_info, get_available_issues, create_issue_with_data
+from app.services.issue_service import build_issue_out, get_next_issue_info, get_available_issues, create_issue_with_data
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
 
 
 @router.get("", response_model=List[IssueOut])
 def list_issues(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
-    return db.query(Issue).order_by(desc(Issue.issue_number)).offset(skip).limit(limit).all()
+    issues = db.query(Issue).order_by(desc(Issue.issue_number)).offset(skip).limit(limit).all()
+    return [build_issue_out(db, issue) for issue in issues]
 
 
 @router.get("/next", response_model=Optional[NextIssueInfo])
@@ -38,7 +39,7 @@ def create_issue(data: IssueCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail=f"Issue {data.issue_number} already exists")
     result = create_issue_with_data(db, data.issue_number, data.publish_date, data.notes)
     invalidate_dashboard_cache()
-    return result
+    return build_issue_out(db, result)
 
 
 @router.get("/{issue_id}", response_model=IssueOut)
@@ -46,7 +47,7 @@ def get_issue(issue_id: int, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
-    return issue
+    return build_issue_out(db, issue)
 
 
 @router.patch("/{issue_id}", response_model=IssueOut)
@@ -60,7 +61,7 @@ def update_issue(issue_id: int, data: IssueUpdate, db: Session = Depends(get_db)
         issue.notes = data.notes
     db.commit()
     db.refresh(issue)
-    return issue
+    return build_issue_out(db, issue)
 
 
 @router.delete("/{issue_id}")

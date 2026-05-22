@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.exports import export_all, export_report, export_shipping
 from app.api.reports import confirm_report, get_report
 from app.database import Base
-from app.models import Issue, IssueAuditSnapshot, IssueStatus, ReportEntry, ShippingDetail, User, UserRole
+from app.models import Issue, IssueAuditSnapshot, IssueStatus, PublicationSchedule, ReportEntry, ShippingDetail, User, UserRole
 
 
 class ReportShippingChainTests(unittest.TestCase):
@@ -269,6 +269,29 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(snapshot.shipping_total, 18)
         self.assertEqual(snapshot.delta, 0)
         self.assertEqual(snapshot.is_match, True)
+
+    def test_report_export_header_includes_annual_sequence_label(self):
+        db = self.SessionLocal()
+        schedule_rows = []
+        for index in range(14):
+            schedule_rows.append(
+                PublicationSchedule(
+                    year=2026,
+                    issue_number=2635 + index,
+                    publish_date=date.fromordinal(date(2026, 1, 5).toordinal() + index * 7),
+                    is_suspended=False,
+                )
+            )
+        issue = Issue(issue_number=2648, publish_date=schedule_rows[-1].publish_date, status=IssueStatus.confirmed)
+        db.add_all(schedule_rows)
+        db.add(issue)
+        db.commit()
+
+        response = export_report(issue.id, db=db)
+        workbook = load_workbook(io.BytesIO(self._read_streaming_response_bytes(response)))
+
+        self.assertIn("第十四期", workbook["北京印厂"]["A3"].value)
+        db.close()
 
     def test_export_all_persists_both_export_audit_snapshots(self):
         db = self.SessionLocal()

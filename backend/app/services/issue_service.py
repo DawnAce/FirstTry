@@ -1,8 +1,59 @@
 from datetime import date
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from app.models import PublicationSchedule, Issue, ReportEntry, ReportItemTemplate
+from app.schemas.issue import IssueOut
 from app.services.report_destination_service import resolve_report_destination
+
+
+_CHINESE_DIGITS = "零一二三四五六七八九"
+
+
+def format_chinese_issue_number(value: int | None) -> str | None:
+    """Format 1..99 as common Chinese numerals for annual issue labels."""
+    if value is None or value <= 0:
+        return None
+    if value < 10:
+        return _CHINESE_DIGITS[value]
+    if value == 10:
+        return "十"
+    if value < 20:
+        return f"十{_CHINESE_DIGITS[value % 10]}"
+    tens, ones = divmod(value, 10)
+    result = f"{_CHINESE_DIGITS[tens]}十"
+    if ones:
+        result += _CHINESE_DIGITS[ones]
+    return result
+
+
+def get_year_issue_index(db: Session, issue: Issue) -> int | None:
+    """Return the non-suspended publication count for issue.publish_date within its year."""
+    count = (
+        db.query(func.count(PublicationSchedule.id))
+        .filter(
+            PublicationSchedule.year == issue.publish_date.year,
+            PublicationSchedule.is_suspended == False,
+            PublicationSchedule.publish_date <= issue.publish_date,
+        )
+        .scalar()
+    )
+    return int(count) if count else None
+
+
+def build_issue_out(db: Session, issue: Issue) -> IssueOut:
+    year_issue_index = get_year_issue_index(db, issue)
+    return IssueOut(
+        id=issue.id,
+        issue_number=issue.issue_number,
+        year_issue_index=year_issue_index,
+        year_issue_label=format_chinese_issue_number(year_issue_index),
+        publish_date=issue.publish_date,
+        page_count=issue.page_count,
+        status=issue.status,
+        notes=issue.notes,
+        created_at=issue.created_at,
+        updated_at=issue.updated_at,
+    )
 
 
 def get_next_issue_info(db: Session) -> dict:

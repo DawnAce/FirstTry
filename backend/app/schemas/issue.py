@@ -18,6 +18,8 @@ class IssueUpdate(BaseModel):
 class IssueOut(BaseModel):
     id: int
     issue_number: int
+    year_issue_index: Optional[int] = None
+    year_issue_label: Optional[str] = None
     publish_date: date
     page_count: int = 24
     status: IssueStatus

@@ -6,6 +6,7 @@ from typing import Optional
 from openpyxl import load_workbook, Workbook
 from sqlalchemy.orm import Session
 from app.models import Issue, ReportEntry, ShippingDetail
+from app.services.issue_service import format_chinese_issue_number, get_year_issue_index
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 
@@ -284,7 +285,9 @@ def export_report_excel(issue_id: int, db: Session) -> io.BytesIO:
     # --- Update header in 北京印厂 ---
     d = issue.publish_date
     page_count = issue.page_count if issue.page_count else 24
-    header = f"期数：{issue.issue_number}   版数：{page_count}    出版日期：{d.year}年{d.month}月{d.day}日"
+    year_issue_label = format_chinese_issue_number(get_year_issue_index(db, issue))
+    year_issue_part = f" 第{year_issue_label}期" if year_issue_label else ""
+    header = f"期数：{issue.issue_number}{year_issue_part}   版数：{page_count}    出版日期：{d.year}年{d.month}月{d.day}日"
     wb["北京印厂"]["A3"] = header
     # 制表时间 = 出版日期的上一周周五 (weekday: Mon=0 ... Fri=4)
     days_since_friday = (d.weekday() - 4) % 7 or 7

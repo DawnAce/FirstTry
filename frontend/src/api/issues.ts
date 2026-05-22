@@ -3,6 +3,8 @@ import api from './client';
 export interface Issue {
   id: number;
   issue_number: number;
+  year_issue_index: number | null;
+  year_issue_label: string | null;
   publish_date: string;
   page_count: number;
   status: 'draft' | 'confirmed' | 'exported';

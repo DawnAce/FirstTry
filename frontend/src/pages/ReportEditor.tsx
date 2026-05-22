@@ -24,6 +24,7 @@ import {
   SendOutlined,
 } from '@ant-design/icons';
 import { getIssue, updateIssue, deleteIssue } from '../api/issues';
+import type { Issue } from '../api/issues';
 import type { ReportEntry, TempPrintDetail } from '../api/reports';
 import { getReport, updateReport, confirmReport, revokeReport, getRevisions, getTempPrintDetails, updateTempPrintDetails } from '../api/reports';
 import type { RevisionRecord } from '../api/reports';
@@ -53,6 +54,12 @@ const categoryFrequency: Record<string, string> = {
 
 // Items hidden from social_use display (shown separately or managed by temp print details)
 const EXTRA_ITEMS = ['临时加印', '临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'];
+
+export function formatIssueReportTitle(issue: Pick<Issue, 'issue_number' | 'publish_date' | 'year_issue_label'>) {
+  const yearIssuePart = issue.year_issue_label ? ` 第${issue.year_issue_label}期` : '';
+  const publishYear = issue.publish_date.slice(0, 4);
+  return `${publishYear}年《中国经营报》第${issue.issue_number}期${yearIssuePart} 报数表`;
+}
 
 // Composite groups: parent label → sub_category prefixes
 const COMPOSITE_GROUPS: { label: string; prefix: string; items: string[] }[] = [
@@ -459,7 +466,7 @@ export default function ReportEditor() {
         />
         <div style={{ flex: 1 }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1d1d1f' }}>
-            2026年《中国经营报》第{issue.issue_number}期 报数表
+            {formatIssueReportTitle(issue)}
           </h2>
           <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 16 }}>
             <span style={{ fontSize: 13, color: '#86868b' }}>

@@ -24,6 +24,7 @@ from app.api.operation_logs import router as operation_logs_router
 from app.api.history_import import router as history_import_router
 from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule
+from app.services.issue_service import build_issue_out
 
 app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
 
@@ -106,15 +107,18 @@ def dashboard_data(db: Session = Depends(get_db), _user = Depends(get_current_us
     result = {
         "recent_issues": [
             {
-                "id": i.id,
-                "issue_number": i.issue_number,
-                "publish_date": i.publish_date.isoformat(),
-                "status": i.status.value,
-                "notes": i.notes,
-                "created_at": i.created_at.isoformat() if i.created_at else None,
-                "updated_at": i.updated_at.isoformat() if i.updated_at else None,
+                "id": issue_out.id,
+                "issue_number": issue_out.issue_number,
+                "year_issue_index": issue_out.year_issue_index,
+                "year_issue_label": issue_out.year_issue_label,
+                "publish_date": issue_out.publish_date.isoformat(),
+                "page_count": issue_out.page_count,
+                "status": issue_out.status.value,
+                "notes": issue_out.notes,
+                "created_at": issue_out.created_at.isoformat() if issue_out.created_at else None,
+                "updated_at": issue_out.updated_at.isoformat() if issue_out.updated_at else None,
             }
-            for i in recent_issues
+            for issue_out in (build_issue_out(db, i) for i in recent_issues)
         ],
         "stats": {"total": total, "draft": draft},
         "next_issue": next_info,
