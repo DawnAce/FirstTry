@@ -27,6 +27,7 @@ class ScheduleSummary:
 @dataclass(frozen=True)
 class ParsedSchedule:
     year: int
+    raw_text: str
     rows: list[ScheduleRowDraft]
     summary: ScheduleSummary
     errors: list[str]
@@ -87,6 +88,7 @@ def parse_schedule_pdf(content: bytes) -> ParsedSchedule:
 def parse_schedule_text(text: str) -> ParsedSchedule:
     year = extract_year(text)
     rows: list[ScheduleRowDraft] = []
+    errors: list[str] = []
     in_table = False
     remarks: str | None = None
 
@@ -94,18 +96,29 @@ def parse_schedule_text(text: str) -> ParsedSchedule:
         line = raw_line.strip()
         if not line:
             continue
-        if line.startswith("备注"):
-            remarks = line
-            break
+        line, inline_remarks = _split_inline_remarks(line)
+        if inline_remarks is not None:
+            remarks = inline_remarks
+            if not line:
+                break
         if not in_table:
             if _is_table_header(line):
                 in_table = True
+            if inline_remarks is not None:
+                break
             continue
 
         pairs = _extract_day_issue_pairs(line)
         current_month = 1
         for day, issue_text in pairs:
-            publish_date, current_month = _resolve_publish_date(year, current_month, day)
+            try:
+                publish_date, current_month = _resolve_publish_date(
+                    year, current_month, day
+                )
+            except ValueError as exc:
+                errors.append(str(exc))
+                current_month += 1
+                continue
             rows.append(
                 ScheduleRowDraft(
                     publish_date=publish_date,
@@ -113,13 +126,16 @@ def parse_schedule_text(text: str) -> ParsedSchedule:
                     is_suspended=issue_text == "休刊",
                 )
             )
+        if inline_remarks is not None:
+            break
 
     rows.sort(key=lambda row: row.publish_date)
-    errors = validate_schedule_rows(year, rows)
+    errors.extend(validate_schedule_rows(year, rows))
     if not in_table or not rows:
         errors.append("未识别到出版日期期号表")
     return ParsedSchedule(
         year=year,
+        raw_text=text,
         rows=rows,
         summary=summarize_rows(rows, remarks=remarks),
         errors=errors,
@@ -193,6 +209,14 @@ def _extract_day_issue_pairs(line: str) -> list[tuple[int, str]]:
         else:
             index += 1
     return pairs
+
+
+def _split_inline_remarks(line: str) -> tuple[str, str | None]:
+    if "备注" not in line:
+        return line, None
+
+    table_text, remarks = line.split("备注", 1)
+    return table_text.strip(), f"备注{remarks}".strip()
 
 
 def _resolve_publish_date(year: int, start_month: int, day: int) -> tuple[date, int]:

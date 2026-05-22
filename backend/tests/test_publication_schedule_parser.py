@@ -8,6 +8,7 @@ from app.services.publication_schedule_parser import (
     ScheduleRowDraft,
     extract_pdf_text,
     extract_year,
+    parse_schedule_pdf,
     parse_schedule_text,
     summarize_rows,
     validate_schedule_rows,
@@ -39,6 +40,7 @@ def test_parse_schedule_text_extracts_2026_rows():
     parsed = parse_schedule_text(SCHEDULE_2026_TEXT)
 
     assert parsed.year == 2026
+    assert parsed.raw_text == SCHEDULE_2026_TEXT
     assert parsed.summary.total_rows == 52
     assert parsed.summary.published_count == 49
     assert parsed.summary.suspended_count == 3
@@ -57,6 +59,54 @@ def test_parse_schedule_text_extracts_2026_rows():
         row.issue_number for row in parsed.rows if not row.is_suspended
     ]
     assert published_issue_numbers == list(range(2635, 2684))
+
+
+def test_parse_schedule_text_collects_unmatched_cell_errors_and_keeps_rows():
+    text = """
+    2026年出版日期、期号对照表
+    日期 期数 日期 期数
+    5 2635 99 2636
+    """
+
+    parsed = parse_schedule_text(text)
+
+    assert [row.publish_date for row in parsed.rows] == [date(2026, 1, 5)]
+    assert "无法匹配出版日期：2026-99" in parsed.errors
+
+
+def test_parse_schedule_text_advances_month_after_unmatched_cell():
+    text = """
+    2026年出版日期、期号对照表
+    日期 期数 日期 期数 日期 期数
+    5 2635 99 2636 2 2637
+    """
+
+    parsed = parse_schedule_text(text)
+
+    assert [(row.publish_date, row.issue_number) for row in parsed.rows] == [
+        (date(2026, 1, 5), 2635),
+        (date(2026, 3, 2), 2637),
+    ]
+    assert "无法匹配出版日期：2026-99" in parsed.errors
+
+
+def test_parse_schedule_text_handles_inline_remarks_after_data_row():
+    text = """
+    2026年出版日期、期号对照表
+    日期 期数 日期 期数
+    30 2645 29 2658 31 2667 30 2679 备注：全年出版正报4期，对开 24 版
+    """
+
+    parsed = parse_schedule_text(text)
+
+    assert [row.publish_date for row in parsed.rows] == [
+        date(2026, 3, 30),
+        date(2026, 6, 29),
+        date(2026, 8, 31),
+        date(2026, 11, 30),
+    ]
+    assert parsed.summary.remarks == "备注：全年出版正报4期，对开 24 版"
+    assert "无法匹配出版日期：2026-24" not in parsed.errors
 
 
 def test_parse_schedule_text_reports_missing_table():
@@ -79,6 +129,68 @@ def test_extract_pdf_text_rejects_pdf_without_text():
 
     with pytest.raises(ValueError, match="PDF 未包含可抽取文本，请上传文字版 PDF"):
         extract_pdf_text(content.getvalue())
+
+
+def test_parse_schedule_pdf_parses_extracted_text(monkeypatch):
+    def fake_extract_pdf_text(content: bytes) -> str:
+        assert content == b"pdf bytes"
+        return SCHEDULE_2026_TEXT
+
+    monkeypatch.setattr(
+        "app.services.publication_schedule_parser.extract_pdf_text",
+        fake_extract_pdf_text,
+    )
+
+    parsed = parse_schedule_pdf(b"pdf bytes")
+
+    assert parsed.year == 2026
+    assert parsed.summary.published_count == 49
+    assert parsed.raw_text == SCHEDULE_2026_TEXT
+
+
+def test_validate_schedule_rows_rejects_out_of_year_dates():
+    errors = validate_schedule_rows(
+        2026,
+        [
+            ScheduleRowDraft(
+                publish_date=date(2027, 1, 4),
+                issue_number=2635,
+                is_suspended=False,
+            ),
+        ],
+    )
+
+    assert "出版日期年份必须为 2026：2027-01-04" in errors
+
+
+def test_validate_schedule_rows_rejects_missing_issue_number_on_published_row():
+    errors = validate_schedule_rows(
+        2026,
+        [
+            ScheduleRowDraft(
+                publish_date=date(2026, 1, 5),
+                issue_number=None,
+                is_suspended=False,
+            ),
+        ],
+    )
+
+    assert "2026-01-05 必须填写正数期号" in errors
+
+
+def test_validate_schedule_rows_rejects_non_positive_issue_number():
+    errors = validate_schedule_rows(
+        2026,
+        [
+            ScheduleRowDraft(
+                publish_date=date(2026, 1, 5),
+                issue_number=0,
+                is_suspended=False,
+            ),
+        ],
+    )
+
+    assert "2026-01-05 必须填写正数期号" in errors
 
 
 def test_validate_schedule_rows_rejects_suspended_row_with_issue_number():
