@@ -1,6 +1,6 @@
 # 中国经营报 · 印数报数系统
 
-每周五生成下周一出版的《中国经营报》印数报数表和中通快递发货明细的 Web 应用。
+每周五生成下周一出版的《中国经营报》印数报数表和中通快递发货明细的 Web 应用，并支持管理员上传年度刊期 PDF，预览校验后更新系统刊期表。
 
 当前主链已经收敛为：
 
@@ -11,7 +11,7 @@
 旧的 `/shipping/:issueId` 入口已重定向到当前的「收件人管理 → 中通发货明细」执行面。
 
 ## 技术栈
-- **后端**: Python / FastAPI / SQLAlchemy / JWT 认证 / openpyxl / cpca（地址解析）
+- **后端**: Python / FastAPI / SQLAlchemy / JWT 认证 / openpyxl / pypdf / cpca（地址解析）
 - **前端**: React / TypeScript / Vite / Ant Design / TanStack Query
 - **数据库**: MySQL
 
@@ -65,6 +65,10 @@ $token = (Invoke-RestMethod -Method Post http://localhost:8000/api/auth/login -C
 Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{Authorization="Bearer $token"}
 ```
 
+### 7. 年度刊期表上传
+
+管理员可以通过刊期 API 上传文字版 PDF，系统会解析出版日期、期号和休刊行，先返回可确认的预览结果；确认无误后再提交写入 `publication_schedule`，并在 `publication_schedule_uploads` 保留上传记录、解析摘要和错误信息。提交会保护已创建期数：如果新刊期表会删除已创建期号或修改其出版日期，系统会拒绝提交。
+
 ### 一键启动（推荐）
 
 | 系统 | 命令 |
@@ -73,7 +77,7 @@ Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{A
 | Windows CMD | `dev.bat` |
 | macOS / Linux | `./dev.sh` |
 
-### 7. 生产部署
+### 8. 生产部署
 ```bash
 cd frontend && npm run build
 cd ../backend && uvicorn app.main:app --port 8000

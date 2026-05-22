@@ -658,12 +658,11 @@ VITE ready in 500 ms
 ### Q8: 系统支持多年管理吗？
 
 **A**:
-- 目前仅初始化了 2026 年的刊期表
-- 如需增加其他年份：
-  1. 参考 `backend/app/seeds/publication_schedule_2026.py`
-  2. 创建新的种子文件，如 `publication_schedule_2027.py`
-  3. 运行种子数据导入
-- 系统架构支持多年，只是需要手动添加刊期数据
+- 目前默认初始化 2026 年刊期表。
+- 管理员可通过刊期上传接口导入其他年份的文字版 PDF：先调用 `POST /api/schedule/uploads/preview` 预览解析结果，确认无误后调用 `POST /api/schedule/uploads/{upload_id}/commit` 写入正式刊期表。
+- 提交前请重点核对出版日期、期号连续性和休刊行；休刊行不填写期号。
+- 如果该年份已经创建过期数，新刊期表不能删除这些期号，也不能修改它们的出版日期，系统会拒绝此类提交。
+- 上传历史可通过 `GET /api/schedule/uploads?year=年份` 查看。
 
 ### Q9: 发货数量可以为 0 吗？
 
