@@ -168,6 +168,8 @@ def commit_schedule_upload(
     )
     if upload is None:
         raise ValueError("上传记录不存在")
+    if upload.status != PublicationScheduleUploadStatus.previewed:
+        raise ValueError("只有待确认的刊期表上传记录可以提交")
 
     errors = validate_schedule_rows(upload.year, rows)
     if errors:
@@ -176,27 +178,39 @@ def commit_schedule_upload(
         db.commit()
         raise ValueError("；".join(errors))
 
-    ensure_commit_is_safe(db, upload.year, rows)
+    try:
+        ensure_commit_is_safe(db, upload.year, rows)
+    except ValueError as exc:
+        upload.status = PublicationScheduleUploadStatus.failed
+        upload.error_json = [str(exc)]
+        db.commit()
+        raise
 
-    db.query(PublicationSchedule).filter(PublicationSchedule.year == upload.year).delete()
-    for row in sorted(rows, key=lambda item: item.publish_date):
-        db.add(
-            PublicationSchedule(
-                year=upload.year,
-                issue_number=None if row.is_suspended else row.issue_number,
-                publish_date=row.publish_date,
-                is_suspended=row.is_suspended,
-            )
+    try:
+        db.query(PublicationSchedule).filter(PublicationSchedule.year == upload.year).delete(
+            synchronize_session=False
         )
+        for row in sorted(rows, key=lambda item: item.publish_date):
+            db.add(
+                PublicationSchedule(
+                    year=upload.year,
+                    issue_number=None if row.is_suspended else row.issue_number,
+                    publish_date=row.publish_date,
+                    is_suspended=row.is_suspended,
+                )
+            )
 
-    upload.status = PublicationScheduleUploadStatus.committed
-    upload.summary_json = asdict(
-        summarize_rows(rows, (upload.summary_json or {}).get("remarks"))
-    )
-    upload.error_json = []
-    upload.committed_at = datetime.now()
+        upload.status = PublicationScheduleUploadStatus.committed
+        upload.summary_json = asdict(
+            summarize_rows(rows, (upload.summary_json or {}).get("remarks"))
+        )
+        upload.error_json = []
+        upload.committed_at = datetime.now()
 
-    db.commit()
-    db.refresh(upload)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     invalidate_dashboard_cache()
+    db.refresh(upload)
     return upload

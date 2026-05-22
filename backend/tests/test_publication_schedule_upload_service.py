@@ -457,10 +457,11 @@ class FakeCommitQuery:
             return self.db.upload
         raise AssertionError(f"unexpected first() for {self.model}")
 
-    def delete(self):
+    def delete(self, **kwargs):
         if self.model is not PublicationSchedule:
             raise AssertionError(f"unexpected delete() for {self.model}")
         self.db.deleted_schedule_years.append(self.db.upload.year)
+        self.db.delete_kwargs.append(kwargs)
         return 1
 
 
@@ -470,8 +471,10 @@ class FakeCommitDb:
         self.added = []
         self.committed = False
         self.commit_count = 0
+        self.rollback_count = 0
         self.refreshed = None
         self.deleted_schedule_years = []
+        self.delete_kwargs = []
 
     def query(self, model):
         return FakeCommitQuery(self, model)
@@ -485,6 +488,9 @@ class FakeCommitDb:
 
     def refresh(self, obj):
         self.refreshed = obj
+
+    def rollback(self):
+        self.rollback_count += 1
 
 
 def make_upload(summary_json=None):
@@ -527,6 +533,67 @@ def test_commit_schedule_upload_validation_errors_mark_failed_and_commit(monkeyp
     assert db.commit_count == 1
 
 
+@pytest.mark.parametrize(
+    "status",
+    [
+        PublicationScheduleUploadStatus.committed,
+        PublicationScheduleUploadStatus.failed,
+    ],
+)
+def test_commit_schedule_upload_rejects_non_previewed_upload_without_replacement(
+    monkeypatch, status
+):
+    upload = make_upload()
+    upload.status = status
+    db = FakeCommitDb(upload=upload)
+    monkeypatch.setattr(
+        service,
+        "validate_schedule_rows",
+        lambda year, rows: pytest.fail("validation should not run"),
+        raising=False,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        service.commit_schedule_upload(
+            db,
+            upload.id,
+            [ScheduleRowDraft(date(2026, 1, 5), 2635, False)],
+        )
+
+    assert str(exc.value) == "只有待确认的刊期表上传记录可以提交"
+    assert db.deleted_schedule_years == []
+    assert db.added == []
+    assert db.commit_count == 0
+
+
+def test_commit_schedule_upload_safety_error_marks_failed_commits_and_reraises(
+    monkeypatch,
+):
+    upload = make_upload()
+    db = FakeCommitDb(upload=upload)
+    safety_error = ValueError("第 2635 期已创建，不能从刊期表中移除")
+    monkeypatch.setattr(service, "validate_schedule_rows", lambda year, rows: [], raising=False)
+
+    def fail_safety(db_arg, year, rows_arg):
+        raise safety_error
+
+    monkeypatch.setattr(service, "ensure_commit_is_safe", fail_safety)
+
+    with pytest.raises(ValueError) as exc:
+        service.commit_schedule_upload(
+            db,
+            upload.id,
+            [ScheduleRowDraft(date(2026, 1, 5), 2635, False)],
+        )
+
+    assert exc.value is safety_error
+    assert upload.status == PublicationScheduleUploadStatus.failed
+    assert upload.error_json == [str(safety_error)]
+    assert db.commit_count == 1
+    assert db.deleted_schedule_years == []
+    assert db.added == []
+
+
 def test_commit_schedule_upload_replaces_schedule_rows_and_invalidates_cache(monkeypatch):
     upload = make_upload(summary_json={"remarks": "春节休刊"})
     db = FakeCommitDb(upload=upload)
@@ -552,6 +619,7 @@ def test_commit_schedule_upload_replaces_schedule_rows_and_invalidates_cache(mon
     assert result is upload
     assert safe_calls == [(db, 2026, rows)]
     assert db.deleted_schedule_years == [2026]
+    assert db.delete_kwargs == [{"synchronize_session": False}]
     assert [schedule.publish_date for schedule in db.added] == [
         date(2026, 1, 5),
         date(2026, 1, 12),
@@ -568,6 +636,76 @@ def test_commit_schedule_upload_replaces_schedule_rows_and_invalidates_cache(mon
     assert db.commit_count == 1
     assert db.refreshed is upload
     assert invalidated == [True]
+
+
+class FailingFinalCommitDb(FakeCommitDb):
+    def __init__(self, upload=None):
+        super().__init__(upload=upload)
+        self.commit_error = RuntimeError("final commit failed")
+
+    def commit(self):
+        self.commit_count += 1
+        raise self.commit_error
+
+
+def test_commit_schedule_upload_final_commit_failure_rolls_back_and_reraises(
+    monkeypatch,
+):
+    upload = make_upload()
+    db = FailingFinalCommitDb(upload=upload)
+    monkeypatch.setattr(service, "validate_schedule_rows", lambda year, rows: [], raising=False)
+    monkeypatch.setattr(service, "ensure_commit_is_safe", lambda db, year, rows: None)
+
+    with pytest.raises(RuntimeError) as exc:
+        service.commit_schedule_upload(
+            db,
+            upload.id,
+            [ScheduleRowDraft(date(2026, 1, 5), 2635, False)],
+        )
+
+    assert exc.value is db.commit_error
+    assert db.rollback_count == 1
+
+
+class FailingCommitRefreshDb(FakeCommitDb):
+    def __init__(self, upload=None):
+        super().__init__(upload=upload)
+        self.events = []
+        self.refresh_error = RuntimeError("refresh failed")
+
+    def commit(self):
+        super().commit()
+        self.events.append("commit")
+
+    def refresh(self, obj):
+        self.events.append("refresh")
+        raise self.refresh_error
+
+
+def test_commit_schedule_upload_invalidates_cache_after_commit_before_refresh_failure(
+    monkeypatch,
+):
+    upload = make_upload()
+    db = FailingCommitRefreshDb(upload=upload)
+    monkeypatch.setattr(service, "validate_schedule_rows", lambda year, rows: [], raising=False)
+    monkeypatch.setattr(service, "ensure_commit_is_safe", lambda db, year, rows: None)
+    monkeypatch.setattr(
+        service,
+        "invalidate_dashboard_cache",
+        lambda: db.events.append("invalidate"),
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError) as exc:
+        service.commit_schedule_upload(
+            db,
+            upload.id,
+            [ScheduleRowDraft(date(2026, 1, 5), 2635, False)],
+        )
+
+    assert exc.value is db.refresh_error
+    assert db.events == ["commit", "invalidate", "refresh"]
+    assert db.rollback_count == 0
 
 
 def test_commit_schedule_upload_writes_suspended_rows_without_issue_number(monkeypatch):
