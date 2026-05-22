@@ -192,7 +192,7 @@ describe('PublicationScheduleManager', () => {
   it('commits preview rows and clears preview state after confirmation succeeds', async () => {
     state.isAdmin = true;
     state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf'];
-    vi.mocked(commitScheduleUpload).mockResolvedValue({
+    const commitResponse = {
       data: {
         id: 12,
         year: 2026,
@@ -204,7 +204,8 @@ describe('PublicationScheduleManager', () => {
         created_at: null,
         committed_at: null,
       },
-    });
+    } as Awaited<ReturnType<typeof commitScheduleUpload>>;
+    vi.mocked(commitScheduleUpload).mockResolvedValue(commitResponse);
 
     renderToString(<PublicationScheduleManager />);
     await state.popconfirmOnConfirm?.();

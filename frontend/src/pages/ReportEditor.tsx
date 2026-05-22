@@ -24,7 +24,6 @@ import {
   SendOutlined,
 } from '@ant-design/icons';
 import { getIssue, updateIssue, deleteIssue } from '../api/issues';
-import type { Issue } from '../api/issues';
 import type { ReportEntry, TempPrintDetail } from '../api/reports';
 import { getReport, updateReport, confirmReport, revokeReport, getRevisions, getTempPrintDetails, updateTempPrintDetails } from '../api/reports';
 import type { RevisionRecord } from '../api/reports';
