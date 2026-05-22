@@ -21,7 +21,6 @@ class ShippingDetail(Base):
     deadline = Column(String(50))
     notes = Column(Text)
     extra_info = Column(Text)
-    city = Column(String(50))
     station_name = Column(String(100))
     station_hall = Column(String(200))
     contact_person = Column(String(100))

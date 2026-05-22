@@ -129,7 +129,6 @@ class ReportShippingChainTests(unittest.TestCase):
                     deadline="长期",
                     notes="备注",
                     extra_info="附加信息",
-                    city="北京",
                     station_name="北京站",
                     station_hall="A厅",
                     contact_person="联系人甲",
@@ -153,7 +152,7 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(workbook.sheetnames, ["中通发货明细"])
 
         sheet = workbook["中通发货明细"]
-        headers = [sheet.cell(row=1, column=col).value for col in range(1, 25)]
+        headers = [sheet.cell(row=1, column=col).value for col in range(1, 24)]
         self.assertEqual(
             headers,
             [
@@ -174,7 +173,6 @@ class ReportShippingChainTests(unittest.TestCase):
                 "状态",
                 "备注",
                 "附加信息",
-                "城市",
                 "站点",
                 "站厅",
                 "联系人",
@@ -183,7 +181,7 @@ class ReportShippingChainTests(unittest.TestCase):
                 "信息确认",
             ],
         )
-        first_row = [sheet.cell(row=2, column=col).value for col in range(1, 25)]
+        first_row = [sheet.cell(row=2, column=col).value for col in range(1, 24)]
         self.assertEqual(
             first_row,
             [
@@ -204,7 +202,6 @@ class ReportShippingChainTests(unittest.TestCase):
                 "正常",
                 "备注",
                 "附加信息",
-                "北京",
                 "北京站",
                 "A厅",
                 "联系人甲",

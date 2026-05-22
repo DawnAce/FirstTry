@@ -31,7 +31,6 @@ class ShippingImportRow(BaseModel):
     deadline: str = ""
     notes: str = ""
     extra_info: str = ""
-    city: str = ""
     station_name: str = ""
     station_hall: str = ""
     contact_person: str = ""

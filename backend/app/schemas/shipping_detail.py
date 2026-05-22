@@ -18,7 +18,6 @@ class ShippingDetailCreate(BaseModel):
     deadline: Optional[str] = None
     notes: Optional[str] = None
     extra_info: Optional[str] = None
-    city: Optional[str] = None
     station_name: Optional[str] = None
     station_hall: Optional[str] = None
     contact_person: Optional[str] = None
@@ -42,7 +41,6 @@ class ShippingDetailUpdate(BaseModel):
     deadline: Optional[str] = None
     notes: Optional[str] = None
     extra_info: Optional[str] = None
-    city: Optional[str] = None
     station_name: Optional[str] = None
     station_hall: Optional[str] = None
     contact_person: Optional[str] = None
@@ -93,7 +91,6 @@ class ShippingDetailOut(BaseModel):
     deadline: Optional[str]
     notes: Optional[str]
     extra_info: Optional[str]
-    city: Optional[str]
     station_name: Optional[str]
     station_hall: Optional[str]
     contact_person: Optional[str]

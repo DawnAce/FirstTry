@@ -18,7 +18,8 @@ _fake_cpca = SimpleNamespace(
 )
 
 with patch.dict("sys.modules", {"cpca": _fake_cpca}):
-    from app.api.shipping_details import clear_shipping_details_by_issue
+    from app.api.shipping_details import _snapshot, clear_shipping_details_by_issue
+from app.schemas.shipping_detail import ShippingDetailCreate, ShippingDetailOut, ShippingDetailUpdate
 
 
 class ClearShippingDetailsByIssueTests(unittest.TestCase):
@@ -71,6 +72,23 @@ class ClearShippingDetailsByIssueTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 404)
         db.close()
+
+
+class ShippingDetailsCityRemovalTests(unittest.TestCase):
+    def test_shipping_detail_schemas_do_not_expose_city(self):
+        for schema in (ShippingDetailCreate, ShippingDetailUpdate, ShippingDetailOut):
+            self.assertNotIn("city", schema.model_fields)
+
+    def test_operation_snapshot_does_not_track_city(self):
+        detail = ShippingDetail(
+            issue_number=2652,
+            sheet_name="高铁展示",
+            channel="对公订阅",
+            name="赵叶",
+            quantity=5,
+        )
+
+        self.assertNotIn("city", _snapshot(detail))
 
 
 if __name__ == "__main__":

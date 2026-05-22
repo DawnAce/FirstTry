@@ -40,7 +40,7 @@ _REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES = {
 _SHIPPING_DETAIL_COPY_FIELDS = [
     "sheet_name", "channel", "sub_channel", "transport", "frequency",
     "status", "name", "address", "phone", "quantity", "deadline",
-    "notes", "extra_info", "city", "station_name", "station_hall",
+    "notes", "extra_info", "station_name", "station_hall",
     "contact_person", "seq_number", "period_count", "company",
 ]
 

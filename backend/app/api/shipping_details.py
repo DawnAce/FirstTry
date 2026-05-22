@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/shipping-details", tags=["shipping-details"])
 _TRACKED_FIELDS = [
     "issue_number", "sheet_name", "channel", "sub_channel", "transport", "frequency",
     "status", "name", "address", "phone", "quantity", "deadline",
-    "notes", "extra_info", "city", "station_name", "station_hall",
+    "notes", "extra_info", "station_name", "station_hall",
     "contact_person", "seq_number", "period_count", "confirmation",
     "company", "shipped_at",
 ]
@@ -219,8 +219,6 @@ def create_shipping_detail(
     if dump.get("address"):
         parsed = normalize_address(dump["address"])
         dump["address"] = parsed["address"]
-        if not dump.get("city") and parsed["city"]:
-            dump["city"] = parsed["city"]
     detail = ShippingDetail(**dump)
     db.add(detail)
     db.flush()  # get the id before commit
@@ -287,8 +285,6 @@ def update_shipping_detail(
     if update_data.get("address"):
         parsed = normalize_address(update_data["address"])
         update_data["address"] = parsed["address"]
-        if not update_data.get("city") and parsed["city"]:
-            update_data["city"] = parsed["city"]
     for key, value in update_data.items():
         setattr(detail, key, value)
     new_snapshot = _snapshot(detail)
@@ -410,9 +406,6 @@ def normalize_all_addresses(
         changed = False
         if parsed["address"] != detail.address:
             detail.address = parsed["address"]
-            changed = True
-        if parsed["city"] and not detail.city:
-            detail.city = parsed["city"]
             changed = True
         if changed:
             updated += 1

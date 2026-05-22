@@ -17,7 +17,6 @@ export interface ShippingDetail {
   deadline: string | null;
   notes: string | null;
   extra_info: string | null;
-  city: string | null;
   station_name: string | null;
   station_hall: string | null;
   contact_person: string | null;
@@ -45,7 +44,6 @@ export interface ShippingDetailCreate {
   deadline?: string;
   notes?: string;
   extra_info?: string;
-  city?: string;
   station_name?: string;
   station_hall?: string;
   contact_person?: string;
@@ -69,7 +67,6 @@ export interface ShippingDetailUpdate {
   deadline?: string;
   notes?: string;
   extra_info?: string;
-  city?: string;
   station_name?: string;
   station_hall?: string;
   contact_person?: string;

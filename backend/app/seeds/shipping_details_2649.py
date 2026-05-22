@@ -148,16 +148,13 @@ def _parse_weekly_reader(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dic
 
 
 def _parse_high_speed_rail(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[dict]:
-    """Parse 高铁展示 sheet: rows 4-26, 10 columns. Carry forward city name."""
+    """Parse 高铁展示 sheet: rows 4-26, 10 columns."""
     records = []
-    current_city = None
     for row in ws.iter_rows(min_row=4, max_row=26, max_col=10, values_only=True):
         city, seq, station, hall, contact, phone, address, qty, confirm, extra = row
         # Skip rows where both seq and station are empty (after data ends)
         if seq is None and station is None:
             continue
-        if _str(city):
-            current_city = _str(city)
         records.append({
             "sheet_name": "高铁展示",
             "channel": "对公订阅",
@@ -166,7 +163,6 @@ def _parse_high_speed_rail(ws: openpyxl.worksheet.worksheet.Worksheet) -> list[d
             "frequency": "周",
             "status": "正常",
             "name": _str(contact) or "(未填写)",
-            "city": current_city,
             "seq_number": _int(seq),
             "station_name": _str(station),
             "station_hall": _str(hall),

@@ -51,13 +51,6 @@ export const shippingDetailDisplayColumns: TableColumnsType<ShippingDetail> = [
     ellipsis: true,
     render: (v: string | null) => v ?? '-',
   },
-  {
-    title: '城市',
-    dataIndex: 'city',
-    key: 'city',
-    width: 80,
-    render: (v: string | null) => v ?? '-',
-  },
   { title: '电话', dataIndex: 'phone', key: 'phone', width: 120, render: (v: string | null) => v ?? '-' },
   { title: '份数', dataIndex: 'quantity', key: 'quantity', width: 60, render: (v: number) => v ?? '-' },
   { title: '频率', dataIndex: 'frequency', key: 'frequency', width: 60, render: (v: string | null) => v ?? '-' },

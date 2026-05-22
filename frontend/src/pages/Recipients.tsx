@@ -83,7 +83,7 @@ const fieldLabels: Record<string, string> = {
   issue_number: '期号', sheet_name: '工作表', channel: '渠道', sub_channel: '子渠道', transport: '运输方式',
   frequency: '频率', status: '状态', name: '姓名', address: '地址', phone: '电话',
   quantity: '份数', deadline: '截止日期', notes: '备注', extra_info: '附加信息',
-  city: '城市', station_name: '站点', station_hall: '站厅', contact_person: '联系人',
+  station_name: '站点', station_hall: '站厅', contact_person: '联系人',
   seq_number: '序号', period_count: '期数', confirmation: '确认', company: '签约公司',
   shipped_at: '发货时间',
 };

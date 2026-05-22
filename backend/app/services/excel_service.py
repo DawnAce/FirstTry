@@ -27,7 +27,6 @@ SHIPPING_DETAIL_EXPORT_COLUMNS: list[tuple[str, str | None]] = [
     ("状态", "status"),
     ("备注", "notes"),
     ("附加信息", "extra_info"),
-    ("城市", "city"),
     ("站点", "station_name"),
     ("站厅", "station_hall"),
     ("联系人", "contact_person"),

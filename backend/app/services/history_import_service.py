@@ -30,7 +30,7 @@ from app.schemas.history_import import (
 _SHIPPING_COLUMNS = [
     "工作表名称", "渠道", "子渠道", "运输方式", "频次", "状态",
     "姓名", "地址", "电话", "数量", "截止日期", "备注", "附加信息",
-    "城市", "网点名称", "网点大厅", "联系人", "序号", "期数", "公司",
+    "网点名称", "网点大厅", "联系人", "序号", "期数", "公司",
 ]
 
 
@@ -148,13 +148,12 @@ def _read_shipping_rows(wb) -> list[ShippingImportRow]:
             deadline=_str(row[10]),
             notes=_str(row[11]),
             extra_info=_str(row[12]),
-            city=_str(row[13]),
-            station_name=_str(row[14]),
-            station_hall=_str(row[15]),
-            contact_person=_str(row[16]),
-            seq_number=_int_or_none(row[17]),
-            period_count=_int_or_none(row[18]),
-            company=_str(row[19]),
+            station_name=_str(row[13]),
+            station_hall=_str(row[14]),
+            contact_person=_str(row[15]),
+            seq_number=_int_or_none(row[16]),
+            period_count=_int_or_none(row[17]),
+            company=_str(row[18]),
         ))
     return rows
 
@@ -489,7 +488,6 @@ def commit_history_import(db: Session, import_session_id: str) -> HistoryImportC
             deadline=row.get("deadline", ""),
             notes=row.get("notes", ""),
             extra_info=row.get("extra_info", ""),
-            city=row.get("city", ""),
             station_name=row.get("station_name", ""),
             station_hall=row.get("station_hall", ""),
             contact_person=row.get("contact_person", ""),

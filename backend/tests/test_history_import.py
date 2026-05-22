@@ -23,7 +23,7 @@ from app.services.raw_report_import_service import parse_raw_report_workbook
 _SHIPPING_HEADERS = [
     "工作表名称", "渠道", "子渠道", "运输方式", "频次", "状态",
     "姓名", "地址", "电话", "数量", "截止日期", "备注", "附加信息",
-    "城市", "网点名称", "网点大厅", "联系人", "序号", "期数", "公司",
+    "网点名称", "网点大厅", "联系人", "序号", "期数", "公司",
 ]
 
 
@@ -151,7 +151,7 @@ def build_shipping_upload(issue_number: int = 2648, quantity: int = 10) -> bytes
     detail.append([
         "发货明细", "邮发", "本市", "中通物流", "每周", "正常",
         "张三", "北京市朝阳区xx路1号", "13800138000", quantity,
-        "2026-04-19", "", "", "北京", "", "", "", 1, issue_number, "",
+        "2026-04-19", "", "", "", "", "", 1, issue_number, "",
     ])
 
     return _wb_to_bytes(wb)
@@ -467,7 +467,6 @@ class HistoryImportTemplateTests(unittest.TestCase):
                 "截止日期",
                 "备注",
                 "附加信息",
-                "城市",
                 "网点名称",
                 "网点大厅",
                 "联系人",
@@ -794,7 +793,7 @@ class HistoryImportPreviewTests(unittest.TestCase):
         ))
         db.close()
 
-    def test_original_zto_parser_sets_mafei_warehouse_city_to_beijing(self):
+    def test_original_zto_parser_omits_city_from_rows(self):
         wb = load_workbook(io.BytesIO(build_original_zto_shipping_upload()))
         wb["每周（对公）"].append([
             "马飞", "中通库房", "", 1, "中国经营报", "库房留存", "", "", "周", "库房留存", "", "",
@@ -803,7 +802,7 @@ class HistoryImportPreviewTests(unittest.TestCase):
         rows = read_original_zto_shipping_rows(wb)
 
         row = next(row for row in rows if row.name == "马飞")
-        self.assertEqual(row.city, "北京")
+        self.assertFalse(hasattr(row, "city"))
 
     def test_preview_accepts_original_zto_high_speed_alias_sheet(self):
         db = self.SessionLocal()
@@ -1041,9 +1040,7 @@ class HistoryImportCommitTests(unittest.TestCase):
         self.assertEqual(by_name["叶剑"].channel, "渠道订阅")
         self.assertEqual(by_name["叶剑"].company, "广州日报")
         self.assertEqual(by_name["赵叶"].station_name, "北京站")
-        self.assertEqual(by_name["赵叶"].city, "北京")
         self.assertEqual(by_name["赵叶"].confirmation, "☑")
-        self.assertEqual(by_name["李四"].city, "北京")
         self.assertEqual(by_name["丁联诚"].period_count, 2)
         self.assertEqual(by_name["丁联诚"].deadline, "2026-05-01")
         self.assertEqual(by_name["宣传部5号格"].frequency, "月")

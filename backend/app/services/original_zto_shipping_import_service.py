@@ -40,23 +40,6 @@ def _deadline_str(value: Any) -> str:
     return _str(value)
 
 
-def _city_for_row(row: dict[str, Any]) -> str:
-    city = _str(row.get("city"))
-    if city:
-        return city
-
-    name = _str(row.get("name"))
-    transport = _str(row.get("transport"))
-    row_text = " ".join(
-        _str(row.get(field))
-        for field in ("address", "channel", "sub_channel", "company", "notes", "extra_info")
-    )
-    if name == "马飞" and transport == "库房留存" and "中通库房" in row_text:
-        return "北京"
-
-    return ""
-
-
 def _is_summary_row(phone_value: Any) -> bool:
     return _str(phone_value) == "合计"
 
@@ -119,7 +102,6 @@ def _row_to_import_row(sheet_name: str, row: dict[str, Any]) -> ShippingImportRo
         deadline=_deadline_str(row.get("deadline")),
         notes=_str(row.get("notes")),
         extra_info=_str(row.get("extra_info")),
-        city=_city_for_row(row),
         station_name=_str(row.get("station_name")),
         station_hall=_str(row.get("station_hall")),
         contact_person=_str(row.get("contact_person")),
@@ -135,7 +117,7 @@ def _parse_table_sheet(ws, sheet_name: str, min_row: int, max_col: int) -> list[
     for row in ws.iter_rows(min_row=min_row, max_col=max_col, values_only=True):
         if _is_blank_row(row) or _is_summary_row(row[2]):
             continue
-        name, address, phone, quantity, _publication, channel, sub_channel, company, frequency, transport, city, notes, *rest = row
+        name, address, phone, quantity, _publication, channel, sub_channel, company, frequency, transport, _city, notes, *rest = row
         rows.append(_row_to_import_row(
             sheet_name,
             {
@@ -148,7 +130,6 @@ def _parse_table_sheet(ws, sheet_name: str, min_row: int, max_col: int) -> list[
                 "company": company,
                 "frequency": frequency,
                 "transport": transport,
-                "city": city,
                 "notes": notes,
                 "extra_info": rest[0] if rest else "",
             },
@@ -161,7 +142,7 @@ def _parse_weekly_reader(ws) -> list[ShippingImportRow]:
     for row in ws.iter_rows(min_row=3, max_col=14, values_only=True):
         if _is_blank_row(row) or _is_summary_row(row[2]):
             continue
-        name, address, phone, quantity, _publication, deadline, channel, sub_channel, company, frequency, transport, city, notes, extra = row
+        name, address, phone, quantity, _publication, deadline, channel, sub_channel, company, frequency, transport, _city, notes, extra = row
         rows.append(_row_to_import_row(
             "每周（读者）",
             {
@@ -175,7 +156,6 @@ def _parse_weekly_reader(ws) -> list[ShippingImportRow]:
                 "company": company,
                 "frequency": frequency,
                 "transport": transport,
-                "city": city,
                 "notes": notes,
                 "extra_info": extra,
             },
@@ -185,13 +165,10 @@ def _parse_weekly_reader(ws) -> list[ShippingImportRow]:
 
 def _parse_high_speed_rail(ws) -> list[ShippingImportRow]:
     rows: list[ShippingImportRow] = []
-    current_city = ""
     for row in ws.iter_rows(min_row=4, max_col=15, values_only=True):
         if _is_blank_row(row) or (row[1] is None and row[2] is None):
             continue
-        city, seq, station, hall, contact, phone, address, quantity, confirmation, extra, channel, sub_channel, company, frequency, transport = row
-        if _str(city):
-            current_city = _str(city)
+        _city, seq, station, hall, contact, phone, address, quantity, confirmation, extra, channel, sub_channel, company, frequency, transport = row
         rows.append(_row_to_import_row(
             "高铁展示",
             {
@@ -202,7 +179,6 @@ def _parse_high_speed_rail(ws) -> list[ShippingImportRow]:
                 "frequency": frequency,
                 "status": "正常",
                 "name": contact,
-                "city": current_city,
                 "seq_number": seq,
                 "station_name": station,
                 "station_hall": hall,
@@ -247,7 +223,7 @@ def _parse_monthly(ws) -> list[ShippingImportRow]:
     for row in ws.iter_rows(min_row=3, max_col=15, values_only=True):
         if _is_blank_row(row) or _is_summary_row(row[2]):
             continue
-        name, address, phone, period, quantity, _publication, deadline, channel, sub_channel, company, frequency, transport, city, notes, extra = row
+        name, address, phone, period, quantity, _publication, deadline, channel, sub_channel, company, frequency, transport, _city, notes, extra = row
         rows.append(_row_to_import_row(
             "月底-整月",
             {
@@ -262,7 +238,6 @@ def _parse_monthly(ws) -> list[ShippingImportRow]:
                 "company": company,
                 "frequency": frequency,
                 "transport": transport,
-                "city": city,
                 "notes": notes,
                 "extra_info": extra,
             },
