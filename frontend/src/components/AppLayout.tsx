@@ -1,5 +1,5 @@
 import { Layout, Menu, Button, Space } from 'antd';
-import { DashboardOutlined, UserOutlined, HistoryOutlined, SettingOutlined, LogoutOutlined } from '@ant-design/icons';
+import { DashboardOutlined, UserOutlined, HistoryOutlined, SettingOutlined, LogoutOutlined, CalendarOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -9,6 +9,7 @@ const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '印数报数管理' },
   { key: '/recipients', icon: <UserOutlined />, label: '收件人管理' },
   { key: '/history', icon: <HistoryOutlined />, label: '历史记录' },
+  { key: '/schedule', icon: <CalendarOutlined />, label: '刊期表管理' },
   { key: '/templates', icon: <SettingOutlined />, label: '模板管理' },
 ];
 
@@ -23,6 +24,7 @@ export default function AppLayout() {
     if (path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import')) return '/';
     if (path.startsWith('/recipients')) return '/recipients';
     if (path.startsWith('/history')) return '/history';
+    if (path.startsWith('/schedule')) return '/schedule';
     if (path.startsWith('/templates')) return '/templates';
     return path;
   };

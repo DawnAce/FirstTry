@@ -12,3 +12,4 @@ pydantic-settings==2.5.0
 python-multipart==0.0.9
 cpca>=0.5.5
 setuptools<81
+pypdf==4.3.1
