@@ -23,11 +23,16 @@ function renderIssue(row: ScheduleEntry) {
 
 function renderStatus(status: ScheduleUpload['status']) {
   const colorMap: Record<ScheduleUpload['status'], string> = {
-    previewed: 'processing',
-    committed: 'success',
-    failed: 'error',
+    previewed: 'blue',
+    committed: 'green',
+    failed: 'red',
   };
-  return <Tag color={colorMap[status]}>{status}</Tag>;
+  const labelMap: Record<ScheduleUpload['status'], string> = {
+    previewed: '待确认',
+    committed: '已保存',
+    failed: '失败',
+  };
+  return <Tag color={colorMap[status]}>{labelMap[status]}</Tag>;
 }
 
 export default function PublicationScheduleManager() {
@@ -102,7 +107,7 @@ export default function PublicationScheduleManager() {
       <Space direction="vertical" size={24} style={{ width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: 'var(--color-text)' }}>
+            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: 'var(--color-text-primary)' }}>
               刊期表管理
             </h1>
             <p style={{ margin: '8px 0 0', color: 'var(--color-text-secondary)' }}>
@@ -112,7 +117,7 @@ export default function PublicationScheduleManager() {
           <Select value={year} options={yearOptions} onChange={setYear} style={{ width: 140 }} />
         </div>
 
-        {(scheduleQuery.isError || uploadsQuery.isError) && (
+        {scheduleQuery.isError && (
           <Alert type="error" showIcon message="加载刊期表数据失败，请稍后重试" />
         )}
 
@@ -139,7 +144,7 @@ export default function PublicationScheduleManager() {
           </Col>
         </Row>
 
-        {scheduleRows.length === 0 && !scheduleQuery.isLoading ? (
+        {scheduleRows.length === 0 && !scheduleQuery.isLoading && !scheduleQuery.isError ? (
           <Card>
             <Alert type="info" showIcon message="暂无该年份刊期表" />
           </Card>
@@ -158,13 +163,17 @@ export default function PublicationScheduleManager() {
         )}
 
         <Card title="上传记录" loading={uploadsQuery.isLoading}>
-          <Table<ScheduleUpload>
-            rowKey="id"
-            columns={uploadColumns}
-            dataSource={uploadsQuery.data ?? []}
-            pagination={false}
-            size="middle"
-          />
+          {uploadsQuery.isError ? (
+            <Alert type="error" showIcon message="加载上传记录失败，请稍后重试" />
+          ) : (
+            <Table<ScheduleUpload>
+              rowKey="id"
+              columns={uploadColumns}
+              dataSource={uploadsQuery.data ?? []}
+              pagination={false}
+              size="middle"
+            />
+          )}
         </Card>
       </Space>
     </div>
