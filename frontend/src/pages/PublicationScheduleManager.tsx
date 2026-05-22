@@ -6,6 +6,7 @@ import type { TableProps, UploadProps } from 'antd';
 import dayjs from 'dayjs';
 import { getSchedule, getScheduleUploads, previewScheduleUpload } from '../api/schedule';
 import type { ScheduleDraftRow, ScheduleEntry, SchedulePreview, ScheduleUpload } from '../api/schedule';
+import { useAuth } from '../contexts/AuthContext';
 import {
   formatIssueRange,
   groupScheduleRowsByMonth,
@@ -50,6 +51,7 @@ function getPreviewErrorMessage(error: unknown) {
 
 export default function PublicationScheduleManager() {
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const [year, setYear] = useState(DEFAULT_YEAR);
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -112,6 +114,13 @@ export default function PublicationScheduleManager() {
     }
 
     return Upload.LIST_IGNORE;
+  };
+
+  const handleYearChange = (nextYear: number) => {
+    setYear(nextYear);
+    setPreview(null);
+    setPreviewError(null);
+    setPreviewFileName(null);
   };
 
   const scheduleColumns: TableProps<ScheduleEntry>['columns'] = [
@@ -189,116 +198,118 @@ export default function PublicationScheduleManager() {
               查看年度出版计划和刊期表上传记录
             </p>
           </div>
-          <Select value={year} options={yearOptions} onChange={setYear} style={{ width: 140 }} />
+          <Select value={year} options={yearOptions} onChange={handleYearChange} style={{ width: 140 }} />
         </div>
 
         {scheduleQuery.isError && (
           <Alert type="error" showIcon message="加载刊期表数据失败，请稍后重试" />
         )}
 
-        <Card title="上传 PDF 预览">
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Dragger
-              accept=".pdf,application/pdf"
-              beforeUpload={handlePreviewUpload}
-              disabled={previewing}
-              maxCount={1}
-              showUploadList={false}
-            >
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖拽上传年度刊期 PDF</p>
-              <p className="ant-upload-hint">选择文件后将自动解析并生成预览，不会直接写入正式刊期表</p>
-            </Dragger>
+        {isAdmin && (
+          <Card title="上传 PDF 预览">
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <Dragger
+                accept=".pdf,application/pdf"
+                beforeUpload={handlePreviewUpload}
+                disabled={previewing}
+                maxCount={1}
+                showUploadList={false}
+              >
+                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                <p className="ant-upload-text">点击或拖拽上传年度刊期 PDF</p>
+                <p className="ant-upload-hint">选择文件后将自动解析并生成预览，不会直接写入正式刊期表</p>
+              </Dragger>
 
-            {previewFileName && (
-              <Text type="secondary">当前预览文件：{previewFileName}</Text>
-            )}
+              {previewFileName && (
+                <Text type="secondary">当前预览文件：{previewFileName}</Text>
+              )}
 
-            {previewing && (
-              <Alert type="info" showIcon message="正在解析 PDF，请稍候..." />
-            )}
+              {previewing && (
+                <Alert type="info" showIcon message="正在解析 PDF，请稍候..." />
+              )}
 
-            {previewError && (
-              <Alert type="error" showIcon message="解析预览失败" description={previewError} />
-            )}
+              {previewError && (
+                <Alert type="error" showIcon message="解析预览失败" description={previewError} />
+              )}
 
-            {preview && (
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <Alert
-                  type={preview.can_commit ? 'success' : 'warning'}
-                  showIcon
-                  message={preview.can_commit ? '解析完成，可在下一步确认保存' : '解析完成，但存在需要处理的问题'}
-                  description="确认保存将在下一步提供；本次操作仅生成预览，不会修改正式刊期表。"
-                />
+              {preview && (
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                  <Alert
+                    type={preview.can_commit ? 'success' : 'warning'}
+                    showIcon
+                    message={preview.can_commit ? '解析完成，可在下一步确认保存' : '解析完成，但存在需要处理的问题'}
+                    description="确认保存将在下一步提供；本次操作仅生成预览，不会修改正式刊期表。"
+                  />
 
-                <Row gutter={[16, 16]}>
-                  <Col xs={24} sm={12} lg={4}>
-                    <Card size="small">
-                      <Statistic title="年份" value={preview.year} suffix="年" />
-                    </Card>
-                  </Col>
-                  <Col xs={24} sm={12} lg={4}>
-                    <Card size="small">
-                      <Statistic title="总行数" value={preview.summary.total_rows} suffix="行" />
-                    </Card>
-                  </Col>
-                  <Col xs={24} sm={12} lg={4}>
-                    <Card size="small">
-                      <Statistic title="出版期数" value={preview.summary.published_count} suffix="期" />
-                    </Card>
-                  </Col>
-                  <Col xs={24} sm={12} lg={4}>
-                    <Card size="small">
-                      <Statistic title="休刊次数" value={preview.summary.suspended_count} suffix="次" />
-                    </Card>
-                  </Col>
-                  <Col xs={24} sm={12} lg={4}>
-                    <Card size="small">
-                      <Statistic title="期号范围" value={previewIssueRange} />
-                    </Card>
-                  </Col>
-                  <Col xs={24} sm={12} lg={4}>
-                    <Card size="small">
-                      <Statistic
-                        title="可保存"
-                        value={preview.can_commit ? '是' : '否'}
-                        valueStyle={{ color: preview.can_commit ? 'var(--color-accent)' : undefined }}
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24} sm={12} lg={4}>
+                      <Card size="small">
+                        <Statistic title="年份" value={preview.year} suffix="年" />
+                      </Card>
+                    </Col>
+                    <Col xs={24} sm={12} lg={4}>
+                      <Card size="small">
+                        <Statistic title="总行数" value={preview.summary.total_rows} suffix="行" />
+                      </Card>
+                    </Col>
+                    <Col xs={24} sm={12} lg={4}>
+                      <Card size="small">
+                        <Statistic title="出版期数" value={preview.summary.published_count} suffix="期" />
+                      </Card>
+                    </Col>
+                    <Col xs={24} sm={12} lg={4}>
+                      <Card size="small">
+                        <Statistic title="休刊次数" value={preview.summary.suspended_count} suffix="次" />
+                      </Card>
+                    </Col>
+                    <Col xs={24} sm={12} lg={4}>
+                      <Card size="small">
+                        <Statistic title="期号范围" value={previewIssueRange} />
+                      </Card>
+                    </Col>
+                    <Col xs={24} sm={12} lg={4}>
+                      <Card size="small">
+                        <Statistic
+                          title="可保存"
+                          value={preview.can_commit ? '是' : '否'}
+                          valueStyle={{ color: preview.can_commit ? 'var(--color-accent)' : undefined }}
+                        />
+                      </Card>
+                    </Col>
+                  </Row>
+
+                  {preview.errors.length > 0 && (
+                    <Alert
+                      type="error"
+                      showIcon
+                      message="解析校验错误"
+                      description={(
+                        <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+                          {preview.errors.map((error) => (
+                            <li key={error}>{error}</li>
+                          ))}
+                        </ul>
+                      )}
+                    />
+                  )}
+
+                  {previewMonthGroups.map((group) => (
+                    <Card key={group.month} title={`预览：${preview.year} 年 ${group.month} 月`} size="small">
+                      <Table<ScheduleDraftRow>
+                        rowKey={(record, index) => `${record.publish_date}-${index ?? 0}`}
+                        columns={previewColumns}
+                        dataSource={group.rows}
+                        pagination={false}
+                        size="middle"
+                        rowClassName={(record) => (rowHasError(record, preview.errors) ? 'schedule-preview-row-error' : '')}
                       />
                     </Card>
-                  </Col>
-                </Row>
-
-                {preview.errors.length > 0 && (
-                  <Alert
-                    type="error"
-                    showIcon
-                    message="解析校验错误"
-                    description={(
-                      <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
-                        {preview.errors.map((error) => (
-                          <li key={error}>{error}</li>
-                        ))}
-                      </ul>
-                    )}
-                  />
-                )}
-
-                {previewMonthGroups.map((group) => (
-                  <Card key={group.month} title={`预览：${preview.year} 年 ${group.month} 月`} size="small">
-                    <Table<ScheduleDraftRow>
-                      rowKey={(record, index) => `${record.publish_date}-${index ?? 0}`}
-                      columns={previewColumns}
-                      dataSource={group.rows}
-                      pagination={false}
-                      size="middle"
-                      rowClassName={(record) => (rowHasError(record, preview.errors) ? 'schedule-preview-row-error' : '')}
-                    />
-                  </Card>
-                ))}
-              </Space>
-            )}
-          </Space>
-        </Card>
+                  ))}
+                </Space>
+              )}
+            </Space>
+          </Card>
+        )}
 
         <Row gutter={[16, 16]}>
           <Col xs={24} sm={12} lg={6}>
