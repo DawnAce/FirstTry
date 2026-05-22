@@ -67,7 +67,7 @@ Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{A
 
 ### 7. 年度刊期表上传
 
-管理员可以通过刊期 API 上传文字版 PDF，系统会解析出版日期、期号和休刊行，先返回可确认的预览结果；确认无误后再提交写入 `publication_schedule`，并在 `publication_schedule_uploads` 保留上传记录、解析摘要和错误信息。提交会保护已创建期数：如果新刊期表会删除已创建期号或修改其出版日期，系统会拒绝提交。
+管理员可以在侧边栏进入「刊期表管理」（`/schedule`），按年份查看年度出版计划、月度刊期表和上传历史。刊期 API 支持上传文字版 PDF，系统会解析出版日期、期号和休刊行，先返回可确认的预览结果；确认无误后再提交写入 `publication_schedule`，并在 `publication_schedule_uploads` 保留上传记录、解析摘要和错误信息。提交会保护已创建期数：如果新刊期表会删除已创建期号或修改其出版日期，系统会拒绝提交。
 
 ### 一键启动（推荐）
 

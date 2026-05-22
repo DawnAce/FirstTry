@@ -659,7 +659,8 @@ VITE ready in 500 ms
 
 **A**:
 - 目前默认初始化 2026 年刊期表。
-- 管理员可通过刊期上传接口导入其他年份的文字版 PDF：先调用 `POST /api/schedule/uploads/preview` 预览解析结果，确认无误后调用 `POST /api/schedule/uploads/{upload_id}/commit` 写入正式刊期表。
+- 管理员可在侧边栏打开「刊期表管理」，选择年份后查看计划周数、出版期数、休刊次数、期号范围、按月份分组的刊期表，以及该年份的上传记录。
+- 管理员也可通过刊期上传接口导入其他年份的文字版 PDF：先调用 `POST /api/schedule/uploads/preview` 预览解析结果，确认无误后调用 `POST /api/schedule/uploads/{upload_id}/commit` 写入正式刊期表。
 - 提交前请重点核对出版日期、期号连续性和休刊行；休刊行不填写期号。
 - 如果该年份已经创建过期数，新刊期表不能删除这些期号，也不能修改它们的出版日期，系统会拒绝此类提交。
 - 上传历史可通过 `GET /api/schedule/uploads?year=年份` 查看。
