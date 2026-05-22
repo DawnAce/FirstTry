@@ -95,7 +95,18 @@ def test_store_uploaded_pdf_writes_bytes_and_returns_relative_upload_path(tmp_pa
     assert (upload_root / "2026" / "safe.pdf").read_bytes() == b"pdf-bytes"
     assert "uploads" in stored_path
     assert "publication_schedules" in stored_path
-    assert stored_path.endswith("2026\\safe.pdf")
+    assert stored_path.endswith("2026/safe.pdf")
+
+
+def test_store_uploaded_pdf_returns_posix_path(tmp_path, monkeypatch):
+    upload_root = tmp_path / "uploads" / "publication_schedules"
+    monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(service, "_safe_filename", lambda filename: "safe.pdf")
+
+    stored_path = service.store_uploaded_pdf(2026, "unsafe.pdf", b"pdf-bytes")
+
+    assert "/" in stored_path
+    assert "\\" not in stored_path
 
 
 def test_create_preview_upload_rejects_non_pdf_filename_and_content_type():
@@ -103,6 +114,45 @@ def test_create_preview_upload_rejects_non_pdf_filename_and_content_type():
         service.create_preview_upload(
             FakeDb([]),
             "schedule.txt",
+            "text/plain",
+            b"content",
+            "alice",
+        )
+
+    assert str(exc.value) == "请上传 PDF 文件"
+
+
+def test_create_preview_upload_rejects_exe_filename_with_pdf_content_type():
+    with pytest.raises(ValueError) as exc:
+        service.create_preview_upload(
+            FakeDb([]),
+            "schedule.exe",
+            "application/pdf",
+            b"content",
+            "alice",
+        )
+
+    assert str(exc.value) == "请上传 PDF 文件"
+
+
+def test_create_preview_upload_rejects_double_extension_with_pdf_content_type():
+    with pytest.raises(ValueError) as exc:
+        service.create_preview_upload(
+            FakeDb([]),
+            "schedule.pdf.exe",
+            "application/pdf",
+            b"content",
+            "alice",
+        )
+
+    assert str(exc.value) == "请上传 PDF 文件"
+
+
+def test_create_preview_upload_rejects_pdf_filename_with_non_pdf_content_type():
+    with pytest.raises(ValueError) as exc:
+        service.create_preview_upload(
+            FakeDb([]),
+            "schedule.pdf",
             "text/plain",
             b"content",
             "alice",
@@ -139,10 +189,13 @@ class FakeWriteDb:
     def refresh(self, obj):
         self.refreshed = obj
 
+    def rollback(self):
+        self.rolled_back = True
 
-def test_create_preview_upload_creates_preview_record(tmp_path, monkeypatch):
+
+def make_parsed_schedule():
     rows = [ScheduleRowDraft(date(2026, 1, 5), 2635, False)]
-    parsed = ParsedSchedule(
+    return ParsedSchedule(
         year=2026,
         raw_text="raw text",
         rows=rows,
@@ -156,6 +209,10 @@ def test_create_preview_upload_creates_preview_record(tmp_path, monkeypatch):
         ),
         errors=["warning"],
     )
+
+
+def test_create_preview_upload_creates_preview_record(tmp_path, monkeypatch):
+    parsed = make_parsed_schedule()
     upload_root = tmp_path / "uploads" / "publication_schedules"
     monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
     monkeypatch.setattr(service, "_safe_filename", lambda filename: "stored.pdf")
@@ -170,13 +227,13 @@ def test_create_preview_upload_creates_preview_record(tmp_path, monkeypatch):
         "alice",
     )
 
-    assert returned_rows == rows
+    assert returned_rows == parsed.rows
     assert db.added is upload
     assert db.committed is True
     assert db.refreshed is upload
     assert upload.year == 2026
     assert upload.original_filename == "schedule.pdf"
-    assert upload.stored_path.endswith("2026\\stored.pdf")
+    assert upload.stored_path.endswith("2026/stored.pdf")
     assert upload.status == PublicationScheduleUploadStatus.previewed
     assert upload.summary_json == {
         "total_rows": 1,
@@ -190,3 +247,95 @@ def test_create_preview_upload_creates_preview_record(tmp_path, monkeypatch):
     assert upload.uploaded_by == "alice"
     assert upload.raw_text == "raw text"
     assert (upload_root / "2026" / "stored.pdf").read_bytes() == b"pdf-content"
+
+
+@pytest.mark.parametrize("filename", [None, "", "   "])
+def test_create_preview_upload_uses_default_original_filename_for_missing_or_blank_filename(
+    tmp_path, monkeypatch, filename
+):
+    parsed = make_parsed_schedule()
+    upload_root = tmp_path / "uploads" / "publication_schedules"
+    monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(service, "_safe_filename", lambda filename: "stored.pdf")
+    monkeypatch.setattr(service, "parse_schedule_pdf", lambda content: parsed)
+    db = FakeWriteDb()
+
+    upload, _ = service.create_preview_upload(
+        db,
+        filename,
+        "application/pdf",
+        b"pdf-content",
+        "alice",
+    )
+
+    assert upload.original_filename == "publication_schedule.pdf"
+
+
+def test_create_preview_upload_rejects_overlong_filename_before_writing(tmp_path, monkeypatch):
+    upload_root = tmp_path / "uploads" / "publication_schedules"
+    monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(service, "parse_schedule_pdf", lambda content: make_parsed_schedule())
+
+    with pytest.raises(ValueError) as exc:
+        service.create_preview_upload(
+            FakeWriteDb(),
+            f"{'a' * 252}.pdf",
+            "application/pdf",
+            b"pdf-content",
+            "alice",
+        )
+
+    assert str(exc.value) == "文件名不能超过 255 个字符"
+    assert not upload_root.exists()
+
+
+def test_create_preview_upload_rejects_overlong_username_before_writing(tmp_path, monkeypatch):
+    upload_root = tmp_path / "uploads" / "publication_schedules"
+    monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(service, "parse_schedule_pdf", lambda content: make_parsed_schedule())
+
+    with pytest.raises(ValueError) as exc:
+        service.create_preview_upload(
+            FakeWriteDb(),
+            "schedule.pdf",
+            "application/pdf",
+            b"pdf-content",
+            "a" * 51,
+        )
+
+    assert str(exc.value) == "上传用户名不能超过 50 个字符"
+    assert not upload_root.exists()
+
+
+class FailingCommitDb(FakeWriteDb):
+    def __init__(self):
+        super().__init__()
+        self.rolled_back = False
+        self.commit_error = RuntimeError("commit failed")
+
+    def commit(self):
+        raise self.commit_error
+
+
+def test_create_preview_upload_rolls_back_and_deletes_file_on_commit_failure(
+    tmp_path, monkeypatch
+):
+    parsed = make_parsed_schedule()
+    upload_root = tmp_path / "uploads" / "publication_schedules"
+    monkeypatch.setattr(service, "UPLOAD_ROOT", upload_root)
+    monkeypatch.setattr(service, "_safe_filename", lambda filename: "stored.pdf")
+    monkeypatch.setattr(service, "parse_schedule_pdf", lambda content: parsed)
+    db = FailingCommitDb()
+
+    with pytest.raises(RuntimeError) as exc:
+        service.create_preview_upload(
+            db,
+            "schedule.pdf",
+            "application/pdf",
+            b"pdf-content",
+            "alice",
+        )
+
+    assert exc.value is db.commit_error
+    assert db.rolled_back is True
+    assert not (upload_root / "2026" / "stored.pdf").exists()

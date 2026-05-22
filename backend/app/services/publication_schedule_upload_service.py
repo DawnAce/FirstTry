@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from contextlib import suppress
 from datetime import date
 from pathlib import Path
 import re
@@ -35,27 +36,53 @@ def store_uploaded_pdf(year: int, filename: str, content: bytes) -> str:
     stored_file = year_dir / _safe_filename(filename)
     stored_file.write_bytes(content)
 
-    return str(stored_file.relative_to(UPLOAD_ROOT.parents[1]))
+    return stored_file.relative_to(UPLOAD_ROOT.parents[1]).as_posix()
 
 
-def create_preview_upload(db, filename, content_type, content, username):
+def _normalize_upload_filename(filename: str | None) -> str:
+    normalized = (filename or "").strip() or "publication_schedule.pdf"
+    if len(normalized) > 255:
+        raise ValueError("文件名不能超过 255 个字符")
+    return normalized
+
+
+def _validate_preview_upload(
+    filename: str,
+    content_type: str | None,
+    content: bytes,
+    username: str | None,
+) -> None:
     is_pdf_content_type = content_type in {
         "application/pdf",
         "application/octet-stream",
         None,
     }
-    is_pdf_filename = filename.lower().endswith(".pdf")
-    if not (is_pdf_content_type or is_pdf_filename):
+    is_pdf_filename = Path(filename).suffix.lower() == ".pdf"
+    if not (is_pdf_content_type and is_pdf_filename):
         raise ValueError("请上传 PDF 文件")
 
     if not content:
         raise ValueError("上传文件为空")
 
+    if username is not None and len(username) > 50:
+        raise ValueError("上传用户名不能超过 50 个字符")
+
+
+def create_preview_upload(
+    db: Session,
+    filename: str | None,
+    content_type: str | None,
+    content: bytes,
+    username: str | None,
+) -> tuple[PublicationScheduleUpload, list[ScheduleRowDraft]]:
+    normalized_filename = _normalize_upload_filename(filename)
+    _validate_preview_upload(normalized_filename, content_type, content, username)
+
     parsed = parse_schedule_pdf(content)
-    stored_path = store_uploaded_pdf(parsed.year, filename, content)
+    stored_path = store_uploaded_pdf(parsed.year, normalized_filename, content)
     upload = PublicationScheduleUpload(
         year=parsed.year,
-        original_filename=filename,
+        original_filename=normalized_filename,
         stored_path=stored_path,
         status=PublicationScheduleUploadStatus.previewed,
         summary_json=asdict(parsed.summary),
@@ -65,7 +92,18 @@ def create_preview_upload(db, filename, content_type, content, username):
     )
 
     db.add(upload)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        rollback = getattr(db, "rollback", None)
+        if rollback is not None:
+            with suppress(Exception):
+                rollback()
+        stored_file = UPLOAD_ROOT.parents[1] / Path(stored_path)
+        with suppress(OSError):
+            if stored_file.exists():
+                stored_file.unlink()
+        raise
     db.refresh(upload)
 
     return upload, parsed.rows
