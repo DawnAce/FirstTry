@@ -421,13 +421,13 @@ export default function PublicationScheduleManager() {
                     showIcon
                     message={preview.can_commit ? '解析完成，可确认保存' : '解析完成，但存在需要处理的问题'}
                     description={preview.can_commit
-                      ? '确认保存后将替换该年份的正式刊期表。'
+                      ? `确认保存后将更新 ${preview.year} 年的正式刊期表（仅影响该年份，其他年份不受影响）。`
                       : '请处理校验问题后再保存；本次预览尚未修改正式刊期表。'}
                   />
 
                   <Popconfirm
                     title="确认保存刊期表？"
-                    description={`保存后将替换 ${preview.year} 年正式刊期表。`}
+                    description={`保存后将更新 ${preview.year} 年的刊期表，其他年份数据不受影响。`}
                     okText="确认保存"
                     cancelText="取消"
                     disabled={!preview.can_commit || committing}
