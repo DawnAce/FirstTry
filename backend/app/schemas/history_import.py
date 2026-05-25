@@ -50,12 +50,14 @@ class CommitReadiness(BaseModel):
 class HistoryImportPreviewOut(BaseModel):
     issue_number: int
     publish_date: str           # normalized ISO date YYYY-MM-DD
+    page_count: int = 24
     report_entry_count: int
     temp_detail_count: int
     shipping_detail_count: int
     can_commit: bool            # top-level convenience copy
     import_session_id: str
     errors: list[str] = []
+    warnings: list[str] = []
     readiness: CommitReadiness
     manual_temp_print_required_quantity: int = 0
     manual_temp_print_self_quantity: int = 0
@@ -73,3 +75,6 @@ class HistoryImportCommitOut(BaseModel):
     report_entry_count: int
     temp_detail_count: int
     shipping_detail_count: int
+    schedule_page_count_updated: bool = False
+    previous_schedule_page_count: int | None = None
+    new_page_count: int | None = None

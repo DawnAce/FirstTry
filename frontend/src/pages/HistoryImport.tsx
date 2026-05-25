@@ -149,8 +149,16 @@ export default function HistoryImport() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['issues'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['publication-schedule'] }),
+        queryClient.invalidateQueries({ queryKey: ['publication-schedules'] }),
       ]);
-      message.success(`第 ${res.data.issue_number} 期数据导入成功`);
+      if (res.data.schedule_page_count_updated) {
+        message.success(
+          `第 ${res.data.issue_number} 期数据导入成功，刊期表版数已从 ${res.data.previous_schedule_page_count ?? '-'} 版更新为 ${res.data.new_page_count ?? '-'} 版`,
+        );
+      } else {
+        message.success(`第 ${res.data.issue_number} 期数据导入成功`);
+      }
       navigate(`/report/${res.data.issue_id}`);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };
@@ -236,7 +244,7 @@ export default function HistoryImport() {
 
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(5, 1fr)',
+            gridTemplateColumns: 'repeat(6, 1fr)',
             gap: 16,
             marginBottom: 20,
             padding: '16px 20px',
@@ -253,6 +261,12 @@ export default function HistoryImport() {
               <Text type="secondary" style={{ fontSize: 12 }}>出版日期</Text>
               <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>
                 {preview.publish_date}
+              </div>
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 12 }}>版数</Text>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#1d1d1f' }}>
+                {preview.page_count} 版
               </div>
             </div>
             <div>
@@ -274,6 +288,20 @@ export default function HistoryImport() {
               </div>
             </div>
           </div>
+
+          {preview.warnings && preview.warnings.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              message="导入注意事项"
+              description={
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
+                  {preview.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              }
+              style={{ marginBottom: 16 }}
+            />
+          )}
 
           {manualTempRequired > 0 && (
             <Alert

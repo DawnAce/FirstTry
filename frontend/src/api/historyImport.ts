@@ -11,11 +11,13 @@ export interface CommitReadiness {
 export interface HistoryImportPreview {
   issue_number: number;
   publish_date: string;
+  page_count: number;
   report_entry_count: number;
   temp_detail_count: number;
   shipping_detail_count: number;
   readiness: CommitReadiness;
   errors: string[];
+  warnings: string[];
   can_commit: boolean;
   import_session_id: string;
   manual_temp_print_required_quantity: number;
@@ -36,6 +38,9 @@ export interface HistoryImportCommitResult {
   report_entry_count: number;
   temp_detail_count: number;
   shipping_detail_count: number;
+  schedule_page_count_updated: boolean;
+  previous_schedule_page_count: number | null;
+  new_page_count: number | null;
 }
 
 export const downloadReportTemplate = (): Promise<AxiosResponse<Blob>> =>
