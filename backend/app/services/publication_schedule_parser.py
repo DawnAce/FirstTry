@@ -12,6 +12,7 @@ class ScheduleRowDraft:
     publish_date: date
     issue_number: int | None
     is_suspended: bool
+    page_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -145,11 +146,21 @@ def parse_schedule_text(text: str) -> ParsedSchedule:
     errors.extend(validate_schedule_rows(year, rows))
     if not in_table or not rows:
         errors.append("未识别到出版日期期号表")
+    default_page_count = extract_page_count(text)
+    rows_with_page_count = [
+        ScheduleRowDraft(
+            publish_date=row.publish_date,
+            issue_number=row.issue_number,
+            is_suspended=row.is_suspended,
+            page_count=default_page_count,
+        )
+        for row in rows
+    ]
     return ParsedSchedule(
         year=year,
         raw_text=text,
-        rows=rows,
-        summary=summarize_rows(rows, remarks=remarks, page_count=extract_page_count(text)),
+        rows=rows_with_page_count,
+        summary=summarize_rows(rows_with_page_count, remarks=remarks, page_count=default_page_count),
         errors=errors,
     )
 

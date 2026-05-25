@@ -100,6 +100,7 @@ def _serialize_rows(rows: list[ScheduleRowDraft]) -> list[dict[str, object]]:
             "publish_date": row.publish_date.isoformat(),
             "issue_number": row.issue_number,
             "is_suspended": row.is_suspended,
+            "page_count": row.page_count,
         }
         for row in rows
     ]
@@ -115,11 +116,13 @@ def _deserialize_rows(rows_json: object) -> list[ScheduleRowDraft]:
             if not isinstance(row, dict):
                 raise ValueError
             issue_number = row.get("issue_number")
+            page_count = row.get("page_count")
             rows.append(
                 ScheduleRowDraft(
                     publish_date=date.fromisoformat(str(row["publish_date"])),
                     issue_number=None if issue_number is None else int(issue_number),
                     is_suspended=bool(row["is_suspended"]),
+                    page_count=None if page_count is None else int(page_count),
                 )
             )
     except (KeyError, TypeError, ValueError) as exc:

@@ -22,6 +22,7 @@ export interface ScheduleDraftRow {
   publish_date: string;
   issue_number: number | null;
   is_suspended: boolean;
+  page_count?: number | null;
 }
 
 export interface SchedulePreview {

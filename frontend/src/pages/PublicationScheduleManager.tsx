@@ -185,6 +185,7 @@ export default function PublicationScheduleManager() {
         publish_date: `${preview?.year ?? year}-01-01`,
         issue_number: null,
         is_suspended: true,
+        page_count: previewPageCount,
       },
     ]);
   };
@@ -280,6 +281,20 @@ export default function PublicationScheduleManager() {
           value={record.issue_number}
           disabled={record.is_suspended || committing || savingDraftRows}
           onChange={(value) => handleDraftRowChange(record.draftIndex, { issue_number: value ?? null })}
+        />
+      ),
+    },
+    {
+      title: '版数',
+      key: 'page_count',
+      width: 100,
+      render: (_value: unknown, record) => (
+        <InputNumber
+          min={1}
+          precision={0}
+          value={record.page_count}
+          disabled={committing || savingDraftRows}
+          onChange={(value) => handleDraftRowChange(record.draftIndex, { page_count: value ?? null })}
         />
       ),
     },

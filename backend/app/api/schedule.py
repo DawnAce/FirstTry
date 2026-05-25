@@ -82,6 +82,7 @@ async def preview_schedule_upload(
                 publish_date=row.publish_date,
                 issue_number=row.issue_number,
                 is_suspended=row.is_suspended,
+                page_count=row.page_count,
             )
             for row in rows
         ],
@@ -108,6 +109,7 @@ def update_schedule_upload_rows_endpoint(
                     publish_date=row.publish_date,
                     issue_number=None if row.is_suspended else row.issue_number,
                     is_suspended=row.is_suspended,
+                    page_count=row.page_count,
                 )
                 for row in body.rows
             ],
@@ -125,6 +127,7 @@ def update_schedule_upload_rows_endpoint(
                 publish_date=row.publish_date,
                 issue_number=row.issue_number,
                 is_suspended=row.is_suspended,
+                page_count=row.page_count,
             )
             for row in rows
         ],

@@ -16,6 +16,7 @@ class ScheduleRowIn(BaseModel):
     publish_date: date
     issue_number: int | None = Field(default=None, ge=1)
     is_suspended: bool
+    page_count: int | None = Field(default=None, ge=1)
 
 
 class SchedulePreviewOut(BaseModel):
