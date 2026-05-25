@@ -137,11 +137,12 @@ def update_schedule_upload_rows_endpoint(
 @router.post("/uploads/{upload_id}/commit", response_model=ScheduleUploadOut)
 def commit_schedule_upload_endpoint(
     upload_id: int,
+    page_count: int | None = None,
     db: Session = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """Persist server-stored preview rows from an upload into publication_schedule."""
     try:
-        return commit_schedule_upload(db, upload_id)
+        return commit_schedule_upload(db, upload_id, page_count=page_count)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

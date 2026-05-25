@@ -21,6 +21,7 @@ class ScheduleSummary:
     suspended_count: int
     first_issue_number: int | None
     last_issue_number: int | None
+    page_count: int | None = None
     remarks: str | None = None
 
 
@@ -84,6 +85,14 @@ def extract_year(text: str) -> int:
     raise ValueError("无法识别出版年份")
 
 
+def extract_page_count(text: str) -> int | None:
+    """Extract page count from text like '对开32版' or '对开 32 版'."""
+    match = re.search(r"对开\s*(\d+)\s*版", text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
 def parse_schedule_pdf(content: bytes) -> ParsedSchedule:
     return parse_schedule_text(extract_pdf_text(content))
 
@@ -140,13 +149,15 @@ def parse_schedule_text(text: str) -> ParsedSchedule:
         year=year,
         raw_text=text,
         rows=rows,
-        summary=summarize_rows(rows, remarks=remarks),
+        summary=summarize_rows(rows, remarks=remarks, page_count=extract_page_count(text)),
         errors=errors,
     )
 
 
 def summarize_rows(
-    rows: Sequence[ScheduleRowDraft], remarks: str | None = None
+    rows: Sequence[ScheduleRowDraft],
+    remarks: str | None = None,
+    page_count: int | None = None,
 ) -> ScheduleSummary:
     published_issue_numbers = [
         row.issue_number for row in rows if not row.is_suspended and row.issue_number is not None
@@ -157,6 +168,7 @@ def summarize_rows(
         suspended_count=sum(1 for row in rows if row.is_suspended),
         first_issue_number=min(published_issue_numbers) if published_issue_numbers else None,
         last_issue_number=max(published_issue_numbers) if published_issue_numbers else None,
+        page_count=page_count,
         remarks=remarks,
     )
 

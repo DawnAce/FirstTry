@@ -14,6 +14,7 @@ export interface ScheduleSummary {
   suspended_count: number;
   first_issue_number: number | null;
   last_issue_number: number | null;
+  page_count?: number | null;
   remarks?: string | null;
 }
 
@@ -59,5 +60,7 @@ export const previewScheduleUpload = (file: File) => {
 export const updateScheduleUploadRows = (uploadId: number, rows: ScheduleDraftRow[]) =>
   api.put<SchedulePreview>(`/schedule/uploads/${uploadId}/rows`, { rows });
 
-export const commitScheduleUpload = (uploadId: number) =>
-  api.post<ScheduleUpload>(`/schedule/uploads/${uploadId}/commit`);
+export const commitScheduleUpload = (uploadId: number, pageCount?: number | null) =>
+  api.post<ScheduleUpload>(`/schedule/uploads/${uploadId}/commit`, null, {
+    params: pageCount != null ? { page_count: pageCount } : undefined,
+  });

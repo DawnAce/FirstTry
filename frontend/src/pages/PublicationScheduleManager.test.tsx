@@ -158,7 +158,7 @@ describe('PublicationScheduleManager', () => {
 
   it('shows the confirm save action to admins when a preview exists', () => {
     state.isAdmin = true;
-    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf'];
+    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', null];
 
     const html = renderToString(<PublicationScheduleManager />);
 
@@ -168,7 +168,7 @@ describe('PublicationScheduleManager', () => {
 
   it('does not show the confirm save action to non-admin users', () => {
     state.isAdmin = false;
-    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf'];
+    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', null];
 
     const html = renderToString(<PublicationScheduleManager />);
 
@@ -177,7 +177,7 @@ describe('PublicationScheduleManager', () => {
 
   it('disables the confirm save action when preview cannot be committed', () => {
     state.isAdmin = true;
-    state.reactStateValues = [2026, { ...preview, can_commit: false }, false, false, null, 'schedule.pdf'];
+    state.reactStateValues = [2026, { ...preview, can_commit: false }, false, false, null, 'schedule.pdf', null];
 
     const html = renderToString(<PublicationScheduleManager />);
 
@@ -186,7 +186,7 @@ describe('PublicationScheduleManager', () => {
 
   it('shows manual correction controls when a preview exists', () => {
     state.isAdmin = true;
-    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', preview.rows, false];
+    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', null, preview.rows, false];
 
     const html = renderToString(<PublicationScheduleManager />);
 
@@ -196,7 +196,7 @@ describe('PublicationScheduleManager', () => {
 
   it('disables upload and year selection while committing a preview', () => {
     state.isAdmin = true;
-    state.reactStateValues = [2026, preview, false, true, null, 'schedule.pdf'];
+    state.reactStateValues = [2026, preview, false, true, null, 'schedule.pdf', null];
 
     const html = renderToString(<PublicationScheduleManager />);
 
@@ -206,7 +206,7 @@ describe('PublicationScheduleManager', () => {
 
   it('commits preview rows and clears preview state after confirmation succeeds', async () => {
     state.isAdmin = true;
-    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf'];
+    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', null];
     const commitResponse = {
       data: {
         id: 12,
@@ -225,13 +225,14 @@ describe('PublicationScheduleManager', () => {
     renderToString(<PublicationScheduleManager />);
     await state.popconfirmOnConfirm?.();
 
-    expect(commitScheduleUpload).toHaveBeenCalledWith(preview.upload_id);
+    expect(commitScheduleUpload).toHaveBeenCalledWith(preview.upload_id, null);
     expect(state.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['schedule', preview.year] });
     expect(state.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['scheduleUploads', preview.year] });
     expect(state.reactSetters[0]).toHaveBeenCalledWith(preview.year);
     expect(state.reactSetters[1]).toHaveBeenCalledWith(null);
     expect(state.reactSetters[4]).toHaveBeenCalledWith(null);
     expect(state.reactSetters[5]).toHaveBeenCalledWith(null);
+    expect(state.reactSetters[6]).toHaveBeenCalledWith(null);
     expect(message.success).toHaveBeenCalledWith('2026 年刊期表已保存');
   });
 });

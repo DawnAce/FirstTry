@@ -8,6 +8,7 @@ class ScheduleSummaryOut(BaseModel):
     suspended_count: int
     first_issue_number: int | None
     last_issue_number: int | None
+    page_count: int | None = None
     remarks: str | None = None
 
 

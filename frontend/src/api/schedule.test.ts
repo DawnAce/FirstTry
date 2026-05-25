@@ -20,7 +20,7 @@ describe('commitScheduleUpload', () => {
 
     await commitScheduleUpload(12);
 
-    expect(api.post).toHaveBeenCalledWith('/schedule/uploads/12/commit');
+    expect(api.post).toHaveBeenCalledWith('/schedule/uploads/12/commit', null, { params: undefined });
   });
 
   it('puts edited preview rows to the upload rows endpoint', async () => {

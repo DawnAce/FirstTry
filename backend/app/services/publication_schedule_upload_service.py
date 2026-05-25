@@ -213,7 +213,11 @@ def update_schedule_upload_rows(
 
     upload.rows_json = _serialize_rows(rows)
     upload.summary_json = asdict(
-        summarize_rows(rows, (upload.summary_json or {}).get("remarks"))
+        summarize_rows(
+            rows,
+            (upload.summary_json or {}).get("remarks"),
+            page_count=(upload.summary_json or {}).get("page_count"),
+        )
     )
     upload.error_json = validate_schedule_rows(upload.year, rows)
     db.commit()
@@ -224,6 +228,7 @@ def update_schedule_upload_rows(
 def commit_schedule_upload(
     db: Session,
     upload_id: int,
+    page_count: int | None = None,
 ) -> PublicationScheduleUpload:
     upload = (
         db.query(PublicationScheduleUpload)
@@ -276,7 +281,11 @@ def commit_schedule_upload(
 
         upload.status = PublicationScheduleUploadStatus.committed
         upload.summary_json = asdict(
-            summarize_rows(rows, (upload.summary_json or {}).get("remarks"))
+            summarize_rows(
+                rows,
+                (upload.summary_json or {}).get("remarks"),
+                page_count=page_count,
+            )
         )
         upload.error_json = []
         upload.committed_at = datetime.now()

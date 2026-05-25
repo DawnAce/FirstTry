@@ -84,6 +84,7 @@ export default function PublicationScheduleManager() {
   const [committing, setCommitting] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewFileName, setPreviewFileName] = useState<string | null>(null);
+  const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
   const [draftRows, setDraftRows] = useState<ScheduleDraftRow[]>([]);
   const [savingDraftRows, setSavingDraftRows] = useState(false);
   const yearOptions = useMemo(() => buildYearOptions(year), [year]);
@@ -137,6 +138,7 @@ export default function PublicationScheduleManager() {
       const res = await previewScheduleUpload(file);
       setPreview(res.data);
       setDraftRows(res.data.rows);
+      setPreviewPageCount(res.data.summary.page_count ?? null);
       if (res.data.year !== year) {
         setYear(res.data.year);
       }
@@ -158,6 +160,7 @@ export default function PublicationScheduleManager() {
     setPreview(null);
     setPreviewError(null);
     setPreviewFileName(null);
+    setPreviewPageCount(null);
     setDraftRows([]);
   };
 
@@ -216,7 +219,7 @@ export default function PublicationScheduleManager() {
 
     setCommitting(true);
     try {
-      await commitScheduleUpload(preview.upload_id);
+      await commitScheduleUpload(preview.upload_id, previewPageCount);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['schedule', preview.year] }),
         queryClient.invalidateQueries({ queryKey: ['scheduleUploads', preview.year] }),
@@ -225,6 +228,7 @@ export default function PublicationScheduleManager() {
       setPreview(null);
       setPreviewError(null);
       setPreviewFileName(null);
+      setPreviewPageCount(null);
       setDraftRows([]);
       message.success(`${preview.year} 年刊期表已保存`);
     } catch (error: unknown) {
@@ -464,6 +468,19 @@ export default function PublicationScheduleManager() {
                     <Col xs={24} sm={12} lg={4}>
                       <Card size="small">
                         <Statistic title="期号范围" value={previewIssueRange} />
+                      </Card>
+                    </Col>
+                    <Col xs={24} sm={12} lg={4}>
+                      <Card size="small">
+                        <div style={{ marginBottom: 4, color: 'rgba(0, 0, 0, 0.45)', fontSize: 14 }}>版数</div>
+                        <InputNumber
+                          value={previewPageCount}
+                          onChange={(val) => setPreviewPageCount(val)}
+                          min={1}
+                          suffix="版"
+                          style={{ width: '100%' }}
+                          placeholder="如：32"
+                        />
                       </Card>
                     </Col>
                     <Col xs={24} sm={12} lg={4}>
