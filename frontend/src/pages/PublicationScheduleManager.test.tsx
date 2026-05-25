@@ -1,7 +1,7 @@
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { message } from 'antd';
-import { commitScheduleUpload } from '../api/schedule';
+import { commitScheduleUpload, updateScheduleUploadRows } from '../api/schedule';
 import type { SchedulePreview } from '../api/schedule';
 import PublicationScheduleManager from './PublicationScheduleManager';
 
@@ -61,6 +61,7 @@ vi.mock('../api/schedule', () => ({
   getSchedule: vi.fn(),
   getScheduleUploads: vi.fn(),
   previewScheduleUpload: vi.fn(),
+  updateScheduleUploadRows: vi.fn(),
   commitScheduleUpload: vi.fn(),
 }));
 
@@ -80,6 +81,8 @@ vi.mock('antd', async () => {
     ),
     Card: passthrough,
     Col: passthrough,
+    DatePicker: () => React.createElement('input', { type: 'date' }),
+    InputNumber: () => React.createElement('input', { type: 'number' }),
     Popconfirm: ({
       children,
       title,
@@ -103,6 +106,7 @@ vi.mock('antd', async () => {
       suffix?: React.ReactNode;
     }) => React.createElement('div', null, title, value, suffix),
     Table: () => React.createElement('div'),
+    Switch: () => React.createElement('input', { type: 'checkbox' }),
     Tag: passthrough,
     Typography: { Text: passthrough },
     Upload: Object.assign(passthrough, {
@@ -127,6 +131,7 @@ describe('PublicationScheduleManager', () => {
     state.invalidateQueries.mockResolvedValue(undefined);
     state.popconfirmOnConfirm = undefined;
     vi.mocked(commitScheduleUpload).mockReset();
+    vi.mocked(updateScheduleUploadRows).mockReset();
     vi.mocked(message.success).mockReset();
     vi.mocked(message.error).mockReset();
   });
@@ -177,6 +182,16 @@ describe('PublicationScheduleManager', () => {
     const html = renderToString(<PublicationScheduleManager />);
 
     expect(html).toContain('<button disabled="">确认保存</button>');
+  });
+
+  it('shows manual correction controls when a preview exists', () => {
+    state.isAdmin = true;
+    state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', preview.rows, false];
+
+    const html = renderToString(<PublicationScheduleManager />);
+
+    expect(html).toContain('新增一行');
+    expect(html).toContain('应用手动修正并重新校验');
   });
 
   it('disables upload and year selection while committing a preview', () => {

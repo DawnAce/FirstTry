@@ -203,15 +203,71 @@ def _extract_day_issue_pairs(line: str) -> list[tuple[int, str]]:
     tokens = re.findall(r"\d+|休刊", line)
     pairs: list[tuple[int, str]] = []
     index = 0
-    while index + 1 < len(tokens):
+    while index < len(tokens):
         day_text = tokens[index]
-        issue_text = tokens[index + 1]
-        if day_text.isdigit() and (issue_text.isdigit() or issue_text == "休刊"):
-            pairs.append((int(day_text), issue_text))
-            index += 2
-        else:
+        next_token = tokens[index + 1] if index + 1 < len(tokens) else None
+        if not day_text.isdigit():
             index += 1
+            continue
+
+        if next_token == "休刊":
+            compact_pairs, trailing_day = _split_compact_issue_digits(day_text, allow_trailing_day=True)
+            pairs.extend(compact_pairs)
+            if trailing_day is not None:
+                pairs.append((trailing_day, "休刊"))
+            else:
+                pairs.append((int(day_text), "休刊"))
+            index += 2
+            continue
+
+        if next_token is not None and next_token.isdigit() and len(day_text) <= 2:
+            pairs.append((int(day_text), next_token))
+            index += 2
+            continue
+
+        compact_pairs, trailing_day = _split_compact_issue_digits(day_text, allow_trailing_day=False)
+        pairs.extend(compact_pairs)
+        if trailing_day is not None:
+            pairs.append((trailing_day, ""))
+        elif not compact_pairs and len(day_text) > 2:
+            pairs.append((int(day_text), ""))
+        index += 1
     return pairs
+
+
+def _split_compact_issue_digits(
+    text: str,
+    allow_trailing_day: bool,
+) -> tuple[list[tuple[int, str]], int | None]:
+    def parse_from(position: int) -> tuple[list[tuple[int, str]], int | None] | None:
+        if position == len(text):
+            return [], None
+
+        remaining = len(text) - position
+        if allow_trailing_day and remaining <= 2:
+            trailing_day = int(text[position:])
+            if 1 <= trailing_day <= 31:
+                return [], trailing_day
+
+        for day_length in (2, 1):
+            if position + day_length + 4 > len(text):
+                continue
+            day = int(text[position:position + day_length])
+            if day < 1 or day > 31:
+                continue
+            issue_text = text[position + day_length:position + day_length + 4]
+            issue_number = int(issue_text)
+            if issue_number < 1000 or issue_number > 4999:
+                continue
+            result = parse_from(position + day_length + 4)
+            if result is not None:
+                pairs, trailing_day = result
+                return [(day, issue_text), *pairs], trailing_day
+
+        return None
+
+    result = parse_from(0)
+    return result if result is not None else ([], None)
 
 
 def _split_inline_remarks(line: str) -> tuple[str, str | None]:

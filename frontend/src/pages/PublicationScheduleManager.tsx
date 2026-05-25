@@ -1,10 +1,34 @@
 ﻿import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, Col, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Typography, Upload, message } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  InputNumber,
+  Popconfirm,
+  Row,
+  Select,
+  Space,
+  Statistic,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+  Upload,
+  message,
+} from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import type { TableProps, UploadProps } from 'antd';
 import dayjs from 'dayjs';
-import { commitScheduleUpload, getSchedule, getScheduleUploads, previewScheduleUpload } from '../api/schedule';
+import {
+  commitScheduleUpload,
+  getSchedule,
+  getScheduleUploads,
+  previewScheduleUpload,
+  updateScheduleUploadRows,
+} from '../api/schedule';
 import type { ScheduleDraftRow, ScheduleEntry, SchedulePreview, ScheduleUpload } from '../api/schedule';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -17,6 +41,8 @@ import {
 const DEFAULT_YEAR = 2026;
 const { Dragger } = Upload;
 const { Text } = Typography;
+
+type EditableScheduleDraftRow = ScheduleDraftRow & { draftIndex: number };
 
 function buildYearOptions(selectedYear: number) {
   const currentYear = dayjs().year();
@@ -58,6 +84,8 @@ export default function PublicationScheduleManager() {
   const [committing, setCommitting] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewFileName, setPreviewFileName] = useState<string | null>(null);
+  const [draftRows, setDraftRows] = useState<ScheduleDraftRow[]>([]);
+  const [savingDraftRows, setSavingDraftRows] = useState(false);
   const yearOptions = useMemo(() => buildYearOptions(year), [year]);
 
   const scheduleQuery = useQuery({
@@ -80,8 +108,15 @@ export default function PublicationScheduleManager() {
   const summary = useMemo(() => summarizeScheduleRows(scheduleRows), [scheduleRows]);
   const monthGroups = useMemo(() => groupScheduleRowsByMonth(scheduleRows), [scheduleRows]);
   const issueRange = formatIssueRange(summary);
-  const previewMonthGroups = useMemo(() => groupScheduleRowsByMonth(preview?.rows ?? []), [preview?.rows]);
+  const previewRowsWithIndex = useMemo<EditableScheduleDraftRow[]>(
+    () => draftRows.map((row, draftIndex) => ({ ...row, draftIndex })),
+    [draftRows],
+  );
+  const previewMonthGroups = useMemo(() => groupScheduleRowsByMonth(previewRowsWithIndex), [previewRowsWithIndex]);
   const previewIssueRange = preview ? formatIssueRange(preview.summary) : '-';
+  const hasDraftRowChanges = preview
+    ? JSON.stringify(draftRows) !== JSON.stringify(preview.rows)
+    : false;
 
   const handlePreviewUpload: UploadProps['beforeUpload'] = async (file) => {
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
@@ -101,6 +136,7 @@ export default function PublicationScheduleManager() {
     try {
       const res = await previewScheduleUpload(file);
       setPreview(res.data);
+      setDraftRows(res.data.rows);
       if (res.data.year !== year) {
         setYear(res.data.year);
       }
@@ -122,6 +158,53 @@ export default function PublicationScheduleManager() {
     setPreview(null);
     setPreviewError(null);
     setPreviewFileName(null);
+    setDraftRows([]);
+  };
+
+  const handleDraftRowChange = (
+    draftIndex: number,
+    patch: Partial<ScheduleDraftRow>,
+  ) => {
+    setDraftRows((rows) => rows.map((row, index) => {
+      if (index !== draftIndex) return row;
+      const next = { ...row, ...patch };
+      if (patch.is_suspended === true) {
+        next.issue_number = null;
+      }
+      return next;
+    }));
+  };
+
+  const handleAddDraftRow = () => {
+    setDraftRows((rows) => [
+      ...rows,
+      {
+        publish_date: `${preview?.year ?? year}-01-01`,
+        issue_number: null,
+        is_suspended: true,
+      },
+    ]);
+  };
+
+  const handleRemoveDraftRow = (draftIndex: number) => {
+    setDraftRows((rows) => rows.filter((_row, index) => index !== draftIndex));
+  };
+
+  const handleApplyDraftRows = async () => {
+    if (!preview) return;
+    setSavingDraftRows(true);
+    try {
+      const res = await updateScheduleUploadRows(preview.upload_id, draftRows);
+      setPreview(res.data);
+      setDraftRows(res.data.rows);
+      await queryClient.invalidateQueries({ queryKey: ['scheduleUploads', res.data.year] });
+      message.success('手动修正已应用并重新校验');
+    } catch (error: unknown) {
+      const errorMessage = getApiErrorMessage(error, '手动修正保存失败，请稍后重试');
+      message.error(errorMessage);
+    } finally {
+      setSavingDraftRows(false);
+    }
   };
 
   const handleCommitPreview = async () => {
@@ -142,6 +225,7 @@ export default function PublicationScheduleManager() {
       setPreview(null);
       setPreviewError(null);
       setPreviewFileName(null);
+      setDraftRows([]);
       message.success(`${preview.year} 年刊期表已保存`);
     } catch (error: unknown) {
       const errorMessage = getApiErrorMessage(error, '刊期表保存失败，请稍后重试');
@@ -165,17 +249,48 @@ export default function PublicationScheduleManager() {
     },
   ];
 
-  const previewColumns: TableProps<ScheduleDraftRow>['columns'] = [
+  const previewColumns: TableProps<EditableScheduleDraftRow>['columns'] = [
     {
       title: '出版日期',
       dataIndex: 'publish_date',
       key: 'publish_date',
-      render: (value: string) => dayjs(value).format('YYYY-MM-DD'),
+      render: (value: string, record) => (
+        <DatePicker
+          value={dayjs(value)}
+          onChange={(nextDate) => {
+            if (nextDate) {
+              handleDraftRowChange(record.draftIndex, { publish_date: nextDate.format('YYYY-MM-DD') });
+            }
+          }}
+          disabled={committing || savingDraftRows}
+        />
+      ),
     },
     {
       title: '期号',
       key: 'issue_number',
-      render: (_value: unknown, record) => renderIssue(record),
+      render: (_value: unknown, record) => (
+        <InputNumber
+          min={1}
+          precision={0}
+          value={record.issue_number}
+          disabled={record.is_suspended || committing || savingDraftRows}
+          onChange={(value) => handleDraftRowChange(record.draftIndex, { issue_number: value ?? null })}
+        />
+      ),
+    },
+    {
+      title: '休刊',
+      key: 'is_suspended',
+      render: (_value: unknown, record) => (
+        <Switch
+          checked={record.is_suspended}
+          checkedChildren="休刊"
+          unCheckedChildren="出版"
+          disabled={committing || savingDraftRows}
+          onChange={(checked) => handleDraftRowChange(record.draftIndex, { is_suspended: checked })}
+        />
+      ),
     },
     {
       title: '校验状态',
@@ -184,6 +299,20 @@ export default function PublicationScheduleManager() {
         rowHasError(record, preview?.errors ?? [])
           ? <Tag color="red">需检查</Tag>
           : <Tag color="green">正常</Tag>
+      ),
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      render: (_value: unknown, record) => (
+        <Button
+          danger
+          size="small"
+          disabled={committing || savingDraftRows}
+          onClick={() => handleRemoveDraftRow(record.draftIndex)}
+        >
+          删除
+        </Button>
       ),
     },
   ];
@@ -285,10 +414,31 @@ export default function PublicationScheduleManager() {
                     disabled={!preview.can_commit || committing}
                     onConfirm={handleCommitPreview}
                   >
-                    <Button type="primary" loading={committing} disabled={!preview.can_commit || committing}>
+                    <Button
+                      type="primary"
+                      loading={committing}
+                      disabled={!preview.can_commit || committing || hasDraftRowChanges}
+                    >
                       确认保存
                     </Button>
                   </Popconfirm>
+
+                  <Space>
+                    <Button onClick={handleAddDraftRow} disabled={committing || savingDraftRows}>
+                      新增一行
+                    </Button>
+                    <Button
+                      type="default"
+                      loading={savingDraftRows}
+                      disabled={!hasDraftRowChanges || committing || savingDraftRows}
+                      onClick={handleApplyDraftRows}
+                    >
+                      应用手动修正并重新校验
+                    </Button>
+                    {hasDraftRowChanges && (
+                      <Text type="warning">存在未应用的手动修正，需重新校验后才能确认保存。</Text>
+                    )}
+                  </Space>
 
                   <Row gutter={[16, 16]}>
                     <Col xs={24} sm={12} lg={4}>
@@ -344,8 +494,8 @@ export default function PublicationScheduleManager() {
 
                   {previewMonthGroups.map((group) => (
                     <Card key={group.month} title={`预览：${preview.year} 年 ${group.month} 月`} size="small">
-                      <Table<ScheduleDraftRow>
-                        rowKey={(record, index) => `${record.publish_date}-${index ?? 0}`}
+                      <Table<EditableScheduleDraftRow>
+                        rowKey={(record) => `${record.draftIndex}-${record.publish_date}`}
                         columns={previewColumns}
                         dataSource={group.rows}
                         pagination={false}

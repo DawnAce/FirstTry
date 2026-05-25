@@ -62,6 +62,35 @@ def test_parse_schedule_text_extracts_2026_rows():
     assert published_issue_numbers == list(range(2635, 2684))
 
 
+def test_parse_schedule_text_extracts_compact_2025_pdf_rows():
+    text = """
+    二O二五年出版日期、期号对照表
+    日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数
+    625863休刊325927259752601226057261042614126186休刊3262612630
+    132587102589102593142598122602926061426111126158261913262310262782631
+    202588172590172594212599192603162607212612182616152620202624172628152632
+    27休刊242591242595282600262604232608282613252617222621272625242629222633
+    312596302609292622292634
+    备注：全年出版正报49期，对开 32 版，全年定价240元
+    """
+
+    parsed = parse_schedule_text(text)
+
+    assert parsed.year == 2025
+    assert parsed.summary.total_rows == 52
+    assert parsed.summary.published_count == 49
+    assert parsed.summary.suspended_count == 3
+    assert parsed.summary.first_issue_number == 2586
+    assert parsed.summary.last_issue_number == 2634
+    assert parsed.errors == []
+    assert [(row.publish_date, row.issue_number, row.is_suspended) for row in parsed.rows[:4]] == [
+        (date(2025, 1, 6), 2586, False),
+        (date(2025, 1, 13), 2587, False),
+        (date(2025, 1, 20), 2588, False),
+        (date(2025, 1, 27), None, True),
+    ]
+
+
 def test_parse_schedule_text_collects_unmatched_cell_errors_and_keeps_rows():
     text = """
     2026年出版日期、期号对照表
