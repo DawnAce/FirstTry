@@ -19,11 +19,12 @@ import {
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined } from '@ant-design/icons';
+import { InboxOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { TableProps, UploadProps } from 'antd';
 import dayjs from 'dayjs';
 import {
   commitScheduleUpload,
+  discardScheduleUpload,
   getSchedule,
   getScheduleUploads,
   previewScheduleUpload,
@@ -240,6 +241,17 @@ export default function PublicationScheduleManager() {
     }
   };
 
+  const handleDiscardUpload = async (uploadId: number) => {
+    try {
+      await discardScheduleUpload(uploadId);
+      await queryClient.invalidateQueries({ queryKey: ['scheduleUploads', year] });
+      message.success('已删除待确认记录');
+    } catch (error: unknown) {
+      const errorMessage = getApiErrorMessage(error, '删除失败，请稍后重试');
+      message.error(errorMessage);
+    }
+  };
+
   const scheduleColumns: TableProps<ScheduleEntry>['columns'] = [
     {
       title: '出版日期',
@@ -366,6 +378,23 @@ export default function PublicationScheduleManager() {
       key: 'created_at',
       render: (value: string | null) => value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-',
     },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: unknown, record: ScheduleUpload) =>
+        record.status === 'previewed' ? (
+          <Popconfirm
+            title="确认删除此待确认记录？"
+            onConfirm={() => handleDiscardUpload(record.id)}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button type="link" danger size="small" icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        ) : null,
+    },
   ];
 
   return (
@@ -427,13 +456,13 @@ export default function PublicationScheduleManager() {
                     showIcon
                     message={preview.can_commit ? '解析完成，可确认保存' : '解析完成，但存在需要处理的问题'}
                     description={preview.can_commit
-                      ? '确认保存后将替换该年份的正式刊期表。'
+                      ? `确认保存后将更新 ${preview.year} 年的正式刊期表（仅影响该年份，其他年份不受影响）。`
                       : '请处理校验问题后再保存；本次预览尚未修改正式刊期表。'}
                   />
 
                   <Popconfirm
                     title="确认保存刊期表？"
-                    description={`保存后将替换 ${preview.year} 年正式刊期表。`}
+                    description={`保存后将更新 ${preview.year} 年的刊期表，其他年份数据不受影响。`}
                     okText="确认保存"
                     cancelText="取消"
                     disabled={!preview.can_commit || committing}

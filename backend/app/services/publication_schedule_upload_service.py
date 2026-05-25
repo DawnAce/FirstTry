@@ -294,6 +294,13 @@ def commit_schedule_upload(
         upload.error_json = []
         upload.committed_at = datetime.now()
 
+        # Auto-cleanup: remove other pending uploads for the same year
+        db.query(PublicationScheduleUpload).filter(
+            PublicationScheduleUpload.year == upload.year,
+            PublicationScheduleUpload.id != upload.id,
+            PublicationScheduleUpload.status == PublicationScheduleUploadStatus.previewed,
+        ).delete(synchronize_session=False)
+
         db.commit()
     except Exception:
         db.rollback()
