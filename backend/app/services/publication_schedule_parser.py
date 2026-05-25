@@ -36,7 +36,10 @@ class ParsedSchedule:
 def extract_pdf_text(content: bytes) -> str:
     try:
         from pypdf import PdfReader
+    except ImportError as exc:
+        raise ValueError("缺少 PDF 解析依赖，请先安装后端依赖后重启服务") from exc
 
+    try:
         reader = PdfReader(BytesIO(content))
     except Exception as exc:
         raise ValueError("无法读取 PDF 文件，请确认文件未损坏") from exc
@@ -220,6 +223,9 @@ def _split_inline_remarks(line: str) -> tuple[str, str | None]:
 
 
 def _resolve_publish_date(year: int, start_month: int, day: int) -> tuple[date, int]:
+    if day < 1 or day > 31:
+        raise ValueError(f"无法匹配出版日期：{year}-{day}")
+
     for month in range(start_month, 13):
         try:
             candidate = date(year, month, day)
