@@ -10,5 +10,6 @@ class PublicationSchedule(Base):
     issue_number = Column(Integer, nullable=True)
     publish_date = Column(Date, nullable=False)
     is_suspended = Column(Boolean, default=False, nullable=False)
+    page_count = Column(Integer, nullable=True)
 
     __table_args__ = (UniqueConstraint("year", "publish_date"),)

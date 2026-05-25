@@ -252,6 +252,12 @@ export default function PublicationScheduleManager() {
       key: 'issue_number',
       render: (_value: unknown, record) => renderIssue(record),
     },
+    {
+      title: '版数',
+      dataIndex: 'page_count',
+      key: 'page_count',
+      render: (value: number | null | undefined) => value != null ? `${value}版` : '-',
+    },
   ];
 
   const previewColumns: TableProps<EditableScheduleDraftRow>['columns'] = [

@@ -279,6 +279,7 @@ def commit_schedule_upload(
                     issue_number=None if row.is_suspended else row.issue_number,
                     publish_date=row.publish_date,
                     is_suspended=row.is_suspended,
+                    page_count=row.page_count,
                 )
             )
 

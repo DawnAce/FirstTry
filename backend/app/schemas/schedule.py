@@ -8,5 +8,6 @@ class ScheduleEntry(BaseModel):
     issue_number: int | None
     publish_date: date
     is_suspended: bool
+    page_count: int | None = None
 
     model_config = {"from_attributes": True}

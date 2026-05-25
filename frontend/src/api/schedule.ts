@@ -6,6 +6,7 @@ export interface ScheduleEntry {
   issue_number: number | null;
   publish_date: string;
   is_suspended: boolean;
+  page_count?: number | null;
 }
 
 export interface ScheduleSummary {
