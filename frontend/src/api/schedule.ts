@@ -65,3 +65,6 @@ export const commitScheduleUpload = (uploadId: number, pageCount?: number | null
   api.post<ScheduleUpload>(`/schedule/uploads/${uploadId}/commit`, null, {
     params: pageCount != null ? { page_count: pageCount } : undefined,
   });
+
+export const discardScheduleUpload = (uploadId: number) =>
+  api.delete(`/schedule/uploads/${uploadId}`);

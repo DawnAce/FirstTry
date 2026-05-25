@@ -19,11 +19,12 @@ import {
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined } from '@ant-design/icons';
+import { InboxOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { TableProps, UploadProps } from 'antd';
 import dayjs from 'dayjs';
 import {
   commitScheduleUpload,
+  discardScheduleUpload,
   getSchedule,
   getScheduleUploads,
   previewScheduleUpload,
@@ -240,6 +241,17 @@ export default function PublicationScheduleManager() {
     }
   };
 
+  const handleDiscardUpload = async (uploadId: number) => {
+    try {
+      await discardScheduleUpload(uploadId);
+      await queryClient.invalidateQueries({ queryKey: ['scheduleUploads', year] });
+      message.success('已删除待确认记录');
+    } catch (error: unknown) {
+      const errorMessage = getApiErrorMessage(error, '删除失败，请稍后重试');
+      message.error(errorMessage);
+    }
+  };
+
   const scheduleColumns: TableProps<ScheduleEntry>['columns'] = [
     {
       title: '出版日期',
@@ -359,6 +371,23 @@ export default function PublicationScheduleManager() {
       dataIndex: 'created_at',
       key: 'created_at',
       render: (value: string | null) => value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-',
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: unknown, record: ScheduleUpload) =>
+        record.status === 'previewed' ? (
+          <Popconfirm
+            title="确认删除此待确认记录？"
+            onConfirm={() => handleDiscardUpload(record.id)}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button type="link" danger size="small" icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        ) : null,
     },
   ];
 

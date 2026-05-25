@@ -4,7 +4,7 @@ from typing import List
 
 from app.auth import require_admin
 from app.database import get_db
-from app.models import PublicationSchedule, PublicationScheduleUpload, User
+from app.models import PublicationSchedule, PublicationScheduleUpload, PublicationScheduleUploadStatus, User
 from app.schemas.publication_schedule_upload import (
     SchedulePreviewOut,
     ScheduleRowIn,
@@ -149,3 +149,24 @@ def commit_schedule_upload_endpoint(
         return commit_schedule_upload(db, upload_id, page_count=page_count)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/uploads/{upload_id}")
+def discard_schedule_upload(
+    upload_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """Discard a pending (previewed) upload record."""
+    upload = (
+        db.query(PublicationScheduleUpload)
+        .filter(PublicationScheduleUpload.id == upload_id)
+        .first()
+    )
+    if upload is None:
+        raise HTTPException(status_code=404, detail="上传记录不存在")
+    if upload.status != PublicationScheduleUploadStatus.previewed:
+        raise HTTPException(status_code=400, detail="只能删除待确认的上传记录")
+    db.delete(upload)
+    db.commit()
+    return {"detail": "已删除"}
