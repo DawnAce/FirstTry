@@ -22,6 +22,7 @@ import {
   PlusOutlined,
   DeleteOutlined,
   SendOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { getIssue, updateIssue, deleteIssue } from '../api/issues';
 import type { ReportEntry, TempPrintDetail } from '../api/reports';
@@ -467,25 +468,36 @@ export default function ReportEditor() {
             <span style={{ fontSize: 13, color: '#86868b' }}>
               人民日报印厂 · 出版日期 {issue.publish_date}
             </span>
-            <span style={{ fontSize: 13, color: '#86868b', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              版数：{isConfirmed ? (
-                <span style={{ color: '#1d1d1f', fontWeight: 500 }}>{issue.page_count ?? 24}</span>
-              ) : (
-                <InputNumber
-                  size="small"
-                  value={issue.page_count ?? 24}
-                  min={4}
-                  step={4}
-                  precision={0}
-                  style={{ width: 64 }}
-                  onChange={(val) => {
-                    if (val && val !== issue.page_count) {
-                      updateIssue(Number(issueId), { page_count: val }).then(() => {
-                        queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
-                      });
-                    }
-                  }}
-                />
+            <span style={{ fontSize: 13, color: '#86868b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {issue.planned_page_count != null && (
+                <span>计划 <span style={{ color: '#1d1d1f', fontWeight: 500 }}>{issue.planned_page_count}</span> 版</span>
+              )}
+              {issue.planned_page_count != null && <span>·</span>}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                实际{isConfirmed ? (
+                  <span style={{ color: '#1d1d1f', fontWeight: 500 }}> {issue.page_count ?? 24} </span>
+                ) : (
+                  <InputNumber
+                    size="small"
+                    value={issue.page_count ?? 24}
+                    min={4}
+                    step={4}
+                    precision={0}
+                    style={{ width: 64, margin: '0 2px' }}
+                    onChange={(val) => {
+                      if (val && val !== issue.page_count) {
+                        updateIssue(Number(issueId), { page_count: val }).then(() => {
+                          queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+                        });
+                      }
+                    }}
+                  />
+                )}版
+              </span>
+              {issue.planned_page_count != null && issue.page_count !== issue.planned_page_count && (
+                <Tag color="orange" style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px', margin: 0 }}>
+                  <WarningOutlined /> 版数与计划不一致
+                </Tag>
               )}
             </span>
           </div>

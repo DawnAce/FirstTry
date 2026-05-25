@@ -7,6 +7,7 @@ export interface Issue {
   year_issue_label: string | null;
   publish_date: string;
   page_count: number;
+  planned_page_count: number | null;
   status: 'draft' | 'confirmed' | 'exported';
   notes: string | null;
   created_at: string;
@@ -16,6 +17,7 @@ export interface Issue {
 export interface NextIssueInfo {
   issue_number: number;
   publish_date: string;
+  page_count: number | null;
   previous_issue_id: number | null;
 }
 

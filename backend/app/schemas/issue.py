@@ -22,6 +22,7 @@ class IssueOut(BaseModel):
     year_issue_label: Optional[str] = None
     publish_date: date
     page_count: int = 24
+    planned_page_count: Optional[int] = None
     status: IssueStatus
     notes: Optional[str]
     created_at: Optional[datetime]
@@ -33,4 +34,5 @@ class IssueOut(BaseModel):
 class NextIssueInfo(BaseModel):
     issue_number: int
     publish_date: date
+    page_count: Optional[int] = None
     previous_issue_id: Optional[int] = None

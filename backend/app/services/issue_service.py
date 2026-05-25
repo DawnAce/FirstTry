@@ -40,8 +40,22 @@ def get_year_issue_index(db: Session, issue: Issue) -> int | None:
     return int(count) if count else None
 
 
+def _get_planned_page_count(db: Session, issue_number: int) -> int | None:
+    """Look up planned page_count from PublicationSchedule by issue_number."""
+    entry = (
+        db.query(PublicationSchedule.page_count)
+        .filter(
+            PublicationSchedule.issue_number == issue_number,
+            PublicationSchedule.is_suspended == False,
+        )
+        .first()
+    )
+    return entry[0] if entry else None
+
+
 def build_issue_out(db: Session, issue: Issue) -> IssueOut:
     year_issue_index = get_year_issue_index(db, issue)
+    planned_page_count = _get_planned_page_count(db, issue.issue_number)
     return IssueOut(
         id=issue.id,
         issue_number=issue.issue_number,
@@ -49,6 +63,7 @@ def build_issue_out(db: Session, issue: Issue) -> IssueOut:
         year_issue_label=format_chinese_issue_number(year_issue_index),
         publish_date=issue.publish_date,
         page_count=issue.page_count,
+        planned_page_count=planned_page_count,
         status=issue.status,
         notes=issue.notes,
         created_at=issue.created_at,
@@ -82,6 +97,7 @@ def get_next_issue_info(db: Session) -> dict:
     return {
         "issue_number": next_entry.issue_number,
         "publish_date": next_entry.publish_date,
+        "page_count": next_entry.page_count,
         "previous_issue_id": prev_issue.id if prev_issue else None,
     }
 
@@ -103,14 +119,18 @@ def get_available_issues(db: Session) -> list[dict]:
     )
 
     return [
-        {"issue_number": e.issue_number, "publish_date": e.publish_date}
+        {"issue_number": e.issue_number, "publish_date": e.publish_date, "page_count": e.page_count}
         for e in entries
     ]
 
 
 def create_issue_with_data(db: Session, issue_number: int, publish_date: date, notes: str = None) -> Issue:
     """Create a new issue and copy report entries from previous issue (or from templates)."""
-    issue = Issue(issue_number=issue_number, publish_date=publish_date, notes=notes)
+    # Auto-fill page_count from publication schedule
+    scheduled_page_count = _get_planned_page_count(db, issue_number)
+    initial_page_count = scheduled_page_count if scheduled_page_count else 24
+
+    issue = Issue(issue_number=issue_number, publish_date=publish_date, page_count=initial_page_count, notes=notes)
     db.add(issue)
     db.flush()  # get issue.id
 

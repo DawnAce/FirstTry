@@ -151,7 +151,7 @@ FirstTry/
 | issue_number | INT | 期号（唯一） |
 | publish_date | DATE | 出版日期 |
 | status | ENUM | 状态：draft/confirmed/exported |
-| page_count | INT | 版数（默认 24，步长 4） |
+| page_count | INT | 版数（默认 24，步长 4）。创建期次时自动从期刊表获取计划版数作为初始值 |
 | notes | TEXT | 备注 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
@@ -161,6 +161,8 @@ FirstTry/
 - 一对多 `shipping_records`（发货记录）
 
 **年内期次**：`issues` 表不单独存储年内第几期。接口返回时根据 `publication_schedule` 实时计算：同一年、未休刊、出版日期不晚于当前期的计划条数。例如 2026-04-20 的总第 2648 期为当年第 14 期，接口返回 `year_issue_index: 14`、`year_issue_label: "十四"`。
+
+**期刊表联动**：接口返回的 `IssueOut` 包含 `planned_page_count` 字段（来自 `publication_schedule` 的计划版数），前端同时显示"计划 XX 版"和"实际 XX 版"。当两者不一致时显示警告提示，用户可手动修改实际版数。
 
 ### 3.4 report_item_templates（报数模板配置）
 定义报数表的所有项目及其属性。
