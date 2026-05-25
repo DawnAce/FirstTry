@@ -50,7 +50,24 @@ def list_schedule_uploads(
     query = db.query(PublicationScheduleUpload)
     if year is not None:
         query = query.filter(PublicationScheduleUpload.year == year)
-    return query.order_by(PublicationScheduleUpload.created_at.desc()).all()
+    uploads = query.order_by(PublicationScheduleUpload.created_at.desc()).all()
+
+    # Auto-cleanup: if a committed upload exists for a year,
+    # delete all previewed uploads for that year (stale leftovers)
+    committed_years = {u.year for u in uploads if u.status == PublicationScheduleUploadStatus.committed}
+    if committed_years:
+        stale_ids = [
+            u.id for u in uploads
+            if u.status == PublicationScheduleUploadStatus.previewed and u.year in committed_years
+        ]
+        if stale_ids:
+            db.query(PublicationScheduleUpload).filter(
+                PublicationScheduleUpload.id.in_(stale_ids)
+            ).delete(synchronize_session=False)
+            db.commit()
+            uploads = [u for u in uploads if u.id not in stale_ids]
+
+    return uploads
 
 
 @router.post("/uploads/preview", response_model=SchedulePreviewOut)
