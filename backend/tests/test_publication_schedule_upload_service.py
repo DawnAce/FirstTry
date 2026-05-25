@@ -573,6 +573,63 @@ def test_commit_schedule_upload_missing_upload_raises_value_error():
     assert str(exc.value) == "上传记录不存在"
 
 
+def test_update_schedule_upload_rows_revalidates_and_stores_manual_rows():
+    upload = make_upload(summary_json={"remarks": "春节休刊"})
+    db = FakeCommitDb(upload=upload)
+    rows = [
+        ScheduleRowDraft(date(2026, 1, 5), 2635, False),
+        ScheduleRowDraft(date(2026, 1, 12), 2636, False),
+        ScheduleRowDraft(date(2026, 1, 19), None, True),
+    ]
+
+    result, returned_rows = service.update_schedule_upload_rows(db, upload.id, rows)
+
+    assert result is upload
+    assert returned_rows == rows
+    assert upload.rows_json == [
+        {"publish_date": "2026-01-05", "issue_number": 2635, "is_suspended": False},
+        {"publish_date": "2026-01-12", "issue_number": 2636, "is_suspended": False},
+        {"publish_date": "2026-01-19", "issue_number": None, "is_suspended": True},
+    ]
+    assert upload.summary_json == {
+        "total_rows": 3,
+        "published_count": 2,
+        "suspended_count": 1,
+        "first_issue_number": 2635,
+        "last_issue_number": 2636,
+        "remarks": "春节休刊",
+    }
+    assert upload.error_json == []
+    assert db.commit_count == 1
+    assert db.refreshed is upload
+
+
+def test_update_schedule_upload_rows_keeps_validation_errors_for_manual_rows():
+    upload = make_upload()
+    db = FakeCommitDb(upload=upload)
+    rows = [
+        ScheduleRowDraft(date(2026, 1, 5), 2635, False),
+        ScheduleRowDraft(date(2026, 1, 12), 2637, False),
+    ]
+
+    result, returned_rows = service.update_schedule_upload_rows(db, upload.id, rows)
+
+    assert result is upload
+    assert returned_rows == rows
+    assert upload.error_json == ["期号必须连续递增：2635 后应为 2636，实际为 2637"]
+    assert db.commit_count == 1
+
+
+def test_update_schedule_upload_rows_rejects_non_preview_upload():
+    upload = make_upload()
+    upload.status = PublicationScheduleUploadStatus.committed
+
+    with pytest.raises(ValueError) as exc:
+        service.update_schedule_upload_rows(FakeCommitDb(upload=upload), upload.id, [])
+
+    assert str(exc.value) == "只有待确认的刊期表上传记录可以编辑"
+
+
 def test_commit_schedule_upload_rejects_preview_errors_before_validation(monkeypatch):
     upload = make_upload()
     upload.error_json = ["preview error"]

@@ -26,6 +26,10 @@ class SchedulePreviewOut(BaseModel):
     can_commit: bool
 
 
+class ScheduleRowsUpdateIn(BaseModel):
+    rows: list[ScheduleRowIn]
+
+
 class ScheduleUploadOut(BaseModel):
     id: int
     year: int

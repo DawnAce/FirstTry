@@ -1,5 +1,6 @@
 from io import BytesIO
 from datetime import date
+import builtins
 
 import pytest
 from pypdf import PdfWriter
@@ -61,6 +62,35 @@ def test_parse_schedule_text_extracts_2026_rows():
     assert published_issue_numbers == list(range(2635, 2684))
 
 
+def test_parse_schedule_text_extracts_compact_2025_pdf_rows():
+    text = """
+    二O二五年出版日期、期号对照表
+    日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数 日期 期数
+    625863休刊325927259752601226057261042614126186休刊3262612630
+    132587102589102593142598122602926061426111126158261913262310262782631
+    202588172590172594212599192603162607212612182616152620202624172628152632
+    27休刊242591242595282600262604232608282613252617222621272625242629222633
+    312596302609292622292634
+    备注：全年出版正报49期，对开 32 版，全年定价240元
+    """
+
+    parsed = parse_schedule_text(text)
+
+    assert parsed.year == 2025
+    assert parsed.summary.total_rows == 52
+    assert parsed.summary.published_count == 49
+    assert parsed.summary.suspended_count == 3
+    assert parsed.summary.first_issue_number == 2586
+    assert parsed.summary.last_issue_number == 2634
+    assert parsed.errors == []
+    assert [(row.publish_date, row.issue_number, row.is_suspended) for row in parsed.rows[:4]] == [
+        (date(2025, 1, 6), 2586, False),
+        (date(2025, 1, 13), 2587, False),
+        (date(2025, 1, 20), 2588, False),
+        (date(2025, 1, 27), None, True),
+    ]
+
+
 def test_parse_schedule_text_collects_unmatched_cell_errors_and_keeps_rows():
     text = """
     2026年出版日期、期号对照表
@@ -72,6 +102,19 @@ def test_parse_schedule_text_collects_unmatched_cell_errors_and_keeps_rows():
 
     assert [row.publish_date for row in parsed.rows] == [date(2026, 1, 5)]
     assert "无法匹配出版日期：2026-99" in parsed.errors
+
+
+def test_parse_schedule_text_rejects_huge_day_without_crashing():
+    text = """
+    2026年出版日期、期号对照表
+    日期 期数 日期 期数
+    5 2635 999999999999999999999999 2636
+    """
+
+    parsed = parse_schedule_text(text)
+
+    assert [row.publish_date for row in parsed.rows] == [date(2026, 1, 5)]
+    assert "无法匹配出版日期：2026-999999999999999999999999" in parsed.errors
 
 
 def test_parse_schedule_text_advances_month_after_unmatched_cell():
@@ -119,6 +162,20 @@ def test_parse_schedule_text_reports_missing_table():
 def test_extract_pdf_text_rejects_corrupt_pdf():
     with pytest.raises(ValueError, match="无法读取 PDF 文件，请确认文件未损坏"):
         extract_pdf_text(b"not a pdf")
+
+
+def test_extract_pdf_text_reports_missing_pdf_parser_dependency(monkeypatch):
+    original_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "pypdf":
+            raise ImportError("No module named 'pypdf'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(ValueError, match="缺少 PDF 解析依赖"):
+        extract_pdf_text(b"%PDF-1.4")
 
 
 def test_extract_pdf_text_rejects_pdf_without_text():

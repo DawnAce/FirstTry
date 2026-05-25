@@ -196,6 +196,31 @@ def ensure_commit_is_safe(db: Session, year: int, rows: list[ScheduleRowDraft]) 
             )
 
 
+def update_schedule_upload_rows(
+    db: Session,
+    upload_id: int,
+    rows: list[ScheduleRowDraft],
+) -> tuple[PublicationScheduleUpload, list[ScheduleRowDraft]]:
+    upload = (
+        db.query(PublicationScheduleUpload)
+        .filter(PublicationScheduleUpload.id == upload_id)
+        .first()
+    )
+    if upload is None:
+        raise ValueError("上传记录不存在")
+    if upload.status != PublicationScheduleUploadStatus.previewed:
+        raise ValueError("只有待确认的刊期表上传记录可以编辑")
+
+    upload.rows_json = _serialize_rows(rows)
+    upload.summary_json = asdict(
+        summarize_rows(rows, (upload.summary_json or {}).get("remarks"))
+    )
+    upload.error_json = validate_schedule_rows(upload.year, rows)
+    db.commit()
+    db.refresh(upload)
+    return upload, rows
+
+
 def commit_schedule_upload(
     db: Session,
     upload_id: int,
