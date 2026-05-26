@@ -54,9 +54,15 @@ def list_schedule(year: int = 2026, db: Session = Depends(get_db)):
 
     result = []
     for s in schedules:
-        entry = ScheduleEntry.model_validate(s)
-        if s.issue_number is not None and s.issue_number in actual_map:
-            entry.actual_page_count = actual_map[s.issue_number]
+        entry = ScheduleEntry(
+            id=s.id,
+            year=s.year,
+            issue_number=s.issue_number,
+            publish_date=s.publish_date,
+            is_suspended=s.is_suspended,
+            page_count=s.page_count,
+            actual_page_count=actual_map.get(s.issue_number) if s.issue_number is not None else None,
+        )
         result.append(entry)
     return result
 
