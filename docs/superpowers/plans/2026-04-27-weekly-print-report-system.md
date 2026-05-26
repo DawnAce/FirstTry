@@ -1789,7 +1789,7 @@ const { Header, Sider, Content } = Layout;
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '首页' },
   { key: '/recipients', icon: <TeamOutlined />, label: '收件人管理' },
-  { key: '/history', icon: <HistoryOutlined />, label: '历史记录' },
+  { key: '/history', icon: <HistoryOutlined />, label: '历史期数' },
 ];
 
 export default function AppLayout() {
