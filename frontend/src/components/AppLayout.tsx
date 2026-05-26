@@ -6,9 +6,16 @@ import { useAuth } from '../contexts/AuthContext';
 const { Sider, Content } = Layout;
 
 const menuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: '印数报数管理' },
+  {
+    key: 'print-management',
+    icon: <DashboardOutlined />,
+    label: '印数管理',
+    children: [
+      { key: '/', label: '印数报数' },
+      { key: '/history', icon: <HistoryOutlined />, label: '历史期数' },
+    ],
+  },
   { key: '/recipients', icon: <UserOutlined />, label: '收件人管理' },
-  { key: '/history', icon: <HistoryOutlined />, label: '历史记录' },
   { key: '/schedule', icon: <CalendarOutlined />, label: '刊期表管理' },
   { key: '/templates', icon: <SettingOutlined />, label: '模板管理' },
 ];
@@ -27,6 +34,15 @@ export default function AppLayout() {
     if (path.startsWith('/schedule')) return '/schedule';
     if (path.startsWith('/templates')) return '/templates';
     return path;
+  };
+
+  // Auto-open the sub-menu that contains the current route
+  const getOpenKeys = () => {
+    const path = location.pathname;
+    if (path === '/' || path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import') || path.startsWith('/history')) {
+      return ['print-management'];
+    }
+    return [];
   };
 
   return (
@@ -76,7 +92,9 @@ export default function AppLayout() {
           </div>
           <div style={{ flex: 1, padding: '12px 8px', overflow: 'auto' }}>
             <Menu
+              mode="inline"
               selectedKeys={[getSelectedKey()]}
+              defaultOpenKeys={getOpenKeys()}
               onClick={({key}) => navigate(key)}
               items={menuItems}
             />
