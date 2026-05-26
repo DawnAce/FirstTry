@@ -169,7 +169,7 @@ export default function HistoryImport() {
         margin: '0 0 32px 0',
         letterSpacing: '-0.02em',
       }}>
-        历史数据导入
+        往期印数导入
       </h1>
 
       {/* Step 1: Download templates */}

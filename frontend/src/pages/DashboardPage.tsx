@@ -102,7 +102,7 @@ export default function Dashboard() {
         margin: '0 0 32px 0',
         letterSpacing: '-0.02em',
       }}>
-        报数管理
+        印数管理
       </h1>
 
       {/* Stats Row */}
@@ -123,8 +123,8 @@ export default function Dashboard() {
       <Card style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 2 }}>历史数据导入</div>
-            <div style={{ fontSize: 13, color: '#86868b' }}>通过 Excel 模板批量导入历史期次报数与发货数据</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 2 }}>往期印数导入</div>
+            <div style={{ fontSize: 13, color: '#86868b' }}>通过 Excel 模板批量导入往期印数与发货数据</div>
           </div>
           <Button icon={<UploadOutlined />} onClick={() => navigate('/history-import')}>
             导入往期
@@ -190,7 +190,7 @@ export default function Dashboard() {
           color: '#1d1d1f',
           margin: '0 0 16px 0',
         }}>
-          最近报数
+          近期印数
         </h2>
       </div>
       <Card loading={loading}>
