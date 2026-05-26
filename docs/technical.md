@@ -89,7 +89,7 @@ FirstTry/
 │   │   │   ├── Recipients.tsx
 │   │   │   ├── ReportEditor.tsx
 │   │   │   ├── ShippingPreview.tsx
-│   │   │   └── Templates.tsx
+│   │   │   └── Templates.tsx    # 模板管理页（/templates，侧边栏「印数管理 > 模板管理」）
 │   │   ├── App.tsx
 │   │   └── main.tsx
 │   ├── package.json
