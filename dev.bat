@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-echo 🚀 启动印数报数系统（开发模式）...
+echo 🚀 启动印数管理系统（开发模式）...
 
 if not exist ".env" (
     echo ❌ 缺少 .env 文件，请先创建！

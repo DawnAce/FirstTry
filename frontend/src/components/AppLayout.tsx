@@ -11,8 +11,8 @@ const menuItems = [
     icon: <DashboardOutlined />,
     label: '印数管理',
     children: [
-      { key: '/', label: '印数报数' },
-      { key: '/history', label: '历史期数' },
+      { key: '/', label: '印数管理' },
+      { key: '/history', label: '历史印数期数' },
     ],
   },
   { key: '/recipients', icon: <UserOutlined />, label: '收件人管理' },

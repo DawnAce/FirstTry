@@ -1,10 +1,10 @@
-# 中国经营报 · 印数报数系统 - 本地开发一键启动
+# 中国经营报 · 印数管理系统 - 本地开发一键启动
 # 用法: 在项目根目录运行 .\dev.ps1
 
 $ErrorActionPreference = "Stop"
 $ROOT = $PSScriptRoot
 
-Write-Host "🚀 启动印数报数系统（开发模式）..." -ForegroundColor Cyan
+Write-Host "🚀 启动印数管理系统（开发模式）..." -ForegroundColor Cyan
 
 # 检查 Python venv
 if (-not (Test-Path "$ROOT\backend\venv\Scripts\activate.ps1")) {

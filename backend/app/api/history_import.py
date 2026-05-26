@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api/history-import", tags=["history-import"])
 
 @router.get("/templates/report")
 def download_report_template(db: Session = Depends(get_db)):
-    """Download the Excel template for the report (印数报数) history import."""
+    """Download the Excel template for the report (印数) history import."""
     content = build_report_import_template(db)
     return StreamingResponse(
         io.BytesIO(content),

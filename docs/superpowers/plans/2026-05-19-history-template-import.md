@@ -22,7 +22,7 @@
 - **Create:** `frontend\src\pages\HistoryImport.tsx` — Dedicated import page with upload, preview, confirm, and progress UI.
 - **Modify:** `backend\app\main.py` — Register the new router.
 - **Modify:** `frontend\src\App.tsx` — Add the new protected route.
-- **Modify:** `frontend\src\components\AppLayout.tsx` — Keep `/history-import` highlighted under “印数报数管理”.
+- **Modify:** `frontend\src\components\AppLayout.tsx` — Keep `/history-import` highlighted under "印数管理".
 - **Modify:** `frontend\src\pages\Dashboard.tsx` — Add the “导入往期” entry button.
 - **Modify:** `README.md` — Document the template-based history import capability.
 - **Modify:** `docs\requirements.md` — Add the new workflow and its limits.

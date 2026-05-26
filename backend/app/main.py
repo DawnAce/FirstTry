@@ -26,7 +26,7 @@ from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule
 from app.services.issue_service import build_issue_out
 
-app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
+app = FastAPI(title="中国经营报 · 印数管理系统", version="1.0.0")
 
 
 @app.on_event("startup")

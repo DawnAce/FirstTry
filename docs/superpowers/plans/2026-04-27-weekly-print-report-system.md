@@ -1,4 +1,4 @@
-# 中国经营报 · 每周印数报数系统 Implementation Plan
+# 中国经营报 · 每周印数管理系统 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -148,7 +148,7 @@ def get_db():
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="中国经营报 · 印数报数系统", version="1.0.0")
+app = FastAPI(title="中国经营报 · 印数管理系统
 
 app.add_middleware(
     CORSMiddleware,
@@ -1812,7 +1812,7 @@ export default function AppLayout() {
       </Sider>
       <Layout>
         <Header style={{ background: '#fff', padding: '0 24px', fontSize: 18, fontWeight: 'bold' }}>
-          印数报数系统
+          印数管理系统
         </Header>
         <Content style={{ margin: 24, padding: 24, background: '#fff', borderRadius: 8 }}>
           <Outlet />
@@ -2802,9 +2802,9 @@ git commit -m "feat: serve React SPA from FastAPI in production mode"
 - [ ] **Step 1: Create `README.md`**
 
 ```markdown
-# 中国经营报 · 印数报数系统
+# 中国经营报 · 印数管理系统
 
-每周五生成下周一出版的《中国经营报》印数报数表和中通快递发货明细的 Web 应用。
+每周五生成下周一出版的《中国经营报》印数管理表和中通快递发货明细的 Web 应用。
 
 ## 技术栈
 - **后端**: FastAPI + SQLAlchemy + openpyxl

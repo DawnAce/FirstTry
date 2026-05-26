@@ -704,7 +704,7 @@ git commit -m "feat: route shipping actions to shipping details" -m "Co-authored
 
 ```md
 1. 在“收件人管理 → 中通发货明细”维护当期中通明细
-2. 在“印数报数管理 → 报数编辑页”完成报数录入
+2. 在"印数管理 → 报数编辑页"完成报数录入
 3. 点击“确认报数”并查看数量对照提示
 4. 分别导出报数文件和中通明细文件
 ```

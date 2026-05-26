@@ -41,7 +41,7 @@ export default function Login() {
         boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
       }}>
         <h2 style={{ textAlign: 'center', marginBottom: 8, color: '#1d1d1f' }}>
-          印数报数系统
+          印数管理系统
         </h2>
         <p style={{ textAlign: 'center', color: '#86868b', marginBottom: 32, fontSize: 14 }}>
           中国经营报

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# 中国经营报 · 印数报数系统 - 本地开发一键启动 (macOS / Linux)
+# 中国经营报 · 印数管理系统 - 本地开发一键启动 (macOS / Linux)
 # 用法: 在项目根目录运行 ./dev.sh
 
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-echo "🚀 启动印数报数系统（开发模式）..."
+echo "🚀 启动印数管理系统（开发模式）..."
 
 # 检查 .env
 if [ ! -f "$ROOT/.env" ]; then

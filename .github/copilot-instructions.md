@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is the **每周印数报数系统** (Weekly Print Report System) for 《中国经营报》(China Business Journal).
+This is the **每周印数管理系统** (Weekly Print Report System) for 《中国经营报》(China Business Journal).
 
 - **Backend**: FastAPI (Python) — `backend/`
 - **Frontend**: React + TypeScript + Vite + Ant Design + TanStack Query — `frontend/`
