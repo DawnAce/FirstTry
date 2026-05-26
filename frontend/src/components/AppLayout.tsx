@@ -1,5 +1,5 @@
 import { Layout, Menu, Button, Space } from 'antd';
-import { DashboardOutlined, UserOutlined, HistoryOutlined, SettingOutlined, LogoutOutlined, CalendarOutlined } from '@ant-design/icons';
+import { DashboardOutlined, UserOutlined, SettingOutlined, LogoutOutlined, CalendarOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -12,7 +12,7 @@ const menuItems = [
     label: '印数管理',
     children: [
       { key: '/', label: '印数报数' },
-      { key: '/history', icon: <HistoryOutlined />, label: '历史期数' },
+      { key: '/history', label: '历史期数' },
     ],
   },
   { key: '/recipients', icon: <UserOutlined />, label: '收件人管理' },
