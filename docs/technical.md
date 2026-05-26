@@ -83,7 +83,7 @@ FirstTry/
 │   │   ├── pages/              # 页面组件
 │   │   │   ├── DashboardPage.tsx  # 印数报数页（/，侧边栏「印数管理 > 印数报数」）
 │   │   │   ├── History.tsx        # 历史期数页（/history，侧边栏「印数管理 > 历史期数」）
-│   │   │   ├── HistoryImport.tsx  # 往期导入页（/history-import）
+│   │   │   ├── HistoryImport.tsx  # 往期导入页（/history-import，从历史印数期数页右上角「导入往期」按钮进入）
 │   │   │   ├── Login.tsx       # 登录页面
 │   │   │   ├── PublicationScheduleManager.tsx # 刊期表管理页（/schedule）
 │   │   │   ├── Recipients.tsx
