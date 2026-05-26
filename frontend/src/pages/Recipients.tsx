@@ -19,6 +19,7 @@ import {
   Card,
   Tabs,
   Tooltip,
+  Alert,
 } from 'antd';
 import {
   PlusOutlined,
@@ -546,6 +547,19 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
           </div>
         </div>
       </div>
+
+      {report?.shipping_check && !report.shipping_check.is_match && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={
+            `中通份数不一致：报数合计 ${report.shipping_check.report_zt_total.toLocaleString()} 份，` +
+            `发货明细合计 ${report.shipping_check.shipping_total.toLocaleString()} 份，` +
+            `差值 ${report.shipping_check.delta.toLocaleString()} 份`
+          }
+        />
+      )}
 
       {confirmationSummary && (
         <Card style={{ marginBottom: 16 }}>

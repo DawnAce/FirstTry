@@ -25,12 +25,20 @@ class DestinationSummary(BaseModel):
     total: int
 
 
+class ShippingCheck(BaseModel):
+    report_zt_total: int
+    shipping_total: int
+    delta: int
+    is_match: bool
+
+
 class ReportDataOut(BaseModel):
     issue_id: int
     issue_number: int
     entries: List[ReportEntryOut]
     total: int
     destination_summary: List[DestinationSummary] = []
+    shipping_check: Optional[ShippingCheck] = None
     confirmation_summary: Optional[ConfirmationSummary] = None
 
 
