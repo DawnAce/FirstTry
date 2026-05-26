@@ -44,7 +44,7 @@ export default function History() {
         margin: '0 0 24px 0',
         letterSpacing: '-0.02em',
       }}>
-        历史期数
+        历史印数期数
       </h2>
       <Card style={{ padding: 0 }}>
         <Table columns={columns} dataSource={issues} rowKey="id" loading={loading} />
