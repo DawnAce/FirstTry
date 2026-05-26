@@ -81,8 +81,8 @@ FirstTry/
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
 │   │   ├── pages/              # 页面组件
-│   │   │   ├── DashboardPage.tsx
-│   │   │   ├── History.tsx
+│   │   │   ├── DashboardPage.tsx  # 印数报数页（/，侧边栏「印数管理 > 印数报数」）
+│   │   │   ├── History.tsx        # 历史期数页（/history，侧边栏「印数管理 > 历史期数」）
 │   │   │   ├── HistoryImport.tsx  # 往期导入页（/history-import）
 │   │   │   ├── Login.tsx       # 登录页面
 │   │   │   ├── PublicationScheduleManager.tsx # 刊期表管理页（/schedule）
