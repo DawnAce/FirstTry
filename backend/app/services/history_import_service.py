@@ -10,7 +10,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy.orm import Session
 
 from app.history_import_cache import save_history_import_session, pop_history_import_session
-from app.models import Issue, IssueStatus, ReportEntry, ReportItemTemplate, ShippingDetail, TempPrintDetail
+from app.models import Issue, IssueStatus, PublicationSchedule, ReportEntry, ReportItemTemplate, ShippingDetail, TempPrintDetail
 from app.services.original_zto_shipping_import_service import (
     is_original_zto_shipping_workbook,
     read_original_zto_shipping_basic_info,
@@ -407,6 +407,15 @@ def preview_history_import(
     }
     session_id = save_history_import_session(payload)
 
+    # Compare against publication_schedule.page_count, warn on mismatch
+    warnings: list[str] = []
+    schedule_row = _find_schedule_row(db, issue_number, publish_date)
+    if schedule_row is not None and schedule_row.page_count is not None and schedule_row.page_count != page_count:
+        warnings.append(
+            f"印数表版数为 {page_count} 版，与刊期表登记的 {schedule_row.page_count} 版不一致。"
+            f"导入后将以印数表为准，自动把刊期表第 {issue_number} 期的版数更新为 {page_count} 版。"
+        )
+
     readiness = CommitReadiness(
         same_issue=True,
         issue_exists=False,
@@ -416,17 +425,40 @@ def preview_history_import(
     return HistoryImportPreviewOut(
         issue_number=issue_number,
         publish_date=publish_date,
+        page_count=page_count,
         report_entry_count=len(enriched_report_rows),
         temp_detail_count=len(temp_rows),
         shipping_detail_count=len(shipping_rows),
         can_commit=manual_temp_print_required_quantity == 0,
         import_session_id=session_id,
         errors=[],
+        warnings=warnings,
         readiness=readiness,
         manual_temp_print_required_quantity=manual_temp_print_required_quantity,
         manual_temp_print_self_quantity=manual_temp_print_self_quantity,
         manual_temp_rows=manual_temp_rows,
     )
+
+
+def _find_schedule_row(
+    db: Session,
+    issue_number: int,
+    publish_date_str: str,
+) -> PublicationSchedule | None:
+    """Locate the schedule row for this import. Prefer issue_number, fall back to publish_date."""
+    row = db.query(PublicationSchedule).filter(
+        PublicationSchedule.issue_number == issue_number,
+    ).first()
+    if row is not None:
+        return row
+    try:
+        from datetime import date as _date
+        publish_date = _date.fromisoformat(publish_date_str)
+    except ValueError:
+        return None
+    return db.query(PublicationSchedule).filter(
+        PublicationSchedule.publish_date == publish_date,
+    ).first()
 
 
 def _validate_manual_temp_rows(
@@ -545,10 +577,25 @@ def commit_history_import(
     db.commit()
     db.refresh(issue)
 
+    # Sync publication_schedule.page_count to the actually-imported value
+    schedule_page_count_updated = False
+    previous_schedule_page_count: int | None = None
+    schedule_row = _find_schedule_row(db, issue_number, publish_date_str)
+    if schedule_row is not None and schedule_row.page_count != issue.page_count:
+        previous_schedule_page_count = schedule_row.page_count
+        schedule_row.page_count = issue.page_count
+        if schedule_row.issue_number is None:
+            schedule_row.issue_number = issue_number
+        db.commit()
+        schedule_page_count_updated = True
+
     return HistoryImportCommitOut(
         issue_id=issue.id,
         issue_number=issue.issue_number,
         report_entry_count=len(payload.get("report_rows", [])),
         temp_detail_count=len(payload.get("temp_rows", [])),
         shipping_detail_count=len(payload.get("shipping_rows", [])),
+        schedule_page_count_updated=schedule_page_count_updated,
+        previous_schedule_page_count=previous_schedule_page_count,
+        new_page_count=issue.page_count,
     )

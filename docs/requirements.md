@@ -524,7 +524,9 @@ start_date <= publish_date <= end_date
 - ✅ 下载系统印数导入模板（含 `基本信息` / `报数项` / `临时加印明细` 三个 sheet）
 - ✅ 下载系统中通发货导入模板（含 `基本信息` / `发货明细` 两个 sheet）
 - ✅ 上传两份模板，执行预览与校验
+- ✅ 支持上传原始中通多工作表文件（无需整理成系统模板）
 - ✅ 校验通过后一次性生成草稿期数（Issue + ReportEntry + TempPrintDetail + ShippingDetail）
+- ✅ 导入预览阶段对比印数表版数与刊期表登记的版数，若不一致以 warning 提示；提交时以印数表为准同步更新 `publication_schedule.page_count`
 - ✅ 导入成功后直接跳转至报数编辑页，沿用现有确认、发货、导出流程
 
 **约束与限制**：
