@@ -102,7 +102,7 @@ export default function Dashboard() {
         margin: '0 0 32px 0',
         letterSpacing: '-0.02em',
       }}>
-        印数管理
+        印数报数
       </h1>
 
       {/* Stats Row */}
