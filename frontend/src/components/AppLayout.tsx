@@ -13,7 +13,7 @@ const menuItems = [
     children: [
       { key: '/', label: '印数报数' },
       { key: '/history', label: '历史期数' },
-      { key: '/templates', label: '模板管理' },
+      { key: '/templates', label: '报数模板' },
     ],
   },
   { key: '/recipients', icon: <UserOutlined />, label: '收件人管理' },

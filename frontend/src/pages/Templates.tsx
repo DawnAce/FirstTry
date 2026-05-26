@@ -170,7 +170,7 @@ export default function Templates() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1d1d1f' }}>模板管理</h2>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1d1d1f' }}>报数模板</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           新增项目
         </Button>
