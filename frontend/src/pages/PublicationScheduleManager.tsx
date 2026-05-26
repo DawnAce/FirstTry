@@ -19,7 +19,7 @@ import {
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined, DeleteOutlined } from '@ant-design/icons';
+import { InboxOutlined, DeleteOutlined, WarningOutlined } from '@ant-design/icons';
 import type { TableProps, UploadProps } from 'antd';
 import dayjs from 'dayjs';
 import {
@@ -268,7 +268,27 @@ export default function PublicationScheduleManager() {
       title: '版数',
       dataIndex: 'page_count',
       key: 'page_count',
-      render: (value: number | null | undefined) => value != null ? `${value}版` : '-',
+      render: (_value: number | null | undefined, record: ScheduleEntry) => {
+        const planned = record.page_count;
+        const actual = record.actual_page_count;
+        if (planned == null && actual == null) return '-';
+        const mismatch = actual != null && planned != null && actual !== planned;
+        return (
+          <Space size={4}>
+            {planned != null && <span>计划 {planned}版</span>}
+            {actual != null && (
+              <span style={{ color: mismatch ? '#fa8c16' : undefined, fontWeight: mismatch ? 500 : undefined }}>
+                实际 {actual}版
+              </span>
+            )}
+            {mismatch && (
+              <Tag color="orange" style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
+                <WarningOutlined />
+              </Tag>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 

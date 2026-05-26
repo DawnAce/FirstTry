@@ -4,7 +4,7 @@ from typing import List
 
 from app.auth import require_admin
 from app.database import get_db
-from app.models import PublicationSchedule, PublicationScheduleUpload, PublicationScheduleUploadStatus, User
+from app.models import Issue, PublicationSchedule, PublicationScheduleUpload, PublicationScheduleUploadStatus, User
 from app.schemas.publication_schedule_upload import (
     SchedulePreviewOut,
     ScheduleRowIn,
@@ -34,12 +34,31 @@ async def read_limited_upload(file: UploadFile) -> bytes:
 
 @router.get("", response_model=List[ScheduleEntry])
 def list_schedule(year: int = 2026, db: Session = Depends(get_db)):
-    return (
+    schedules = (
         db.query(PublicationSchedule)
         .filter(PublicationSchedule.year == year)
         .order_by(PublicationSchedule.publish_date)
         .all()
     )
+
+    # Batch-fetch actual page_count from issues for all issue_numbers in this year
+    issue_numbers = [s.issue_number for s in schedules if s.issue_number is not None]
+    actual_map: dict[int, int] = {}
+    if issue_numbers:
+        rows = (
+            db.query(Issue.issue_number, Issue.page_count)
+            .filter(Issue.issue_number.in_(issue_numbers))
+            .all()
+        )
+        actual_map = {r[0]: r[1] for r in rows}
+
+    result = []
+    for s in schedules:
+        entry = ScheduleEntry.model_validate(s)
+        if s.issue_number is not None and s.issue_number in actual_map:
+            entry.actual_page_count = actual_map[s.issue_number]
+        result.append(entry)
+    return result
 
 
 @router.get("/uploads", response_model=list[ScheduleUploadOut])
