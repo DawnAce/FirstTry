@@ -1,5 +1,5 @@
 import { Table, Tag, Button, Space, Card } from 'antd';
-import { EditOutlined, SendOutlined, DownloadOutlined } from '@ant-design/icons';
+import { EditOutlined, SendOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getIssues } from '../api/issues';
@@ -37,15 +37,20 @@ export default function History() {
 
   return (
     <div>
-      <h2 style={{
-        fontSize: 24,
-        fontWeight: 700,
-        color: '#1d1d1f',
-        margin: '0 0 24px 0',
-        letterSpacing: '-0.02em',
-      }}>
-        历史印数期数
-      </h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <h2 style={{
+          fontSize: 24,
+          fontWeight: 700,
+          color: '#1d1d1f',
+          margin: 0,
+          letterSpacing: '-0.02em',
+        }}>
+          历史印数期数
+        </h2>
+        <Button icon={<UploadOutlined />} onClick={() => navigate('/history-import')}>
+          导入往期
+        </Button>
+      </div>
       <Card style={{ padding: 0 }}>
         <Table columns={columns} dataSource={issues} rowKey="id" loading={loading} />
       </Card>
