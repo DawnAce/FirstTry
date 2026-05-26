@@ -179,6 +179,49 @@ def update_schedule_upload_rows_endpoint(
     )
 
 
+@router.put("/uploads/{upload_id}/rows", response_model=SchedulePreviewOut)
+def update_schedule_upload_rows_endpoint(
+    upload_id: int,
+    body: ScheduleRowsUpdateIn,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """Replace preview rows for a pending upload, then re-run validation."""
+    try:
+        upload, rows = update_schedule_upload_rows(
+            db,
+            upload_id,
+            [
+                ScheduleRowDraft(
+                    publish_date=row.publish_date,
+                    issue_number=None if row.is_suspended else row.issue_number,
+                    is_suspended=row.is_suspended,
+                )
+                for row in body.rows
+            ],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    summary = upload.summary_json or {}
+    errors = upload.error_json or []
+    return SchedulePreviewOut(
+        upload_id=upload.id,
+        year=upload.year,
+        rows=[
+            ScheduleRowIn(
+                publish_date=row.publish_date,
+                issue_number=row.issue_number,
+                is_suspended=row.is_suspended,
+            )
+            for row in rows
+        ],
+        summary=ScheduleSummaryOut(**summary),
+        errors=errors,
+        can_commit=len(errors) == 0,
+    )
+
+
 @router.post("/uploads/{upload_id}/commit", response_model=ScheduleUploadOut)
 def commit_schedule_upload_endpoint(
     upload_id: int,

@@ -163,7 +163,7 @@ describe('PublicationScheduleManager', () => {
     const html = renderToString(<PublicationScheduleManager />);
 
     expect(html).toContain('确认保存');
-    expect(html).toContain('保存后将替换 2026 年正式刊期表');
+    expect(html).toContain('确认保存后将更新 2026 年的正式刊期表');
   });
 
   it('does not show the confirm save action to non-admin users', () => {

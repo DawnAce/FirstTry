@@ -31,4 +31,13 @@ describe('commitScheduleUpload', () => {
 
     expect(api.put).toHaveBeenCalledWith('/schedule/uploads/12/rows', { rows });
   });
+
+  it('puts edited preview rows to the upload rows endpoint', async () => {
+    const rows = [{ publish_date: '2025-01-06', issue_number: 2586, is_suspended: false }];
+    vi.mocked(api.put).mockResolvedValue({ data: { rows } });
+
+    await updateScheduleUploadRows(12, rows);
+
+    expect(api.put).toHaveBeenCalledWith('/schedule/uploads/12/rows', { rows });
+  });
 });
