@@ -702,8 +702,9 @@ body {
 /* Backfill card */
 .dashboard-backfill-card {
   height: 100%;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: none;
   box-shadow: none;
+  background: linear-gradient(135deg, #f0f5ff, #e6f0ff);
 }
 
 .dashboard-backfill-card .ant-card-body {
@@ -712,6 +713,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  background: transparent;
 }
 
 .dashboard-backfill-title {
