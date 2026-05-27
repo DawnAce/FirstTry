@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { message } from 'antd';
 import { commitScheduleUpload, updateScheduleUploadRows } from '../api/schedule';
 import type { SchedulePreview } from '../api/schedule';
-import PublicationScheduleManager from './PublicationScheduleManager';
+import ScheduleImport from './ScheduleImport';
 
 const state = vi.hoisted(() => ({
   isAdmin: false,
@@ -63,6 +63,7 @@ vi.mock('../api/schedule', () => ({
   previewScheduleUpload: vi.fn(),
   updateScheduleUploadRows: vi.fn(),
   commitScheduleUpload: vi.fn(),
+  discardScheduleUpload: vi.fn(),
 }));
 
 vi.mock('antd', async () => {
@@ -120,10 +121,11 @@ vi.mock('antd', async () => {
 });
 
 vi.mock('@ant-design/icons', () => ({
+  DeleteOutlined: () => <span />,
   InboxOutlined: () => <span />,
 }));
 
-describe('PublicationScheduleManager', () => {
+describe('ScheduleImport', () => {
   beforeEach(() => {
     state.reactStateValues = [];
     state.reactSetters = [];
@@ -140,37 +142,37 @@ describe('PublicationScheduleManager', () => {
     state.isAdmin = false;
   });
 
-  it('hides the PDF upload preview card from non-admin users', () => {
+  it('shows admin warning to non-admin users inside the upload card', () => {
     state.isAdmin = false;
 
-    const html = renderToString(<PublicationScheduleManager />);
+    const html = renderToString(<ScheduleImport />);
 
-    expect(html).not.toContain('上传 PDF 预览');
+    expect(html).toContain('仅管理员可上传刊期 PDF');
   });
 
-  it('shows the PDF upload preview card to admin users', () => {
+  it('shows the PDF upload dragger to admin users', () => {
     state.isAdmin = true;
 
-    const html = renderToString(<PublicationScheduleManager />);
+    const html = renderToString(<ScheduleImport />);
 
     expect(html).toContain('上传 PDF 预览');
+    expect(html).not.toContain('仅管理员可上传刊期 PDF');
   });
 
   it('shows the confirm save action to admins when a preview exists', () => {
     state.isAdmin = true;
     state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', null];
 
-    const html = renderToString(<PublicationScheduleManager />);
+    const html = renderToString(<ScheduleImport />);
 
     expect(html).toContain('确认保存');
-    expect(html).toContain('确认保存后将更新 2026 年的正式刊期表');
-  });
+    expect(html).toContain('确认保存后将更新 2026 年的正式刊期表');  });
 
   it('does not show the confirm save action to non-admin users', () => {
     state.isAdmin = false;
     state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', null];
 
-    const html = renderToString(<PublicationScheduleManager />);
+    const html = renderToString(<ScheduleImport />);
 
     expect(html).not.toContain('确认保存');
   });
@@ -179,7 +181,7 @@ describe('PublicationScheduleManager', () => {
     state.isAdmin = true;
     state.reactStateValues = [2026, { ...preview, can_commit: false }, false, false, null, 'schedule.pdf', null];
 
-    const html = renderToString(<PublicationScheduleManager />);
+    const html = renderToString(<ScheduleImport />);
 
     expect(html).toContain('<button disabled="">确认保存</button>');
   });
@@ -188,7 +190,7 @@ describe('PublicationScheduleManager', () => {
     state.isAdmin = true;
     state.reactStateValues = [2026, preview, false, false, null, 'schedule.pdf', null, preview.rows, false];
 
-    const html = renderToString(<PublicationScheduleManager />);
+    const html = renderToString(<ScheduleImport />);
 
     expect(html).toContain('新增一行');
     expect(html).toContain('应用手动修正并重新校验');
@@ -198,7 +200,7 @@ describe('PublicationScheduleManager', () => {
     state.isAdmin = true;
     state.reactStateValues = [2026, preview, false, true, null, 'schedule.pdf', null];
 
-    const html = renderToString(<PublicationScheduleManager />);
+    const html = renderToString(<ScheduleImport />);
 
     expect(html).toContain('data-testid="schedule-upload-dragger" data-disabled="true"');
     expect(html).toContain('<select disabled=""></select>');
@@ -222,7 +224,7 @@ describe('PublicationScheduleManager', () => {
     } as Awaited<ReturnType<typeof commitScheduleUpload>>;
     vi.mocked(commitScheduleUpload).mockResolvedValue(commitResponse);
 
-    renderToString(<PublicationScheduleManager />);
+    renderToString(<ScheduleImport />);
     await state.popconfirmOnConfirm?.();
 
     expect(commitScheduleUpload).toHaveBeenCalledWith(preview.upload_id, null);
