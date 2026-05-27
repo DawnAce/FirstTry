@@ -1,14 +1,37 @@
-import { Layout, Menu, Button, Space } from 'antd';
-import { DashboardOutlined, UserOutlined, LogoutOutlined, CalendarOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { Layout, Menu, Input, Badge, Avatar, Dropdown, Tooltip } from 'antd';
+import {
+  HomeOutlined,
+  BarChartOutlined,
+  UserOutlined,
+  CalendarOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  BellOutlined,
+  QuestionCircleOutlined,
+  LogoutOutlined,
+  CarOutlined,
+  FileTextOutlined,
+  TeamOutlined,
+  DollarOutlined,
+} from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import type { MenuProps } from 'antd';
 
-const { Sider, Content } = Layout;
+const { Sider, Content, Header } = Layout;
+const { Search } = Input;
 
-const menuItems = [
+const menuItems: MenuProps['items'] = [
+  {
+    key: '/dashboard',
+    icon: <HomeOutlined />,
+    label: '仪表盘',
+    disabled: true,
+  },
   {
     key: 'print-management',
-    icon: <DashboardOutlined />,
+    icon: <BarChartOutlined />,
     label: '印数管理',
     children: [
       { key: '/', label: '印数报数' },
@@ -16,7 +39,11 @@ const menuItems = [
       { key: '/templates', label: '报数模板' },
     ],
   },
-  { key: '/recipients', icon: <UserOutlined />, label: '物流管理' },
+  {
+    key: '/recipients',
+    icon: <CarOutlined />,
+    label: '物流管理',
+  },
   {
     key: 'schedule-management',
     icon: <CalendarOutlined />,
@@ -26,14 +53,38 @@ const menuItems = [
       { key: '/schedule/import', label: '导入期刊表' },
     ],
   },
+  {
+    key: '/orders',
+    icon: <FileTextOutlined />,
+    label: '订单管理',
+    disabled: true,
+  },
+  {
+    key: '/customers',
+    icon: <TeamOutlined />,
+    label: '客户管理',
+    disabled: true,
+  },
+  {
+    key: '/contracts',
+    icon: <FileTextOutlined />,
+    label: '合同管理',
+    disabled: true,
+  },
+  {
+    key: '/finance',
+    icon: <DollarOutlined />,
+    label: '财务管理',
+    disabled: true,
+  },
 ];
 
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
 
-  // Map sub-routes to their parent menu key
   const getSelectedKey = () => {
     const path = location.pathname;
     if (path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import')) return '/';
@@ -45,7 +96,6 @@ export default function AppLayout() {
     return path;
   };
 
-  // Auto-open the sub-menu that contains the current route
   const getOpenKeys = () => {
     const path = location.pathname;
     if (path === '/' || path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import') || path.startsWith('/history') || path.startsWith('/templates')) {
@@ -57,86 +107,121 @@ export default function AppLayout() {
     return [];
   };
 
+  const userMenuItems: MenuProps['items'] = [
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: '退出登录',
+      onClick: logout,
+    },
+  ];
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider
-        collapsed={false}
-        width={240}
-        style={{
-          background: '#fff',
-          borderRight: '1px solid rgba(0,0,0,0.06)',
-          position: 'sticky',
-          top: 0,
-          height: '100vh',
-          overflow: 'hidden',
-        }}
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        trigger={null}
+        width={220}
+        collapsedWidth={64}
+        className="app-sider"
       >
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-        }}>
-          <div style={{
-            height: 72,
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '0 24px',
-            borderBottom: '1px solid rgba(0,0,0,0.04)',
-          }}>
-            <span style={{
-              fontSize: 18,
-              fontWeight: 700,
-              color: '#1d1d1f',
-              letterSpacing: '-0.01em',
-            }}>
-              发行系统
-            </span>
-            <span style={{
-              fontSize: 12,
-              color: '#86868b',
-              marginTop: 2,
-            }}>
-              中国经营报
-            </span>
+        <div className="app-sider-inner">
+          {/* Logo */}
+          <div className="app-sider-logo">
+            <div className="app-sider-logo-icon">
+              <BarChartOutlined style={{ fontSize: 20, color: '#fff' }} />
+            </div>
+            {!collapsed && (
+              <div className="app-sider-logo-text">
+                <span className="app-sider-logo-title">发行系统</span>
+                <span className="app-sider-logo-subtitle">中国经营报</span>
+              </div>
+            )}
           </div>
-          <div style={{ flex: 1, padding: '12px 8px', overflow: 'auto' }}>
+
+          {/* Navigation menu */}
+          <div className="app-sider-menu">
             <Menu
               mode="inline"
               selectedKeys={[getSelectedKey()]}
               defaultOpenKeys={getOpenKeys()}
-              onClick={({key}) => navigate(key)}
+              onClick={({ key }) => {
+                if (!key.startsWith('/dashboard') && !key.startsWith('/orders') && !key.startsWith('/customers') && !key.startsWith('/contracts') && !key.startsWith('/finance')) {
+                  navigate(key);
+                }
+              }}
               items={menuItems}
             />
           </div>
-          {/* User info pinned at bottom */}
-          <div style={{
-            flexShrink: 0,
-            padding: '16px 24px',
-            borderTop: '1px solid rgba(0,0,0,0.04)',
-          }}>
-            <Space direction="vertical" size={4} style={{ width: '100%' }}>
-              <span style={{ fontSize: 13, color: '#1d1d1f', fontWeight: 500 }}>
-                {user?.username}
-                <span style={{ fontSize: 11, color: '#86868b', marginLeft: 6 }}>
-                  {user?.role === 'admin' ? '管理员' : '操作员'}
-                </span>
-              </span>
-              <Button size="small" type="text" onClick={logout} style={{ padding: 0, color: '#86868b' }}>
-                <LogoutOutlined /> 退出登录
-              </Button>
-            </Space>
+
+          {/* User info at bottom */}
+          <div className="app-sider-footer">
+            <Dropdown menu={{ items: userMenuItems }} placement="topRight" trigger={['click']}>
+              <div className="app-sider-user">
+                <Avatar size={32} icon={<UserOutlined />} style={{ background: 'var(--color-accent)', flexShrink: 0 }} />
+                {!collapsed && (
+                  <div className="app-sider-user-info">
+                    <span className="app-sider-user-name">{user?.username}</span>
+                    <span className="app-sider-user-role">
+                      {user?.role === 'admin' ? '管理员' : '操作员'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </Dropdown>
           </div>
         </div>
       </Sider>
+
       <Layout>
-        <Content style={{
-          padding: 32,
-          background: '#f5f5f7',
-          minHeight: '100vh',
-        }}>
+        {/* Top navigation bar */}
+        <Header className="app-header">
+          <div className="app-header-left">
+            <button
+              className="app-header-trigger"
+              onClick={() => setCollapsed(!collapsed)}
+              aria-label={collapsed ? '展开菜单' : '收起菜单'}
+            >
+              {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            </button>
+            <Search
+              placeholder="搜索期数、报刊、状态"
+              className="app-header-search"
+              allowClear
+              onSearch={() => {}}
+            />
+          </div>
+
+          <div className="app-header-right">
+            <Tooltip title="通知">
+              <Badge count={0} overflowCount={99}>
+                <button className="app-header-icon-btn" aria-label="通知">
+                  <BellOutlined />
+                </button>
+              </Badge>
+            </Tooltip>
+            <Tooltip title="帮助">
+              <button className="app-header-icon-btn" aria-label="帮助">
+                <QuestionCircleOutlined />
+              </button>
+            </Tooltip>
+            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
+              <div className="app-header-user">
+                <Avatar size={32} icon={<UserOutlined />} style={{ background: 'var(--color-accent)' }} />
+                <div className="app-header-user-text">
+                  <span className="app-header-user-name">{user?.username}</span>
+                  <span className="app-header-user-role">
+                    {user?.role === 'admin' ? '管理员' : '操作员'}
+                  </span>
+                </div>
+              </div>
+            </Dropdown>
+          </div>
+        </Header>
+
+        <Content className="app-content">
           <Outlet />
         </Content>
       </Layout>

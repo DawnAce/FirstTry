@@ -298,6 +298,247 @@ body {
   white-space: nowrap;
 }
 
+/* ===== App Header (Top Navigation) ===== */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 20px !important;
+  background: var(--color-card) !important;
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-header-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-input);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  transition: all var(--transition);
+}
+
+.app-header-trigger:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--color-text-primary);
+}
+
+.app-header-search {
+  width: 320px;
+}
+
+.app-header-search .ant-input-search-button {
+  display: none !important;
+}
+
+.app-header-search .ant-input-wrapper {
+  border-radius: var(--radius-input) !important;
+}
+
+.app-header-search .ant-input-affix-wrapper {
+  background: var(--color-bg) !important;
+  border: 1px solid transparent !important;
+  border-radius: var(--radius-input) !important;
+}
+
+.app-header-search .ant-input-affix-wrapper:focus-within {
+  background: var(--color-card) !important;
+  border-color: var(--color-accent) !important;
+}
+
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-header-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-input);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: 18px;
+  transition: all var(--transition);
+}
+
+.app-header-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--color-text-primary);
+}
+
+.app-header-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-input);
+  cursor: pointer;
+  transition: background var(--transition);
+  margin-left: 8px;
+}
+
+.app-header-user:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.app-header-user-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.app-header-user-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.app-header-user-role {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* ===== App Sidebar ===== */
+.app-sider {
+  background: var(--color-card) !important;
+  border-right: 1px solid var(--color-border) !important;
+  position: sticky !important;
+  top: 0;
+  height: 100vh !important;
+  overflow: hidden !important;
+}
+
+.app-sider .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-sider-inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-sider-logo {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--color-divider);
+  flex-shrink: 0;
+}
+
+.app-sider-logo-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.app-sider-logo-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.app-sider-logo-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.app-sider-logo-subtitle {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.app-sider-menu {
+  flex: 1;
+  padding: 8px 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.app-sider-footer {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.app-sider-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--radius-input);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.app-sider-user:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.app-sider-user-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  overflow: hidden;
+}
+
+.app-sider-user-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-sider-user-role {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* ===== App Content ===== */
+.app-content {
+  padding: 24px 28px;
+  background: var(--color-bg) !important;
+  min-height: calc(100vh - 56px);
+}
+
 .dashboard-issue-row {
   border-radius: var(--radius-input);
   transition: background var(--transition);
