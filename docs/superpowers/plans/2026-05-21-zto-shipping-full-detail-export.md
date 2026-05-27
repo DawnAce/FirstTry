@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Change 中通发货明细 Excel export to a single “中通发货明细” sheet containing all current business fields.
+**Goal:** Change ZTO-MF Excel export to a single “ZTO-MF” sheet containing all current business fields.
 
 **Architecture:** Keep the existing FastAPI export endpoint and export snapshot behavior. Replace only the Excel workbook layout inside `export_shipping_excel()` with a generated single-sheet workbook driven by a stable field mapping. Tests assert sheet names, headers, and representative field values.
 
@@ -71,9 +71,9 @@ In `backend/tests/test_report_shipping_chain.py`, replace `test_shipping_export_
             response.media_type,
         )
         workbook = load_workbook(io.BytesIO(self._read_streaming_response_bytes(response)))
-        self.assertEqual(workbook.sheetnames, ["中通发货明细"])
+        self.assertEqual(workbook.sheetnames, ["ZTO-MF"])
 
-        sheet = workbook["中通发货明细"]
+        sheet = workbook["ZTO-MF"]
         headers = [sheet.cell(row=1, column=col).value for col in range(1, 25)]
         self.assertEqual(
             headers,
@@ -194,7 +194,7 @@ In `export_shipping_excel()`, replace the template loading, grouping, `_write_sh
 ```python
     wb = Workbook()
     ws = wb.active
-    ws.title = "中通发货明细"
+    ws.title = "ZTO-MF"
 
     details = (
         db.query(ShippingDetail)
@@ -255,8 +255,8 @@ Expected: all tests in `test_report_shipping_chain` pass.
 In `docs/user-guide.md`, under `#### 导出发货明细`, replace the old sheet-check instructions with:
 
 ```markdown
-1. 在「物流管理」→「中通发货明细」选择期号后，点击"导出"按钮下载 `第2635期发货明细.xlsx`
-2. 导出的 Excel 只包含一个「中通发货明细」sheet
+1. 在「物流管理」→「ZTO-MF」选择期号后，点击"导出"按钮下载 `第2635期发货明细.xlsx`
+2. 导出的 Excel 只包含一个「ZTO-MF」sheet
 3. 表头包含当前系统维护的业务字段：期号、原工作表、渠道、子渠道、签约公司、姓名、电话、地址、份数、频率、运输方式、发货时间、截止日期、状态、备注、附加信息、城市、站点、站厅、联系人、高铁序号、期数、信息确认
 4. 系统会同时记录一条 `shipping_export` 导出快照
 5. 检查明细字段和总份数是否正确

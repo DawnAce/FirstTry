@@ -332,7 +332,7 @@ export default function ReportEditor() {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       message.success('确认成功');
       if ((confirmData.shipping_details_copied ?? 0) > 0) {
-        message.info(`已从上一期复制 ${confirmData.shipping_details_copied} 条中通发货明细`);
+        message.info(`已从上一期复制 ${confirmData.shipping_details_copied} 条 ZTO-MF`);
       }
       if (confirmData.warning) {
         Modal.warning({

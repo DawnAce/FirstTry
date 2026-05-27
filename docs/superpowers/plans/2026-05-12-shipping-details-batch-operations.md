@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add batch update and batch delete operations to the 中通发货明细 table, including per-record operation logs.
+**Goal:** Add batch update and batch delete operations to the ZTO-MF table, including per-record operation logs.
 
 **Architecture:** Add dedicated FastAPI batch endpoints for shipping detail updates and deletes, with schema-level validation and per-record audit logging. Add frontend API clients and Ant Design table row selection with a compact batch toolbar for status, deadline, and delete actions.
 
@@ -402,7 +402,7 @@ Expected: no errors.
 
 - [ ] **Step 1: Update technical API docs**
 
-In `docs/technical.md` under “4.11 中通发货明细”, add:
+In `docs/technical.md` under “4.11 ZTO-MF”, add:
 
 ```markdown
 #### POST /api/shipping-details/batch-update
@@ -439,9 +439,9 @@ In `docs/technical.md` under “4.11 中通发货明细”, add:
 In `docs/user-guide.md`, add a short subsection to the recipient/shipping detail area:
 
 ```markdown
-### 批量操作中通发货明细
+### 批量操作ZTO-MF
 
-在“物流管理 - 中通发货明细”中，可以勾选多条记录后进行批量操作：
+在“物流管理 - ZTO-MF”中，可以勾选多条记录后进行批量操作：
 
 - 设为正常
 - 设为停发

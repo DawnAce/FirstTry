@@ -75,7 +75,7 @@ export function IssueDeleteConfirmButton({
           type="error"
           showIcon
           message="此操作不可恢复"
-          description="会同时删除该期报数、发货记录、临时加印和中通发货明细。请确认你要删除的是整期数据，而不是只清空中通发货明细。"
+          description="会同时删除该期报数、发货记录、临时加印和 ZTO-MF。请确认你要删除的是整期数据，而不是只清空 ZTO-MF。"
           style={{ marginBottom: 16 }}
         />
         <Typography.Paragraph>

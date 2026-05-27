@@ -149,9 +149,9 @@ class ReportShippingChainTests(unittest.TestCase):
             response.media_type,
         )
         workbook = load_workbook(io.BytesIO(self._read_streaming_response_bytes(response)))
-        self.assertEqual(workbook.sheetnames, ["中通发货明细"])
+        self.assertEqual(workbook.sheetnames, ["ZTO-MF"])
 
-        sheet = workbook["中通发货明细"]
+        sheet = workbook["ZTO-MF"]
         headers = [sheet.cell(row=1, column=col).value for col in range(1, 24)]
         self.assertEqual(
             headers,

@@ -22,7 +22,7 @@
 - Modify: `backend\app\api\exports.py` — write export snapshots.
 - Modify: `backend\app\services\excel_service.py` — source shipping workbook rows from `shipping_details`.
 - Modify: `frontend\src\pages\ReportEditor.tsx` — show confirmed totals, mismatch, and drift.
-- Modify: `frontend\src\pages\Recipients.tsx` — show current total, confirmed total, and delta in `中通发货明细`.
+- Modify: `frontend\src\pages\Recipients.tsx` — show current total, confirmed total, and delta in `ZTO-MF`.
 - Modify: `frontend\src\pages\Dashboard.tsx` — route old `发货` action into the shipping-details execution surface.
 - Optional modify: `frontend\src\pages\ShippingPreview.tsx` — downgrade to redirect/notice page if route must remain.
 - Modify: `docs\technical.md`, `docs\requirements.md`, `docs\user-guide.md` — align docs with narrowed scope and new source-of-truth.
@@ -551,7 +551,7 @@ git add -- frontend\src\pages\ReportEditor.tsx
 git commit -m "feat: show confirmed shipping totals in report editor" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
 
-### Task 9: Show current-vs-confirmed totals in `中通发货明细`
+### Task 9: Show current-vs-confirmed totals in `ZTO-MF`
 
 **Files:**
 - Modify: `frontend\src\pages\Recipients.tsx`
@@ -684,7 +684,7 @@ git commit -m "feat: route shipping actions to shipping details" -m "Co-authored
 ```md
 ## 报数与中通明细链路
 
-- 当前期中通执行面统一为“物流管理 → 中通发货明细”
+- 当前期中通执行面统一为“物流管理 → ZTO-MF”
 - 报数确认只比较：报数中通合计 vs 当期 shipping_details 合计
 - shipping_records 不再作为确认或中通 Excel 导出的来源
 - issue_audit_snapshots 记录确认与导出时的数量快照
@@ -696,14 +696,14 @@ git commit -m "feat: route shipping actions to shipping details" -m "Co-authored
 ### 当前阶段范围
 
 - 收件人/订阅保留现状
-- 本阶段只打通 报数编辑页 ↔ 中通发货明细页
+- 本阶段只打通 报数编辑页 ↔ ZTO-MF页
 - 后续订单管理系统再接入自动生成链
 ```
 
 - [ ] **Step 3: Update `docs\user-guide.md` with the actual operator flow**
 
 ```md
-1. 在“物流管理 → 中通发货明细”维护当期中通明细
+1. 在“物流管理 → ZTO-MF”维护当期中通明细
 2. 在"印数管理 → 报数编辑页"完成报数录入
 3. 点击“确认报数”并查看数量对照提示
 4. 分别导出报数文件和中通明细文件

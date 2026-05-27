@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an issue publish-date picker to the “中通发货明细” filters that selects and reflects the current issue number.
+**Goal:** Add an issue publish-date picker to the “ZTO-MF” filters that selects and reflects the current issue number.
 
 **Architecture:** Keep the implementation in `ShippingDetailsTab` because this is a local UI state change. Reuse the existing `/issues` data from `getIssues(0, 100)`, derive the current issue and date from `currentIssueNumber`, and update `selectedIssueNumber` from either DatePicker or Select.
 

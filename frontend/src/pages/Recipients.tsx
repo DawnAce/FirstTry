@@ -363,7 +363,7 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
     setClearingIssue(true);
     try {
       const res = await clearShippingDetailsByIssue(currentIssueNumber);
-      message.success(`已清空第 ${currentIssueNumber} 期 ${res.data.affected_count} 条中通发货明细`);
+      message.success(`已清空第 ${currentIssueNumber} 期 ${res.data.affected_count} 条 ZTO-MF`);
       setSelectedRowKeys([]);
       refreshShippingDetails();
     } catch {
@@ -527,8 +527,8 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
               </Button>
               {isAdmin && (
                 <Popconfirm
-                  title={`确认清空第 ${currentIssueNumber ?? '-'} 期中通发货明细？`}
-                  description="只删除该期中通发货明细，不会删除期号和报数数据。此操作不可恢复。"
+                  title={`确认清空第 ${currentIssueNumber ?? '-'} 期 ZTO-MF？`}
+                                    description="只删除该期 ZTO-MF，不会删除期号和报数数据。此操作不可恢复。"
                   okText="清空"
                   cancelText="取消"
                   onConfirm={handleClearCurrentIssueShippingDetails}
@@ -1189,7 +1189,7 @@ export default function Recipients() {
         },
         {
           key: 'shipping',
-          label: '中通发货明细',
+          label: 'ZTO-MF',
           children: <ShippingDetailsTab initialIssueId={initialIssueId} />,
         },
       ]}

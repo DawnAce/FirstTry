@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a direct export button on the 中通发货明细 page that downloads the selected issue's full 中通发货明细 Excel.
+**Goal:** Add a direct export button on the ZTO-MF page that downloads the selected issue's full ZTO-MF Excel.
 
 **Architecture:** Reuse the existing backend export endpoint `/api/issues/{issue_id}/export/shipping` and existing Excel generation service. Add a small tested frontend export URL helper, then add a UI entry point in `ShippingDetailsTab` using the already-loaded `currentIssue.id` for the selected issue. Documentation updates describe the new user-facing workflow.
 
@@ -13,10 +13,10 @@
 ## File Structure
 
 - Modify `frontend/package.json` and `frontend/package-lock.json`: add Vitest and a `test` script.
-- Create `frontend/src/api/exports.test.ts`: test the 中通发货明细 export URL helper.
+- Create `frontend/src/api/exports.test.ts`: test the ZTO-MF export URL helper.
 - Create `frontend/src/api/exports.ts`: provide the tested `getIssueShippingExportUrl()` helper.
 - Modify `frontend/src/pages/Recipients.tsx`: add `DownloadOutlined`, add `handleExportShipping`, and render a “导出” button next to “新增”.
-- Modify `docs/user-guide.md`: document exporting from the 中通发货明细 tab.
+- Modify `docs/user-guide.md`: document exporting from the ZTO-MF tab.
 - No backend changes: `backend/app/api/exports.py` and `backend/app/services/excel_service.py` already implement the required export.
 
 ---
@@ -98,7 +98,7 @@ Expected: PASS for `getIssueShippingExportUrl`.
 
 ---
 
-### Task 2: Add the export button to 中通发货明细
+### Task 2: Add the export button to ZTO-MF
 
 **Files:**
 - Modify: `frontend/src/pages/Recipients.tsx`
@@ -208,7 +208,7 @@ Expected: commit succeeds and includes only frontend test framework, export help
 In `docs/user-guide.md`, under `### 2.5 检查发货明细`, add this workflow item near the existing 中通明细 operation instructions:
 
 ```markdown
-6. 如需导出当前期的完整中通发货明细，点击筛选面板右侧的“导出”按钮；导出内容为所选期号的全部中通发货明细，不受当前筛选条件或勾选记录影响
+6. 如需导出当前期的完整ZTO-MF，点击筛选面板右侧的“导出”按钮；导出内容为所选期号的全部ZTO-MF，不受当前筛选条件或勾选记录影响
 ```
 
 - [ ] **Step 2: Run frontend test and type check again**

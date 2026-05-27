@@ -1524,7 +1524,7 @@ def export_report_excel(issue_id: int, db: Session) -> io.BytesIO:
 
 
 def export_shipping_excel(issue_id: int, db: Session) -> io.BytesIO:
-    """Generate the 中通发货明细 Excel file for a given issue."""
+    """Generate the ZTO-MF Excel file for a given issue."""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise ValueError("Issue not found")

@@ -218,7 +218,7 @@ UNIQUE(issue_id, recipient_id)
 
 ### 4.5 Excel 导出
 - 一键导出报数表（6 个 Sheet）
-- 一键导出中通发货明细（7 个 Sheet）
+- 一键导出ZTO-MF（7 个 Sheet）
 - 打包下载两个文件
 - 格式严格匹配原模板（模板驱动）
 - 自动填入期号、日期
