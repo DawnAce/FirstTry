@@ -263,40 +263,40 @@ export default function Dashboard() {
         </h1>
       </div>
 
+      {/* Statistics Cards - Full Width */}
+      <Row gutter={16} className="dashboard-stat-row">
+        {statCards.map((card, idx) => (
+          <Col span={6} key={idx}>
+            <Card loading={loading} className="dashboard-stat-card" size="small">
+              <div className="dashboard-stat-card-inner">
+                <div className="dashboard-stat-icon" style={{ background: card.bgColor }}>
+                  {card.icon}
+                </div>
+                <div className="dashboard-stat-content">
+                  <div className="dashboard-stat-label">{card.title}</div>
+                  <div className="dashboard-stat-value">
+                    {card.value}
+                    {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
+                  </div>
+                  {card.changeLabel && (
+                    <div className={`dashboard-stat-change ${card.change && card.change >= 0 ? 'up' : 'down'}`}>
+                      {card.change && card.change >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+                      {' '}{card.changeLabel}
+                    </div>
+                  )}
+                  {card.subText && (
+                    <div className="dashboard-stat-sub">{card.subText}</div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
       <Row gutter={20}>
         {/* Main Content */}
         <Col xs={24} lg={17}>
-          {/* Statistics Cards */}
-          <Row gutter={16} className="dashboard-stat-row">
-            {statCards.map((card, idx) => (
-              <Col span={6} key={idx}>
-                <Card loading={loading} className="dashboard-stat-card" size="small">
-                  <div className="dashboard-stat-card-inner">
-                    <div className="dashboard-stat-icon" style={{ background: card.bgColor }}>
-                      {card.icon}
-                    </div>
-                    <div className="dashboard-stat-content">
-                      <div className="dashboard-stat-label">{card.title}</div>
-                      <div className="dashboard-stat-value">
-                        {card.value}
-                        {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
-                      </div>
-                      {card.changeLabel && (
-                        <div className={`dashboard-stat-change ${card.change && card.change >= 0 ? 'up' : 'down'}`}>
-                          {card.change && card.change >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                          {' '}{card.changeLabel}
-                        </div>
-                      )}
-                      {card.subText && (
-                        <div className="dashboard-stat-sub">{card.subText}</div>
-                      )}
-                    </div>
-                  </div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
-
           {/* Create Section */}
           <Row gutter={16} style={{ marginBottom: 20 }}>
             <Col span={12}>
