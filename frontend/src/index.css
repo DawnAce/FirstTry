@@ -561,6 +561,18 @@ body {
   margin-bottom: 20px;
 }
 
+/* Unified card title spacing for dashboard modules */
+.dashboard-page > .ant-row .ant-card > .ant-card-head,
+.dashboard-page .ant-card > .ant-card-head {
+  padding: 16px 16px 8px 16px !important;
+  min-height: unset !important;
+  border-bottom: none;
+}
+
+.dashboard-page .ant-card > .ant-card-head .ant-card-head-title {
+  padding: 0 !important;
+}
+
 .dashboard-stat-row .ant-col {
   display: flex;
 }
@@ -726,11 +738,12 @@ body {
 
 /* Workflow steps */
 .dashboard-workflow {
-  padding: 4px 0;
+  padding: 0;
 }
 
 .dashboard-workflow-header {
-  margin-bottom: 16px;
+  padding: 16px 16px 8px 16px;
+  margin-bottom: 0;
 }
 
 .dashboard-workflow-title {
@@ -762,7 +775,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  padding: 16px 16px 8px 16px;
+  margin: -16px -16px 0 -16px;
 }
 
 .dashboard-sidebar-title {
