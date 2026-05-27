@@ -82,7 +82,7 @@ export default function Dashboard() {
       .reverse()
       .map(issue => ({
         name: `第${issue.issue_number}期\n${dayjs(issue.publish_date).format('MM-DD')}`,
-        value: Number(((issue.print_total ?? 0) / 10000).toFixed(2)),
+        value: issue.print_total ?? 0,
       }));
   }, [recentIssues]);
 
@@ -131,7 +131,7 @@ export default function Dashboard() {
   };
 
   const formatPrintTotal = (value: number) => {
-    return (value / 10000).toFixed(2);
+    return value.toLocaleString();
   };
 
   const columns: ColumnsType<Issue> = [
@@ -157,7 +157,7 @@ export default function Dashboard() {
       render: (status: Issue['status']) => getStatusTag(status),
     },
     {
-      title: '印数（万份）',
+      title: '印数（份）',
       dataIndex: 'print_total',
       key: 'print_total',
       width: 120,
@@ -231,9 +231,9 @@ export default function Dashboard() {
       bgColor: 'rgba(82, 196, 26, 0.08)',
       title: '本周印数',
       value: formatPrintTotal(weeklyStats.this_week_total),
-      suffix: '万份',
+      suffix: '份',
       change: weeklyStats.week_change,
-      changeLabel: `较上周 ${weeklyStats.week_change >= 0 ? '↑' : '↓'} ${formatPrintTotal(Math.abs(weeklyStats.week_change))} 万份`,
+      changeLabel: `较上周 ${weeklyStats.week_change >= 0 ? '↑' : '↓'} ${formatPrintTotal(Math.abs(weeklyStats.week_change))} 份`,
     },
     {
       icon: <CalendarOutlined style={{ fontSize: 22, color: '#722ed1' }} />,
@@ -401,11 +401,11 @@ export default function Dashboard() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 600, fontSize: 16 }}>
                   近6期印数趋势
-                  <Tooltip title="印数单位：万份">
+                  <Tooltip title="印数单位：份">
                     <InfoCircleOutlined style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginLeft: 6 }} />
                   </Tooltip>
                   <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 400, marginLeft: 8 }}>
-                    印数单位：万份
+                    印数单位：份
                   </span>
                 </span>
               </div>
@@ -429,7 +429,7 @@ export default function Dashboard() {
                       width={40}
                     />
                     <RechartsTooltip
-                      formatter={(value: number) => [`${value} 万份`, '印数']}
+                      formatter={(value: number) => [`${value.toLocaleString()} 份`, '印数']}
                       contentStyle={{
                         borderRadius: 8,
                         border: 'none',
@@ -480,7 +480,7 @@ export default function Dashboard() {
                   <div className="dashboard-pending-content">
                     <div className="dashboard-pending-name">第{issue.issue_number}期待确认</div>
                     <div className="dashboard-pending-desc">
-                      印数 {issue.print_total ? formatPrintTotal(issue.print_total) : '-'} 万份
+                      印数 {issue.print_total ? formatPrintTotal(issue.print_total) : '-'} 份
                     </div>
                   </div>
                   <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12 }} />
