@@ -366,7 +366,7 @@ export default function Dashboard() {
             size="small"
             title={
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 600, fontSize: 16 }}>近期印数</span>
+                <span style={{ fontWeight: 700, fontSize: 16 }}>近期印数</span>
                 <Button type="link" onClick={() => navigate('/history')}>
                   查看全部 <RightOutlined />
                 </Button>
@@ -393,7 +393,7 @@ export default function Dashboard() {
             style={{ marginTop: 20 }}
             title={
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 600, fontSize: 16 }}>
+                <span style={{ fontWeight: 700, fontSize: 16 }}>
                   近6期印数趋势
                   <Tooltip title="印数单位：份">
                     <InfoCircleOutlined style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginLeft: 6 }} />

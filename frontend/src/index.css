@@ -734,8 +734,8 @@ body {
 }
 
 .dashboard-workflow-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--color-text-primary);
   margin-right: 8px;
 }
@@ -766,8 +766,8 @@ body {
 }
 
 .dashboard-sidebar-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--color-text-primary);
 }
 
