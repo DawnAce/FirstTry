@@ -612,7 +612,7 @@ body {
 }
 
 .dashboard-stat-value {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.2;

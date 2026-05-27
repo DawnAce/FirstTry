@@ -239,7 +239,13 @@ export default function Dashboard() {
       icon: <CalendarOutlined style={{ fontSize: 22, color: '#722ed1' }} />,
       bgColor: 'rgba(114, 46, 209, 0.08)',
       title: '最近报数时间',
-      value: latestReportTime ? dayjs(latestReportTime).format('YYYY-MM-DD HH:mm') : '-',
+      value: latestReportTime ? (
+        <>
+          {dayjs(latestReportTime).format('YYYY-MM-DD')}
+          <br />
+          {dayjs(latestReportTime).format('HH:mm')}
+        </>
+      ) : '-',
       suffix: '',
       subText: nextIssueNumber ? `第${nextIssueNumber}期报数已创建` : undefined,
     },
