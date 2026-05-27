@@ -745,6 +745,14 @@ body {
   color: var(--color-text-secondary);
 }
 
+.dashboard-workflow .ant-steps .ant-steps-item-title {
+  font-size: 13px !important;
+}
+
+.dashboard-workflow .ant-steps .ant-steps-item-description {
+  font-size: 11px !important;
+}
+
 /* Sidebar cards */
 .dashboard-sidebar-card .ant-card-body {
   padding: 16px !important;
