@@ -291,61 +291,55 @@ export default function Dashboard() {
       <Row gutter={20}>
         {/* Main Content */}
         <Col xs={24} lg={17}>
-          {/* Create Section */}
-          <Row gutter={16} style={{ marginBottom: 20 }}>
-            <Col span={12}>
-              {nextIssue && (
-                <Card className="dashboard-create-card" size="small">
-                  <div
-                    className="dashboard-create-main"
-                    onClick={() => handleCreateIssue(nextIssue.issue_number)}
-                    style={{ cursor: creating ? 'wait' : 'pointer' }}
-                  >
-                    <div className="dashboard-create-icon">
-                      <PlusOutlined style={{ fontSize: 24, color: '#fff' }} />
-                    </div>
-                    <div className="dashboard-create-text">
-                      <div className="dashboard-create-title">
-                        一键创建第 {nextIssue.issue_number} 期（{dayjs(nextIssue.publish_date).format('MM-DD')}）报数
-                      </div>
-                      <div className="dashboard-create-desc">
-                        快速创建当前最新期数的报数并进入录入
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              )}
-            </Col>
-            <Col span={12}>
-              <Card className="dashboard-backfill-card" size="small">
-                <div className="dashboard-backfill-title">补录其他期数</div>
-                <div className="dashboard-backfill-body">
-                  <Select
-                    style={{ flex: 1 }}
-                    placeholder="选择期数"
-                    value={selectedIssue}
-                    onChange={(val) => setSelectedIssue(val)}
-                    showSearch
-                  >
-                    {availableIssues.map((item) => (
-                      <Select.Option key={item.issue_number} value={String(item.issue_number)}>
-                        第 {item.issue_number} 期 ({dayjs(item.publish_date).format('MM-DD')})
-                      </Select.Option>
-                    ))}
-                  </Select>
-                  <Button
-                    type="primary"
-                    onClick={() => handleCreateIssue()}
-                    loading={creating}
-                    disabled={!selectedIssue}
-                  >
-                    创建
-                  </Button>
+          {/* Create Section - unified container */}
+          <div className="dashboard-create-wrapper" style={{ marginBottom: 20 }}>
+            {nextIssue && (
+              <div
+                className="dashboard-create-main"
+                onClick={() => handleCreateIssue(nextIssue.issue_number)}
+                style={{ cursor: creating ? 'wait' : 'pointer' }}
+              >
+                <div className="dashboard-create-icon">
+                  <PlusOutlined style={{ fontSize: 24, color: '#fff' }} />
                 </div>
-                <div className="dashboard-backfill-hint">选择历史期数进行补录，便于完善历史数据</div>
-              </Card>
-            </Col>
-          </Row>
+                <div className="dashboard-create-text">
+                  <div className="dashboard-create-title">
+                    一键创建第 {nextIssue.issue_number} 期（{dayjs(nextIssue.publish_date).format('MM-DD')}）报数
+                  </div>
+                  <div className="dashboard-create-desc">
+                    快速创建当前最新期数的报数并进入录入
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="dashboard-backfill-section">
+              <div className="dashboard-backfill-title">补录其他期数</div>
+              <div className="dashboard-backfill-body">
+                <Select
+                  style={{ flex: 1 }}
+                  placeholder="选择期数"
+                  value={selectedIssue}
+                  onChange={(val) => setSelectedIssue(val)}
+                  showSearch
+                >
+                  {availableIssues.map((item) => (
+                    <Select.Option key={item.issue_number} value={String(item.issue_number)}>
+                      第 {item.issue_number} 期 ({dayjs(item.publish_date).format('MM-DD')})
+                    </Select.Option>
+                  ))}
+                </Select>
+                <Button
+                  type="primary"
+                  onClick={() => handleCreateIssue()}
+                  loading={creating}
+                  disabled={!selectedIssue}
+                >
+                  创建
+                </Button>
+              </div>
+              <div className="dashboard-backfill-hint">选择历史期数进行补录，便于完善历史数据</div>
+            </div>
+          </div>
 
           {/* Workflow Steps */}
           <Card size="small" style={{ marginBottom: 20 }}>

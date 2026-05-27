@@ -645,27 +645,24 @@ body {
 }
 
 /* Create card */
-.dashboard-create-card {
-  height: 100%;
-  border: none;
-  box-shadow: none;
-  background: transparent;
-}
-
-.dashboard-create-card .ant-card-body {
-  padding: 0 !important;
-  height: 100%;
+/* Create section - unified wrapper */
+.dashboard-create-wrapper {
+  display: flex;
+  border-radius: var(--radius-card);
+  border: 1px solid rgba(0, 113, 227, 0.12);
+  overflow: hidden;
+  background: linear-gradient(135deg, #f0f5ff, #e8f1ff);
 }
 
 .dashboard-create-main {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px;
+  padding: 24px 20px;
   background: linear-gradient(135deg, var(--color-accent), #0077ed);
-  border-radius: var(--radius-card);
   transition: opacity var(--transition);
-  height: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .dashboard-create-main:hover {
@@ -699,21 +696,14 @@ body {
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* Backfill card */
-.dashboard-backfill-card {
-  height: 100%;
-  border: none;
-  box-shadow: none;
-  background: linear-gradient(135deg, #f0f5ff, #e6f0ff);
-}
-
-.dashboard-backfill-card .ant-card-body {
-  padding: 20px !important;
-  height: 100%;
+/* Backfill section (right side of unified wrapper) */
+.dashboard-backfill-section {
+  flex: 1;
+  min-width: 0;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  background: transparent;
 }
 
 .dashboard-backfill-title {
