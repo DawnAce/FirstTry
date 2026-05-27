@@ -441,7 +441,7 @@ In `docs/user-guide.md`, add a short subsection to the recipient/shipping detail
 ```markdown
 ### 批量操作中通发货明细
 
-在“收件人管理 - 中通发货明细”中，可以勾选多条记录后进行批量操作：
+在“物流管理 - 中通发货明细”中，可以勾选多条记录后进行批量操作：
 
 - 设为正常
 - 设为停发

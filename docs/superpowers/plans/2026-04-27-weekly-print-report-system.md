@@ -1788,7 +1788,7 @@ const { Header, Sider, Content } = Layout;
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '首页' },
-  { key: '/recipients', icon: <TeamOutlined />, label: '收件人管理' },
+  { key: '/recipients', icon: <TeamOutlined />, label: '物流管理' },
   { key: '/history', icon: <HistoryOutlined />, label: '历史印数期数' },
 ];
 
@@ -2871,7 +2871,7 @@ Requirements documentation covering all functional requirements, data flow, vali
 User guide with step-by-step instructions for:
 1. 首次使用（初始化种子数据、录入基础报数数据、导入收件人）
 2. 每周操作流程（创建新期 → 输入变动数据 → 预览 → 导出）
-3. 收件人管理（新增、续订、停发）
+3. 物流管理（新增、续订、停发）
 4. 常见问题（FAQ）
 
 - [ ] **Step 5: Commit**

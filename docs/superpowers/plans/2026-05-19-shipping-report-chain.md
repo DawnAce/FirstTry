@@ -684,7 +684,7 @@ git commit -m "feat: route shipping actions to shipping details" -m "Co-authored
 ```md
 ## 报数与中通明细链路
 
-- 当前期中通执行面统一为“收件人管理 → 中通发货明细”
+- 当前期中通执行面统一为“物流管理 → 中通发货明细”
 - 报数确认只比较：报数中通合计 vs 当期 shipping_details 合计
 - shipping_records 不再作为确认或中通 Excel 导出的来源
 - issue_audit_snapshots 记录确认与导出时的数量快照
@@ -703,7 +703,7 @@ git commit -m "feat: route shipping actions to shipping details" -m "Co-authored
 - [ ] **Step 3: Update `docs\user-guide.md` with the actual operator flow**
 
 ```md
-1. 在“收件人管理 → 中通发货明细”维护当期中通明细
+1. 在“物流管理 → 中通发货明细”维护当期中通明细
 2. 在"印数管理 → 报数编辑页"完成报数录入
 3. 点击“确认报数”并查看数量对照提示
 4. 分别导出报数文件和中通明细文件

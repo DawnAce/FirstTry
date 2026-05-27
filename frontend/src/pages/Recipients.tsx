@@ -978,7 +978,7 @@ export default function Recipients() {
         margin: '0 0 24px 0',
         letterSpacing: '-0.02em',
       }}>
-        收件人管理
+        物流管理
       </h2>
 
       <Tabs
