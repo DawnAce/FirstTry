@@ -14,7 +14,7 @@ import {
   Tooltip,
   Steps,
 } from 'antd';
-import ReactEChartsCore from 'echarts-for-react/lib/core';
+import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
 import { LineChart as ELineChart } from 'echarts/charts';
 import {
@@ -408,8 +408,7 @@ export default function Dashboard() {
             }
           >
             {trendData.length > 0 ? (
-              <ReactEChartsCore
-                echarts={echarts}
+              <ReactECharts
                 style={{ height: 260 }}
                 option={{
                   grid: { top: 30, right: 30, bottom: 30, left: 50 },
