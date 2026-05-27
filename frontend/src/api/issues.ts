@@ -12,6 +12,7 @@ export interface Issue {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  print_total?: number;
 }
 
 export interface NextIssueInfo {
@@ -21,9 +22,19 @@ export interface NextIssueInfo {
   previous_issue_id: number | null;
 }
 
+export interface WeeklyStats {
+  this_week_total: number;
+  last_week_total: number;
+  week_change: number;
+}
+
 export interface DashboardData {
   recent_issues: Issue[];
   stats: { total: number; draft: number };
+  weekly_stats: WeeklyStats;
+  latest_report_time: string | null;
+  next_issue_number: number | null;
+  next_issue_publish_date: string | null;
   next_issue: NextIssueInfo | null;
   available_issues: NextIssueInfo[];
 }

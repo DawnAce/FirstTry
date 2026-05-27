@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from datetime import date
+from sqlalchemy import desc, func
+from datetime import date, timedelta
 
 from app.database import SessionLocal, get_db, engine
 from app.cache import get_dashboard_cache, set_dashboard_cache
@@ -23,7 +23,7 @@ from app.api.shipping_details import router as shipping_details_router
 from app.api.operation_logs import router as operation_logs_router
 from app.api.history_import import router as history_import_router
 from app.auth import get_current_user, require_admin
-from app.models import Issue, PublicationSchedule
+from app.models import Issue, PublicationSchedule, ReportEntry
 from app.services.issue_service import build_issue_out
 
 app = FastAPI(title="中国经营报 · 印数管理系统", version="1.0.0")
@@ -71,12 +71,75 @@ def dashboard_data(db: Session = Depends(get_db), _user = Depends(get_current_us
 
     today = date.today()
 
+    # Excluded sub-categories for print total calculation
+    excluded_subs = {
+        '临时加印_自留', '营报传媒加印', '财经中心加印',
+        '中经未来', '产经中心加印',
+    }
+
     # Query 1: all issues (tiny table)
     all_issues = db.query(Issue).order_by(desc(Issue.issue_number)).all()
     recent_issues = all_issues[:10]
     total = len(recent_issues)
     draft = sum(1 for i in recent_issues if i.status.value == "draft")
     existing_numbers = {i.issue_number for i in all_issues}
+
+    # Compute print totals for recent issues
+    issue_print_totals: dict[int, int] = {}
+    if recent_issues:
+        recent_ids = [i.id for i in recent_issues]
+        entries = (
+            db.query(ReportEntry.issue_id, ReportEntry.sub_category, ReportEntry.value)
+            .filter(ReportEntry.issue_id.in_(recent_ids))
+            .all()
+        )
+        for issue_id, sub_cat, value in entries:
+            if sub_cat not in excluded_subs:
+                issue_print_totals[issue_id] = issue_print_totals.get(issue_id, 0) + (value or 0)
+
+    # This-week vs last-week print totals
+    # "This week" = issues with publish_date in current week (Mon-Sun)
+    week_start = today - timedelta(days=today.weekday())
+    last_week_start = week_start - timedelta(days=7)
+
+    this_week_issues = [i for i in all_issues if week_start <= i.publish_date <= today]
+    last_week_issues = [i for i in all_issues if last_week_start <= i.publish_date < week_start]
+
+    this_week_total = sum(issue_print_totals.get(i.id, 0) for i in this_week_issues)
+    last_week_total = sum(issue_print_totals.get(i.id, 0) for i in last_week_issues)
+
+    # For issues not in recent_issues, query their totals separately
+    extra_ids = set()
+    for i in this_week_issues + last_week_issues:
+        if i.id not in issue_print_totals:
+            extra_ids.add(i.id)
+    if extra_ids:
+        extra_entries = (
+            db.query(ReportEntry.issue_id, ReportEntry.sub_category, ReportEntry.value)
+            .filter(ReportEntry.issue_id.in_(list(extra_ids)))
+            .all()
+        )
+        extra_totals: dict[int, int] = {}
+        for issue_id, sub_cat, value in extra_entries:
+            if sub_cat not in excluded_subs:
+                extra_totals[issue_id] = extra_totals.get(issue_id, 0) + (value or 0)
+        this_week_total = sum(extra_totals.get(i.id, issue_print_totals.get(i.id, 0)) for i in this_week_issues)
+        last_week_total = sum(extra_totals.get(i.id, issue_print_totals.get(i.id, 0)) for i in last_week_issues)
+
+    # Latest report time (most recent created_at)
+    latest_issue = all_issues[0] if all_issues else None
+    latest_report_time = latest_issue.created_at.isoformat() if latest_issue and latest_issue.created_at else None
+
+    # Next issue info from schedule
+    next_issue_number = None
+    next_issue_publish_date = None
+    for e in db.query(PublicationSchedule).filter(
+        PublicationSchedule.is_suspended == False
+    ).order_by(PublicationSchedule.publish_date.asc()).all():
+        if e.issue_number not in existing_numbers and e.publish_date >= today:
+            next_issue_number = e.issue_number
+            next_issue_publish_date = e.publish_date
+            break
 
     # Query 2: all non-suspended schedule entries
     schedule_entries = (
@@ -117,10 +180,19 @@ def dashboard_data(db: Session = Depends(get_db), _user = Depends(get_current_us
                 "notes": issue_out.notes,
                 "created_at": issue_out.created_at.isoformat() if issue_out.created_at else None,
                 "updated_at": issue_out.updated_at.isoformat() if issue_out.updated_at else None,
+                "print_total": issue_print_totals.get(issue_out.id, 0),
             }
             for issue_out in (build_issue_out(db, i) for i in recent_issues)
         ],
         "stats": {"total": total, "draft": draft},
+        "weekly_stats": {
+            "this_week_total": this_week_total,
+            "last_week_total": last_week_total,
+            "week_change": this_week_total - last_week_total,
+        },
+        "latest_report_time": latest_report_time,
+        "next_issue_number": next_issue_number,
+        "next_issue_publish_date": next_issue_publish_date.isoformat() if next_issue_publish_date else None,
         "next_issue": next_info,
         "available_issues": available,
     }
