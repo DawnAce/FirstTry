@@ -78,7 +78,7 @@ export default function Dashboard() {
   // Prepare trend chart data (last 6 issues, sorted ascending)
   const trendData = useMemo(() => {
     return [...recentIssues]
-      .slice(0, 6)
+      .slice(0, 5)
       .reverse()
       .map(issue => ({
         name: `第${issue.issue_number}期\n${dayjs(issue.publish_date).format('MM-DD')}`,
@@ -394,7 +394,7 @@ export default function Dashboard() {
             title={
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 700, fontSize: 16 }}>
-                  近6期印数趋势
+                  近期印数趋势
                   <Tooltip title="印数单位：份">
                     <InfoCircleOutlined style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginLeft: 6 }} />
                   </Tooltip>
