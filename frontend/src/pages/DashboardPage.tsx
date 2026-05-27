@@ -14,15 +14,17 @@ import {
   Tooltip,
   Steps,
 } from 'antd';
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import * as echarts from 'echarts/core';
+import { LineChart as ELineChart } from 'echarts/charts';
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  ResponsiveContainer,
-} from 'recharts';
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+
+echarts.use([ELineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 import {
   PlusOutlined,
   EditOutlined,
@@ -406,43 +408,54 @@ export default function Dashboard() {
             }
           >
             {trendData.length > 0 ? (
-              <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trendData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fontSize: 11, fill: '#86868b' }}
-                      axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: '#86868b' }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={40}
-                    />
-                    <RechartsTooltip
-                      formatter={(value: number) => [`${value.toLocaleString()} 份`, '印数']}
-                      contentStyle={{
-                        borderRadius: 8,
-                        border: 'none',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                        fontSize: 13,
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="value"
-                      stroke="var(--color-accent)"
-                      strokeWidth={2}
-                      dot={{ r: 4, fill: 'var(--color-accent)', strokeWidth: 2, stroke: '#fff' }}
-                      activeDot={{ r: 6, fill: 'var(--color-accent)', strokeWidth: 2, stroke: '#fff' }}
-                      label={{ position: 'top', fontSize: 11, fill: '#1d1d1f', fontWeight: 500 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <ReactEChartsCore
+                echarts={echarts}
+                style={{ height: 260 }}
+                option={{
+                  grid: { top: 30, right: 30, bottom: 30, left: 50 },
+                  xAxis: {
+                    type: 'category',
+                    data: trendData.map(d => d.name),
+                    axisLabel: { fontSize: 11, color: '#86868b' },
+                    axisLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
+                    axisTick: { show: false },
+                  },
+                  yAxis: {
+                    type: 'value',
+                    axisLabel: { fontSize: 11, color: '#86868b' },
+                    axisLine: { show: false },
+                    axisTick: { show: false },
+                    splitLine: { lineStyle: { type: 'dashed', color: 'rgba(0,0,0,0.06)' } },
+                  },
+                  tooltip: {
+                    trigger: 'axis',
+                    formatter: (params: any) => {
+                      const p = params[0];
+                      return `${p.name}<br/>印数：<b>${p.value.toLocaleString()}</b> 份`;
+                    },
+                    backgroundColor: '#fff',
+                    borderColor: 'transparent',
+                    textStyle: { fontSize: 13 },
+                    extraCssText: 'border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);',
+                  },
+                  series: [{
+                    type: 'line',
+                    data: trendData.map(d => d.value),
+                    smooth: true,
+                    symbolSize: 8,
+                    itemStyle: { color: '#0071e3' },
+                    lineStyle: { width: 2, color: '#0071e3' },
+                    label: {
+                      show: true,
+                      position: 'top',
+                      fontSize: 11,
+                      color: '#1d1d1f',
+                      fontWeight: 500,
+                      formatter: (p: any) => p.value.toLocaleString(),
+                    },
+                  }],
+                }}
+              />
             ) : (
               <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>
                 暂无趋势数据
