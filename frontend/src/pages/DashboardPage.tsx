@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,6 +14,15 @@ import {
   Tooltip,
   Steps,
 } from 'antd';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import {
   PlusOutlined,
   EditOutlined,
@@ -65,6 +74,17 @@ export default function Dashboard() {
   const latestReportTime = data?.latest_report_time;
   const nextIssueNumber = data?.next_issue_number;
   const nextIssuePublishDate = data?.next_issue_publish_date;
+
+  // Prepare trend chart data (last 6 issues, sorted ascending)
+  const trendData = useMemo(() => {
+    return [...recentIssues]
+      .slice(0, 6)
+      .reverse()
+      .map(issue => ({
+        name: `第${issue.issue_number}期\n${dayjs(issue.publish_date).format('MM-DD')}`,
+        value: Number(((issue.print_total ?? 0) / 10000).toFixed(2)),
+      }));
+  }, [recentIssues]);
 
   const handleCreateIssue = async (issueNum?: number) => {
     const num = issueNum ?? (selectedIssue ? Number(selectedIssue) : null);
@@ -371,6 +391,69 @@ export default function Dashboard() {
                 style: { cursor: 'pointer' },
               })}
             />
+          </Card>
+
+          {/* Trend Chart */}
+          <Card
+            size="small"
+            style={{ marginTop: 20 }}
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 600, fontSize: 16 }}>
+                  近6期印数趋势
+                  <Tooltip title="印数单位：万份">
+                    <InfoCircleOutlined style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginLeft: 6 }} />
+                  </Tooltip>
+                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 400, marginLeft: 8 }}>
+                    印数单位：万份
+                  </span>
+                </span>
+              </div>
+            }
+          >
+            {trendData.length > 0 ? (
+              <div style={{ width: '100%', height: 260 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: '#86868b' }}
+                      axisLine={{ stroke: 'rgba(0,0,0,0.06)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#86868b' }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={40}
+                    />
+                    <RechartsTooltip
+                      formatter={(value: number) => [`${value} 万份`, '印数']}
+                      contentStyle={{
+                        borderRadius: 8,
+                        border: 'none',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                        fontSize: 13,
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      stroke="var(--color-accent)"
+                      strokeWidth={2}
+                      dot={{ r: 4, fill: 'var(--color-accent)', strokeWidth: 2, stroke: '#fff' }}
+                      activeDot={{ r: 6, fill: 'var(--color-accent)', strokeWidth: 2, stroke: '#fff' }}
+                      label={{ position: 'top', fontSize: 11, fill: '#1d1d1f', fontWeight: 500 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>
+                暂无趋势数据
+              </div>
+            )}
           </Card>
         </Col>
 
