@@ -775,7 +775,7 @@ export default function Recipients() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<Record<string, any>>({});
-  const activeTab = searchParams.get('tab') === 'shipping' ? 'shipping' : 'recipients';
+  const activeTab = searchParams.get('tab') === 'recipients' ? 'recipients' : 'shipping';
   const issueIdParam = Number(searchParams.get('issueId'));
   const initialIssueId = Number.isFinite(issueIdParam) ? issueIdParam : undefined;
   
@@ -985,8 +985,8 @@ export default function Recipients() {
         activeKey={activeTab}
         onChange={(key) => {
           const nextParams = new URLSearchParams(searchParams);
-          if (key === 'shipping') {
-            nextParams.set('tab', 'shipping');
+          if (key === 'recipients') {
+            nextParams.set('tab', 'recipients');
           } else {
             nextParams.delete('tab');
             nextParams.delete('issueId');
@@ -995,6 +995,11 @@ export default function Recipients() {
         }}
         size="large"
         items={[
+        {
+          key: 'shipping',
+          label: 'ZTO-MF',
+          children: <ShippingDetailsTab initialIssueId={initialIssueId} />,
+        },
         {
           key: 'recipients',
           label: '收件人',
@@ -1186,11 +1191,6 @@ export default function Recipients() {
       </Modal>
             </>
           ),
-        },
-        {
-          key: 'shipping',
-          label: 'ZTO-MF',
-          children: <ShippingDetailsTab initialIssueId={initialIssueId} />,
         },
       ]}
       />
