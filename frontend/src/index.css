@@ -647,10 +647,14 @@ body {
 /* Create card */
 .dashboard-create-card {
   height: 100%;
+  border: none;
+  box-shadow: none;
+  background: transparent;
 }
 
 .dashboard-create-card .ant-card-body {
   padding: 0 !important;
+  height: 100%;
 }
 
 .dashboard-create-main {
@@ -684,41 +688,47 @@ body {
 }
 
 .dashboard-create-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: #fff;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .dashboard-create-desc {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 /* Backfill card */
 .dashboard-backfill-card {
   height: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: none;
 }
 
 .dashboard-backfill-card .ant-card-body {
-  padding: 16px !important;
+  padding: 20px !important;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .dashboard-backfill-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .dashboard-backfill-body {
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .dashboard-backfill-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 
