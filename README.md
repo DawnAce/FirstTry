@@ -12,7 +12,7 @@
 
 ## 技术栈
 - **后端**: Python / FastAPI / SQLAlchemy / JWT 认证 / openpyxl / pypdf / cpca（地址解析）
-- **前端**: React / TypeScript / Vite / Ant Design / TanStack Query
+- **前端**: React / TypeScript / Vite / Ant Design / TanStack Query / ECharts（图表）
 - **数据库**: MySQL
 
 ## 快速开始

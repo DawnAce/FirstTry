@@ -2,7 +2,7 @@
 
 ## 1. 项目架构
 
-本项目采用前后端分离架构，使用 FastAPI + React 构建单页应用（SPA）。
+本项目采用前后端分离架构，使用 FastAPI + React 构建单页应用（SPA）。前端图表使用 ECharts（通过 echarts-for-react 封装），支持折线图、柱状图等多种图表类型。
 
 ### 开发模式
 - 前端：Vite 开发服务器运行在 `http://localhost:5173`
@@ -78,10 +78,11 @@ FirstTry/
 │   │   ├── api/                # API 客户端
 │   │   │   └── auth.ts         # 认证 API
 │   │   ├── components/         # 通用组件
+│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知铃铛、帮助、用户头像）+ 可折叠侧边栏（Logo、印数报数/印数管理/刊期表管理等菜单）
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
 │   │   ├── pages/              # 页面组件
-│   │   │   ├── DashboardPage.tsx  # 印数报数页（/，侧边栏「印数管理 > 印数报数」）
+│   │   │   ├── DashboardPage.tsx  # 印数报数仪表盘（/，侧边栏「印数报数」）— 统计卡片、一键创建/补录、报数流程、近期印数表、趋势图（ECharts）、待处理/快捷入口侧栏
 │   │   │   ├── History.tsx        # 历史期数页（/history，侧边栏「印数管理 > 历史期数」）
 │   │   │   ├── HistoryImport.tsx  # 往期导入页（/history-import，从历史印数期数页右上角「导入往期」按钮进入）
 │   │   │   ├── Login.tsx       # 登录页面
@@ -467,17 +468,33 @@ FirstTry/
 ```
 
 #### GET /api/dashboard
-Dashboard 聚合接口，返回最近期数、统计、下一期信息和可创建期数列表。使用 30 秒内存缓存，创建期数时自动清除缓存。
+Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创建期数列表、周印数统计和最新报数时间。使用 30 秒内存缓存，创建期数时自动清除缓存。
 
 **响应**：
 ```json
 {
-  "recent_issues": [...],
+  "recent_issues": [
+    {
+      "id": 1, "issue_number": 2650, "publish_date": "2026-05-18",
+      "status": "confirmed", "print_total": 9355
+    }
+  ],
   "stats": {"total": 10, "draft": 2},
   "next_issue": {"issue_number": 2652, "publish_date": "2026-05-18", "previous_issue_id": 2},
-  "available_issues": [{"issue_number": 2635, "publish_date": "2026-01-05"}, ...]
+  "available_issues": [{"issue_number": 2635, "publish_date": "2026-01-05"}, ...],
+  "weekly_stats": {
+    "this_week_total": 9355,
+    "last_week_total": 9200,
+    "change": 155
+  },
+  "latest_report_time": "2026-05-27T15:26:00"
 }
 ```
+
+**字段说明**：
+- `print_total`：每个期数的总印数（排除临时加印自留、营报传媒加印等内部分类）
+- `weekly_stats`：本周与上周印数对比（按周计算，非月累计）
+- `latest_report_time`：最新创建期数的时间（ISO 格式）
 
 #### POST /api/admin/seed
 运行种子数据初始化（2026年刊期表 + 报数模板）。
