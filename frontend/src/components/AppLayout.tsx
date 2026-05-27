@@ -17,7 +17,15 @@ const menuItems = [
     ],
   },
   { key: '/recipients', icon: <UserOutlined />, label: '物流管理' },
-  { key: '/schedule', icon: <CalendarOutlined />, label: '刊期表管理' },
+  {
+    key: 'schedule-management',
+    icon: <CalendarOutlined />,
+    label: '刊期表管理',
+    children: [
+      { key: '/schedule', label: '期刊表' },
+      { key: '/schedule/import', label: '导入期刊表' },
+    ],
+  },
 ];
 
 export default function AppLayout() {
@@ -31,6 +39,7 @@ export default function AppLayout() {
     if (path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import')) return '/';
     if (path.startsWith('/recipients')) return '/recipients';
     if (path.startsWith('/history')) return '/history';
+    if (path === '/schedule/import') return '/schedule/import';
     if (path.startsWith('/schedule')) return '/schedule';
     if (path.startsWith('/templates')) return '/templates';
     return path;
@@ -41,6 +50,9 @@ export default function AppLayout() {
     const path = location.pathname;
     if (path === '/' || path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import') || path.startsWith('/history') || path.startsWith('/templates')) {
       return ['print-management'];
+    }
+    if (path.startsWith('/schedule')) {
+      return ['schedule-management'];
     }
     return [];
   };

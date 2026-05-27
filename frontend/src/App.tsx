@@ -7,7 +7,8 @@ import Recipients from './pages/Recipients';
 import History from './pages/History';
 import Templates from './pages/Templates';
 import HistoryImport from './pages/HistoryImport';
-import PublicationScheduleManager from './pages/PublicationScheduleManager';
+import ScheduleView from './pages/ScheduleView';
+import ScheduleImport from './pages/ScheduleImport';
 import Login from './pages/Login';
 import type { ReactNode } from 'react';
 
@@ -37,7 +38,8 @@ function App() {
             <Route path="/history" element={<History />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/history-import" element={<HistoryImport />} />
-            <Route path="/schedule" element={<PublicationScheduleManager />} />
+            <Route path="/schedule" element={<ScheduleView />} />
+            <Route path="/schedule/import" element={<ScheduleImport />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
@@ -19,25 +19,19 @@ import {
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined, DeleteOutlined, WarningOutlined } from '@ant-design/icons';
+import { DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import type { TableProps, UploadProps } from 'antd';
 import dayjs from 'dayjs';
 import {
   commitScheduleUpload,
   discardScheduleUpload,
-  getSchedule,
   getScheduleUploads,
   previewScheduleUpload,
   updateScheduleUploadRows,
 } from '../api/schedule';
-import type { ScheduleDraftRow, ScheduleEntry, SchedulePreview, ScheduleUpload } from '../api/schedule';
+import type { ScheduleDraftRow, SchedulePreview, ScheduleUpload } from '../api/schedule';
 import { useAuth } from '../contexts/AuthContext';
-import {
-  formatIssueRange,
-  groupScheduleRowsByMonth,
-  rowHasError,
-  summarizeScheduleRows,
-} from './publicationScheduleUtils';
+import { formatIssueRange, groupScheduleRowsByMonth, rowHasError } from './publicationScheduleUtils';
 
 const DEFAULT_YEAR = 2026;
 const { Dragger } = Upload;
@@ -50,11 +44,6 @@ function buildYearOptions(selectedYear: number) {
   return Array.from(new Set([DEFAULT_YEAR, currentYear - 1, currentYear, currentYear + 1, selectedYear]))
     .sort((a, b) => a - b)
     .map((year) => ({ label: `${year} 年`, value: year }));
-}
-
-function renderIssue(row: Pick<ScheduleDraftRow | ScheduleEntry, 'is_suspended' | 'issue_number'>) {
-  if (row.is_suspended) return <Tag color="default">休刊</Tag>;
-  return row.issue_number === null ? '-' : `第 ${row.issue_number} 期`;
 }
 
 function renderStatus(status: ScheduleUpload['status']) {
@@ -76,7 +65,7 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return err.response?.data?.detail || err.message || fallback;
 }
 
-export default function PublicationScheduleManager() {
+export default function ScheduleImport() {
   const queryClient = useQueryClient();
   const { isAdmin } = useAuth();
   const [year, setYear] = useState(DEFAULT_YEAR);
@@ -90,14 +79,6 @@ export default function PublicationScheduleManager() {
   const [savingDraftRows, setSavingDraftRows] = useState(false);
   const yearOptions = useMemo(() => buildYearOptions(year), [year]);
 
-  const scheduleQuery = useQuery({
-    queryKey: ['schedule', year],
-    queryFn: async () => {
-      const res = await getSchedule(year);
-      return res.data;
-    },
-  });
-
   const uploadsQuery = useQuery({
     queryKey: ['scheduleUploads', year],
     queryFn: async () => {
@@ -106,10 +87,6 @@ export default function PublicationScheduleManager() {
     },
   });
 
-  const scheduleRows = scheduleQuery.data ?? [];
-  const summary = useMemo(() => summarizeScheduleRows(scheduleRows), [scheduleRows]);
-  const monthGroups = useMemo(() => groupScheduleRowsByMonth(scheduleRows), [scheduleRows]);
-  const issueRange = formatIssueRange(summary);
   const previewRowsWithIndex = useMemo<EditableScheduleDraftRow[]>(
     () => draftRows.map((row, draftIndex) => ({ ...row, draftIndex })),
     [draftRows],
@@ -165,10 +142,7 @@ export default function PublicationScheduleManager() {
     setDraftRows([]);
   };
 
-  const handleDraftRowChange = (
-    draftIndex: number,
-    patch: Partial<ScheduleDraftRow>,
-  ) => {
+  const handleDraftRowChange = (draftIndex: number, patch: Partial<ScheduleDraftRow>) => {
     setDraftRows((rows) => rows.map((row, index) => {
       if (index !== draftIndex) return row;
       const next = { ...row, ...patch };
@@ -251,46 +225,6 @@ export default function PublicationScheduleManager() {
       message.error(errorMessage);
     }
   };
-
-  const scheduleColumns: TableProps<ScheduleEntry>['columns'] = [
-    {
-      title: '出版日期',
-      dataIndex: 'publish_date',
-      key: 'publish_date',
-      render: (value: string) => dayjs(value).format('YYYY-MM-DD'),
-    },
-    {
-      title: '期号',
-      key: 'issue_number',
-      render: (_value: unknown, record) => renderIssue(record),
-    },
-    {
-      title: '版数',
-      dataIndex: 'page_count',
-      key: 'page_count',
-      render: (_value: number | null | undefined, record: ScheduleEntry) => {
-        const planned = record.page_count;
-        const actual = record.actual_page_count;
-        if (planned == null && actual == null) return '-';
-        const mismatch = actual != null && planned != null && actual !== planned;
-        return (
-          <Space size={4}>
-            {planned != null && <span>计划 {planned}版</span>}
-            {actual != null && (
-              <span style={{ color: mismatch ? '#fa8c16' : undefined, fontWeight: mismatch ? 500 : undefined }}>
-                实际 {actual}版
-              </span>
-            )}
-            {mismatch && (
-              <Tag color="orange" style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
-                <WarningOutlined />
-              </Tag>
-            )}
-          </Space>
-        );
-      },
-    },
-  ];
 
   const previewColumns: TableProps<EditableScheduleDraftRow>['columns'] = [
     {
@@ -401,7 +335,7 @@ export default function PublicationScheduleManager() {
     {
       title: '操作',
       key: 'action',
-      render: (_: unknown, record: ScheduleUpload) =>
+      render: (_: unknown, record: ScheduleUpload) => (
         record.status === 'previewed' ? (
           <Popconfirm
             title="确认删除此待确认记录？"
@@ -413,7 +347,8 @@ export default function PublicationScheduleManager() {
               删除
             </Button>
           </Popconfirm>
-        ) : null,
+        ) : null
+      ),
     },
   ];
 
@@ -423,10 +358,10 @@ export default function PublicationScheduleManager() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              刊期表管理
+              导入期刊表
             </h1>
             <p style={{ margin: '8px 0 0', color: 'var(--color-text-secondary)' }}>
-              查看年度出版计划和刊期表上传记录
+              上传年度刊期 PDF 并预览确认
             </p>
           </div>
           <Select
@@ -438,12 +373,15 @@ export default function PublicationScheduleManager() {
           />
         </div>
 
-        {scheduleQuery.isError && (
-          <Alert type="error" showIcon message="加载刊期表数据失败，请稍后重试" />
-        )}
-
-        {isAdmin && (
-          <Card title="上传 PDF 预览">
+        <Card title="上传 PDF 预览">
+          {!isAdmin ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="仅管理员可上传刊期 PDF"
+              description="当前账号没有导入权限，请联系管理员处理年度刊期表导入。"
+            />
+          ) : (
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
               <Dragger
                 accept=".pdf,application/pdf"
@@ -542,7 +480,7 @@ export default function PublicationScheduleManager() {
                     </Col>
                     <Col xs={24} sm={12} lg={4}>
                       <Card size="small">
-                        <div style={{ marginBottom: 4, color: 'rgba(0, 0, 0, 0.45)', fontSize: 14 }}>版数</div>
+                        <div style={{ marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 14 }}>版数</div>
                         <InputNumber
                           value={previewPageCount}
                           onChange={(val) => setPreviewPageCount(val)}
@@ -594,49 +532,8 @@ export default function PublicationScheduleManager() {
                 </Space>
               )}
             </Space>
-          </Card>
-        )}
-
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12} lg={6}>
-            <Card loading={scheduleQuery.isLoading}>
-              <Statistic title="计划周数" value={summary.total_rows} suffix="周" />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card loading={scheduleQuery.isLoading}>
-              <Statistic title="出版期数" value={summary.published_count} suffix="期" />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card loading={scheduleQuery.isLoading}>
-              <Statistic title="休刊次数" value={summary.suspended_count} suffix="次" />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card loading={scheduleQuery.isLoading}>
-              <Statistic title="期号范围" value={issueRange} />
-            </Card>
-          </Col>
-        </Row>
-
-        {scheduleRows.length === 0 && !scheduleQuery.isLoading && !scheduleQuery.isError ? (
-          <Card>
-            <Alert type="info" showIcon message="暂无该年份刊期表" />
-          </Card>
-        ) : (
-          monthGroups.map((group) => (
-            <Card key={group.month} title={`${year} 年 ${group.month} 月`} loading={scheduleQuery.isLoading}>
-              <Table<ScheduleEntry>
-                rowKey="id"
-                columns={scheduleColumns}
-                dataSource={group.rows}
-                pagination={false}
-                size="middle"
-              />
-            </Card>
-          ))
-        )}
+          )}
+        </Card>
 
         <Card title="上传记录" loading={uploadsQuery.isLoading}>
           {uploadsQuery.isError ? (
