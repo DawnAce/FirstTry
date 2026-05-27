@@ -661,7 +661,7 @@ body {
   padding: 24px 20px;
   background: linear-gradient(135deg, var(--color-accent), #0077ed);
   transition: opacity var(--transition);
-  flex: 1;
+  flex: 0 0 50%;
   min-width: 0;
 }
 
@@ -698,7 +698,7 @@ body {
 
 /* Backfill section (right side of unified wrapper) */
 .dashboard-backfill-section {
-  flex: 1;
+  flex: 0 0 50%;
   min-width: 0;
   padding: 20px 24px;
   display: flex;
