@@ -342,7 +342,7 @@ export default function Dashboard() {
           </div>
 
           {/* Workflow Steps */}
-          <Card size="small" style={{ marginBottom: 20 }}>
+          <Card size="small" style={{ marginBottom: 20 }} styles={{ body: { padding: 0 } }}>
             <div className="dashboard-workflow">
               <div className="dashboard-workflow-header">
                 <span className="dashboard-workflow-title">报数流程</span>

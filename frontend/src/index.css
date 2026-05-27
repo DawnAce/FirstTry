@@ -738,12 +738,11 @@ body {
 
 /* Workflow steps */
 .dashboard-workflow {
-  padding: 0;
+  padding: 16px 16px 12px 16px;
 }
 
 .dashboard-workflow-header {
-  padding: 16px 16px 8px 16px;
-  margin-bottom: 0;
+  margin-bottom: 8px;
 }
 
 .dashboard-workflow-title {
