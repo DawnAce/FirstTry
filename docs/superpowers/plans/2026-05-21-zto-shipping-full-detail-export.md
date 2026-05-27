@@ -255,7 +255,7 @@ Expected: all tests in `test_report_shipping_chain` pass.
 In `docs/user-guide.md`, under `#### 导出发货明细`, replace the old sheet-check instructions with:
 
 ```markdown
-1. 在「收件人管理」→「中通发货明细」选择期号后，点击"导出"按钮下载 `第2635期发货明细.xlsx`
+1. 在「物流管理」→「中通发货明细」选择期号后，点击"导出"按钮下载 `第2635期发货明细.xlsx`
 2. 导出的 Excel 只包含一个「中通发货明细」sheet
 3. 表头包含当前系统维护的业务字段：期号、原工作表、渠道、子渠道、签约公司、姓名、电话、地址、份数、频率、运输方式、发货时间、截止日期、状态、备注、附加信息、城市、站点、站厅、联系人、高铁序号、期数、信息确认
 4. 系统会同时记录一条 `shipping_export` 导出快照

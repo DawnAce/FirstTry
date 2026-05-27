@@ -16,7 +16,7 @@ const menuItems = [
       { key: '/templates', label: '报数模板' },
     ],
   },
-  { key: '/recipients', icon: <UserOutlined />, label: '收件人管理' },
+  { key: '/recipients', icon: <UserOutlined />, label: '物流管理' },
   { key: '/schedule', icon: <CalendarOutlined />, label: '刊期表管理' },
 ];
 
