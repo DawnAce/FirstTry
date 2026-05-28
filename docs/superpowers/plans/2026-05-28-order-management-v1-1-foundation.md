@@ -1,5 +1,12 @@
 # Order Management V1.1 Foundation Implementation Plan
 
+> **✅ 已交付 / Status: Delivered** — 2026-05-28 完成 Task 1 ~ Task 10 全部 10 个 Tasks，提交范围 `56bce63..24e3dc1`（14 个 commit，含 2 个设计文档 + 12 个 feat/docs 实现 commit）。
+>
+> - **后端**：73 个新单元/集成测试全部通过；全量 pytest 仅剩 8 个项目历史 baseline 失败，与本次改动无关。
+> - **前端**：`npx tsc --noEmit` 0 错误；Vitest 58/58（含 31 个 orderUtils 测试）。
+> - **文档**：README / docs/technical / docs/requirements / docs/user-guide 4 份均已同步。
+> - **遗留**：本文件末尾「Manual smoke test」清单尚未在浏览器中跑过，待用户在开发环境中手工验证；履约方案多版本、active 状态明细编辑、与 `shipping_details` 同步等留待 V1.2 / V1.3。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the **Order Management V1.1 (Foundation)** stage of the simplified V1 MVP — users can manually create one order (with line items and one or more fulfillment targets), confirm it, browse the list, and view full detail with events. No batch import, no schedule version switching, no shipping sync (those are V1.2 and V1.3).
@@ -1165,11 +1172,11 @@ Add "如何创建一张订单" section: open 订单管理 → 新建订单 → f
 
 ## Verification
 
-- [ ] `cd backend && pytest` passes including new tests
-- [ ] `cd backend && alembic upgrade head` and `alembic downgrade -1` both succeed cleanly
-- [ ] `cd frontend && npx tsc --noEmit` clean
-- [ ] `cd frontend && npm run test -- orderUtils` passes
-- [ ] Manual smoke test:
+- [x] `cd backend && pytest` passes including new tests *(73 V1.1 tests pass; 8 pre-existing baseline failures unrelated to V1.1)*
+- [x] `cd backend && alembic upgrade head` and `alembic downgrade -1` both succeed cleanly *(Task 1)*
+- [x] `cd frontend && npx tsc --noEmit` clean
+- [x] `cd frontend && npm run test -- orderUtils` passes *(31/31)*
+- [ ] Manual smoke test: *(待用户在浏览器中验证)*
   - [ ] Login → 订单管理 → 订单列表 (empty state shown)
   - [ ] New order → fill 1 item + 1 target → save draft → list shows draft
   - [ ] Open draft → edit → confirm → list shows active with order_code
