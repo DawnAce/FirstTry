@@ -127,20 +127,31 @@ class OrderCreate(BaseModel):
 
 
 class OrderUpdate(BaseModel):
-    """Payload for PATCH /orders/{id} on a draft / pending order.
+    """Payload for PUT /orders/{id}.
 
-    Once the order is ``active`` only ``notes`` may be edited via this
-    endpoint; other fields are silently ignored by the service layer.
-    The structural fields (items / targets) are edited via dedicated
-    endpoints in V1.2+.
+    All fields optional — only those set in the request body are applied.
+    Business rules (enforced in the service layer, not here):
+
+    * Draft orders: any field can be patched.
+    * Active orders: only ``ACTIVE_EDITABLE_FIELDS`` may be patched;
+      structural fields (``order_date`` / ``source_type`` / ``payer_name``)
+      are rejected with HTTP 422 — those require the V1.2
+      version-switching flow.
+    * Voided orders: rejected with HTTP 409.
+
+    Items / targets edits are out of scope here; they will get dedicated
+    endpoints in V1.2.
     """
 
-    external_order_no: Optional[str] = None
-    source_platform: Optional[str] = None
-    source_store: Optional[str] = None
-    payer_contact: Optional[str] = None
+    order_date: Optional[date] = None
+    source_type: Optional[OrderSourceType] = None
+    source_platform: Optional[str] = Field(default=None, max_length=64)
+    source_store: Optional[str] = Field(default=None, max_length=128)
+    external_order_no: Optional[str] = Field(default=None, max_length=128)
+    payer_name: Optional[str] = Field(default=None, max_length=128)
+    payer_contact: Optional[str] = Field(default=None, max_length=64)
     payment_method: Optional[OrderPaymentMethod] = None
-    payment_collector: Optional[str] = None
+    payment_collector: Optional[str] = Field(default=None, max_length=64)
     total_amount: Optional[Decimal] = None
     paid_amount: Optional[Decimal] = None
     invoice_required: Optional[bool] = None
