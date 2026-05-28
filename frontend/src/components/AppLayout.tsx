@@ -54,10 +54,13 @@ const menuItems: MenuProps['items'] = [
     ],
   },
   {
-    key: '/orders',
+    key: 'order-management',
     icon: <FileTextOutlined />,
     label: '订单管理',
-    disabled: true,
+    children: [
+      { key: '/orders', label: '订单列表' },
+      { key: '/orders/new', label: '新建订单' },
+    ],
   },
   {
     key: '/customers',
@@ -93,6 +96,8 @@ export default function AppLayout() {
     if (path === '/schedule/import') return '/schedule/import';
     if (path.startsWith('/schedule')) return '/schedule';
     if (path.startsWith('/templates')) return '/templates';
+    if (path === '/orders/new') return '/orders/new';
+    if (path.startsWith('/orders')) return '/orders';
     return path;
   };
 
@@ -103,6 +108,9 @@ export default function AppLayout() {
     }
     if (path.startsWith('/schedule')) {
       return ['schedule-management'];
+    }
+    if (path.startsWith('/orders')) {
+      return ['order-management'];
     }
     return [];
   };
@@ -148,7 +156,7 @@ export default function AppLayout() {
               selectedKeys={[getSelectedKey()]}
               defaultOpenKeys={getOpenKeys()}
               onClick={({ key }) => {
-                if (!key.startsWith('/dashboard') && !key.startsWith('/orders') && !key.startsWith('/customers') && !key.startsWith('/contracts') && !key.startsWith('/finance')) {
+                if (!key.startsWith('/dashboard') && !key.startsWith('/customers') && !key.startsWith('/contracts') && !key.startsWith('/finance')) {
                   navigate(key);
                 }
               }}
