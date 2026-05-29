@@ -414,15 +414,16 @@ V1.1 新增独立的订单管理子模块，与刊期 / 印数 / 物流子系统
 | 表 | 说明 |
 |----|------|
 | `orders` | 订单主体（订单编码、付款主体、来源、状态、金额）。状态机：`draft → pending_confirmation → active → void` |
-| `order_items` | 订单明细（一笔履约：订阅 / 单期 / 赠阅 / 补寄 / 续订 / 换订），含 `expected_issues_at_creation` 期数快照 |
+| `order_items` | 订单明细（一笔履约：订阅 / 单期 / 赠阅 / 补寄 / 续订 / 换订），含 `expected_issues_at_creation` 期数快照、`total_quantity`（每期份数）、`unit_price`（订阅 = 单订户覆盖期总价 / 单期 = 每份零售价）、`subtotal`（= total_quantity × unit_price） |
 | `fulfillment_allocations` | 分配方案版本（每条明细 V1.1 只有 v1；V1.2 起支持替换/暂停产生 v2+） |
-| `fulfillment_targets` | 履约目标（收件人 / 电话 / 地址 / 邮编 / 份数），`shipping_channel` V1.1 默认 `zto_outsource` |
+| `fulfillment_targets` | 履约目标（收件人 / 电话 / 地址 / 邮编 / 份数 = 每期份数），`shipping_channel` V1.1 默认 `zto_outsource` |
 | `order_events` | 订单事件流（created / confirmed / modified / voided / allocation_updated / target_* / synced_to_shipping / shipping_sync_conflict） |
 
 关键约束：
 
 - `order_code` 在 `active` 后由 `OrderCodeGenerator` 生成，格式 `ORD-YYYY-NNNNNN`（年内 6 位零填充序号，如 `ORD-2026-000003`），创建草稿时为 `NULL`
 - `order_items.allocation_id` 是 NOT NULL FK，因此**草稿创建时即写入 v1 allocation**（避免 confirm 时改 schema）
+- **份数 / 单价语义**：`order_items.total_quantity` 与 `fulfillment_targets.quantity` 均指**每期**份数（与覆盖期长度无关）；`order_items.unit_price` 在订阅场景下是单订户在整个覆盖期内的订阅费，单期/零售场景下是每份零售价；`subtotal = total_quantity × unit_price`，公式与期数无关。每期实际印数 = total_quantity × `expected_issues_at_creation`（在详情页进度卡里展示）
 - 所有金额字段使用 `DECIMAL(12, 2)`；前端 TS 用 `string` 传输，避免 JS 浮点损失
 - 在 active 状态下，`order_service.ACTIVE_EDITABLE_FIELDS` 白名单仅允许 11 个非结构字段被修改，结构改动留 V1.2
 

@@ -19,6 +19,7 @@ import {
   Spin,
   Switch,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -27,6 +28,7 @@ import {
   CheckOutlined,
   DeleteOutlined,
   PlusOutlined,
+  QuestionCircleOutlined,
   SaveOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -777,7 +779,15 @@ export default function OrderEditor() {
           ) : (
             <Alert
               type="info"
-              message="每条明细对应一笔履约（订阅/单期/赠阅等）；每条明细下至少 1 个履约目标，目标份数之和必须等于明细总份数。"
+              message={
+                <div>
+                  每条明细对应一笔履约（订阅/单期/赠阅等）；每条明细下至少 1 个履约目标。
+                  <br />
+                  <strong>份数语义</strong>：明细「总份数」与目标「份数」都指<strong>每期</strong>份数（如订阅，每订户每期 1 份 → 2 个订户即总份数 2），与覆盖期长度无关。
+                  <br />
+                  <strong>单价语义</strong>：订阅时为单订户覆盖期内的订阅费（如半年 120 元）；零售时为每份零售价。
+                </div>
+              }
               showIcon
               style={{ marginBottom: 16 }}
             />
@@ -997,7 +1007,23 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
         <Col span={6}>
           <Form.Item
             name={[field.name, 'total_quantity']}
-            label="总份数"
+            label={
+              <Space size={4}>
+                <span>总份数</span>
+                <Tooltip
+                  title={
+                    <div>
+                      <div><strong>每期</strong>需要寄出的份数（与覆盖期长度无关）：</div>
+                      <div>· 订阅：等于「订户数 × 每订户每期份数」，常见每订户每期 1 份</div>
+                      <div>· 单期/零售：本期总共要寄出的份数</div>
+                      <div style={{ marginTop: 4 }}>系统会校验该值必须等于下方履约目标份数之和。</div>
+                    </div>
+                  }
+                >
+                  <QuestionCircleOutlined style={{ color: 'var(--color-text-tertiary)', cursor: 'help' }} />
+                </Tooltip>
+              </Space>
+            }
             rules={[
               { required: true, message: '请填写总份数' },
               { type: 'number', min: 1, message: '至少 1 份' },
@@ -1007,6 +1033,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
               style={{ width: '100%' }}
               min={1}
               precision={0}
+              placeholder="每期份数"
               disabled={disabled}
             />
           </Form.Item>
@@ -1014,7 +1041,23 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
         <Col span={6}>
           <Form.Item
             name={[field.name, 'unit_price']}
-            label="单价"
+            label={
+              <Space size={4}>
+                <span>单价</span>
+                <Tooltip
+                  title={
+                    <div>
+                      <div>每「份」对应的价格：</div>
+                      <div>· 订阅：每订户在<strong>整个覆盖期</strong>的订阅费（如半年 120 元、全年 240 元）</div>
+                      <div>· 单期/零售：每份的零售价（如 5 元/份）</div>
+                      <div style={{ marginTop: 4 }}>小计 = 总份数 × 单价（公式与期数无关）。</div>
+                    </div>
+                  }
+                >
+                  <QuestionCircleOutlined style={{ color: 'var(--color-text-tertiary)', cursor: 'help' }} />
+                </Tooltip>
+              </Space>
+            }
             rules={[{ required: true, message: '请填写单价' }]}
           >
             <InputNumber
@@ -1023,12 +1066,22 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
               precision={2}
               step={0.01}
               prefix="¥"
+              placeholder="订阅整期 / 零售每份"
               disabled={disabled}
             />
           </Form.Item>
         </Col>
         <Col span={6}>
-          <Form.Item label="小计">
+          <Form.Item
+            label={
+              <Space size={4}>
+                <span>小计</span>
+                <Tooltip title="小计 = 总份数 × 单价，由系统自动计算">
+                  <QuestionCircleOutlined style={{ color: 'var(--color-text-tertiary)', cursor: 'help' }} />
+                </Tooltip>
+              </Space>
+            }
+          >
             <Input value={formatCurrency(subtotal)} disabled />
           </Form.Item>
         </Col>
@@ -1114,7 +1167,14 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
                   <Col span={8}>
                     <Form.Item
                       name={[tf.name, 'quantity']}
-                      label="份数"
+                      label={
+                        <Space size={4}>
+                          <span>份数</span>
+                          <Tooltip title="该收件人每期收到的份数（订阅情况下一般为 1）。所有目标的份数之和必须等于上方明细的「总份数」。">
+                            <QuestionCircleOutlined style={{ color: 'var(--color-text-tertiary)', cursor: 'help' }} />
+                          </Tooltip>
+                        </Space>
+                      }
                       rules={[
                         { required: true, message: '请填写份数' },
                         { type: 'number', min: 1, message: '至少 1 份' },
@@ -1124,6 +1184,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
                         style={{ width: '100%' }}
                         min={1}
                         precision={0}
+                        placeholder="每期份数"
                         disabled={disabled}
                       />
                     </Form.Item>

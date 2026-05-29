@@ -39,7 +39,12 @@ from app.models.order_item import (
 
 
 class FulfillmentTargetIn(BaseModel):
-    """One recipient row in the order editor."""
+    """One recipient row in the order editor.
+
+    Quantity semantics: ``quantity`` is the number of copies the recipient
+    receives **per issue** (typically 1 for a subscription). The sum of all
+    targets' ``quantity`` must equal the parent ``OrderItemIn.total_quantity``.
+    """
 
     recipient_name: str = Field(min_length=1, max_length=128)
     recipient_phone: Optional[str] = Field(default=None, max_length=64)
@@ -65,7 +70,24 @@ class FulfillmentTargetIn(BaseModel):
 
 
 class OrderItemIn(BaseModel):
-    """One sellable line inside an order, with its initial recipient split."""
+    """One sellable line inside an order, with its initial recipient split.
+
+    Quantity / price semantics (see docs/technical.md §3.15):
+
+    - ``total_quantity``: copies shipped **per issue** (NOT total across the
+      coverage period). For subscriptions this equals the number of
+      subscribers (× per-subscriber copies if > 1). Must equal the sum of
+      the line's target quantities.
+    - ``unit_price``: price per "copy slot". For subscriptions, this is the
+      single-subscriber price for the **entire coverage period** (e.g. ¥120
+      for a 6-month sub); for single-issue / retail orders it's the per-copy
+      retail price (e.g. ¥5).
+    - ``subtotal``: ``total_quantity * unit_price`` (the formula does NOT
+      multiply by issue count — the per-period unit_price already accounts
+      for that on the subscription side).
+    - Actual print volume = ``total_quantity * expected_issues_at_creation``
+      (computed at confirm time, shown on the detail page progress card).
+    """
 
     publication: Publication = Publication.cbj
     publication_format: PublicationFormat = PublicationFormat.paper
