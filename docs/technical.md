@@ -1552,6 +1552,35 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
+### 7.4 项目脚本（`scripts/`）
+
+仓库根目录的 `scripts/` 存放与构建无关、但能提升开发体验的辅助脚本。
+
+#### `use-dawnace.ps1` —— 多账号 GitHub 切换
+
+适用场景：本机同时登录多个 GitHub 账号（典型情况是 Copilot CLI 会向子
+进程注入个人账号的 `GH_TOKEN`，但本仓库需要以仓库 owner `DawnAce`
+身份创建 PR / 调用 GitHub REST API）。
+
+**工作原理**：
+1. 通过 `git credential fill` 从 Windows Credential Manager 取出 DawnAce
+   的 PAT（`git push` 一直在用同一把 token，所以一定存在）。
+2. 仅覆盖**当前 PowerShell 进程** 的 `$env:GH_TOKEN`，不写 User /
+   Machine 环境变量，不动 `~/.config/gh/hosts.yml`。
+3. 原 token 备份到 `$env:GH_TOKEN_BACKUP`，关闭窗口即一切归零。
+
+**用法**：
+```powershell
+. .\scripts\use-dawnace.ps1   # 必须 dot-source（开头有点 + 空格）
+gh api user --jq .login       # 应输出 DawnAce
+gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
+```
+
+**故障排查**：脚本第一行会校验是否 dot-source 调用，若直接 `.\scripts\use-dawnace.ps1`
+执行只会在子进程里短暂生效，回到父 shell 就失效。如果 GCM 里没有 DawnAce
+凭据（弹出错误："无法从 Git Credential Manager 读取"），先执行一次
+`git push` 让 GCM 弹窗存下 PAT。
+
 ## 8. 技术要点
 
 ### 8.1 FastAPI 特性
