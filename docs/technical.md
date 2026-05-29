@@ -421,7 +421,7 @@ V1.1 新增独立的订单管理子模块，与刊期 / 印数 / 物流子系统
 
 关键约束：
 
-- `order_code` 在 `active` 后由 `OrderCodeGenerator` 生成，格式 `ORD-YYYYMM-NNNN`（月内序号），创建草稿时为 `NULL`
+- `order_code` 在 `active` 后由 `OrderCodeGenerator` 生成，格式 `ORD-YYYY-NNNNNN`（年内 6 位零填充序号，如 `ORD-2026-000003`），创建草稿时为 `NULL`
 - `order_items.allocation_id` 是 NOT NULL FK，因此**草稿创建时即写入 v1 allocation**（避免 confirm 时改 schema）
 - 所有金额字段使用 `DECIMAL(12, 2)`；前端 TS 用 `string` 传输，避免 JS 浮点损失
 - 在 active 状态下，`order_service.ACTIVE_EDITABLE_FIELDS` 白名单仅允许 11 个非结构字段被修改，结构改动留 V1.2
