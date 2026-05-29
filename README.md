@@ -83,6 +83,20 @@ Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{A
 | Windows CMD | `dev.bat` |
 | macOS / Linux | `./dev.sh` |
 
+### 多账号 GitHub 切换（可选）
+
+如果本机同时登录了多个 GitHub 账号（例如 Copilot CLI 注入的 `GH_TOKEN`
+属于个人账号，但本仓库需要以 `DawnAce` 身份创建 PR / 调用 GitHub API），
+可在 PowerShell 里 dot-source 一次：
+
+```powershell
+. .\scripts\use-dawnace.ps1   # 仅覆盖当前窗口的 GH_TOKEN
+gh pr create ...              # 此后 gh / API 调用都是 DawnAce 身份
+```
+
+脚本会从 Git Credential Manager 取 token，**只影响当前 shell**，不写
+User/Machine 环境变量，关闭窗口后自动恢复。
+
 ### 8. 生产部署
 ```bash
 cd frontend && npm run build
