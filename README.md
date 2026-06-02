@@ -1,12 +1,13 @@
 # 中国经营报 · 印数管理系统
 
-每周五生成下周一出版的《中国经营报》印数管理表和中通快递发货明细的 Web 应用，并支持管理员上传年度刊期 PDF，预览校验后更新系统刊期表。
+每周五生成下周一出版的《中国经营报》印数管理表和中通快递发货明细的 Web 应用，并支持管理员上传年度刊期 PDF，预览校验后更新系统刊期表。系统从 V1.1 起还包含**订单管理**模块，用于手工录入和管理读者订单，跟踪覆盖期、履约目标和期数偏差。
 
 当前主链已经收敛为：
 
 - 报数编辑页中的 **中通物流公司合计**
 - 收件人管理中的 **中通发货明细（`shipping_details`）**
 - 报数/发货/打包导出时生成的 **审计快照**
+- 订单管理中的 **订单 → 明细 → 履约目标** 三级数据（V1.1 仅支持手工创建；电商批量导入、对账留待后续版本）
 
 旧的 `/shipping/:issueId` 入口已重定向到当前的「收件人管理 → 中通发货明细」执行面。
 
@@ -81,6 +82,20 @@ Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{A
 | Windows PowerShell | `.\dev.ps1` |
 | Windows CMD | `dev.bat` |
 | macOS / Linux | `./dev.sh` |
+
+### 多账号 GitHub 切换（可选）
+
+如果本机同时登录了多个 GitHub 账号（例如 Copilot CLI 注入的 `GH_TOKEN`
+属于个人账号，但本仓库需要以 `DawnAce` 身份创建 PR / 调用 GitHub API），
+可在 PowerShell 里 dot-source 一次：
+
+```powershell
+. .\scripts\use-dawnace.ps1   # 仅覆盖当前窗口的 GH_TOKEN
+gh pr create ...              # 此后 gh / API 调用都是 DawnAce 身份
+```
+
+脚本会从 Git Credential Manager 取 token，**只影响当前 shell**，不写
+User/Machine 环境变量，关闭窗口后自动恢复。
 
 ### 8. 生产部署
 ```bash

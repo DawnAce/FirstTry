@@ -1,6 +1,34 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime
+import enum
+
+from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SAEnum, ForeignKey
 from sqlalchemy.sql import func
 from app.database import Base
+
+
+class ShippingDetailSourceType(str, enum.Enum):
+    """Where a shipping_details row originated.
+
+    - manual: entered directly on the ZTO-MF page (legacy / V1.1 default)
+    - order_generated: written by the order sync job (V1.3+)
+    - historical_import: imported from a historical archive (V2)
+    """
+
+    manual = "manual"
+    order_generated = "order_generated"
+    historical_import = "historical_import"
+
+
+class ShippingDetailSyncStatus(str, enum.Enum):
+    """Sync state vs the source order target (V1.3+).
+
+    - synced: matches the linked order target as last synced
+    - manually_modified: a manual edit diverged from the order target
+    - orphaned: the linked order or target was voided / removed
+    """
+
+    synced = "synced"
+    manually_modified = "manually_modified"
+    orphaned = "orphaned"
 
 
 class ShippingDetail(Base):
@@ -29,5 +57,24 @@ class ShippingDetail(Base):
     confirmation = Column(String(50))
     company = Column(String(100), nullable=True, index=True)
     shipped_at = Column(DateTime, nullable=True)
+    # V1.1: order management linkage. All five are nullable so existing
+    # rows (legacy manual entries) keep working unchanged. source_type
+    # and sync_status get server_default so the DDL upgrade is clean.
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
+    order_item_id = Column(Integer, ForeignKey("order_items.id"), nullable=True)
+    fulfillment_target_id = Column(Integer, ForeignKey("fulfillment_targets.id"), nullable=True)
+    source_type = Column(
+        SAEnum(ShippingDetailSourceType),
+        nullable=False,
+        default=ShippingDetailSourceType.manual,
+        server_default="manual",
+        index=True,
+    )
+    sync_status = Column(
+        SAEnum(ShippingDetailSyncStatus),
+        nullable=False,
+        default=ShippingDetailSyncStatus.synced,
+        server_default="synced",
+    )
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

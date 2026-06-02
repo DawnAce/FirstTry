@@ -506,6 +506,7 @@ start_date <= publish_date <= end_date
 - ✅ 模板管理
 - ✅ 往期数据导入（基于系统模板）
 - ✅ 年度刊期 PDF 上传、预览、校验与提交
+- ✅ 订单管理（V1.1：手工录入、确认、作废、覆盖期偏差跟踪）
 
 ### 10.2 不包含的功能
 
@@ -536,6 +537,36 @@ start_date <= publish_date <= end_date
 - 报数项必须与 `report_item_templates` 中的定义一致（`category` + `sub_category` 匹配）
 - 导入页不提供整表编辑，所有数据填写在 Excel 模板中完成
 - 导入生成的期数状态为 `draft`，不自动确认
+
+### 10.4 订单管理（V1.1）
+
+V1.1 上线 MVP 级订单管理，目标是把目前散落在 Excel 中的读者订单沉淀进系统，并为后续电商对接、批量导入留出框架。
+
+**已交付（V1.1）**：
+- ✅ 订单主表 + 明细 + 履约分配 + 履约目标 + 事件流（5 张表）
+- ✅ 6 种履约类型：`subscription` 订阅 / `single_issue` 单期 / `complimentary` 赠阅 / `make_good` 补寄 / `renewal` 续订 / `swap` 换订
+- ✅ 草稿创建、生效、作废 三态生命周期（含 `pending_confirmation` 预留状态）
+- ✅ 订单编码自动生成（生效时分配，年内 6 位序号 `ORD-YYYY-NNNNNN`）
+- ✅ 期数预估：基于 `publication_schedule` 跳过休刊期、订阅按覆盖期算实际期数；生效时快照 `expected_issues_at_creation`，详情页实时显示当前期数和偏差
+- ✅ active 状态下白名单编辑（11 个非结构字段，如付款主体、备注、外部订单号等）
+- ✅ 订单列表筛选、订单详情 4 Tab 视图（明细 / 履约方案 / 发货同步占位 / 事件流时间线）
+- ✅ 完整事件流审计（created / confirmed / modified / voided / allocation_updated / target_*）
+
+**留待 V1.2**：
+- ❌ active 状态下就地编辑明细 / 目标（V1.1 需先作废重建）
+- ❌ 履约方案多版本（替换 / 暂停产生 v2+）
+- ❌ 与 `shipping_details` 实际同步（V1.1 事件流已预留 `synced_to_shipping` / `shipping_sync_conflict`）
+
+**留待 V1.3+**：
+- ❌ 电商订单批量导入（Excel / API）
+- ❌ 财务对账（实付 / 应收 / 退款）
+- ❌ 客户自助下单
+
+**约束与限制**：
+- V1.1 只支持手工创建，不接收任何外部订单源
+- 订单一旦作废即为终态，不可恢复，需重新创建
+- 期数快照只在生效时写入一次，刊期表后续调整不会回溯，但详情页可看到实时偏差，便于人工跟进
+- 金额字段使用 `DECIMAL(12, 2)`，前后端字符串传输避免浮点精度问题
 
 
 

@@ -9,6 +9,9 @@ import Templates from './pages/Templates';
 import HistoryImport from './pages/HistoryImport';
 import ScheduleView from './pages/ScheduleView';
 import ScheduleImport from './pages/ScheduleImport';
+import OrderList from './pages/OrderList';
+import OrderEditor from './pages/OrderEditor';
+import OrderDetail from './pages/OrderDetail';
 import Login from './pages/Login';
 import type { ReactNode } from 'react';
 
@@ -40,6 +43,10 @@ function App() {
             <Route path="/history-import" element={<HistoryImport />} />
             <Route path="/schedule" element={<ScheduleView />} />
             <Route path="/schedule/import" element={<ScheduleImport />} />
+            <Route path="/orders" element={<OrderList />} />
+            <Route path="/orders/new" element={<OrderEditor />} />
+            <Route path="/orders/:id" element={<OrderDetail />} />
+            <Route path="/orders/:id/edit" element={<OrderEditor />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
