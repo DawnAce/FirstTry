@@ -234,6 +234,42 @@ def test_update_active_allows_notes(client):
     assert r.json()["notes"] == "after confirm"
 
 
+def test_invoice_fields_round_trip_on_create_and_active_update(client):
+    """V1.1 发票拆分：抬头 / 税号 / 接收邮箱 三个字段独立持久化，
+    在 active 状态下都允许编辑（运营经常事后补 / 改这些信息）。
+    """
+    payload = _make_create_payload()
+    payload.update(
+        {
+            "invoice_required": True,
+            "invoice_title": "东莞农村商业银行股份有限公司",
+            "invoice_tax_no": "914419007829859746",
+            "invoice_recipient_email": "ar@example.com",
+        }
+    )
+    created = client.post("/api/orders", json=payload).json()
+    assert created["invoice_required"] is True
+    assert created["invoice_title"] == "东莞农村商业银行股份有限公司"
+    assert created["invoice_tax_no"] == "914419007829859746"
+    assert created["invoice_recipient_email"] == "ar@example.com"
+
+    # confirm → active, then edit invoice fields
+    client.post(f"/api/orders/{created['id']}/confirm")
+    r = client.put(
+        f"/api/orders/{created['id']}",
+        json={
+            "invoice_title": "新抬头",
+            "invoice_tax_no": "91440100MA5XXXXXX0",
+            "invoice_recipient_email": "finance@example.com",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["invoice_title"] == "新抬头"
+    assert body["invoice_tax_no"] == "91440100MA5XXXXXX0"
+    assert body["invoice_recipient_email"] == "finance@example.com"
+
+
 def test_update_order_not_found_returns_404(client):
     r = client.put("/api/orders/99999", json={"notes": "x"})
     assert r.status_code == 404

@@ -548,7 +548,7 @@ V1.1 上线 MVP 级订单管理，目标是把目前散落在 Excel 中的读者
 - ✅ 草稿创建、生效、作废 三态生命周期（含 `pending_confirmation` 预留状态）
 - ✅ 订单编码自动生成（生效时分配，年内 6 位序号 `ORD-YYYY-NNNNNN`）
 - ✅ 期数预估：基于 `publication_schedule` 跳过休刊期、订阅按覆盖期算实际期数；生效时快照 `expected_issues_at_creation`，详情页实时显示当前期数和偏差
-- ✅ active 状态下白名单编辑（11 个非结构字段，如付款主体、备注、外部订单号等）
+- ✅ active 状态下白名单编辑（**13 个非结构字段**，含付款主体、备注、外部订单号、发票抬头/税号/接收邮箱等）
 - ✅ 订单列表筛选、订单详情 4 Tab 视图（明细 / 履约方案 / 发货同步占位 / 事件流时间线）
 - ✅ 完整事件流审计（created / confirmed / modified / voided / allocation_updated / target_*）
 

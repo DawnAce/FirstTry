@@ -258,10 +258,20 @@ export default function OrderDetail() {
           </Descriptions.Item>
           <Descriptions.Item label="开票">
             {order.invoice_required ? '是' : '否'}
-            {order.invoice_required && order.invoice_title
-              ? `（抬头：${order.invoice_title}）`
-              : ''}
           </Descriptions.Item>
+          {order.invoice_required && (
+            <>
+              <Descriptions.Item label="发票抬头">
+                {order.invoice_title ?? '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="纳税人识别号">
+                {order.invoice_tax_no ?? '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="发票接收邮箱">
+                {order.invoice_recipient_email ?? '-'}
+              </Descriptions.Item>
+            </>
+          )}
           {order.notes && (
             <Descriptions.Item label="备注" span={3}>
               {order.notes}
