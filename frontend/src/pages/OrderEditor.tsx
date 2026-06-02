@@ -157,6 +157,8 @@ const ACTIVE_EDITABLE_FIELDS = new Set<keyof OrderFormValues>([
   'payer_contact',
   'invoice_required',
   'invoice_title',
+  'invoice_tax_no',
+  'invoice_recipient_email',
   'payment_method',
   'payment_collector',
   'external_order_no',
@@ -203,6 +205,8 @@ export interface OrderFormValues {
   paid_amount?: number | null;
   invoice_required: boolean;
   invoice_title?: string | null;
+  invoice_tax_no?: string | null;
+  invoice_recipient_email?: string | null;
   notes?: string | null;
   items: ItemFormValues[];
 }
@@ -260,6 +264,8 @@ function detailToFormValues(detail: OrderOut): Partial<OrderFormValues> {
     paid_amount: Number(detail.paid_amount),
     invoice_required: detail.invoice_required,
     invoice_title: detail.invoice_title,
+    invoice_tax_no: detail.invoice_tax_no,
+    invoice_recipient_email: detail.invoice_recipient_email,
     notes: detail.notes,
     items: detail.items.map<ItemFormValues>((it) => {
       const activeAllocation =
@@ -347,6 +353,8 @@ function formValuesToCreatePayload(values: OrderFormValues): OrderCreatePayload 
     paid_amount: Number(values.paid_amount) || 0,
     invoice_required: values.invoice_required,
     invoice_title: values.invoice_title ?? null,
+    invoice_tax_no: values.invoice_tax_no ?? null,
+    invoice_recipient_email: values.invoice_recipient_email ?? null,
     notes: values.notes ?? null,
     items: values.items.map(itemToCreatePayload),
   };
@@ -370,6 +378,8 @@ function formValuesToUpdatePayload(
     paid_amount: Number(values.paid_amount) || 0,
     invoice_required: values.invoice_required,
     invoice_title: values.invoice_title ?? null,
+    invoice_tax_no: values.invoice_tax_no ?? null,
+    invoice_recipient_email: values.invoice_recipient_email ?? null,
     notes: values.notes ?? null,
   };
   if (!isActive) return all;
@@ -814,15 +824,49 @@ export default function OrderEditor() {
             </Col>
           </Row>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item name="invoice_title" label="发票抬头">
                 <Input
                   maxLength={200}
+                  placeholder="如：东莞农村商业银行股份有限公司"
                   disabled={isFieldDisabled('invoice_title', status)}
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={8}>
+              <Form.Item
+                name="invoice_tax_no"
+                label="纳税人识别号"
+                tooltip="统一社会信用代码（USCC，常见 18 位字母数字）。个人发票可留空。"
+              >
+                <Input
+                  maxLength={64}
+                  placeholder="如：914419007829859746"
+                  disabled={isFieldDisabled('invoice_tax_no', status)}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                name="invoice_recipient_email"
+                label="发票接收邮箱"
+                rules={[
+                  {
+                    type: 'email',
+                    message: '请输入有效的邮箱地址',
+                  },
+                ]}
+              >
+                <Input
+                  maxLength={128}
+                  placeholder="如：finance@example.com"
+                  disabled={isFieldDisabled('invoice_recipient_email', status)}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={24}>
               <Form.Item name="notes" label="备注">
                 <TextArea
                   rows={2}

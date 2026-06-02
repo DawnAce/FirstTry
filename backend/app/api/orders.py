@@ -240,6 +240,8 @@ def _build_order_out(db: Session, order) -> OrderOut:
         paid_amount=order.paid_amount,
         invoice_required=order.invoice_required,
         invoice_title=order.invoice_title,
+        invoice_tax_no=order.invoice_tax_no,
+        invoice_recipient_email=order.invoice_recipient_email,
         status=order.status,
         notes=order.notes,
         created_at=order.created_at,

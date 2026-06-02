@@ -146,7 +146,11 @@ class OrderCreate(BaseModel):
     total_amount: Decimal = Decimal("0")
     paid_amount: Decimal = Decimal("0")
     invoice_required: bool = False
-    invoice_title: Optional[str] = None
+    invoice_title: Optional[str] = Field(default=None, max_length=200)
+    # 纳税人识别号 / 统一社会信用代码（USCC 18 位字母数字）；个人发票可留空
+    invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
+    # 电子发票送达邮箱；前端 Form 已做格式校验，后端只做长度限制 + 可空
+    invoice_recipient_email: Optional[str] = Field(default=None, max_length=128)
     notes: Optional[str] = None
     items: List[OrderItemIn] = Field(min_length=1)
 
@@ -183,7 +187,9 @@ class OrderUpdate(BaseModel):
     total_amount: Optional[Decimal] = None
     paid_amount: Optional[Decimal] = None
     invoice_required: Optional[bool] = None
-    invoice_title: Optional[str] = None
+    invoice_title: Optional[str] = Field(default=None, max_length=200)
+    invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_recipient_email: Optional[str] = Field(default=None, max_length=128)
     notes: Optional[str] = None
 
 
@@ -287,6 +293,8 @@ class OrderOut(BaseModel):
     paid_amount: Decimal
     invoice_required: bool
     invoice_title: Optional[str]
+    invoice_tax_no: Optional[str]
+    invoice_recipient_email: Optional[str]
     status: OrderStatus
     notes: Optional[str]
     created_at: datetime

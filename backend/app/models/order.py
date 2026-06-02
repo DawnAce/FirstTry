@@ -62,6 +62,8 @@ class Order(Base):
     paid_amount = Column(Numeric(10, 2), default=0, nullable=False)
     invoice_required = Column(Boolean, default=False, nullable=False)
     invoice_title = Column(Text, nullable=True)
+    invoice_tax_no = Column(String(64), nullable=True)
+    invoice_recipient_email = Column(String(128), nullable=True)
     status = Column(
         SAEnum(OrderStatus),
         default=OrderStatus.draft,

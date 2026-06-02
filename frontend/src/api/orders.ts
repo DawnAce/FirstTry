@@ -108,6 +108,8 @@ export interface OrderCreatePayload {
   paid_amount?: string | number;
   invoice_required?: boolean;
   invoice_title?: string | null;
+  invoice_tax_no?: string | null;
+  invoice_recipient_email?: string | null;
   notes?: string | null;
   items: OrderItemIn[];
 }
@@ -127,6 +129,8 @@ export interface OrderUpdatePayload {
   paid_amount?: string | number;
   invoice_required?: boolean;
   invoice_title?: string | null;
+  invoice_tax_no?: string | null;
+  invoice_recipient_email?: string | null;
   notes?: string | null;
 }
 
@@ -213,6 +217,8 @@ export interface OrderOut {
   paid_amount: string;
   invoice_required: boolean;
   invoice_title: string | null;
+  invoice_tax_no: string | null;
+  invoice_recipient_email: string | null;
   status: OrderStatus;
   notes: string | null;
   created_at: string;

@@ -426,7 +426,7 @@ V1.1 新增独立的订单管理子模块，与刊期 / 印数 / 物流子系统
 - **份数 / 单价语义**：`order_items.total_quantity` 与 `fulfillment_targets.quantity` 均指**每期**份数（与覆盖期长度无关）；`order_items.unit_price` 在订阅场景下是单订户在整个覆盖期内的订阅费，单期/零售场景下是每份零售价；`subtotal = total_quantity × unit_price`，公式与期数无关。每期实际印数 = total_quantity × `expected_issues_at_creation`（在详情页进度卡里展示）
 - **订阅期限（前端 UX，不入库）**：`OrderEditor.tsx` 提供「半年 / 一年 / 自定义」快捷按钮，仅是前端体验糖：选半年 → 自动写 `coverage_range = [start, start + 6 months - 1 day]`；选一年 → `+12 months - 1 day`；选自定义则 RangePicker 完全手填。后端权威字段始终是 `coverage_start_date / coverage_end_date`，**没有** `subscription_term` 列，因此 2 年等非标周期完全兼容。加载已有订单时按覆盖期天数反推期限标签（容差 ±3 天，避免大小月与闰年抖动）
 - 所有金额字段使用 `DECIMAL(10, 2)`（最大 9999 9999.99 元）；前端 TS 用 `string` 传输，避免 JS 浮点损失
-- 在 active 状态下，`order_service.ACTIVE_EDITABLE_FIELDS` 白名单仅允许 11 个非结构字段被修改，结构改动留 V1.2
+- 在 active 状态下，`order_service.ACTIVE_EDITABLE_FIELDS` 白名单仅允许 13 个非结构字段被修改（V1.1 起含新增的 `invoice_tax_no` / `invoice_recipient_email`），结构改动留 V1.2
 - **V1.1 业务范围限定**：仅覆盖"个人客户预付 + 同事赠阅"两种场景。`paid_amount` 字段虽已建表，但**没有任何业务逻辑读它**（不算欠款、不阻塞 confirm、不做对账、列表不能按"未付清"过滤）。"渠道订单（先履约后付款 / 赊账）"明确不在 V1.1 范围，留待 V1.2 引入「收款流水子表 + 欠款追踪 + 未付清筛选 + Dashboard 欠款卡片」时再激活该字段的业务价值
 - **`source_type` 字段的 V1.1 含义重新定义**：原 5 个枚举值（`ecommerce` / `corporate_transfer` / `vip_gift` / `manual` / `mail_annual`）实际混杂了 4 个维度的概念（销售渠道 / 付款方式 / 业务性质 / 录入方式），与已有的 `source_platform`（销售渠道）/ `payment_method`（付款方式）/ `billing_type`（业务性质）字段重复。**PR-A 已将 UX 解耦为"录入方式"** —— 前端表单完全隐藏该字段，列表筛选器移除，详情页用 Tag「📥 手工录入」展示；后端 `OrderCreate.source_type` 默认 `manual`、`OrderUpdate` 完全移除该字段（provenance 元数据任何状态下都不可改）。数据迁移 `d8a1f4e7b9c2` 已把全部历史数据规范化为 `manual`。**V1.2 计划做 PR-B**：DB schema rename `source_type` → `entry_method`、枚举值改为 `manual` / `excel_import` / `api_sync`、Excel 批量导入入口与 API 同步通道启用时各自固定写对应值
 - **录入方式与销售渠道的区分**：用户填的"渠道信息"（微信小程序 / 淘宝 / 有赞 + 店铺名）走 `source_platform` / `source_store`，不走 `source_type`；详情页 Descriptions 区有专门展示。这与"录入方式"是两个正交维度（例：吴娟那张订单是"销售渠道 = 微信小程序，录入方式 = 手工录入"）
@@ -435,6 +435,7 @@ V1.1 新增独立的订单管理子模块，与刊期 / 印数 / 物流子系统
 
 - `alembic/versions/c7e3a9b1d2f4_add_order_management_v1_1.py`：建表 + 索引
 - `alembic/versions/d8a1f4e7b9c2_normalize_order_source_type_to_manual.py`：PR-A 数据规范化（全部 `source_type` 写为 `manual`）
+- `alembic/versions/e9b3c5d7f1a4_add_invoice_tax_no_and_email.py`：把"发票抬头"单字段拆出 `invoice_tax_no`（纳税人识别号 VARCHAR(64)）、`invoice_recipient_email`（电子发票送达邮箱 VARCHAR(128)）两个新列，便于后续生成 / 推送电子发票
 
 ## 4. API 接口一览
 
@@ -1397,7 +1398,7 @@ draft ──confirm──> active ──void──> void
 
 - `draft`：允许任意编辑、可作废
 - `pending_confirmation`：（保留状态，目前未自动跳入）
-- `active`：仅允许 `ACTIVE_EDITABLE_FIELDS`（11 个非结构字段）；items / targets 改动留 V1.2
+- `active`：仅允许 `ACTIVE_EDITABLE_FIELDS`（13 个非结构字段，含发票抬头 / 税号 / 接收邮箱）；items / targets 改动留 V1.2
 - `void`：终态，任何编辑/重新确认返回 409
 
 
