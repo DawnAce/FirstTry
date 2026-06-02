@@ -95,7 +95,9 @@ export interface OrderItemIn {
 export interface OrderCreatePayload {
   external_order_no?: string | null;
   order_date: string;
-  source_type: OrderSourceType;
+  // V1.1：录入方式 provenance；前端可以不传（后端默认 manual）。
+  // V1.2 引入批量导入 / API 同步时再暴露选择 UI。
+  source_type?: OrderSourceType;
   source_platform?: string | null;
   source_store?: string | null;
   payer_name: string;
@@ -112,7 +114,8 @@ export interface OrderCreatePayload {
 
 export interface OrderUpdatePayload {
   order_date?: string;
-  source_type?: OrderSourceType;
+  // NOTE: source_type 不在 update payload —— V1.1 起为 provenance 元数据，
+  // 任何状态下都不允许通过编辑接口修改（详见 backend OrderUpdate docstring）
   source_platform?: string | null;
   source_store?: string | null;
   external_order_no?: string | null;

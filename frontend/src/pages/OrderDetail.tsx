@@ -26,6 +26,7 @@ import {
 import {
   ArrowLeftOutlined,
   EditOutlined,
+  InboxOutlined,
   StopOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
@@ -47,12 +48,12 @@ import {
   canVoidOrder,
   driftColor,
   driftLabel,
+  entryMethodLabel,
   eventTypeLabel,
   fulfillmentTypeLabel,
   formatCoverage,
   formatCurrency,
   publicationLabel,
-  sourceTypeLabel,
   statusBadgeColor,
   statusLabel,
   targetStatusColor,
@@ -179,6 +180,9 @@ export default function OrderDetail() {
             {order.order_code ?? `订单 #${order.id}`}
           </Title>
           <Badge status={statusBadgeColor(order.status)} text={statusLabel(order.status)} />
+          <Tag icon={<InboxOutlined />} color="default">
+            {entryMethodLabel(order.source_type)}
+          </Tag>
         </Space>
         <Space>
           {canEditOrder(order.status) && (
@@ -200,31 +204,24 @@ export default function OrderDetail() {
       {/* Summary card */}
       <Card size="small" style={{ marginBottom: 16 }}>
         <Row gutter={24}>
-          <Col span={5}>
+          <Col span={6}>
             <Statistic title="付款主体" value={order.payer_name} valueStyle={{ fontSize: 18 }} />
           </Col>
-          <Col span={5}>
+          <Col span={6}>
             <Statistic
               title="下单日期"
               value={order.order_date}
               valueStyle={{ fontSize: 18 }}
             />
           </Col>
-          <Col span={5}>
-            <Statistic
-              title="来源"
-              value={sourceTypeLabel(order.source_type)}
-              valueStyle={{ fontSize: 18 }}
-            />
-          </Col>
-          <Col span={5}>
+          <Col span={6}>
             <Statistic
               title="覆盖期"
               value={headerCoverage}
               valueStyle={{ fontSize: 18 }}
             />
           </Col>
-          <Col span={4}>
+          <Col span={6}>
             <Statistic
               title="订单总金额"
               value={formatCurrency(order.total_amount)}
@@ -238,6 +235,12 @@ export default function OrderDetail() {
           style={{ marginTop: 16 }}
           labelStyle={{ width: 100 }}
         >
+          <Descriptions.Item label="来源平台">
+            {order.source_platform ?? '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="来源店铺">
+            {order.source_store ?? '-'}
+          </Descriptions.Item>
           <Descriptions.Item label="来源单号">
             {order.external_order_no ?? '-'}
           </Descriptions.Item>

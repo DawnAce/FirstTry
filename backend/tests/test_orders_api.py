@@ -127,12 +127,30 @@ def test_create_order_returns_201_with_draft_status(client):
     body = r.json()
     assert body["status"] == "draft"
     assert body["order_code"] is None
+    # V1.1 PR-A: 即使客户端 payload 传 source_type="ecommerce"，
+    # 服务端也会硬归一为 manual（provenance 由 entrypoint 控制）
+    assert body["source_type"] == "manual"
     assert len(body["items"]) == 1
     assert body["items"][0]["total_quantity"] == 2
     # nested progress is computed even at draft (snapshot=None, so drift=None)
     progress = body["items"][0]["progress"]
     assert progress["expected_at_creation"] is None
     assert progress["drift"] is None
+
+
+def test_create_order_ignores_client_source_type_and_persists_manual(client):
+    """V1.1 PR-A invariant via the HTTP layer: even if a stale client (or 3rd-party
+    integration) POSTs a non-manual source_type, the server must persist 'manual'.
+    Provenance is controlled by the entrypoint, not trusted from the request body.
+    """
+    for spoofed in ("ecommerce", "corporate_transfer", "vip_gift", "mail_annual"):
+        payload = _make_create_payload(source_type=spoofed)
+        r = client.post("/api/orders", json=payload)
+        assert r.status_code == 201, f"{spoofed}: {r.text}"
+        assert r.json()["source_type"] == "manual", (
+            f"client claimed source_type={spoofed}, "
+            f"server must normalize to manual"
+        )
 
 
 def test_create_order_validates_targets_quantity_sum(client):

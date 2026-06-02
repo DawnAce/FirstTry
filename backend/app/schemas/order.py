@@ -133,7 +133,10 @@ class OrderCreate(BaseModel):
 
     external_order_no: Optional[str] = Field(default=None, max_length=128)
     order_date: date
-    source_type: OrderSourceType
+    # V1.1：来源类型仅作为录入方式 provenance 元数据，前端不再暴露选择 UI；
+    # 默认 `manual`，未来 V1.2 引入批量导入 / API 同步时再扩展枚举。
+    # 销售渠道信息（电商平台、店铺）走 source_platform / source_store。
+    source_type: OrderSourceType = OrderSourceType.manual
     source_platform: Optional[str] = Field(default=None, max_length=64)
     source_store: Optional[str] = Field(default=None, max_length=128)
     payer_name: str = Field(min_length=1, max_length=128)
@@ -156,17 +159,20 @@ class OrderUpdate(BaseModel):
 
     * Draft orders: any field can be patched.
     * Active orders: only ``ACTIVE_EDITABLE_FIELDS`` may be patched;
-      structural fields (``order_date`` / ``source_type`` / ``payer_name``)
-      are rejected with HTTP 422 — those require the V1.2
-      version-switching flow.
+      structural fields (``order_date`` / ``payer_name``) are rejected
+      with HTTP 422 — those require the V1.2 version-switching flow.
     * Voided orders: rejected with HTTP 409.
+
+    ``source_type`` is **not** included here. It is provenance metadata
+    (how the order entered the system) and must not be mutated through
+    a normal edit. V1.2 import / API sync flows will set it via dedicated
+    creation paths.
 
     Items / targets edits are out of scope here; they will get dedicated
     endpoints in V1.2.
     """
 
     order_date: Optional[date] = None
-    source_type: Optional[OrderSourceType] = None
     source_platform: Optional[str] = Field(default=None, max_length=64)
     source_store: Optional[str] = Field(default=None, max_length=128)
     external_order_no: Optional[str] = Field(default=None, max_length=128)

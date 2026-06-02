@@ -26,6 +26,23 @@ export function sourceTypeLabel(value: OrderSourceType): string {
   return SOURCE_TYPE_LABELS[value] ?? String(value);
 }
 
+// V1.1：来源类型已 UX 解耦为"录入方式"。
+// 服务端 create_order_draft 已硬设 source_type=manual（不信任客户端传值），
+// 数据迁移 d8a1f4e7b9c2 已规范化所有历史数据为 manual。
+// 此处保留 SOURCE_TYPE_LABELS 兜底，是为了若 DB 中真出现非 manual 残值
+// （比如 PR-B 阶段未跑迁移就部署），UI 能露出真实标签暴露数据漂移，
+// 而不是把异常静默标为"手工录入"误导用户。
+// PR-B 将把列名 rename 为 entry_method 并启用 excel_import / api_sync。
+const ENTRY_METHOD_LABELS: Partial<Record<OrderSourceType, string>> = {
+  manual: '手工录入',
+};
+
+export function entryMethodLabel(value: OrderSourceType): string {
+  // manual 走录入方式标签；其他历史值原样展示（带 sourceTypeLabel 兜底），
+  // 便于运维及时发现数据未归一的情况。
+  return ENTRY_METHOD_LABELS[value] ?? sourceTypeLabel(value);
+}
+
 const PAYMENT_METHOD_LABELS: Record<OrderPaymentMethod, string> = {
   wechat: '微信',
   alipay: '支付宝',
