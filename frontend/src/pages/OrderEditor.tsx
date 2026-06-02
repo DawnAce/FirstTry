@@ -70,6 +70,26 @@ const SOURCE_TYPE_OPTIONS: Array<{ label: string; value: OrderSourceType }> = [
   { label: '邮局全年', value: 'mail_annual' },
 ];
 
+// 来源平台 / 来源店铺：使用 1:1 映射的固定选项
+// 数据库字段仍是自由文本，老数据非标值（如"天猫"）仍可读取展示，但下拉只列以下标准选项
+const SOURCE_PLATFORM_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '微信小程序', value: '微信小程序' },
+  { label: '淘宝', value: '淘宝' },
+  { label: '有赞', value: '有赞' },
+];
+
+const SOURCE_STORE_OPTIONS: Array<{ label: string; value: string; platform: string }> = [
+  { label: 'CBJ+', value: 'CBJ+', platform: '微信小程序' },
+  { label: '中国经营报发行部', value: '中国经营报发行部', platform: '淘宝' },
+  { label: '中国经营报微店', value: '中国经营报微店', platform: '有赞' },
+];
+
+// 平台 → 默认店铺（1:1）。切换平台时自动填店铺。
+const PLATFORM_DEFAULT_STORE: Record<string, string> = SOURCE_STORE_OPTIONS.reduce(
+  (acc, opt) => ({ ...acc, [opt.platform]: opt.value }),
+  {},
+);
+
 const PAYMENT_METHOD_OPTIONS: Array<{ label: string; value: OrderPaymentMethod }> = [
   { label: '微信', value: 'wechat' },
   { label: '支付宝', value: 'alipay' },
@@ -464,6 +484,23 @@ export default function OrderEditor() {
   // so items are read-only whenever we already have an existing order.
   const itemsReadOnly = isEditMode;
 
+  // 来源平台变化时联动来源店铺：1:1 自动填默认值；切到未识别平台 / 清空则清掉店铺
+  const sourcePlatform = Form.useWatch<string | null | undefined>('source_platform', form);
+  const storeOptions = useMemo(
+    () =>
+      sourcePlatform
+        ? SOURCE_STORE_OPTIONS.filter((o) => o.platform === sourcePlatform)
+        : [],
+    [sourcePlatform],
+  );
+  const handlePlatformChange = (next: string | null | undefined) => {
+    if (next && PLATFORM_DEFAULT_STORE[next]) {
+      form.setFieldValue('source_store', PLATFORM_DEFAULT_STORE[next]);
+    } else {
+      form.setFieldValue('source_store', null);
+    }
+  };
+
   useEffect(() => {
     if (isEditMode && detailQuery.data) {
       form.setFieldsValue(detailToFormValues(detailQuery.data) as OrderFormValues);
@@ -681,19 +718,23 @@ export default function OrderEditor() {
             </Col>
             <Col span={6}>
               <Form.Item name="source_platform" label="来源平台">
-                <Input
-                  maxLength={100}
-                  placeholder="如：天猫 / 京东 / 网店"
+                <Select
+                  options={SOURCE_PLATFORM_OPTIONS}
+                  placeholder="选择来源平台"
+                  allowClear
+                  onChange={(v) => handlePlatformChange(v)}
                   disabled={isFieldDisabled('source_platform', status)}
                 />
               </Form.Item>
             </Col>
             <Col span={6}>
               <Form.Item name="source_store" label="来源店铺">
-                <Input
-                  maxLength={100}
-                  placeholder="店铺名称"
-                  disabled={isFieldDisabled('source_store', status)}
+                <Select
+                  options={storeOptions}
+                  placeholder={sourcePlatform ? '选择店铺' : '请先选择来源平台'}
+                  allowClear
+                  notFoundContent={sourcePlatform ? '该平台暂无对应店铺' : '请先选择来源平台'}
+                  disabled={!sourcePlatform || isFieldDisabled('source_store', status)}
                 />
               </Form.Item>
             </Col>
