@@ -141,49 +141,42 @@ export default function Dashboard() {
       title: '期数',
       dataIndex: 'issue_number',
       key: 'issue_number',
-      width: 100,
-      render: (num: number) => <span style={{ fontWeight: 600 }}>第{num}期</span>,
+      render: (num: number) => <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>第{num}期</span>,
     },
     {
       title: '报数日期',
       dataIndex: 'publish_date',
       key: 'publish_date',
-      width: 120,
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
+      render: (date: string) => <span style={{ whiteSpace: 'nowrap' }}>{dayjs(date).format('YYYY-MM-DD')}</span>,
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
       render: (status: Issue['status']) => getStatusTag(status),
     },
     {
       title: '印数（份）',
       dataIndex: 'print_total',
       key: 'print_total',
-      width: 120,
-      render: (val: number) => val ? formatPrintTotal(val) : '-',
+      render: (val: number) => <span style={{ whiteSpace: 'nowrap' }}>{val ? formatPrintTotal(val) : '-'}</span>,
     },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 160,
-      render: (date: string) => date ? `创建于 ${dayjs(date).format('MM-DD HH:mm')}` : '-',
+      render: (date: string) => <span style={{ whiteSpace: 'nowrap' }}>{date ? `创建于 ${dayjs(date).format('MM-DD HH:mm')}` : '-'}</span>,
     },
     {
       title: '更新人',
       key: 'updater',
-      width: 80,
       render: () => 'admin',
     },
     {
       title: '操作',
       key: 'actions',
-      width: 200,
       render: (_: unknown, record: Issue) => (
-        <Space size="small">
+        <Space size="small" style={{ whiteSpace: 'nowrap' }}>
           <Button
             type="link"
             size="small"
@@ -382,6 +375,7 @@ export default function Dashboard() {
               pagination={false}
               loading={loading}
               size="small"
+              tableLayout="auto"
               onRow={(record) => ({
                 onClick: () => navigate(`/report/${record.id}`),
                 style: { cursor: 'pointer' },
