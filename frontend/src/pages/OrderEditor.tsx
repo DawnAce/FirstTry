@@ -13,6 +13,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Radio,
   Row,
   Select,
   Space,
@@ -102,6 +103,36 @@ const BILLING_TYPE_OPTIONS: Array<{ label: string; value: BillingType }> = [
 
 const COVERAGE_REQUIRED_TYPES = new Set<FulfillmentType>(['subscription', 'extension']);
 
+// =============================================================================
+// 订阅"期限"（仅前端 UX，不入库；后端权威字段仍是 coverage_start/end_date）
+// =============================================================================
+export type SubscriptionTerm = 'half_year' | 'full_year' | 'custom';
+
+const SUBSCRIPTION_TERM_OPTIONS: Array<{ label: string; value: SubscriptionTerm }> = [
+  { label: '半年', value: 'half_year' },
+  { label: '一年', value: 'full_year' },
+  { label: '自定义', value: 'custom' },
+];
+
+// 把"期限 + 起始日"转换为 [start, end]（end = start + N 个月 - 1 天）。
+function computeCoverageRange(term: SubscriptionTerm, start: Dayjs): [Dayjs, Dayjs] {
+  const months = term === 'half_year' ? 6 : 12;
+  return [start, start.add(months, 'month').subtract(1, 'day')];
+}
+
+// 从已有覆盖期日期反向推断"期限"。容差 ±3 天，避免大小月与闰年抖动。
+function inferSubscriptionTerm(
+  start: Dayjs | null | undefined,
+  end: Dayjs | null | undefined,
+): SubscriptionTerm {
+  if (!start || !end) return 'custom';
+  const halfEnd = start.add(6, 'month').subtract(1, 'day');
+  const fullEnd = start.add(1, 'year').subtract(1, 'day');
+  if (Math.abs(end.diff(halfEnd, 'day')) <= 3) return 'half_year';
+  if (Math.abs(end.diff(fullEnd, 'day')) <= 3) return 'full_year';
+  return 'custom';
+}
+
 // Fields that remain editable when an order has reached active status.
 // Mirrors backend ACTIVE_EDITABLE_FIELDS in order_service.py.
 const ACTIVE_EDITABLE_FIELDS = new Set<keyof OrderFormValues>([
@@ -132,6 +163,8 @@ export interface ItemFormValues {
   fulfillment_type: FulfillmentType;
   billing_type: BillingType;
   coverage_range?: [Dayjs, Dayjs] | null;
+  // 仅前端状态，决定单价语义与覆盖期快捷填法；不提交到后端。
+  subscription_term?: SubscriptionTerm | null;
   issue_number?: number | null;
   total_quantity: number;
   unit_price: number;
@@ -169,11 +202,14 @@ function buildBlankTarget(): TargetFormValues {
 }
 
 function buildBlankItem(): ItemFormValues {
+  const today = dayjs();
+  const [start, end] = computeCoverageRange('full_year', today);
   return {
     publication: 'cbj',
     fulfillment_type: 'subscription',
     billing_type: 'paid',
-    coverage_range: null,
+    coverage_range: [start, end],
+    subscription_term: 'full_year',
     issue_number: null,
     total_quantity: 1,
     unit_price: 0,
@@ -213,14 +249,19 @@ function detailToFormValues(detail: OrderOut): Partial<OrderFormValues> {
     items: detail.items.map<ItemFormValues>((it) => {
       const activeAllocation =
         it.allocations.find((a) => a.version_no === 1) ?? it.allocations[0];
+      const coverageRange: [Dayjs, Dayjs] | null =
+        it.coverage_start_date && it.coverage_end_date
+          ? [dayjs(it.coverage_start_date), dayjs(it.coverage_end_date)]
+          : null;
+      const isCoverageType = COVERAGE_REQUIRED_TYPES.has(it.fulfillment_type);
       return {
         publication: it.publication,
         fulfillment_type: it.fulfillment_type,
         billing_type: it.billing_type,
-        coverage_range:
-          it.coverage_start_date && it.coverage_end_date
-            ? [dayjs(it.coverage_start_date), dayjs(it.coverage_end_date)]
-            : null,
+        coverage_range: coverageRange,
+        subscription_term: isCoverageType
+          ? inferSubscriptionTerm(coverageRange?.[0], coverageRange?.[1])
+          : null,
         issue_number: it.issue_number,
         total_quantity: it.total_quantity,
         unit_price: Number(it.unit_price),
@@ -251,14 +292,15 @@ function isFieldDisabled(field: keyof OrderFormValues, status: OrderStatus | nul
 function itemToCreatePayload(item: ItemFormValues): OrderItemIn {
   const totalQty = Number(item.total_quantity) || 0;
   const unitPrice = Number(item.unit_price) || 0;
+  const isCoverageType = COVERAGE_REQUIRED_TYPES.has(item.fulfillment_type);
   const [start, end] = item.coverage_range ?? [];
   return {
     publication: item.publication,
     publication_format: 'paper',
     fulfillment_type: item.fulfillment_type,
     billing_type: item.billing_type,
-    coverage_start_date: start ? start.format('YYYY-MM-DD') : null,
-    coverage_end_date: end ? end.format('YYYY-MM-DD') : null,
+    coverage_start_date: isCoverageType && start ? start.format('YYYY-MM-DD') : null,
+    coverage_end_date: isCoverageType && end ? end.format('YYYY-MM-DD') : null,
     issue_number: item.issue_number ?? null,
     total_quantity: totalQty,
     unit_price: unitPrice,
@@ -785,7 +827,7 @@ export default function OrderEditor() {
                   <br />
                   <strong>份数语义</strong>：明细「总份数」与目标「份数」都指<strong>每期</strong>份数（如订阅，每订户每期 1 份 → 2 个订户即总份数 2），与覆盖期长度无关。
                   <br />
-                  <strong>单价语义</strong>：订阅时为单订户覆盖期内的订阅费（如半年 120 元）；零售时为每份零售价。
+                  <strong>单价语义</strong>：订阅时为单订户覆盖期内的订阅费（先选「订阅期限」=半年/一年，单价标签会自动变成「半年订阅单价 / 户」等）；零售时为每份零售价。
                 </div>
               }
               showIcon
@@ -909,6 +951,14 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
     ['items', field.name, 'targets'],
     form,
   );
+  const subscriptionTerm = Form.useWatch<SubscriptionTerm | undefined | null>(
+    ['items', field.name, 'subscription_term'],
+    form,
+  );
+  const coverageRange = Form.useWatch<[Dayjs, Dayjs] | null | undefined>(
+    ['items', field.name, 'coverage_range'],
+    form,
+  );
 
   const subtotal = useMemo(
     () => (Number(totalQuantity) || 0) * (Number(unitPrice) || 0),
@@ -924,6 +974,64 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
     ? COVERAGE_REQUIRED_TYPES.has(fulfillmentType)
     : false;
   const requireIssueNumber = fulfillmentType === 'single_issue';
+
+  // 当履约类型在 订阅/续订 ↔ 其它 之间切换时，同步 subscription_term
+  useEffect(() => {
+    const current = form.getFieldValue(['items', field.name, 'subscription_term']);
+    if (requireCoverage) {
+      if (!current) {
+        const range = form.getFieldValue(['items', field.name, 'coverage_range']) as
+          | [Dayjs, Dayjs]
+          | null
+          | undefined;
+        form.setFieldValue(
+          ['items', field.name, 'subscription_term'],
+          inferSubscriptionTerm(range?.[0], range?.[1]),
+        );
+      }
+    } else if (current) {
+      form.setFieldValue(['items', field.name, 'subscription_term'], null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requireCoverage]);
+
+  // 用户手动改 RangePicker 时，自动反推期限（半年 / 一年 / 自定义）。
+  // 防止"选半年→改了 end→标签还显示半年"的歧义。
+  useEffect(() => {
+    if (!requireCoverage) return;
+    const [s, e] = coverageRange ?? [];
+    const inferred = inferSubscriptionTerm(s, e);
+    if (inferred !== subscriptionTerm) {
+      form.setFieldValue(['items', field.name, 'subscription_term'], inferred);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coverageRange?.[0]?.valueOf(), coverageRange?.[1]?.valueOf(), requireCoverage]);
+
+  // 点击"半年/一年"快捷按钮：以当前起始日（或今天）为基准重算结束日。
+  const handleTermChange = (term: SubscriptionTerm) => {
+    form.setFieldValue(['items', field.name, 'subscription_term'], term);
+    if (term === 'custom') return;
+    const current = form.getFieldValue(['items', field.name, 'coverage_range']) as
+      | [Dayjs, Dayjs]
+      | null
+      | undefined;
+    const start = current?.[0] ?? dayjs();
+    form.setFieldValue(['items', field.name, 'coverage_range'], computeCoverageRange(term, start));
+  };
+
+  // 单价标签与占位符随期限切换
+  const unitPriceMeta = useMemo(() => {
+    if (!requireCoverage) {
+      return { label: '单价', placeholder: '零售每份', hint: '· 单期/零售：每份的零售价（如 5 元/份）' };
+    }
+    if (subscriptionTerm === 'half_year') {
+      return { label: '半年订阅单价 / 户', placeholder: '如 120', hint: '半年订阅：每订户在 6 个月内的订阅总价（常见 120 元）' };
+    }
+    if (subscriptionTerm === 'full_year') {
+      return { label: '全年订阅单价 / 户', placeholder: '如 240', hint: '全年订阅：每订户在 12 个月内的订阅总价（常见 240 元）' };
+    }
+    return { label: '订阅单价 / 户（按覆盖期）', placeholder: '按覆盖期', hint: '自定义覆盖期：每订户在整个覆盖期内的订阅总价' };
+  }, [requireCoverage, subscriptionTerm]);
 
   return (
     <Card
@@ -984,6 +1092,39 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
           </Form.Item>
         </Col>
       </Row>
+      {requireCoverage && (
+        <Row gutter={12}>
+          <Col span={24}>
+            <Form.Item
+              name={[field.name, 'subscription_term']}
+              label={
+                <Space size={4}>
+                  <span>订阅期限</span>
+                  <Tooltip
+                    title={
+                      <div>
+                        <div>选「半年 / 一年」会按当前起始日自动算出结束日，并把"单价"标签换成对应套餐。</div>
+                        <div style={{ marginTop: 4 }}>需要"半年但换个起始日"？先在 RangePicker 改起始日，再点一次「半年」即可重算结束日。</div>
+                        <div style={{ marginTop: 4 }}>非标周期（如 2 年）请选「自定义」并直接编辑 RangePicker。</div>
+                      </div>
+                    }
+                  >
+                    <QuestionCircleOutlined style={{ color: 'var(--color-text-tertiary)', cursor: 'help' }} />
+                  </Tooltip>
+                </Space>
+              }
+              style={{ marginBottom: 12 }}
+            >
+              <Radio.Group
+                options={SUBSCRIPTION_TERM_OPTIONS}
+                optionType="button"
+                onChange={(e) => handleTermChange(e.target.value as SubscriptionTerm)}
+                disabled={disabled}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+      )}
       <Row gutter={12}>
         <Col span={6}>
           <Form.Item
@@ -1043,13 +1184,14 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
             name={[field.name, 'unit_price']}
             label={
               <Space size={4}>
-                <span>单价</span>
+                <span>{unitPriceMeta.label}</span>
                 <Tooltip
                   title={
                     <div>
                       <div>每「份」对应的价格：</div>
                       <div>· 订阅：每订户在<strong>整个覆盖期</strong>的订阅费（如半年 120 元、全年 240 元）</div>
                       <div>· 单期/零售：每份的零售价（如 5 元/份）</div>
+                      <div style={{ marginTop: 4 }}>当前：{unitPriceMeta.hint}</div>
                       <div style={{ marginTop: 4 }}>小计 = 总份数 × 单价（公式与期数无关）。</div>
                     </div>
                   }
@@ -1066,7 +1208,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
               precision={2}
               step={0.01}
               prefix="¥"
-              placeholder="订阅整期 / 零售每份"
+              placeholder={unitPriceMeta.placeholder}
               disabled={disabled}
             />
           </Form.Item>

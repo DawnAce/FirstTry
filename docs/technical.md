@@ -424,6 +424,7 @@ V1.1 新增独立的订单管理子模块，与刊期 / 印数 / 物流子系统
 - `order_code` 在 `active` 后由 `OrderCodeGenerator` 生成，格式 `ORD-YYYY-NNNNNN`（年内 6 位零填充序号，如 `ORD-2026-000003`），创建草稿时为 `NULL`
 - `order_items.allocation_id` 是 NOT NULL FK，因此**草稿创建时即写入 v1 allocation**（避免 confirm 时改 schema）
 - **份数 / 单价语义**：`order_items.total_quantity` 与 `fulfillment_targets.quantity` 均指**每期**份数（与覆盖期长度无关）；`order_items.unit_price` 在订阅场景下是单订户在整个覆盖期内的订阅费，单期/零售场景下是每份零售价；`subtotal = total_quantity × unit_price`，公式与期数无关。每期实际印数 = total_quantity × `expected_issues_at_creation`（在详情页进度卡里展示）
+- **订阅期限（前端 UX，不入库）**：`OrderEditor.tsx` 提供「半年 / 一年 / 自定义」快捷按钮，仅是前端体验糖：选半年 → 自动写 `coverage_range = [start, start + 6 months - 1 day]`；选一年 → `+12 months - 1 day`；选自定义则 RangePicker 完全手填。后端权威字段始终是 `coverage_start_date / coverage_end_date`，**没有** `subscription_term` 列，因此 2 年等非标周期完全兼容。加载已有订单时按覆盖期天数反推期限标签（容差 ±3 天，避免大小月与闰年抖动）
 - 所有金额字段使用 `DECIMAL(12, 2)`；前端 TS 用 `string` 传输，避免 JS 浮点损失
 - 在 active 状态下，`order_service.ACTIVE_EDITABLE_FIELDS` 白名单仅允许 11 个非结构字段被修改，结构改动留 V1.2
 
