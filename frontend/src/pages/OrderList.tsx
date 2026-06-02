@@ -28,7 +28,6 @@ import {
 import type {
   ListOrdersParams,
   OrderListRow,
-  OrderSourceType,
   OrderStatus,
 } from '../api/orders';
 import {
@@ -37,7 +36,6 @@ import {
   driftLabel,
   formatCoverage,
   formatCurrency,
-  sourceTypeLabel,
   statusBadgeColor,
   statusLabel,
 } from './orderUtils';
@@ -47,17 +45,8 @@ const { RangePicker } = DatePicker;
 
 const STATUS_OPTIONS: Array<{ label: string; value: OrderStatus }> = [
   { label: '草稿', value: 'draft' },
-  { label: '待确认', value: 'pending_confirmation' },
   { label: '生效', value: 'active' },
   { label: '已作废', value: 'void' },
-];
-
-const SOURCE_TYPE_OPTIONS: Array<{ label: string; value: OrderSourceType }> = [
-  { label: '电商', value: 'ecommerce' },
-  { label: '对公转账', value: 'corporate_transfer' },
-  { label: 'VIP 赠阅', value: 'vip_gift' },
-  { label: '手工录入', value: 'manual' },
-  { label: '邮局全年', value: 'mail_annual' },
 ];
 
 type DriftFilter = 'all' | 'with_drift' | 'no_drift';
@@ -70,7 +59,6 @@ const DRIFT_OPTIONS: Array<{ label: string; value: DriftFilter }> = [
 
 interface FilterState {
   status?: OrderStatus;
-  source_type?: OrderSourceType;
   payer_name_like?: string;
   order_date_range?: [Dayjs, Dayjs] | null;
   coverage_range?: [Dayjs, Dayjs] | null;
@@ -87,7 +75,6 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
     limit: PAGE_SIZE,
   };
   if (filters.status) params.status = filters.status;
-  if (filters.source_type) params.source_type = filters.source_type;
   if (filters.payer_name_like) params.payer_name_like = filters.payer_name_like.trim();
   if (filters.coverage_range?.[0]) {
     params.coverage_start = filters.coverage_range[0].format('YYYY-MM-DD');
@@ -201,16 +188,16 @@ export default function OrderList() {
       ellipsis: true,
     },
     {
-      title: '来源',
-      dataIndex: 'source_type',
-      key: 'source_type',
-      width: 110,
-      render: (t: OrderSourceType, row) => {
-        const label = sourceTypeLabel(t);
-        return row.source_platform ? (
-          <Tooltip title={row.source_platform}>{label}</Tooltip>
+      title: '渠道/平台',
+      dataIndex: 'source_platform',
+      key: 'source_platform',
+      width: 140,
+      render: (platform: string | null, row) => {
+        if (!platform) return '-';
+        return row.source_store ? (
+          <Tooltip title={`店铺：${row.source_store}`}>{platform}</Tooltip>
         ) : (
-          label
+          platform
         );
       },
     },
@@ -336,14 +323,6 @@ export default function OrderList() {
               allowClear
               placeholder="全部"
               options={STATUS_OPTIONS}
-              style={{ width: 140 }}
-            />
-          </Form.Item>
-          <Form.Item name="source_type" label="来源">
-            <Select
-              allowClear
-              placeholder="全部"
-              options={SOURCE_TYPE_OPTIONS}
               style={{ width: 140 }}
             />
           </Form.Item>

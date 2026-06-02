@@ -56,8 +56,9 @@ from app.services.order_event_logger import log_event
 
 
 # Fields safe to edit on an ``active`` order. Structural fields
-# (items / payer_name / order_date / source_type) are blocked until
-# V1.2 introduces version-switching.
+# (items / payer_name / order_date) are blocked until V1.2 introduces
+# version-switching. ``source_type`` is provenance metadata — set by
+# the entry-point on creation and never editable in any status.
 ACTIVE_EDITABLE_FIELDS = frozenset(
     {
         "notes",
@@ -94,7 +95,11 @@ def create_order_draft(
     """
     order = Order(
         order_date=data.order_date,
-        source_type=data.source_type,
+        # V1.1: 录入方式 provenance 由服务端控制，不信任客户端传入值。
+        # 本路径仅服务于手工录入入口（FastAPI 前端表单），固定写 manual。
+        # V1.2 引入 Excel 批量导入 / API 同步时，将由各自的入口函数固定写
+        # `excel_import` / `api_sync`（PR-B 后改为 entry_method 字段）。
+        source_type=OrderSourceType.manual,
         source_platform=data.source_platform,
         source_store=data.source_store,
         external_order_no=data.external_order_no,
@@ -164,7 +169,8 @@ def create_order_draft(
         order_id=order.id,
         event_type=OrderEventType.created,
         payload={
-            "source_type": data.source_type.value,
+            # 与 order.source_type 保持一致（服务端硬设的 manual），不读 data
+            "source_type": OrderSourceType.manual.value,
             "items_count": len(data.items),
         },
         operator_id=created_by,
