@@ -21,6 +21,7 @@ from app.schemas.report import (
     ReportDataOut,
     ReportDataUpdate,
     ReportEntryOut,
+    ShippingCheck,
     TempPrintDetailIn,
     TempPrintDetailOut,
 )
@@ -141,6 +142,13 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         .filter(ShippingDetail.issue_number == issue.issue_number)
         .scalar()
     )
+    report_zt_total = destination_totals.get(DESTINATION_ZTO, 0)
+    shipping_check = ShippingCheck(
+        report_zt_total=report_zt_total,
+        shipping_total=current_shipping_total,
+        delta=report_zt_total - current_shipping_total,
+        is_match=report_zt_total == current_shipping_total,
+    )
     confirmation_summary = None
     if latest_confirmation:
         current_delta = latest_confirmation.report_total - current_shipping_total
@@ -164,6 +172,7 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
             DestinationSummary(destination=destination, total=destination_total)
             for destination, destination_total in destination_totals.items()
         ],
+        shipping_check=shipping_check,
         confirmation_summary=confirmation_summary,
     )
 
