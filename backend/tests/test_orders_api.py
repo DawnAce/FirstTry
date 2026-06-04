@@ -308,6 +308,31 @@ def test_create_order_round_trips_subscription_pricing_fields(client):
     assert item["subtotal"] == "390.00"
 
 
+def test_create_order_recalculates_non_custom_subscription_package_fields(client):
+    payload = _make_create_payload()
+    payload["items"][0].update(
+        {
+            "subscription_term": "half_year",
+            "delivery_method": "zto_mf",
+            "term_start_month": "2026-01",
+            "coverage_start_date": "2020-01-01",
+            "coverage_end_date": "2020-01-02",
+            "total_quantity": 2,
+            "unit_price": "1",
+            "subtotal": "2",
+        }
+    )
+
+    r = client.post("/api/orders", json=payload)
+
+    assert r.status_code == 201, r.text
+    item = r.json()["items"][0]
+    assert item["coverage_start_date"] == "2026-01-05"
+    assert item["coverage_end_date"] == "2026-06-29"
+    assert item["unit_price"] == "195.00"
+    assert item["subtotal"] == "390.00"
+
+
 def test_create_order_rejects_invalid_subscription_term_start_month(client):
     payload = _make_create_payload()
     payload["items"][0].update({"term_start_month": "2026-13"})

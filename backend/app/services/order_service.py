@@ -44,6 +44,7 @@ from app.models import (
     OrderSourceType,
     OrderStatus,
 )
+from app.models.order_item import SubscriptionTerm
 from app.schemas.order import (
     FulfillmentProgress,
     OrderCreate,
@@ -53,6 +54,7 @@ from app.schemas.order import (
 from app.services.expected_issues_calculator import compute_expected_issues
 from app.services.order_code_service import generate_order_code
 from app.services.order_event_logger import log_event
+from app.services.order_pricing_service import build_pricing_preview
 
 
 # Fields safe to edit on an ``active`` order. Structural fields
@@ -123,6 +125,28 @@ def create_order_draft(
     db.flush()
 
     for item_data in data.items:
+        coverage_start_date = item_data.coverage_start_date
+        coverage_end_date = item_data.coverage_end_date
+        unit_price = item_data.unit_price
+        subtotal = item_data.subtotal
+        if (
+            item_data.subscription_term is not None
+            and item_data.subscription_term != SubscriptionTerm.custom
+            and item_data.delivery_method is not None
+            and item_data.term_start_month is not None
+        ):
+            preview = build_pricing_preview(
+                db,
+                subscription_term=item_data.subscription_term,
+                delivery_method=item_data.delivery_method,
+                term_start_month=item_data.term_start_month,
+                total_quantity=item_data.total_quantity,
+            )
+            coverage_start_date = preview.coverage_start_date
+            coverage_end_date = preview.coverage_end_date
+            unit_price = preview.unit_price
+            subtotal = preview.subtotal
+
         item = OrderItem(
             order_id=order.id,
             publication=item_data.publication,
@@ -132,12 +156,12 @@ def create_order_draft(
             subscription_term=item_data.subscription_term,
             delivery_method=item_data.delivery_method,
             term_start_month=item_data.term_start_month,
-            coverage_start_date=item_data.coverage_start_date,
-            coverage_end_date=item_data.coverage_end_date,
+            coverage_start_date=coverage_start_date,
+            coverage_end_date=coverage_end_date,
             issue_number=item_data.issue_number,
             total_quantity=item_data.total_quantity,
-            unit_price=item_data.unit_price,
-            subtotal=item_data.subtotal,
+            unit_price=unit_price,
+            subtotal=subtotal,
             notes=item_data.notes,
         )
         db.add(item)
