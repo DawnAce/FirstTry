@@ -26,10 +26,12 @@ from app.models.order import OrderPaymentMethod, OrderSourceType, OrderStatus
 from app.models.order_event import OrderEventType
 from app.models.order_item import (
     BillingType,
+    DeliveryMethod,
     FulfillmentType,
     OrderItemStatus,
     Publication,
     PublicationFormat,
+    SubscriptionTerm,
 )
 
 
@@ -93,6 +95,12 @@ class OrderItemIn(BaseModel):
     publication_format: PublicationFormat = PublicationFormat.paper
     fulfillment_type: FulfillmentType
     billing_type: BillingType = BillingType.paid
+    subscription_term: Optional[SubscriptionTerm] = None
+    delivery_method: Optional[DeliveryMethod] = None
+    term_start_month: Optional[str] = Field(
+        default=None,
+        pattern=r"^\d{4}-(0[1-9]|1[0-2])$",
+    )
     coverage_start_date: Optional[date] = None
     coverage_end_date: Optional[date] = None
     issue_number: Optional[int] = Field(default=None, ge=1)
@@ -252,6 +260,9 @@ class OrderItemOut(BaseModel):
     publication_format: PublicationFormat
     fulfillment_type: FulfillmentType
     billing_type: BillingType
+    subscription_term: Optional[SubscriptionTerm] = None
+    delivery_method: Optional[DeliveryMethod] = None
+    term_start_month: Optional[str] = None
     coverage_start_date: Optional[date]
     coverage_end_date: Optional[date]
     issue_number: Optional[int]

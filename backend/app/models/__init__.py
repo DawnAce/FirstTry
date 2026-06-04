@@ -26,12 +26,14 @@ from app.models.order import (
     OrderStatus,
 )
 from app.models.order_item import (
+    BillingType,
+    DeliveryMethod,
+    FulfillmentType,
     OrderItem,
+    OrderItemStatus,
     Publication,
     PublicationFormat,
-    FulfillmentType,
-    BillingType,
-    OrderItemStatus,
+    SubscriptionTerm,
 )
 from app.models.fulfillment_allocation import FulfillmentAllocation
 from app.models.fulfillment_target import (
@@ -60,7 +62,7 @@ __all__ = [
     # Order management (V1.1)
     "Order", "OrderSourceType", "OrderPaymentMethod", "OrderStatus",
     "OrderItem", "Publication", "PublicationFormat",
-    "FulfillmentType", "BillingType", "OrderItemStatus",
+    "FulfillmentType", "BillingType", "DeliveryMethod", "OrderItemStatus", "SubscriptionTerm",
     "FulfillmentAllocation",
     "FulfillmentTarget", "ShippingChannel", "TargetStatus",
     "OrderEvent", "OrderEventType",

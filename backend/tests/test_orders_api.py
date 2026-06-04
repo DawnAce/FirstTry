@@ -270,6 +270,40 @@ def test_invoice_fields_round_trip_on_create_and_active_update(client):
     assert body["invoice_recipient_email"] == "finance@example.com"
 
 
+def test_create_order_round_trips_subscription_pricing_fields(client):
+    payload = _make_create_payload()
+    payload["items"][0].update(
+        {
+            "subscription_term": "half_year",
+            "delivery_method": "zto_mf",
+            "term_start_month": "2026-01",
+            "unit_price": "195",
+            "subtotal": "390",
+            "total_quantity": 2,
+        }
+    )
+
+    r = client.post("/api/orders", json=payload)
+
+    assert r.status_code == 201, r.text
+    item = r.json()["items"][0]
+    assert item["subscription_term"] == "half_year"
+    assert item["delivery_method"] == "zto_mf"
+    assert item["term_start_month"] == "2026-01"
+    assert item["unit_price"] == "195.00"
+    assert item["subtotal"] == "390.00"
+
+
+def test_create_order_rejects_invalid_subscription_term_start_month(client):
+    payload = _make_create_payload()
+    payload["items"][0].update({"term_start_month": "2026-13"})
+
+    r = client.post("/api/orders", json=payload)
+
+    assert r.status_code == 422
+    assert "term_start_month" in r.text
+
+
 def test_update_order_not_found_returns_404(client):
     r = client.put("/api/orders/99999", json={"notes": "x"})
     assert r.status_code == 404

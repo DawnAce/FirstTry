@@ -49,6 +49,17 @@ class OrderItemStatus(str, enum.Enum):
     cancelled = "cancelled"
 
 
+class SubscriptionTerm(str, enum.Enum):
+    half_year = "half_year"
+    one_year = "one_year"
+    custom = "custom"
+
+
+class DeliveryMethod(str, enum.Enum):
+    post_office = "post_office"
+    zto_mf = "zto_mf"
+
+
 class OrderItem(Base):
     __tablename__ = "order_items"
 
@@ -75,6 +86,15 @@ class OrderItem(Base):
         nullable=False,
         default=BillingType.paid,
     )
+    subscription_term = Column(
+        SAEnum(SubscriptionTerm),
+        nullable=True,
+    )
+    delivery_method = Column(
+        SAEnum(DeliveryMethod),
+        nullable=True,
+    )
+    term_start_month = Column(String(7), nullable=True)
     coverage_start_date = Column(Date, nullable=True)
     coverage_end_date = Column(Date, nullable=True)
     issue_number = Column(Integer, nullable=True)

@@ -424,7 +424,7 @@ V1.1 新增独立的订单管理子模块，与刊期 / 印数 / 物流子系统
 - `order_code` 在 `active` 后由 `OrderCodeGenerator` 生成，格式 `ORD-YYYY-NNNNNN`（年内 6 位零填充序号，如 `ORD-2026-000003`），创建草稿时为 `NULL`
 - `order_items.allocation_id` 是 NOT NULL FK，因此**草稿创建时即写入 v1 allocation**（避免 confirm 时改 schema）
 - **份数 / 单价语义**：`order_items.total_quantity` 与 `fulfillment_targets.quantity` 均指**每期**份数（与覆盖期长度无关）；`order_items.unit_price` 在订阅场景下是单订户在整个覆盖期内的订阅费，单期/零售场景下是每份零售价；`subtotal = total_quantity × unit_price`，公式与期数无关。每期实际印数 = total_quantity × `expected_issues_at_creation`（在详情页进度卡里展示）
-- **订阅期限（前端 UX，不入库）**：`OrderEditor.tsx` 提供「半年 / 一年 / 自定义」快捷按钮，仅是前端体验糖：选半年 → 自动写 `coverage_range = [start, start + 6 months - 1 day]`；选一年 → `+12 months - 1 day`；选自定义则 RangePicker 完全手填。后端权威字段始终是 `coverage_start_date / coverage_end_date`，**没有** `subscription_term` 列，因此 2 年等非标周期完全兼容。加载已有订单时按覆盖期天数反推期限标签（容差 ±3 天，避免大小月与闰年抖动）
+- **订阅定价字段（V1.1 Task 1 已入库）**：`order_items` 现持久化 `subscription_term`（`half_year` / `one_year` / `custom`）、`delivery_method`（`post_office` / `zto_mf`）与 `term_start_month`（`YYYY-MM`）。这些字段用于保存订阅报价与起订月元数据；覆盖范围的履约权威字段仍然是 `coverage_start_date / coverage_end_date`，因此 2 年等非标周期依旧通过实际日期区间表达。
 - 所有金额字段使用 `DECIMAL(10, 2)`（最大 9999 9999.99 元）；前端 TS 用 `string` 传输，避免 JS 浮点损失
 - 在 active 状态下，`order_service.ACTIVE_EDITABLE_FIELDS` 白名单仅允许 13 个非结构字段被修改（V1.1 起含新增的 `invoice_tax_no` / `invoice_recipient_email`），结构改动留 V1.2
 - **V1.1 业务范围限定**：仅覆盖"个人客户预付 + 同事赠阅"两种场景。`paid_amount` 字段虽已建表，但**没有任何业务逻辑读它**（不算欠款、不阻塞 confirm、不做对账、列表不能按"未付清"过滤）。"渠道订单（先履约后付款 / 赊账）"明确不在 V1.1 范围，留待 V1.2 引入「收款流水子表 + 欠款追踪 + 未付清筛选 + Dashboard 欠款卡片」时再激活该字段的业务价值
@@ -436,6 +436,7 @@ V1.1 新增独立的订单管理子模块，与刊期 / 印数 / 物流子系统
 - `alembic/versions/c7e3a9b1d2f4_add_order_management_v1_1.py`：建表 + 索引
 - `alembic/versions/d8a1f4e7b9c2_normalize_order_source_type_to_manual.py`：PR-A 数据规范化（全部 `source_type` 写为 `manual`）
 - `alembic/versions/e9b3c5d7f1a4_add_invoice_tax_no_and_email.py`：把"发票抬头"单字段拆出 `invoice_tax_no`（纳税人识别号 VARCHAR(64)）、`invoice_recipient_email`（电子发票送达邮箱 VARCHAR(128)）两个新列，便于后续生成 / 推送电子发票
+- `alembic/versions/f4a8c2d9e6b1_add_order_item_subscription_pricing_fields.py`：为 `order_items` 新增 `subscription_term`、`delivery_method`、`term_start_month` 三个订阅定价字段
 
 ## 4. API 接口一览
 
