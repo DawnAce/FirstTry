@@ -37,6 +37,10 @@ export type FulfillmentType =
 
 export type BillingType = 'paid' | 'free_gift' | 'bundle_gift';
 
+export type SubscriptionTerm = 'half_year' | 'one_year' | 'custom';
+
+export type DeliveryMethod = 'post_office' | 'zto_mf';
+
 export type OrderItemStatus = 'active' | 'cancelled';
 
 export type ShippingChannel =
@@ -82,6 +86,9 @@ export interface OrderItemIn {
   publication_format?: PublicationFormat;
   fulfillment_type: FulfillmentType;
   billing_type?: BillingType;
+  subscription_term?: SubscriptionTerm | null;
+  delivery_method?: DeliveryMethod | null;
+  term_start_month?: string | null;
   coverage_start_date?: string | null;
   coverage_end_date?: string | null;
   issue_number?: number | null;
@@ -180,6 +187,9 @@ export interface OrderItemOut {
   publication_format: PublicationFormat;
   fulfillment_type: FulfillmentType;
   billing_type: BillingType;
+  subscription_term: SubscriptionTerm | null;
+  delivery_method: DeliveryMethod | null;
+  term_start_month: string | null;
   coverage_start_date: string | null;
   coverage_end_date: string | null;
   issue_number: number | null;
@@ -249,6 +259,25 @@ export interface ListOrdersResponse {
   total: number;
 }
 
+export interface PricingPreviewPayload {
+  subscription_term: Exclude<SubscriptionTerm, 'custom'>;
+  delivery_method: DeliveryMethod;
+  term_start_month: string;
+  total_quantity: number;
+}
+
+export interface PricingPreviewOut {
+  month_range_label: string;
+  coverage_start_date: string;
+  coverage_end_date: string;
+  expected_issue_count: number;
+  unit_price: string;
+  subtotal: string;
+  price_label: string;
+  schedule_incomplete: boolean;
+  warning: string | null;
+}
+
 // =============================================================================
 // Query params
 // =============================================================================
@@ -299,6 +328,12 @@ export const listOrderEvents = (
   id: number,
 ): Promise<AxiosResponse<OrderEventOut[]>> =>
   api.get<OrderEventOut[]>(`/orders/${id}/events`);
+
+export function previewOrderPricing(
+  payload: PricingPreviewPayload,
+): Promise<AxiosResponse<PricingPreviewOut>> {
+  return api.post('/orders/pricing-preview', payload);
+}
 
 export const getOrderProgress = (
   id: number,

@@ -1,5 +1,6 @@
 import type {
   BillingType,
+  DeliveryMethod,
   FulfillmentType,
   OrderEventType,
   OrderItemStatus,
@@ -7,6 +8,7 @@ import type {
   OrderSourceType,
   OrderStatus,
   Publication,
+  SubscriptionTerm,
   TargetStatus,
 } from '../api/orders';
 
@@ -103,6 +105,19 @@ const BILLING_TYPE_LABELS: Record<BillingType, string> = {
 
 export function billingTypeLabel(value: BillingType): string {
   return BILLING_TYPE_LABELS[value] ?? String(value);
+}
+
+export function subscriptionTermLabel(value: SubscriptionTerm | null | undefined): string {
+  if (value === 'half_year') return '半年';
+  if (value === 'one_year') return '一年';
+  if (value === 'custom') return '自定义';
+  return '未设置';
+}
+
+export function deliveryMethodLabel(value: DeliveryMethod | null | undefined): string {
+  if (value === 'post_office') return '邮局投递';
+  if (value === 'zto_mf') return 'ZTO-MF 快递';
+  return '未设置';
 }
 
 const PUBLICATION_LABELS: Record<Publication, string> = {

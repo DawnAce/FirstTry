@@ -4,6 +4,7 @@ import {
   canConfirmOrder,
   canEditOrder,
   canVoidOrder,
+  deliveryMethodLabel,
   driftColor,
   driftLabel,
   eventTypeLabel,
@@ -16,6 +17,7 @@ import {
   sourceTypeLabel,
   statusBadgeColor,
   statusLabel,
+  subscriptionTermLabel,
   targetStatusColor,
   targetStatusLabel,
 } from './orderUtils';
@@ -210,5 +212,18 @@ describe('canEditOrder / canConfirmOrder / canVoidOrder', () => {
     expect(canVoidOrder('pending_confirmation')).toBe(true);
     expect(canVoidOrder('active')).toBe(true);
     expect(canVoidOrder('void')).toBe(false);
+  });
+});
+
+describe('subscription pricing labels', () => {
+  it('formats subscription term labels', () => {
+    expect(subscriptionTermLabel('half_year')).toBe('半年');
+    expect(subscriptionTermLabel('one_year')).toBe('一年');
+    expect(subscriptionTermLabel('custom')).toBe('自定义');
+  });
+
+  it('formats delivery method labels', () => {
+    expect(deliveryMethodLabel('post_office')).toBe('邮局投递');
+    expect(deliveryMethodLabel('zto_mf')).toBe('ZTO-MF 快递');
   });
 });
