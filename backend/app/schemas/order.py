@@ -207,6 +207,25 @@ class OrderVoidIn(BaseModel):
     reason: str = Field(min_length=1, max_length=255)
 
 
+class PricingPreviewIn(BaseModel):
+    subscription_term: SubscriptionTerm
+    delivery_method: DeliveryMethod
+    term_start_month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    total_quantity: int = Field(default=1, ge=1)
+
+
+class PricingPreviewOut(BaseModel):
+    month_range_label: str
+    coverage_start_date: date
+    coverage_end_date: date
+    expected_issue_count: int
+    unit_price: Decimal
+    subtotal: Decimal
+    price_label: str
+    schedule_incomplete: bool = False
+    warning: Optional[str] = None
+
+
 # =============================================================================
 # Outputs (to frontend)
 # =============================================================================

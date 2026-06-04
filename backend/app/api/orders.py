@@ -24,7 +24,7 @@ can render pagination metadata without an extra round-trip.
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -39,8 +39,11 @@ from app.schemas.order import (
     OrderOut,
     OrderUpdate,
     OrderVoidIn,
+    PricingPreviewIn,
+    PricingPreviewOut,
 )
 from app.services import order_service
+from app.services.order_pricing_service import build_pricing_preview
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -76,6 +79,24 @@ def list_orders(
         limit=limit,
     )
     return {"rows": rows, "total": total}
+
+
+@router.post("/pricing-preview", response_model=PricingPreviewOut)
+def preview_pricing(
+    data: PricingPreviewIn,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    try:
+        return build_pricing_preview(
+            db,
+            subscription_term=data.subscription_term,
+            delivery_method=data.delivery_method,
+            term_start_month=data.term_start_month,
+            total_quantity=data.total_quantity,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/{order_id}", response_model=OrderOut)

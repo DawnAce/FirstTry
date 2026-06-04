@@ -15,6 +15,8 @@ What this complements (and does *not* duplicate):
   against the dev database; SQLite glosses over them.
 """
 
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -24,6 +26,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
+from app.models import PublicationSchedule
 from app.models.user import User, UserRole
 
 
@@ -47,6 +50,17 @@ def client():
     )
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    seed_db = TestingSessionLocal()
+    seed_db.add_all(
+        [
+            PublicationSchedule(year=2026, issue_number=2601, publish_date=date(2026, 1, 5), is_suspended=False),
+            PublicationSchedule(year=2026, issue_number=None, publish_date=date(2026, 2, 16), is_suspended=True),
+            PublicationSchedule(year=2026, issue_number=2625, publish_date=date(2026, 6, 29), is_suspended=False),
+        ]
+    )
+    seed_db.commit()
+    seed_db.close()
 
     fake_user = User(
         id=1,
@@ -462,3 +476,24 @@ def test_get_progress_returns_per_item_summary(client):
 def test_get_progress_not_found_404(client):
     r = client.get("/api/orders/99999/fulfillment-progress")
     assert r.status_code == 404
+
+
+def test_pricing_preview_endpoint_returns_coverage_and_price(client):
+    r = client.post(
+        "/api/orders/pricing-preview",
+        json={
+            "subscription_term": "half_year",
+            "delivery_method": "zto_mf",
+            "term_start_month": "2026-01",
+            "total_quantity": 2,
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["coverage_start_date"] == "2026-01-05"
+    assert body["coverage_end_date"] == "2026-06-29"
+    assert body["expected_issue_count"] == 2
+    assert body["unit_price"] == "195"
+    assert body["subtotal"] == "390"
+    assert body["price_label"] == "ZTO-MF 快递半年套餐"
