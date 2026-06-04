@@ -46,6 +46,7 @@ import {
   billingTypeLabel,
   canEditOrder,
   canVoidOrder,
+  deliveryMethodLabel,
   driftColor,
   driftLabel,
   entryMethodLabel,
@@ -56,6 +57,7 @@ import {
   publicationLabel,
   statusBadgeColor,
   statusLabel,
+  subscriptionTermLabel,
   targetStatusColor,
   targetStatusLabel,
 } from './orderUtils';
@@ -407,16 +409,25 @@ function ItemCard({ item, index }: { item: OrderItemOut; index: number }) {
             <Descriptions.Item label="覆盖期">
               {formatCoverage(item.coverage_start_date, item.coverage_end_date)}
             </Descriptions.Item>
+            <Descriptions.Item label="订阅期限">
+              {subscriptionTermLabel(item.subscription_term)}
+            </Descriptions.Item>
+            <Descriptions.Item label="投递方式">
+              {deliveryMethodLabel(item.delivery_method)}
+            </Descriptions.Item>
+            <Descriptions.Item label="起始月份">
+              {item.term_start_month ?? '-'}
+            </Descriptions.Item>
             <Descriptions.Item label="单期期号">
               {item.issue_number ?? '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="总份数">
+            <Descriptions.Item label="每期总份数">
               {item.total_quantity}
             </Descriptions.Item>
-            <Descriptions.Item label="单价">
+            <Descriptions.Item label="单份套餐价">
               {formatCurrency(item.unit_price)}
             </Descriptions.Item>
-            <Descriptions.Item label="小计">
+            <Descriptions.Item label="应收小计">
               {formatCurrency(subtotal)}
             </Descriptions.Item>
             <Descriptions.Item label="备注">{item.notes ?? '-'}</Descriptions.Item>
