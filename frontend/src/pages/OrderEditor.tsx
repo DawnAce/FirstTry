@@ -39,10 +39,12 @@ import {
   createOrder,
   getOrder,
   orderQueryKeys,
+  previewOrderPricing,
   updateOrder,
 } from '../api/orders';
 import type {
   BillingType,
+  DeliveryMethod,
   FulfillmentType,
   OrderCreatePayload,
   OrderItemIn,
@@ -51,6 +53,7 @@ import type {
   OrderStatus,
   OrderUpdatePayload,
   Publication,
+  SubscriptionTerm,
 } from '../api/orders';
 import {
   formatCurrency,
@@ -120,35 +123,16 @@ const BILLING_TYPE_OPTIONS: Array<{ label: string; value: BillingType }> = [
 
 const COVERAGE_REQUIRED_TYPES = new Set<FulfillmentType>(['subscription', 'extension']);
 
-// =============================================================================
-// 订阅"期限"（仅前端 UX，不入库；后端权威字段仍是 coverage_start/end_date）
-// =============================================================================
-export type SubscriptionTerm = 'half_year' | 'full_year' | 'custom';
-
 const SUBSCRIPTION_TERM_OPTIONS: Array<{ label: string; value: SubscriptionTerm }> = [
   { label: '半年', value: 'half_year' },
-  { label: '一年', value: 'full_year' },
+  { label: '一年', value: 'one_year' },
   { label: '自定义', value: 'custom' },
 ];
 
-// 把"期限 + 起始日"转换为 [start, end]（end = start + N 个月 - 1 天）。
-function computeCoverageRange(term: SubscriptionTerm, start: Dayjs): [Dayjs, Dayjs] {
-  const months = term === 'half_year' ? 6 : 12;
-  return [start, start.add(months, 'month').subtract(1, 'day')];
-}
-
-// 从已有覆盖期日期反向推断"期限"。容差 ±3 天，避免大小月与闰年抖动。
-function inferSubscriptionTerm(
-  start: Dayjs | null | undefined,
-  end: Dayjs | null | undefined,
-): SubscriptionTerm {
-  if (!start || !end) return 'custom';
-  const halfEnd = start.add(6, 'month').subtract(1, 'day');
-  const fullEnd = start.add(1, 'year').subtract(1, 'day');
-  if (Math.abs(end.diff(halfEnd, 'day')) <= 3) return 'half_year';
-  if (Math.abs(end.diff(fullEnd, 'day')) <= 3) return 'full_year';
-  return 'custom';
-}
+const DELIVERY_METHOD_OPTIONS: Array<{ label: string; value: DeliveryMethod }> = [
+  { label: '邮局投递（半年120 / 一年240）', value: 'post_office' },
+  { label: 'ZTO-MF 快递（半年195 / 一年390）', value: 'zto_mf' },
+];
 
 // Fields that remain editable when an order has reached active status.
 // Mirrors backend ACTIVE_EDITABLE_FIELDS in order_service.py.
@@ -182,8 +166,9 @@ export interface ItemFormValues {
   fulfillment_type: FulfillmentType;
   billing_type: BillingType;
   coverage_range?: [Dayjs, Dayjs] | null;
-  // 仅前端状态，决定单价语义与覆盖期快捷填法；不提交到后端。
   subscription_term?: SubscriptionTerm | null;
+  delivery_method?: DeliveryMethod | null;
+  term_start_month?: Dayjs | null;
   issue_number?: number | null;
   total_quantity: number;
   unit_price: number;
@@ -223,17 +208,17 @@ function buildBlankTarget(): TargetFormValues {
 }
 
 function buildBlankItem(): ItemFormValues {
-  const today = dayjs();
-  const [start, end] = computeCoverageRange('full_year', today);
   return {
     publication: 'cbj',
     fulfillment_type: 'subscription',
     billing_type: 'paid',
-    coverage_range: [start, end],
-    subscription_term: 'full_year',
+    coverage_range: null,
+    subscription_term: 'half_year',
+    delivery_method: 'zto_mf',
+    term_start_month: dayjs().startOf('month'),
     issue_number: null,
     total_quantity: 1,
-    unit_price: 0,
+    unit_price: 195,
     notes: null,
     targets: [buildBlankTarget()],
   };
@@ -280,9 +265,9 @@ function detailToFormValues(detail: OrderOut): Partial<OrderFormValues> {
         fulfillment_type: it.fulfillment_type,
         billing_type: it.billing_type,
         coverage_range: coverageRange,
-        subscription_term: isCoverageType
-          ? inferSubscriptionTerm(coverageRange?.[0], coverageRange?.[1])
-          : null,
+        subscription_term: it.subscription_term ?? (isCoverageType ? 'custom' : null),
+        delivery_method: it.delivery_method,
+        term_start_month: it.term_start_month ? dayjs(`${it.term_start_month}-01`) : null,
         issue_number: it.issue_number,
         total_quantity: it.total_quantity,
         unit_price: Number(it.unit_price),
@@ -320,6 +305,9 @@ function itemToCreatePayload(item: ItemFormValues): OrderItemIn {
     publication_format: 'paper',
     fulfillment_type: item.fulfillment_type,
     billing_type: item.billing_type,
+    subscription_term: item.subscription_term ?? null,
+    delivery_method: item.delivery_method ?? null,
+    term_start_month: item.term_start_month ? item.term_start_month.format('YYYY-MM') : null,
     coverage_start_date: isCoverageType && start ? start.format('YYYY-MM-DD') : null,
     coverage_end_date: isCoverageType && end ? end.format('YYYY-MM-DD') : null,
     issue_number: item.issue_number ?? null,
@@ -1025,10 +1013,55 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
     ['items', field.name, 'subscription_term'],
     form,
   );
-  const coverageRange = Form.useWatch<[Dayjs, Dayjs] | null | undefined>(
-    ['items', field.name, 'coverage_range'],
+  const deliveryMethod = Form.useWatch<DeliveryMethod | undefined | null>(
+    ['items', field.name, 'delivery_method'],
     form,
   );
+  const termStartMonth = Form.useWatch<Dayjs | undefined | null>(
+    ['items', field.name, 'term_start_month'],
+    form,
+  );
+
+  const requireCoverage = fulfillmentType
+    ? COVERAGE_REQUIRED_TYPES.has(fulfillmentType)
+    : false;
+  const requireIssueNumber = fulfillmentType === 'single_issue';
+
+  const previewQuery = useQuery({
+    queryKey: [
+      'orders',
+      'pricing-preview',
+      subscriptionTerm,
+      deliveryMethod,
+      termStartMonth?.format('YYYY-MM'),
+      totalQuantity,
+    ],
+    queryFn: async () => {
+      const res = await previewOrderPricing({
+        subscription_term: subscriptionTerm as Exclude<SubscriptionTerm, 'custom'>,
+        delivery_method: deliveryMethod as DeliveryMethod,
+        term_start_month: termStartMonth!.format('YYYY-MM'),
+        total_quantity: Number(totalQuantity) || 1,
+      });
+      return res.data;
+    },
+    enabled:
+      requireCoverage &&
+      subscriptionTerm !== 'custom' &&
+      !!subscriptionTerm &&
+      !!deliveryMethod &&
+      !!termStartMonth,
+  });
+
+  useEffect(() => {
+    const preview = previewQuery.data;
+    if (!preview || disabled || !requireCoverage || subscriptionTerm === 'custom') return;
+    form.setFieldValue(['items', field.name, 'coverage_range'], [
+      dayjs(preview.coverage_start_date),
+      dayjs(preview.coverage_end_date),
+    ]);
+    form.setFieldValue(['items', field.name, 'unit_price'], Number(preview.unit_price));
+  }, [previewQuery.data, disabled, requireCoverage, subscriptionTerm, form, field.name]);
 
   const subtotal = useMemo(
     () => (Number(totalQuantity) || 0) * (Number(unitPrice) || 0),
@@ -1040,65 +1073,16 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
     [targets],
   );
 
-  const requireCoverage = fulfillmentType
-    ? COVERAGE_REQUIRED_TYPES.has(fulfillmentType)
-    : false;
-  const requireIssueNumber = fulfillmentType === 'single_issue';
-
-  // 当履约类型在 订阅/续订 ↔ 其它 之间切换时，同步 subscription_term
-  useEffect(() => {
-    const current = form.getFieldValue(['items', field.name, 'subscription_term']);
-    if (requireCoverage) {
-      if (!current) {
-        const range = form.getFieldValue(['items', field.name, 'coverage_range']) as
-          | [Dayjs, Dayjs]
-          | null
-          | undefined;
-        form.setFieldValue(
-          ['items', field.name, 'subscription_term'],
-          inferSubscriptionTerm(range?.[0], range?.[1]),
-        );
-      }
-    } else if (current) {
-      form.setFieldValue(['items', field.name, 'subscription_term'], null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requireCoverage]);
-
-  // 用户手动改 RangePicker 时，自动反推期限（半年 / 一年 / 自定义）。
-  // 防止"选半年→改了 end→标签还显示半年"的歧义。
-  useEffect(() => {
-    if (!requireCoverage) return;
-    const [s, e] = coverageRange ?? [];
-    const inferred = inferSubscriptionTerm(s, e);
-    if (inferred !== subscriptionTerm) {
-      form.setFieldValue(['items', field.name, 'subscription_term'], inferred);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coverageRange?.[0]?.valueOf(), coverageRange?.[1]?.valueOf(), requireCoverage]);
-
-  // 点击"半年/一年"快捷按钮：以当前起始日（或今天）为基准重算结束日。
-  const handleTermChange = (term: SubscriptionTerm) => {
-    form.setFieldValue(['items', field.name, 'subscription_term'], term);
-    if (term === 'custom') return;
-    const current = form.getFieldValue(['items', field.name, 'coverage_range']) as
-      | [Dayjs, Dayjs]
-      | null
-      | undefined;
-    const start = current?.[0] ?? dayjs();
-    form.setFieldValue(['items', field.name, 'coverage_range'], computeCoverageRange(term, start));
-  };
-
   // 单价标签与占位符随期限切换
   const unitPriceMeta = useMemo(() => {
     if (!requireCoverage) {
       return { label: '单价', placeholder: '零售每份', hint: '· 单期/零售：每份的零售价（如 5 元/份）' };
     }
     if (subscriptionTerm === 'half_year') {
-      return { label: '半年订阅单价 / 户', placeholder: '如 120', hint: '半年订阅：每订户在 6 个月内的订阅总价（常见 120 元）' };
+      return { label: '单份套餐价', placeholder: '如 120', hint: '半年订阅：每订户在 6 个月内的订阅总价（常见 120 元）' };
     }
-    if (subscriptionTerm === 'full_year') {
-      return { label: '全年订阅单价 / 户', placeholder: '如 240', hint: '全年订阅：每订户在 12 个月内的订阅总价（常见 240 元）' };
+    if (subscriptionTerm === 'one_year') {
+      return { label: '单份套餐价', placeholder: '如 240', hint: '一年订阅：每订户在 12 个月内的订阅总价（常见 240 元）' };
     }
     return { label: '订阅单价 / 户（按覆盖期）', placeholder: '按覆盖期', hint: '自定义覆盖期：每订户在整个覆盖期内的订阅总价' };
   }, [requireCoverage, subscriptionTerm]);
@@ -1148,52 +1132,79 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
             <Select options={BILLING_TYPE_OPTIONS} disabled={disabled} />
           </Form.Item>
         </Col>
-        <Col span={6}>
-          <Form.Item
-            name={[field.name, 'coverage_range']}
-            label="覆盖期"
-            rules={
-              requireCoverage
-                ? [{ required: true, message: '订阅/续订需要填写覆盖期' }]
-                : undefined
-            }
-          >
-            <DatePicker.RangePicker style={{ width: '100%' }} disabled={disabled} />
-          </Form.Item>
-        </Col>
       </Row>
       {requireCoverage && (
-        <Row gutter={12}>
-          <Col span={24}>
-            <Form.Item
-              name={[field.name, 'subscription_term']}
-              label={
-                <Space size={4}>
-                  <span>订阅期限</span>
-                  <Tooltip
-                    title={
-                      <div>
-                        <div>选「半年 / 一年」会按当前起始日自动算出结束日，并把"单价"标签换成对应套餐。</div>
-                        <div style={{ marginTop: 4 }}>需要"半年但换个起始日"？先在 RangePicker 改起始日，再点一次「半年」即可重算结束日。</div>
-                        <div style={{ marginTop: 4 }}>非标周期（如 2 年）请选「自定义」并直接编辑 RangePicker。</div>
-                      </div>
-                    }
-                  >
-                    <QuestionCircleOutlined style={{ color: 'var(--color-text-tertiary)', cursor: 'help' }} />
-                  </Tooltip>
-                </Space>
-              }
-              style={{ marginBottom: 12 }}
-            >
-              <Radio.Group
-                options={SUBSCRIPTION_TERM_OPTIONS}
-                optionType="button"
-                onChange={(e) => handleTermChange(e.target.value as SubscriptionTerm)}
-                disabled={disabled}
-              />
-            </Form.Item>
-          </Col>
-        </Row>
+        <>
+          <Row gutter={12}>
+            <Col span={6}>
+              <Form.Item
+                name={[field.name, 'subscription_term']}
+                label="订阅期限"
+                rules={[{ required: true, message: '请选择订阅期限' }]}
+              >
+                <Radio.Group
+                  options={SUBSCRIPTION_TERM_OPTIONS}
+                  optionType="button"
+                  disabled={disabled}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item
+                name={[field.name, 'term_start_month']}
+                label="起始月份"
+                rules={subscriptionTerm !== 'custom' ? [{ required: true, message: '请选择起始月份' }] : undefined}
+              >
+                <DatePicker
+                  picker="month"
+                  style={{ width: '100%' }}
+                  disabled={disabled || subscriptionTerm === 'custom'}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name={[field.name, 'delivery_method']}
+                label="投递/收费方式"
+                rules={[{ required: true, message: '请选择投递/收费方式' }]}
+              >
+                <Radio.Group options={DELIVERY_METHOD_OPTIONS} disabled={disabled} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item
+            name={[field.name, 'coverage_range']}
+            label="实际覆盖期"
+            rules={[{ required: true, message: '请通过预览生成或手动填写覆盖期' }]}
+          >
+            <DatePicker.RangePicker
+              style={{ width: '100%' }}
+              disabled={disabled || subscriptionTerm !== 'custom'}
+            />
+          </Form.Item>
+        </>
+      )}
+      {requireCoverage && subscriptionTerm !== 'custom' && (
+        <Alert
+          type={previewQuery.data?.schedule_incomplete ? 'warning' : 'info'}
+          showIcon
+          message={previewQuery.isLoading ? '正在计算套餐价...' : previewQuery.data?.price_label ?? '请选择起始月份和投递方式'}
+          description={
+            previewQuery.data ? (
+              <Space direction="vertical" size={2}>
+                <span>实际覆盖期：{previewQuery.data.coverage_start_date} ～ {previewQuery.data.coverage_end_date}</span>
+                <span>预计发货：{previewQuery.data.expected_issue_count} 期</span>
+                <span>单份套餐价：{formatCurrency(previewQuery.data.unit_price)}</span>
+                <span>每期总份数：{Number(totalQuantity) || 0}</span>
+                <span>应收小计：{formatCurrency(previewQuery.data.subtotal)}</span>
+                {previewQuery.data.warning && <Typography.Text type="warning">{previewQuery.data.warning}</Typography.Text>}
+              </Space>
+            ) : previewQuery.isError ? (
+              '预览失败：请检查期刊表或改用自定义。'
+            ) : undefined
+          }
+          style={{ marginBottom: 12 }}
+        />
       )}
       <Row gutter={12}>
         <Col span={6}>
@@ -1220,7 +1231,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
             name={[field.name, 'total_quantity']}
             label={
               <Space size={4}>
-                <span>总份数</span>
+                <span>每期总份数</span>
                 <Tooltip
                   title={
                     <div>
@@ -1236,7 +1247,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
               </Space>
             }
             rules={[
-              { required: true, message: '请填写总份数' },
+              { required: true, message: '请填写每期总份数' },
               { type: 'number', min: 1, message: '至少 1 份' },
             ]}
           >
@@ -1262,7 +1273,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
                       <div>· 订阅：每订户在<strong>整个覆盖期</strong>的订阅费（如半年 120 元、全年 240 元）</div>
                       <div>· 单期/零售：每份的零售价（如 5 元/份）</div>
                       <div style={{ marginTop: 4 }}>当前：{unitPriceMeta.hint}</div>
-                      <div style={{ marginTop: 4 }}>小计 = 总份数 × 单价（公式与期数无关）。</div>
+                      <div style={{ marginTop: 4 }}>应收小计 = 每期总份数 × 单份套餐价（公式与期数无关）。</div>
                     </div>
                   }
                 >
@@ -1287,8 +1298,8 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
           <Form.Item
             label={
               <Space size={4}>
-                <span>小计</span>
-                <Tooltip title="小计 = 总份数 × 单价，由系统自动计算">
+                <span>应收小计</span>
+                <Tooltip title="应收小计 = 每期总份数 × 单份套餐价，由系统自动计算">
                   <QuestionCircleOutlined style={{ color: 'var(--color-text-tertiary)', cursor: 'help' }} />
                 </Tooltip>
               </Space>
@@ -1308,7 +1319,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
           color={targetSum === Number(totalQuantity || 0) ? 'green' : 'orange'}
           style={{ marginLeft: 8 }}
         >
-          目标合计 {targetSum} / 明细总份数 {Number(totalQuantity) || 0}
+          目标合计 {targetSum} / 每期总份数 {Number(totalQuantity) || 0}
         </Tag>
       </Divider>
 
