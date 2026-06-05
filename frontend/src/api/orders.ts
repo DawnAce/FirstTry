@@ -62,6 +62,9 @@ export type OrderEventType =
   | 'target_added'
   | 'target_replaced'
   | 'target_suspended'
+  | 'item_added'
+  | 'item_removed'
+  | 'item_modified'
   | 'synced_to_shipping'
   | 'shipping_sync_conflict';
 
@@ -143,6 +146,16 @@ export interface OrderUpdatePayload {
 
 export interface OrderVoidPayload {
   reason: string;
+}
+
+export interface OrderItemUpdate extends OrderItemIn {
+  id?: number | null;
+}
+
+export interface OrderItemsUpdatePayload {
+  effective_from_issue: number;
+  change_reason?: string | null;
+  items: OrderItemUpdate[];
 }
 
 // =============================================================================
@@ -328,6 +341,12 @@ export const listOrderEvents = (
   id: number,
 ): Promise<AxiosResponse<OrderEventOut[]>> =>
   api.get<OrderEventOut[]>(`/orders/${id}/events`);
+
+export const updateOrderItems = (
+  id: number,
+  payload: OrderItemsUpdatePayload,
+): Promise<AxiosResponse<OrderOut>> =>
+  api.put<OrderOut>(`/orders/${id}/items`, payload);
 
 export function previewOrderPricing(
   payload: PricingPreviewPayload,
