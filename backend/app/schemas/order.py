@@ -207,6 +207,25 @@ class OrderVoidIn(BaseModel):
     reason: str = Field(min_length=1, max_length=255)
 
 
+class OrderItemUpdate(OrderItemIn):
+    """Extension of OrderItemIn that optionally carries a DB id for matching.
+
+    Items with an ``id`` are matched to existing records (update/keep).
+    Items without ``id`` are treated as new additions.
+    Existing items not present in the list are treated as removals.
+    """
+
+    id: Optional[int] = None
+
+
+class OrderItemsUpdate(BaseModel):
+    """Payload for PUT /orders/{id}/items — batch update items on an active order."""
+
+    effective_from_issue: int = Field(ge=1, description="新版本生效起始期号")
+    change_reason: Optional[str] = Field(default=None, max_length=255)
+    items: List[OrderItemUpdate] = Field(min_length=1)
+
+
 class PricingPreviewIn(BaseModel):
     subscription_term: SubscriptionTerm
     delivery_method: DeliveryMethod

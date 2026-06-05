@@ -35,6 +35,7 @@ from app.schemas.order import (
     FulfillmentProgress,
     OrderCreate,
     OrderEventOut,
+    OrderItemsUpdate,
     OrderListRow,
     OrderOut,
     OrderUpdate,
