@@ -28,13 +28,16 @@ from app.models.fulfillment_target import ShippingChannel
 from app.models.order_item import (
     BillingType,
     FulfillmentType,
+    OrderItemStatus,
     Publication,
     PublicationFormat,
 )
 from app.schemas.order import (
     FulfillmentTargetIn,
     OrderCreate,
+    OrderItemsUpdate,
     OrderItemIn,
+    OrderItemUpdate,
     OrderUpdate,
 )
 from app.services import order_service
@@ -341,6 +344,149 @@ def test_update_order_no_changes_does_not_log_event():
 # ---------------------------------------------------------------------------
 # get_order_detail
 # ---------------------------------------------------------------------------
+
+
+def _seed_active_order_for_item_updates() -> Order:
+    order = _seeded_order(status=OrderStatus.active, order_id=1, payer_name="Alice")
+
+    item1 = OrderItem(
+        order_id=order.id,
+        fulfillment_type=FulfillmentType.subscription,
+        total_quantity=1,
+        unit_price=Decimal("390.00"),
+        subtotal=Decimal("390.00"),
+        coverage_start_date=date(2026, 3, 1),
+        coverage_end_date=date(2026, 12, 31),
+        notes="old note",
+        status=OrderItemStatus.active,
+    )
+    item1.id = 10
+    alloc1 = FulfillmentAllocation(
+        order_item_id=item1.id,
+        version_no=1,
+        effective_from_issue=2601,
+        effective_until_issue=None,
+        change_reason="initial",
+    )
+    alloc1.id = 20
+    target1 = FulfillmentTarget(
+        order_item_id=item1.id,
+        allocation_id=alloc1.id,
+        recipient_name="Old Recipient",
+        recipient_address="Old Address",
+        quantity=1,
+        shipping_channel=ShippingChannel.zto_outsource,
+    )
+    target1.id = 30
+    alloc1.targets = [target1]
+    item1.allocations = [alloc1]
+    item1.targets = [target1]
+
+    item2 = OrderItem(
+        order_id=order.id,
+        fulfillment_type=FulfillmentType.gift,
+        total_quantity=1,
+        unit_price=Decimal("0.00"),
+        subtotal=Decimal("0.00"),
+        status=OrderItemStatus.active,
+        notes="remove me",
+    )
+    item2.id = 11
+    alloc2 = FulfillmentAllocation(
+        order_item_id=item2.id,
+        version_no=1,
+        effective_from_issue=2601,
+        effective_until_issue=None,
+        change_reason="initial",
+    )
+    alloc2.id = 21
+    target2 = FulfillmentTarget(
+        order_item_id=item2.id,
+        allocation_id=alloc2.id,
+        recipient_name="Gift Recipient",
+        recipient_address="Gift Address",
+        quantity=1,
+        shipping_channel=ShippingChannel.zto_outsource,
+    )
+    target2.id = 31
+    alloc2.targets = [target2]
+    item2.allocations = [alloc2]
+    item2.targets = [target2]
+
+    order.items = [item1, item2]
+    return order
+
+
+def test_update_order_items_updates_existing_adds_new_and_cancels_missing_items():
+    seeded = _seed_active_order_for_item_updates()
+    db = FakeDb(query_returns=[_FakeQuery(target=seeded)])
+    data = OrderItemsUpdate(
+        effective_from_issue=2660,
+        change_reason="customer moved",
+        items=[
+            OrderItemUpdate(
+                id=10,
+                fulfillment_type=FulfillmentType.subscription,
+                total_quantity=1,
+                unit_price=Decimal("390.00"),
+                subtotal=Decimal("390.00"),
+                coverage_start_date=date(2026, 3, 1),
+                coverage_end_date=date(2026, 12, 31),
+                notes="new note",
+                targets=[
+                    FulfillmentTargetIn(
+                        recipient_name="New Recipient",
+                        recipient_address="New Address",
+                        quantity=1,
+                    )
+                ],
+            ),
+            OrderItemUpdate(
+                fulfillment_type=FulfillmentType.single_issue,
+                total_quantity=1,
+                unit_price=Decimal("5.00"),
+                subtotal=Decimal("5.00"),
+                issue_number=2660,
+                targets=[
+                    FulfillmentTargetIn(
+                        recipient_name="Added Recipient",
+                        recipient_address="Added Address",
+                        quantity=1,
+                    )
+                ],
+            ),
+        ],
+    )
+
+    result = order_service.update_order_items(db, 1, data, operator_id=7)
+
+    existing_item = next(item for item in result.items if item.id == 10)
+    removed_item = next(item for item in result.items if item.id == 11)
+    added_item = next(item for item in db.added if isinstance(item, OrderItem) and item.id not in {10, 11})
+
+    assert existing_item.notes == "new note"
+    assert len(existing_item.allocations) == 2
+    closed_alloc = next(a for a in existing_item.allocations if a.version_no == 1)
+    new_alloc = next(a for a in existing_item.allocations if a.version_no == 2)
+    assert closed_alloc.effective_until_issue == 2659
+    assert new_alloc.effective_from_issue == 2660
+    assert new_alloc.targets[0].recipient_name == "New Recipient"
+
+    assert removed_item.status == OrderItemStatus.cancelled
+    assert removed_item.allocations[0].effective_until_issue == 2659
+
+    assert added_item.issue_number == 2660
+    assert any(
+        isinstance(obj, FulfillmentAllocation)
+        and obj.order_item_id == added_item.id
+        and obj.version_no == 1
+        for obj in db.added
+    )
+    event_types = [obj.event_type for obj in db.added if isinstance(obj, OrderEvent)]
+    assert OrderEventType.item_modified in event_types
+    assert OrderEventType.item_removed in event_types
+    assert OrderEventType.item_added in event_types
+    assert db.committed == 1
 
 
 def test_get_order_detail_returns_order():

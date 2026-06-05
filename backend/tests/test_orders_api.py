@@ -348,6 +348,74 @@ def test_update_order_not_found_returns_404(client):
     assert r.status_code == 404
 
 
+def test_update_active_items_creates_new_allocation_and_records_event(client):
+    created = client.post("/api/orders", json=_make_create_payload()).json()
+    confirmed = client.post(f"/api/orders/{created['id']}/confirm").json()
+    item = confirmed["items"][0]
+
+    r = client.put(
+        f"/api/orders/{created['id']}/items",
+        json={
+            "effective_from_issue": 2660,
+            "change_reason": "customer moved",
+            "items": [
+                {
+                    "id": item["id"],
+                    "fulfillment_type": item["fulfillment_type"],
+                    "billing_type": item["billing_type"],
+                    "coverage_start_date": item["coverage_start_date"],
+                    "coverage_end_date": item["coverage_end_date"],
+                    "total_quantity": item["total_quantity"],
+                    "unit_price": item["unit_price"],
+                    "subtotal": item["subtotal"],
+                    "targets": [
+                        {
+                            "recipient_name": "新收件人",
+                            "recipient_address": "上海市浦东新区",
+                            "quantity": item["total_quantity"],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    updated_item = r.json()["items"][0]
+    assert len(updated_item["allocations"]) == 2
+    latest_alloc = max(updated_item["allocations"], key=lambda alloc: alloc["version_no"])
+    assert latest_alloc["effective_from_issue"] == 2660
+    assert latest_alloc["targets"][0]["recipient_name"] == "新收件人"
+
+    events = client.get(f"/api/orders/{created['id']}/events").json()
+    assert "item_modified" in [event["event_type"] for event in events]
+
+
+def test_update_active_items_rejects_draft_order(client):
+    created = client.post("/api/orders", json=_make_create_payload()).json()
+    r = client.put(
+        f"/api/orders/{created['id']}/items",
+        json={
+            "effective_from_issue": 2660,
+            "items": [
+                {
+                    "fulfillment_type": "subscription",
+                    "total_quantity": 1,
+                    "unit_price": "0",
+                    "subtotal": "0",
+                    "targets": [
+                        {
+                            "recipient_name": "X",
+                            "recipient_address": "Y",
+                            "quantity": 1,
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    assert r.status_code == 409
+
+
 # ---------------------------------------------------------------------------
 # POST /api/orders/{id}/void
 # ---------------------------------------------------------------------------
