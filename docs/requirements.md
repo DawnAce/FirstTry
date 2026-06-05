@@ -556,12 +556,13 @@ V1.1 上线 MVP 级订单管理，目标是把目前散落在 Excel 中的读者
 - ✅ 订单列表筛选、订单详情 4 Tab 视图（明细 / 履约方案 / 发货同步占位 / 事件流时间线）
 - ✅ 完整事件流审计（created / confirmed / modified / voided / allocation_updated / target_*）
 
-**留待 V1.2**：
-- ❌ active 状态下就地编辑明细 / 目标（V1.1 需先作废重建）
-- ❌ 履约方案多版本（替换 / 暂停产生 v2+）
-- ❌ 与 `shipping_details` 实际同步（V1.1 事件流已预留 `synced_to_shipping` / `shipping_sync_conflict`）
+**V1.2 已完成**：
+- ✅ active 状态下就地编辑明细 / 目标（版本化 allocation 追踪，`PUT /orders/{id}/items`）
+- ✅ 履约方案多版本（修改目标自动产生 v2+，`effective_from_issue` / `effective_until_issue` 标记版本边界）
+- ✅ 订阅期限与套餐价（V1.2A，定价预览 + 自动填充单价）
 
 **留待 V1.3+**：
+- ❌ 与 `shipping_details` 实际同步（事件流已预留 `synced_to_shipping` / `shipping_sync_conflict`）
 - ❌ 电商订单批量导入（Excel / API）
 - ❌ 财务对账（实付 / 应收 / 退款）
 - ❌ 客户自助下单
