@@ -14,6 +14,7 @@ Endpoint map:
 * ``PUT    /api/orders/{id}``                         — patch editable fields
 * ``POST   /api/orders/{id}/confirm``                 — draft → active
 * ``POST   /api/orders/{id}/void``                    — active/draft → void
+* ``PUT    /api/orders/{id}/items``                   — batch-edit active items
 * ``GET    /api/orders/{id}/events``                  — audit log
 * ``GET    /api/orders/{id}/fulfillment-progress``    — per-item progress
 
@@ -163,6 +164,19 @@ def void_order(
     order = order_service.void_order(
         db, order_id, reason=payload.reason, operator_id=user.id
     )
+    fresh = order_service.get_order_detail(db, order.id)
+    return _build_order_out(db, fresh)
+
+
+@router.put("/{order_id}/items", response_model=OrderOut)
+def update_items(
+    order_id: int,
+    data: OrderItemsUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Batch update items on an active order with versioned allocation tracking."""
+    order = order_service.update_order_items(db, order_id, data, operator_id=user.id)
     fresh = order_service.get_order_detail(db, order.id)
     return _build_order_out(db, fresh)
 
