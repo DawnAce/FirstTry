@@ -28,7 +28,9 @@ All mutating helpers log an ``order_events`` row through
 ``order_event_logger.log_event`` so the audit trail is single-source.
 """
 
-from datetime import date
+import enum
+from datetime import date, datetime
+from decimal import Decimal
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
@@ -44,10 +46,12 @@ from app.models import (
     OrderSourceType,
     OrderStatus,
 )
-from app.models.order_item import SubscriptionTerm
+from app.models.fulfillment_target import ShippingChannel
+from app.models.order_item import OrderItemStatus, SubscriptionTerm
 from app.schemas.order import (
     FulfillmentProgress,
     OrderCreate,
+    OrderItemsUpdate,
     OrderListRow,
     OrderUpdate,
 )
@@ -78,6 +82,226 @@ ACTIVE_EDITABLE_FIELDS = frozenset(
         "paid_amount",
     }
 )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _serialize_for_event(val):
+    """Convert a value to JSON-safe format for event payloads."""
+    if val is None:
+        return None
+    if isinstance(val, enum.Enum):
+        return val.value
+    if isinstance(val, Decimal):
+        return str(val)
+    if isinstance(val, (date, datetime)):
+        return val.isoformat()
+    return val
+
+
+def _targets_differ(
+    current_targets: list,
+    new_targets: list,
+) -> bool:
+    """Compare current targets with submitted targets to detect changes.
+
+    Uses multiset comparison of normalized signatures covering all
+    semantically meaningful fields.
+    """
+    from collections import Counter
+
+    if len(current_targets) != len(new_targets):
+        return True
+
+    def sig(t):
+        return (
+            t.recipient_name,
+            getattr(t, "recipient_phone", None),
+            t.recipient_address,
+            getattr(t, "recipient_postal_code", None),
+            t.quantity,
+            getattr(t, "shipping_channel", ShippingChannel.zto_outsource),
+            getattr(t, "effective_from_issue", None),
+            getattr(t, "effective_until_issue", None),
+            getattr(t, "notes", None),
+        )
+
+    return Counter(sig(t) for t in current_targets) != Counter(sig(t) for t in new_targets)
+
+
+def _update_existing_item(
+    db: Session,
+    order: Order,
+    item: OrderItem,
+    item_data,
+    effective_from_issue: int,
+    change_reason: Optional[str],
+    operator_id: Optional[int],
+) -> None:
+    """Update an existing item's fields and create new allocation if targets changed."""
+    item_diff: dict = {}
+    field_map = {
+        "publication": item_data.publication,
+        "publication_format": item_data.publication_format,
+        "fulfillment_type": item_data.fulfillment_type,
+        "billing_type": item_data.billing_type,
+        "subscription_term": item_data.subscription_term,
+        "delivery_method": item_data.delivery_method,
+        "term_start_month": item_data.term_start_month,
+        "coverage_start_date": item_data.coverage_start_date,
+        "coverage_end_date": item_data.coverage_end_date,
+        "issue_number": item_data.issue_number,
+        "total_quantity": item_data.total_quantity,
+        "unit_price": item_data.unit_price,
+        "subtotal": item_data.subtotal,
+        "notes": item_data.notes,
+    }
+    for field, new_val in field_map.items():
+        old_val = getattr(item, field)
+        if old_val != new_val:
+            item_diff[field] = {
+                "from": _serialize_for_event(old_val),
+                "to": _serialize_for_event(new_val),
+            }
+            setattr(item, field, new_val)
+
+    current_alloc = max(
+        (a for a in item.allocations if a.effective_until_issue is None),
+        key=lambda a: a.version_no,
+        default=None,
+    )
+    current_targets = current_alloc.targets if current_alloc else []
+
+    targets_changed = _targets_differ(current_targets, item_data.targets)
+
+    if targets_changed and current_alloc:
+        current_alloc.effective_until_issue = effective_from_issue - 1
+
+        new_version = current_alloc.version_no + 1
+        new_alloc = FulfillmentAllocation(
+            order_item_id=item.id,
+            version_no=new_version,
+            effective_from_issue=effective_from_issue,
+            effective_until_issue=None,
+            change_reason=change_reason or "item targets updated",
+            operator_id=operator_id,
+        )
+        db.add(new_alloc)
+        db.flush()
+        item.allocations.append(new_alloc)
+        new_alloc.targets = []
+
+        for tgt_data in item_data.targets:
+            target = FulfillmentTarget(
+                order_item_id=item.id,
+                allocation_id=new_alloc.id,
+                recipient_name=tgt_data.recipient_name,
+                recipient_phone=tgt_data.recipient_phone,
+                recipient_address=tgt_data.recipient_address,
+                recipient_postal_code=tgt_data.recipient_postal_code,
+                quantity=tgt_data.quantity,
+                shipping_channel=tgt_data.shipping_channel,
+                effective_from_issue=tgt_data.effective_from_issue,
+                effective_until_issue=tgt_data.effective_until_issue,
+                notes=tgt_data.notes,
+            )
+            db.add(target)
+            new_alloc.targets.append(target)
+            item.targets.append(target)
+
+    if item_diff or targets_changed:
+        log_event(
+            db,
+            order_id=order.id,
+            event_type=OrderEventType.item_modified,
+            payload={
+                "item_id": item.id,
+                "field_diff": item_diff if item_diff else None,
+                "targets_changed": targets_changed,
+                "effective_from_issue": effective_from_issue,
+                "change_reason": change_reason,
+            },
+            operator_id=operator_id,
+        )
+
+
+def _add_new_item(
+    db: Session,
+    order: Order,
+    item_data,
+    effective_from_issue: int,
+    change_reason: Optional[str],
+    operator_id: Optional[int],
+) -> None:
+    """Create a brand new item + allocation v1 + targets."""
+    item = OrderItem(
+        order_id=order.id,
+        publication=item_data.publication,
+        publication_format=item_data.publication_format,
+        fulfillment_type=item_data.fulfillment_type,
+        billing_type=item_data.billing_type,
+        subscription_term=item_data.subscription_term,
+        delivery_method=item_data.delivery_method,
+        term_start_month=item_data.term_start_month,
+        coverage_start_date=item_data.coverage_start_date,
+        coverage_end_date=item_data.coverage_end_date,
+        issue_number=item_data.issue_number,
+        total_quantity=item_data.total_quantity,
+        unit_price=item_data.unit_price,
+        subtotal=item_data.subtotal,
+        notes=item_data.notes,
+    )
+    db.add(item)
+    db.flush()
+    order.items.append(item)
+    item.allocations = []
+    item.targets = []
+
+    alloc = FulfillmentAllocation(
+        order_item_id=item.id,
+        version_no=1,
+        effective_from_issue=effective_from_issue,
+        effective_until_issue=None,
+        change_reason=change_reason or "new item added to active order",
+        operator_id=operator_id,
+    )
+    db.add(alloc)
+    db.flush()
+    item.allocations.append(alloc)
+    alloc.targets = []
+
+    for tgt_data in item_data.targets:
+        target = FulfillmentTarget(
+            order_item_id=item.id,
+            allocation_id=alloc.id,
+            recipient_name=tgt_data.recipient_name,
+            recipient_phone=tgt_data.recipient_phone,
+            recipient_address=tgt_data.recipient_address,
+            recipient_postal_code=tgt_data.recipient_postal_code,
+            quantity=tgt_data.quantity,
+            shipping_channel=tgt_data.shipping_channel,
+            effective_from_issue=tgt_data.effective_from_issue,
+            effective_until_issue=tgt_data.effective_until_issue,
+            notes=tgt_data.notes,
+        )
+        db.add(target)
+        alloc.targets.append(target)
+        item.targets.append(target)
+
+    log_event(
+        db,
+        order_id=order.id,
+        event_type=OrderEventType.item_added,
+        payload={
+            "item_id": item.id,
+            "effective_from_issue": effective_from_issue,
+            "change_reason": change_reason,
+        },
+        operator_id=operator_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +555,107 @@ def void_order(
     return order
 
 
+def update_order_items(
+    db: Session,
+    order_id: int,
+    data: "OrderItemsUpdate",
+    operator_id: Optional[int] = None,
+) -> Order:
+    """Update items/targets on an active order with versioned allocations.
+
+    For each submitted item:
+    - Items with ``id`` matching an existing item: update item-level fields
+      in place; if targets changed, close current allocation and create a
+      new version.
+    - Items without ``id``: create as new (item + allocation v1 + targets).
+    - Existing items NOT in the submitted list: mark as cancelled.
+
+    ``data.effective_from_issue`` controls the boundary between the old
+    and new allocation versions.
+    """
+    order = (
+        db.query(Order)
+        .options(
+            selectinload(Order.items)
+            .selectinload(OrderItem.allocations)
+            .selectinload(FulfillmentAllocation.targets)
+        )
+        .filter(Order.id == order_id)
+        .first()
+    )
+
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"order {order_id} not found")
+    if order.status != OrderStatus.active:
+        raise HTTPException(
+            status_code=409,
+            detail=f"items can only be edited on active orders (current: {order.status.value})",
+        )
+
+    existing_items = {
+        item.id: item for item in order.items if item.status == OrderItemStatus.active
+    }
+    submitted_ids = {it.id for it in data.items if it.id is not None}
+
+    unknown_ids = submitted_ids - set(existing_items.keys())
+    if unknown_ids:
+        raise HTTPException(
+            status_code=422,
+            detail=f"items do not belong to this active order: {sorted(unknown_ids)}",
+        )
+
+    id_list = [it.id for it in data.items if it.id is not None]
+    if len(id_list) != len(set(id_list)):
+        raise HTTPException(
+            status_code=422,
+            detail="duplicate item IDs in request",
+        )
+
+    for item_id, item in existing_items.items():
+        if item_id not in submitted_ids:
+            item.status = OrderItemStatus.cancelled
+            for alloc in item.allocations:
+                if alloc.effective_until_issue is None:
+                    alloc.effective_until_issue = data.effective_from_issue - 1
+            log_event(
+                db,
+                order_id=order.id,
+                event_type=OrderEventType.item_removed,
+                payload={
+                    "item_id": item_id,
+                    "effective_from_issue": data.effective_from_issue,
+                    "change_reason": data.change_reason,
+                },
+                operator_id=operator_id,
+            )
+
+    for item_data in data.items:
+        if item_data.id is not None and item_data.id in existing_items:
+            item = existing_items[item_data.id]
+            _update_existing_item(
+                db,
+                order,
+                item,
+                item_data,
+                data.effective_from_issue,
+                data.change_reason,
+                operator_id,
+            )
+        else:
+            _add_new_item(
+                db,
+                order,
+                item_data,
+                data.effective_from_issue,
+                data.change_reason,
+                operator_id,
+            )
+
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
@@ -502,23 +827,3 @@ def list_orders(
         )
 
     return rows, total
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _serialize_for_event(val):
-    """Coerce a column value to something JSON-friendly for the audit log.
-
-    Decimals become strings (to avoid precision loss in JSON), dates use
-    isoformat, enums use ``.value``. None passes through.
-    """
-    if val is None:
-        return None
-    if hasattr(val, "isoformat"):
-        return val.isoformat()
-    if hasattr(val, "value"):
-        return val.value
-    return str(val)
