@@ -390,6 +390,123 @@ def test_update_active_items_creates_new_allocation_and_records_event(client):
     assert "item_modified" in [event["event_type"] for event in events]
 
 
+def test_update_active_items_twice_creates_v3_allocation(client):
+    """Consecutive edits: v1 → v2 → v3, each with correct effective boundaries."""
+    created = client.post("/api/orders", json=_make_create_payload()).json()
+    confirmed = client.post(f"/api/orders/{created['id']}/confirm").json()
+    item = confirmed["items"][0]
+
+    def _item_payload(item_id, recipient_name, addr, qty):
+        return {
+            "id": item_id,
+            "fulfillment_type": item["fulfillment_type"],
+            "billing_type": item["billing_type"],
+            "coverage_start_date": item["coverage_start_date"],
+            "coverage_end_date": item["coverage_end_date"],
+            "total_quantity": qty,
+            "unit_price": item["unit_price"],
+            "subtotal": item["subtotal"],
+            "targets": [
+                {"recipient_name": recipient_name, "recipient_address": addr, "quantity": qty}
+            ],
+        }
+
+    # First edit: v1 → v2
+    r1 = client.put(
+        f"/api/orders/{created['id']}/items",
+        json={
+            "effective_from_issue": 2660,
+            "change_reason": "第一次换地址",
+            "items": [_item_payload(item["id"], "李四", "上海市", item["total_quantity"])],
+        },
+    )
+    assert r1.status_code == 200
+    item_after_v2 = r1.json()["items"][0]
+    assert len(item_after_v2["allocations"]) == 2
+
+    # Second edit: v2 → v3
+    r2 = client.put(
+        f"/api/orders/{created['id']}/items",
+        json={
+            "effective_from_issue": 2670,
+            "change_reason": "第二次换地址",
+            "items": [_item_payload(item["id"], "王五", "广州市", item["total_quantity"])],
+        },
+    )
+    assert r2.status_code == 200
+    item_after_v3 = r2.json()["items"][0]
+    allocs = sorted(item_after_v3["allocations"], key=lambda a: a["version_no"])
+    assert len(allocs) == 3
+
+    # v1: closed at 2659
+    assert allocs[0]["version_no"] == 1
+    assert allocs[0]["effective_until_issue"] == 2659
+
+    # v2: closed at 2669
+    assert allocs[1]["version_no"] == 2
+    assert allocs[1]["effective_from_issue"] == 2660
+    assert allocs[1]["effective_until_issue"] == 2669
+
+    # v3: open (current)
+    assert allocs[2]["version_no"] == 3
+    assert allocs[2]["effective_from_issue"] == 2670
+    assert allocs[2]["effective_until_issue"] is None
+    assert allocs[2]["targets"][0]["recipient_name"] == "王五"
+
+
+def test_update_active_items_field_only_no_new_allocation(client):
+    """Changing item-level fields (e.g. notes, unit_price) without
+    changing targets should NOT create a new allocation version."""
+    created = client.post("/api/orders", json=_make_create_payload()).json()
+    confirmed = client.post(f"/api/orders/{created['id']}/confirm").json()
+    item = confirmed["items"][0]
+    alloc_before = item["allocations"]
+
+    # Same targets, different notes and unit_price
+    r = client.put(
+        f"/api/orders/{created['id']}/items",
+        json={
+            "effective_from_issue": 2660,
+            "items": [
+                {
+                    "id": item["id"],
+                    "fulfillment_type": item["fulfillment_type"],
+                    "billing_type": item["billing_type"],
+                    "coverage_start_date": item["coverage_start_date"],
+                    "coverage_end_date": item["coverage_end_date"],
+                    "total_quantity": item["total_quantity"],
+                    "unit_price": "999.00",
+                    "subtotal": "999.00",
+                    "notes": "价格调整",
+                    "targets": [
+                        {
+                            "recipient_name": t["recipient_name"],
+                            "recipient_address": t["recipient_address"],
+                            "quantity": t["quantity"],
+                        }
+                        for t in alloc_before[0]["targets"]
+                    ],
+                }
+            ],
+        },
+    )
+    assert r.status_code == 200
+    updated_item = r.json()["items"][0]
+    # Still only 1 allocation — no version bump
+    assert len(updated_item["allocations"]) == len(alloc_before)
+    assert updated_item["allocations"][0]["version_no"] == 1
+    # But the item fields DID change
+    assert updated_item["unit_price"] == "999.00"
+    assert updated_item["notes"] == "价格调整"
+
+    # Event should still be logged (item_modified with field_diff)
+    events = client.get(f"/api/orders/{created['id']}/events").json()
+    mod_events = [e for e in events if e["event_type"] == "item_modified"]
+    assert len(mod_events) == 1
+    assert mod_events[0]["payload_json"]["targets_changed"] is False
+    assert "unit_price" in mod_events[0]["payload_json"]["field_diff"]
+
+
 def test_update_active_items_rejects_draft_order(client):
     created = client.post("/api/orders", json=_make_create_payload()).json()
     r = client.put(
