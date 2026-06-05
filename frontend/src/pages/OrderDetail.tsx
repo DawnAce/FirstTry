@@ -381,7 +381,10 @@ function ItemsTab({ items }: { items: OrderItemOut[] }) {
 function ItemCard({ item, index }: { item: OrderItemOut; index: number }) {
   const activeAllocation = useMemo<FulfillmentAllocationOut | undefined>(
     () =>
-      item.allocations.find((a) => a.version_no === 1) ?? item.allocations[0],
+      item.allocations
+        .filter((a) => a.effective_until_issue == null)
+        .sort((a, b) => b.version_no - a.version_no)[0]
+      ?? [...item.allocations].sort((a, b) => b.version_no - a.version_no)[0],
     [item.allocations],
   );
   const targets = activeAllocation?.targets ?? [];
@@ -403,6 +406,23 @@ function ItemCard({ item, index }: { item: OrderItemOut; index: number }) {
         </Space>
       }
     >
+      {item.allocations.length > 1 && (
+        <div style={{ marginTop: 8, marginBottom: 16 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            履约方案版本历史：
+          </Text>
+          {item.allocations
+            .sort((a, b) => a.version_no - b.version_no)
+            .map((alloc) => (
+              <Tag key={alloc.id} color={alloc.effective_until_issue ? 'default' : 'blue'}>
+                v{alloc.version_no}
+                {alloc.effective_from_issue != null && ` 第${alloc.effective_from_issue}期起`}
+                {alloc.effective_until_issue != null && ` 至第${alloc.effective_until_issue}期`}
+                {alloc.effective_until_issue == null && alloc.effective_from_issue != null && ' (当前)'}
+              </Tag>
+            ))}
+        </div>
+      )}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={16}>
           <Descriptions column={3} size="small" labelStyle={{ width: 90 }}>
@@ -664,7 +684,7 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
     <>
       <Alert
         type="info"
-        message="V1.1 每条明细只有 v1 一个分配方案。当履约目标变更（替换/暂停）时会生成新版本，能力将在 V1.2 提供。"
+        message="每条明细的履约方案按版本追踪。修改目标（收件人）时会自动创建新版本，旧版本保留历史记录。"
         showIcon
         style={{ marginBottom: 12 }}
       />
