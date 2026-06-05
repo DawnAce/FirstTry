@@ -170,6 +170,9 @@ const EVENT_TYPE_LABELS: Record<OrderEventType, string> = {
   target_added: '新增履约目标',
   target_replaced: '履约目标替换',
   target_suspended: '履约目标暂停',
+  item_added: '新增明细',
+  item_removed: '删除明细',
+  item_modified: '修改明细',
   synced_to_shipping: '同步至快递',
   shipping_sync_conflict: '快递同步冲突',
 };

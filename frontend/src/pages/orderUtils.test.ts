@@ -128,6 +128,9 @@ describe('eventTypeLabel', () => {
     expect(eventTypeLabel('target_added')).toBe('新增履约目标');
     expect(eventTypeLabel('target_replaced')).toBe('履约目标替换');
     expect(eventTypeLabel('target_suspended')).toBe('履约目标暂停');
+    expect(eventTypeLabel('item_added')).toBe('新增明细');
+    expect(eventTypeLabel('item_removed')).toBe('删除明细');
+    expect(eventTypeLabel('item_modified')).toBe('修改明细');
     expect(eventTypeLabel('synced_to_shipping')).toBe('同步至快递');
     expect(eventTypeLabel('shipping_sync_conflict')).toBe('快递同步冲突');
   });
