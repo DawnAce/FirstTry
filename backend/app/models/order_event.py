@@ -25,6 +25,9 @@ class OrderEventType(str, enum.Enum):
     target_added = "target_added"
     target_replaced = "target_replaced"
     target_suspended = "target_suspended"
+    item_added = "item_added"
+    item_removed = "item_removed"
+    item_modified = "item_modified"
     synced_to_shipping = "synced_to_shipping"           # V1.3
     shipping_sync_conflict = "shipping_sync_conflict"   # V1.3
 
