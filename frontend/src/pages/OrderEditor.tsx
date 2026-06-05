@@ -41,6 +41,7 @@ import {
   orderQueryKeys,
   previewOrderPricing,
   updateOrder,
+  updateOrderItems,
 } from '../api/orders';
 import type {
   BillingType,
@@ -48,6 +49,7 @@ import type {
   FulfillmentType,
   OrderCreatePayload,
   OrderItemIn,
+  OrderItemUpdate,
   OrderOut,
   OrderPaymentMethod,
   OrderStatus,
@@ -181,6 +183,7 @@ export interface TargetFormValues {
 }
 
 export interface ItemFormValues {
+  id?: number | null;
   publication: Publication;
   fulfillment_type: FulfillmentType;
   billing_type: BillingType;
@@ -213,6 +216,8 @@ export interface OrderFormValues {
   invoice_tax_no?: string | null;
   invoice_recipient_email?: string | null;
   notes?: string | null;
+  effective_from_issue?: number | null;
+  change_reason?: string | null;
   items: ItemFormValues[];
 }
 
@@ -275,14 +280,19 @@ function detailToFormValues(detail: OrderOut): Partial<OrderFormValues> {
     invoice_recipient_email: detail.invoice_recipient_email,
     notes: detail.notes,
     items: detail.items.map<ItemFormValues>((it) => {
+      // Select current active allocation (open-ended), falling back to highest version
       const activeAllocation =
-        it.allocations.find((a) => a.version_no === 1) ?? it.allocations[0];
+        it.allocations
+          .filter((a) => a.effective_until_issue == null)
+          .sort((a, b) => b.version_no - a.version_no)[0]
+        ?? [...it.allocations].sort((a, b) => b.version_no - a.version_no)[0];
       const coverageRange: [Dayjs, Dayjs] | null =
         it.coverage_start_date && it.coverage_end_date
           ? [dayjs(it.coverage_start_date), dayjs(it.coverage_end_date)]
           : null;
       const isCoverageType = COVERAGE_REQUIRED_TYPES.has(it.fulfillment_type);
       return {
+        id: it.id,
         publication: it.publication,
         fulfillment_type: it.fulfillment_type,
         billing_type: it.billing_type,
@@ -347,6 +357,13 @@ function itemToCreatePayload(item: ItemFormValues): OrderItemIn {
       quantity: Number(t.quantity) || 0,
       notes: t.notes ?? null,
     })),
+  };
+}
+
+function itemToUpdatePayload(item: ItemFormValues): OrderItemUpdate {
+  return {
+    id: item.id ?? undefined,
+    ...itemToCreatePayload(item),
   };
 }
 
@@ -497,9 +514,7 @@ export default function OrderEditor() {
   const status: OrderStatus | null = detailQuery.data?.status ?? null;
   const isVoid = status === 'void';
   const isActive = status === 'active';
-  // In V1.1 the backend update_order endpoint does not accept item changes,
-  // so items are read-only whenever we already have an existing order.
-  const itemsReadOnly = isEditMode;
+  const itemsReadOnly = isVoid;
 
   // 来源平台变化时联动来源店铺：1:1 自动填默认值；切到未识别平台 / 清空则清掉店铺
   const sourcePlatform = Form.useWatch<string | null | undefined>('source_platform', form);
@@ -570,6 +585,17 @@ export default function OrderEditor() {
       if (isEditMode) {
         const payload = formValuesToUpdatePayload(values, isActive);
         const res = await updateMutation.mutateAsync({ id: orderId!, payload });
+
+        // Active orders: also update items via dedicated endpoint
+        if (isActive && values.items.length > 0) {
+          const itemsPayload = {
+            effective_from_issue: values.effective_from_issue!,
+            change_reason: values.change_reason ?? undefined,
+            items: values.items.map(itemToUpdatePayload),
+          };
+          await updateOrderItems(orderId!, itemsPayload);
+        }
+
         return res.data.id;
       }
       const payload = formValuesToCreatePayload(values);
@@ -695,8 +721,8 @@ export default function OrderEditor() {
         <Alert
           type="info"
           showIcon
-          message="订单已生效"
-          description="生效订单只能编辑非结构字段（如付款联系人、备注、金额等）。修改订单明细或履约目标的能力将在 V1.2 上线。"
+          message="正在编辑已生效订单"
+          description="生效订单的非结构字段（备注、金额等）可直接编辑。修改明细目标（收件人）将创建新版本的履约方案，需要填写生效起始期号。"
           style={{ marginBottom: 16 }}
         />
       )}
@@ -892,15 +918,7 @@ export default function OrderEditor() {
         </Card>
 
         <Card title="订单明细" size="small" style={{ marginBottom: 16 }}>
-          {itemsReadOnly ? (
-            <Alert
-              type="warning"
-              message="订单明细在 V1.1 仅可在新建订单时录入"
-              description="若需修改明细或履约目标，请先作废本订单再重新创建。明细的就地编辑能力将在 V1.2 上线。"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-          ) : (
+          {!itemsReadOnly && (
             <Alert
               type="info"
               message={
@@ -915,6 +933,29 @@ export default function OrderEditor() {
               showIcon
               style={{ marginBottom: 16 }}
             />
+          )}
+          {isActive && (
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={6}>
+                <Form.Item
+                  name="effective_from_issue"
+                  label="生效起始期号"
+                  rules={[{ required: true, message: '请填写生效起始期号' }]}
+                >
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    min={1}
+                    precision={0}
+                    placeholder="如 2660"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={18}>
+                <Form.Item name="change_reason" label="变更原因（可选）">
+                  <Input maxLength={255} placeholder="如：客户要求换地址" />
+                </Form.Item>
+              </Col>
+            </Row>
           )}
           <Form.List
             name="items"
