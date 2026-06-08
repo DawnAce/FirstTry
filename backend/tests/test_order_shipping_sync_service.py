@@ -163,7 +163,8 @@ def test_apply_creates_shipping_detail_and_order_event(db):
 
     result = apply_order_shipping_sync(db, order.id, 2655, operator_id=7)
 
-    assert result.summary.to_create == 1
+    assert result.summary.to_create == 0
+    assert result.summary.skipped == 1
     detail = db.query(ShippingDetail).one()
     assert detail.issue_number == 2655
     assert detail.name == "张三"
@@ -187,9 +188,17 @@ def test_apply_is_idempotent_and_updates_linked_synced_row(db):
 
     result = apply_order_shipping_sync(db, order.id, 2655, operator_id=7)
 
-    assert result.summary.to_update == 1
+    assert result.summary.to_update == 0
+    assert result.summary.skipped == 1
     assert db.query(ShippingDetail).count() == 1
     assert db.query(ShippingDetail).one().phone == "13911111111"
+    event = (
+        db.query(OrderEvent)
+        .filter(OrderEvent.event_type == OrderEventType.synced_to_shipping)
+        .order_by(OrderEvent.id.desc())
+        .first()
+    )
+    assert event.payload_json["updated_count"] == 1
 
 
 def test_manually_modified_order_generated_row_blocks_apply(db):

@@ -376,3 +376,35 @@ class OrderListRow(BaseModel):
     has_drift: bool
     synced_count: int
     expected_total: Optional[int]
+
+
+class OrderShippingSyncApplyIn(BaseModel):
+    issue_number: int
+
+
+class OrderShippingSyncSummary(BaseModel):
+    candidates: int = 0
+    to_create: int = 0
+    to_update: int = 0
+    skipped: int = 0
+    conflicts: int = 0
+
+
+class OrderShippingSyncItem(BaseModel):
+    action: str
+    order_id: int
+    order_item_id: int | None = None
+    fulfillment_target_id: int | None = None
+    shipping_detail_id: int | None = None
+    name: str | None = None
+    quantity: int | None = None
+    reason: str | None = None
+    diff: dict | None = None
+
+
+class OrderShippingSyncPreview(BaseModel):
+    order_id: int
+    issue_number: int
+    summary: OrderShippingSyncSummary
+    items: list[OrderShippingSyncItem]
+    message: str | None = None
