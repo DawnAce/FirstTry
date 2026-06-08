@@ -565,7 +565,7 @@ V1.1 上线 MVP 级订单管理，目标是把目前散落在 Excel 中的读者
 
 | 优先级 | 功能 | 说明 |
 |------|------|------|
-| 1 | 与 `shipping_details` 实际同步 | 订单 → 发货明细自动生成，事件流已预留 `synced_to_shipping` / `shipping_sync_conflict`，最直接闭合“录单后发货”的主链路 |
+| 1 | 与 `shipping_details` 实际同步 | V1.3 支持单订单按期号手动预览 / 应用同步，写入 `order_generated` 发货明细，并记录 `synced_to_shipping` / `shipping_sync_conflict` 事件，闭合“录单后发货”的主链路 |
 | 2 | 电商订单批量导入 | Excel / API 批量建单，依赖录入方式 `manual / excel_import / api_sync` 的 schema 收敛 |
 | 3 | 财务对账 | 实付 / 应收 / 退款追踪，覆盖渠道订单、赊账、未付清筛选等财务闭环 |
 | 4 | 客户自助下单 | 前台下单入口，建议在发货同步、导入、对账稳定后再做 |
