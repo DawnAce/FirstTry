@@ -15,7 +15,16 @@ What this complements (and does *not* duplicate):
   against the dev database; SQLite glosses over them.
 """
 
+import os
+import sys
 from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("MYSQL_HOST", "localhost")
+os.environ.setdefault("MYSQL_USER", "test")
+os.environ.setdefault("MYSQL_PASSWORD", "test")
+os.environ.setdefault("MYSQL_DATABASE", "test")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,7 +35,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
-from app.models import PublicationSchedule
+from app.models import Issue, IssueStatus, PublicationSchedule
 from app.models.user import User, UserRole
 
 
@@ -57,6 +66,7 @@ def client():
             PublicationSchedule(year=2026, issue_number=2601, publish_date=date(2026, 1, 5), is_suspended=False),
             PublicationSchedule(year=2026, issue_number=None, publish_date=date(2026, 2, 16), is_suspended=True),
             PublicationSchedule(year=2026, issue_number=2625, publish_date=date(2026, 6, 29), is_suspended=False),
+            Issue(issue_number=2625, publish_date=date(2026, 6, 29), status=IssueStatus.draft),
         ]
     )
     seed_db.commit()
@@ -207,6 +217,39 @@ def test_confirm_order_already_active_returns_409(client):
 def test_confirm_order_not_found_returns_404(client):
     r = client.post("/api/orders/99999/confirm")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Order shipping detail sync
+# ---------------------------------------------------------------------------
+
+
+def test_preview_order_shipping_sync_returns_candidates(client):
+    created = client.post("/api/orders", json=_make_create_payload()).json()
+    client.post(f"/api/orders/{created['id']}/confirm")
+
+    r = client.get(f"/api/orders/{created['id']}/shipping-sync/preview?issue_number=2625")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["order_id"] == created["id"]
+    assert body["issue_number"] == 2625
+    assert body["summary"]["to_create"] == 2
+
+
+def test_apply_order_shipping_sync_creates_rows_and_updates_progress(client):
+    created = client.post("/api/orders", json=_make_create_payload()).json()
+    client.post(f"/api/orders/{created['id']}/confirm")
+
+    r = client.post(
+        f"/api/orders/{created['id']}/shipping-sync/apply",
+        json={"issue_number": 2625},
+    )
+
+    assert r.status_code == 200, r.text
+    detail = client.get(f"/api/orders/{created['id']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["items"][0]["progress"]["synced_count"] == 2
 
 
 # ---------------------------------------------------------------------------

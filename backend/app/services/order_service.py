@@ -13,8 +13,8 @@ Implements the V1.1 lifecycle for订单管理:
 * ``list_orders``        — Filterable + paginated list view with derived
   coverage range + per-order drift detection.
 * ``get_order_detail``   — Eager-loaded order with items/allocations/targets.
-* ``compute_fulfillment_progress`` — Per-item progress summary (synced_count
-  is a V1.3 placeholder, always 0 for now).
+* ``compute_fulfillment_progress`` — Per-item progress summary including
+  linked shipping detail counts.
 
 Design decision (V1.1): we create the v1 ``FulfillmentAllocation`` during
 ``create_order_draft`` rather than at confirm time, because
@@ -45,6 +45,7 @@ from app.models import (
     OrderItem,
     OrderSourceType,
     OrderStatus,
+    ShippingDetail,
 )
 from app.models.fulfillment_target import ShippingChannel
 from app.models.order_item import OrderItemStatus, SubscriptionTerm
@@ -685,10 +686,10 @@ def compute_fulfillment_progress(
 ) -> FulfillmentProgress:
     """Snapshot per-item fulfillment progress.
 
-    V1.1 only computes ``current_expected`` against the live schedule and
-    derives ``drift`` from ``expected_issues_at_creation``. The actual
-    synced row count (``synced_count``) and 休刊-skip count
-    (``skipped_count``) land in V1.3 once shipping sync is in place.
+    Computes ``current_expected`` against the live schedule, derives
+    ``drift`` from ``expected_issues_at_creation``, and counts linked
+    ``shipping_details`` rows for ``synced_count``. 休刊-skip count
+    (``skipped_count``) remains a V1.3 placeholder.
     """
     expected_at_creation = order_item.expected_issues_at_creation
     current_expected = compute_expected_issues(
@@ -700,11 +701,19 @@ def compute_fulfillment_progress(
     drift = None
     if expected_at_creation is not None and current_expected is not None:
         drift = current_expected - expected_at_creation
+    synced_count = (
+        db.query(ShippingDetail)
+        .filter(
+            ShippingDetail.order_id == order_item.order_id,
+            ShippingDetail.order_item_id == order_item.id,
+        )
+        .count()
+    )
     return FulfillmentProgress(
         expected_at_creation=expected_at_creation,
         current_expected=current_expected,
         drift=drift,
-        synced_count=0,
+        synced_count=synced_count,
         skipped_count=0,
     )
 

@@ -15,6 +15,8 @@ Endpoint map:
 * ``POST   /api/orders/{id}/confirm``                 — draft → active
 * ``POST   /api/orders/{id}/void``                    — active/draft → void
 * ``PUT    /api/orders/{id}/items``                   — batch-edit active items
+* ``GET    /api/orders/{id}/shipping-sync/preview``   — preview ZTO-MF rows
+* ``POST   /api/orders/{id}/shipping-sync/apply``     — create/update ZTO-MF rows
 * ``GET    /api/orders/{id}/events``                  — audit log
 * ``GET    /api/orders/{id}/fulfillment-progress``    — per-item progress
 
@@ -36,6 +38,8 @@ from app.schemas.order import (
     FulfillmentProgress,
     OrderCreate,
     OrderEventOut,
+    OrderShippingSyncApplyIn,
+    OrderShippingSyncPreview,
     OrderItemsUpdate,
     OrderListRow,
     OrderOut,
@@ -45,6 +49,10 @@ from app.schemas.order import (
     PricingPreviewOut,
 )
 from app.services import order_service
+from app.services.order_shipping_sync_service import (
+    apply_order_shipping_sync,
+    preview_order_shipping_sync,
+)
 from app.services.order_pricing_service import build_pricing_preview
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -99,6 +107,39 @@ def preview_pricing(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{order_id}/shipping-sync/preview",
+    response_model=OrderShippingSyncPreview,
+)
+def preview_shipping_sync(
+    order_id: int,
+    issue_number: int = Query(...),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Preview order-generated shipping detail changes for one issue."""
+    return preview_order_shipping_sync(db, order_id, issue_number)
+
+
+@router.post(
+    "/{order_id}/shipping-sync/apply",
+    response_model=OrderShippingSyncPreview,
+)
+def apply_shipping_sync(
+    order_id: int,
+    data: OrderShippingSyncApplyIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Apply order-generated shipping detail changes for one issue."""
+    return apply_order_shipping_sync(
+        db,
+        order_id,
+        data.issue_number,
+        operator_id=user.id,
+    )
 
 
 @router.get("/{order_id}", response_model=OrderOut)
