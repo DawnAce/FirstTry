@@ -1724,7 +1724,7 @@ mysqldump -u user -p database_name > backup.sql
 - [x] 往期数据导入（基于系统模板）
 - [x] 订单管理 V1.1（手工创建、确认、作废、偏差跟踪；范围：**个人客户预付 + 同事赠阅**）
 - [x] 订单管理 V1.2（active 状态明细就地编辑、多版本 allocation、订阅期限与套餐价）
-- [ ] 订单管理 V1.3 优先级 1：订单 → `shipping_details` 发货同步流水
+- [x] 订单管理 V1.3 优先级 1：单订单按期手动预览 / 应用同步至 order_generated `shipping_details`
 - [ ] 订单管理 V1.3 优先级 2：电商订单 Excel / API 批量导入
 - [ ] 订单管理 V1.3 优先级 3：财务对账（实付 / 应收 / 退款、欠款追踪、未付清筛选）
 - [ ] 订单管理 V1.3 优先级 4：客户自助下单
