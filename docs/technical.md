@@ -358,8 +358,16 @@ FirstTry/
 | confirmation | VARCHAR(50) | 信息确认（高铁展示用） |
 | company | VARCHAR(100) | 签约公司（如：北京悦途出行、广州日报） |
 | shipped_at | DATETIME | 发货时间（可选，手动填写） |
+| order_id | INT | 订单发货同步来源订单；手工行为空 |
+| order_item_id | INT | 订单发货同步来源明细；手工行为空 |
+| fulfillment_target_id | INT | 订单发货同步来源履约目标；手工行为空 |
+| source_type | ENUM | 来源：manual/order_generated/historical_import |
+| sync_status | ENUM | 同步状态：synced/manually_modified/orphaned |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
+
+订单发货同步行通过唯一索引 `uq_shipping_detail_order_target_issue`
+约束 `(issue_number, order_id, order_item_id, fulfillment_target_id)`，避免同一期同一订单履约目标在并发同步时生成重复发货明细；历史手工行的关联字段为 `NULL`，仍允许多行共存。
 
 ### 3.13 issue_audit_snapshots（确认/导出快照）
 记录当期报数与ZTO-MF之间的关键校验快照，用于追溯确认时和导出时采用的数量状态。

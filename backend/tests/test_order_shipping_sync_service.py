@@ -85,6 +85,9 @@ def seed_active_subscription_order(
     issue_from=2650,
     issue_until=None,
     channel=ShippingChannel.zto_outsource,
+    fulfillment_type=FulfillmentType.subscription,
+    coverage_start_date=date(2026, 1, 5),
+    coverage_end_date=date(2026, 6, 29),
 ):
     order = Order(
         order_code="ORD-2026-000001",
@@ -104,13 +107,13 @@ def seed_active_subscription_order(
         order_id=order.id,
         publication=Publication.cbj,
         publication_format=PublicationFormat.paper,
-        fulfillment_type=FulfillmentType.subscription,
+        fulfillment_type=fulfillment_type,
         billing_type=BillingType.paid,
         subscription_term=SubscriptionTerm.half_year,
         delivery_method=DeliveryMethod.zto_mf,
         term_start_month="2026-01",
-        coverage_start_date=date(2026, 1, 5),
-        coverage_end_date=date(2026, 6, 29),
+        coverage_start_date=coverage_start_date,
+        coverage_end_date=coverage_end_date,
         total_quantity=1,
         unit_price=195,
         subtotal=195,
@@ -155,6 +158,44 @@ def test_preview_creates_candidate_for_active_subscription_order(db):
     assert row.fulfillment_target_id == target.id
     assert row.name == "张三"
     assert row.quantity == 1
+
+
+def test_preview_skips_coverage_based_item_with_missing_coverage_dates(db):
+    seed_issue(db)
+    order, item, _, _ = seed_active_subscription_order(
+        db,
+        coverage_start_date=None,
+        coverage_end_date=None,
+    )
+
+    preview = preview_order_shipping_sync(db, order.id, 2655)
+
+    assert preview.summary.candidates == 0
+    assert preview.summary.to_create == 0
+    assert preview.summary.skipped == 1
+    assert preview.items[0].action == "skip"
+    assert preview.items[0].order_item_id == item.id
+    assert preview.items[0].reason == "覆盖期缺失"
+
+
+def test_shipping_detail_has_unique_order_target_issue_index():
+    index = next(
+        (
+            idx
+            for idx in ShippingDetail.__table__.indexes
+            if idx.name == "uq_shipping_detail_order_target_issue"
+        ),
+        None,
+    )
+
+    assert index is not None
+    assert index.unique is True
+    assert [column.name for column in index.columns] == [
+        "issue_number",
+        "order_id",
+        "order_item_id",
+        "fulfillment_target_id",
+    ]
 
 
 def test_apply_creates_shipping_detail_and_order_event(db):

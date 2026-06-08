@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SAEnum, ForeignKey
+from sqlalchemy import Column, DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -78,3 +78,14 @@ class ShippingDetail(Base):
     )
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index(
+            "uq_shipping_detail_order_target_issue",
+            "issue_number",
+            "order_id",
+            "order_item_id",
+            "fulfillment_target_id",
+            unique=True,
+        ),
+    )

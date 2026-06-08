@@ -6,6 +6,7 @@ from typing import Iterable
 
 from fastapi import HTTPException
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import Issue, Order, OrderStatus, PublicationSchedule, ShippingDetail
@@ -45,6 +46,12 @@ SYNC_FIELDS = (
     "notes",
     "extra_info",
 )
+COVERAGE_BASED_FULFILLMENT_TYPES = {
+    FulfillmentType.subscription,
+    FulfillmentType.gift,
+    FulfillmentType.extension,
+    FulfillmentType.replacement,
+}
 
 
 @dataclass(frozen=True)
@@ -181,7 +188,13 @@ def apply_order_shipping_sync(
             },
             operator_id=operator_id,
         )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if _is_order_target_issue_unique_violation(exc):
+            return preview_order_shipping_sync(db, order_id, issue_number)
+        raise
     return preview_order_shipping_sync(db, order_id, issue_number)
 
 
@@ -246,6 +259,11 @@ def _build_candidates(
         if item.publication_format != PublicationFormat.paper:
             skipped.append(_skip_item(order.id, item.id, None, "非纸刊明细不生成中通发货"))
             continue
+        if _is_coverage_based_item(item) and (
+            item.coverage_start_date is None or item.coverage_end_date is None
+        ):
+            skipped.append(_skip_item(order.id, item.id, None, "覆盖期缺失"))
+            continue
         if not _item_applies_to_issue(item, issue_number, publish_date):
             continue
         allocation = _select_allocation(item.allocations, issue_number)
@@ -282,11 +300,24 @@ def _item_applies_to_issue(
 ) -> bool:
     if item.fulfillment_type in {FulfillmentType.single_issue, FulfillmentType.makeup}:
         return item.issue_number == issue_number
+    if _is_coverage_based_item(item) and (
+        item.coverage_start_date is None or item.coverage_end_date is None
+    ):
+        return False
     if item.coverage_start_date and publish_date < item.coverage_start_date:
         return False
     if item.coverage_end_date and publish_date > item.coverage_end_date:
         return False
     return True
+
+
+def _is_coverage_based_item(item: OrderItem) -> bool:
+    return item.fulfillment_type in COVERAGE_BASED_FULFILLMENT_TYPES
+
+
+def _is_order_target_issue_unique_violation(exc: IntegrityError) -> bool:
+    text = " ".join(str(part) for part in exc.args)
+    return "uq_shipping_detail_order_target_issue" in text
 
 
 def _target_applies_to_issue(target: FulfillmentTarget, issue_number: int) -> bool:
