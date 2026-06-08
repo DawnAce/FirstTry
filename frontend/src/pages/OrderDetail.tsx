@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -703,6 +703,7 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
 function ShippingSyncTab({ orderId }: { orderId: number }) {
   const queryClient = useQueryClient();
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number | null>(null);
+  const selectedIssueNumberRef = useRef<number | null>(null);
   const [preview, setPreview] = useState<OrderShippingSyncPreview | null>(null);
 
   const issuesQuery = useQuery({
@@ -729,7 +730,13 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
       const res = await previewOrderShippingSync(orderId, issueNumber);
       return res.data;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, requestedIssueNumber) => {
+      if (
+        data.issue_number !== requestedIssueNumber
+        || data.issue_number !== selectedIssueNumberRef.current
+      ) {
+        return;
+      }
       setPreview(data);
       message.success('同步预览已生成');
     },
@@ -743,16 +750,33 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
       const res = await applyOrderShippingSync(orderId, issueNumber);
       return res.data;
     },
-    onSuccess: (data) => {
-      setPreview(data);
-      message.success('快递明细同步完成');
+    onSuccess: (data, requestedIssueNumber) => {
+      if (isCurrentShippingSyncPreview(data, requestedIssueNumber, selectedIssueNumberRef.current)) {
+        setPreview(data);
+        message.success('快递明细同步完成');
+      }
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.detail(orderId) });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.events(orderId) });
       queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
       queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
       queryClient.invalidateQueries({ queryKey: ['report'] });
     },
-    onError: () => {
+    onError: (error, requestedIssueNumber) => {
+      const conflictPreview = getShippingSyncConflictPreview(error);
+      if (conflictPreview) {
+        if (
+          !isCurrentShippingSyncPreview(
+            conflictPreview,
+            requestedIssueNumber,
+            selectedIssueNumberRef.current,
+          )
+        ) {
+          return;
+        }
+        setPreview(conflictPreview);
+        message.warning('同步存在冲突，请处理后重试');
+        return;
+      }
       message.error('同步快递明细失败');
     },
   });
@@ -809,6 +833,7 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
             placeholder="选择目标期号"
             value={selectedIssueNumber}
             onChange={(value) => {
+              selectedIssueNumberRef.current = value;
               setSelectedIssueNumber(value);
               setPreview(null);
             }}
@@ -888,6 +913,45 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
 
 function nullableText(value: string | number | null | undefined) {
   return value ?? '-';
+}
+
+function getShippingSyncConflictPreview(error: unknown): OrderShippingSyncPreview | null {
+  if (!isRecord(error)) return null;
+  const response = error.response;
+  if (!isRecord(response) || response.status !== 409) return null;
+  const data = response.data;
+  if (!isRecord(data)) return null;
+  const detail = data.detail;
+  return isOrderShippingSyncPreview(detail) ? detail : null;
+}
+
+function isCurrentShippingSyncPreview(
+  preview: OrderShippingSyncPreview,
+  requestedIssueNumber: number,
+  selectedIssueNumber: number | null,
+): boolean {
+  return preview.issue_number === requestedIssueNumber && preview.issue_number === selectedIssueNumber;
+}
+
+function isOrderShippingSyncPreview(value: unknown): value is OrderShippingSyncPreview {
+  if (!isRecord(value)) return false;
+  if (typeof value.order_id !== 'number' || typeof value.issue_number !== 'number') {
+    return false;
+  }
+  if (!Array.isArray(value.items)) return false;
+  const summary = value.summary;
+  return (
+    isRecord(summary)
+    && typeof summary.candidates === 'number'
+    && typeof summary.to_create === 'number'
+    && typeof summary.to_update === 'number'
+    && typeof summary.skipped === 'number'
+    && typeof summary.conflicts === 'number'
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function shippingSyncActionLabel(action: OrderShippingSyncAction): string {
