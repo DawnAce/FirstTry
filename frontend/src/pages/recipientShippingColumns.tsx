@@ -30,10 +30,61 @@ const sourceTypeLabels: Record<ShippingDetailSourceType, string> = {
   historical_import: '历史导入',
 };
 
+const sourceTypeColors: Record<ShippingDetailSourceType, string> = {
+  manual: 'default',
+  order_generated: 'blue',
+  historical_import: 'default',
+};
+
 const syncStatusLabels: Record<ShippingDetailSyncStatus, string> = {
   synced: '已同步',
   manually_modified: '人工修改',
   orphaned: '孤立',
+};
+
+const syncStatusColors: Record<ShippingDetailSyncStatus, string> = {
+  synced: 'green',
+  manually_modified: 'orange',
+  orphaned: 'red',
+};
+
+const toNonEmptyString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const renderSourceType = (value: unknown) => {
+  const sourceType = toNonEmptyString(value);
+
+  if (!sourceType) {
+    return '-';
+  }
+
+  const knownSourceType = sourceType as ShippingDetailSourceType;
+  return (
+    <Tag color={sourceTypeColors[knownSourceType] ?? 'default'}>
+      {sourceTypeLabels[knownSourceType] ?? sourceType}
+    </Tag>
+  );
+};
+
+const renderSyncStatus = (value: unknown) => {
+  const syncStatus = toNonEmptyString(value);
+
+  if (!syncStatus) {
+    return '-';
+  }
+
+  const knownSyncStatus = syncStatus as ShippingDetailSyncStatus;
+  return (
+    <Tag color={syncStatusColors[knownSyncStatus] ?? 'default'}>
+      {syncStatusLabels[knownSyncStatus] ?? syncStatus}
+    </Tag>
+  );
 };
 
 export const shippingDetailDisplayColumns: TableColumnsType<ShippingDetail> = [
@@ -64,19 +115,14 @@ export const shippingDetailDisplayColumns: TableColumnsType<ShippingDetail> = [
     dataIndex: 'source_type',
     key: 'source_type',
     width: 90,
-    render: (v: ShippingDetailSourceType) => (
-      <Tag color={v === 'order_generated' ? 'blue' : 'default'}>{sourceTypeLabels[v]}</Tag>
-    ),
+    render: renderSourceType,
   },
   {
     title: '同步状态',
     dataIndex: 'sync_status',
     key: 'sync_status',
     width: 100,
-    render: (v: ShippingDetailSyncStatus) => {
-      const color = v === 'manually_modified' ? 'orange' : v === 'orphaned' ? 'red' : 'green';
-      return <Tag color={color}>{syncStatusLabels[v]}</Tag>;
-    },
+    render: renderSyncStatus,
   },
   {
     title: '地址',
