@@ -561,14 +561,16 @@ V1.1 上线 MVP 级订单管理，目标是把目前散落在 Excel 中的读者
 - ✅ 履约方案多版本（修改目标自动产生 v2+，`effective_from_issue` / `effective_until_issue` 标记版本边界）
 - ✅ 订阅期限与套餐价（V1.2A，定价预览 + 自动填充单价）
 
-**V1.3 状态与后续优先级**：
+**V1.3 已完成**：
+- ✅ 与 `shipping_details` 单订单手动同步：支持单订单按期号手动预览 / 应用同步，写入 `order_generated` 发货明细，并记录 `synced_to_shipping` / `shipping_sync_conflict` 事件，闭合“录单后发货”的主链路。
+
+**后续版本优先级**：
 
 | 优先级 | 功能 | 说明 |
 |------|------|------|
-| 1（已实现） | 与 `shipping_details` 单订单手动同步 | V1.3 支持单订单按期号手动预览 / 应用同步，写入 `order_generated` 发货明细，并记录 `synced_to_shipping` / `shipping_sync_conflict` 事件，闭合“录单后发货”的主链路 |
-| 2（待做） | 电商订单批量导入 | Excel / API 批量建单，依赖录入方式 `manual / excel_import / api_sync` 的 schema 收敛 |
-| 3（待做） | 财务对账 | 实付 / 应收 / 退款追踪，覆盖渠道订单、赊账、未付清筛选等财务闭环 |
-| 4（待做） | 客户自助下单 | 前台下单入口，建议在发货同步、导入、对账稳定后再做 |
+| 1 | 电商订单批量导入 | Excel / API 批量建单，依赖录入方式 `manual / excel_import / api_sync` 的 schema 收敛 |
+| 2 | 财务对账 | 实付 / 应收 / 退款追踪，覆盖渠道订单、赊账、未付清筛选等财务闭环 |
+| 3 | 客户自助下单 | 前台下单入口，建议在发货同步、导入、对账稳定后再做 |
 
 **约束与限制**：
 - 当前只支持手工创建，不接收任何外部订单源；Excel / API 入口留待后续版本扩展
