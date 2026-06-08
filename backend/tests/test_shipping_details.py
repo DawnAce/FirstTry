@@ -37,6 +37,7 @@ _fake_cpca = SimpleNamespace(
 
 with patch.dict("sys.modules", {"cpca": _fake_cpca}):
     from app.api.shipping_details import (
+        _copy_shipping_details_from_previous,
         _snapshot,
         batch_update_shipping_details,
         clear_shipping_details_by_issue,
@@ -249,6 +250,69 @@ class ShippingDetailsSyncMetadataTests(unittest.TestCase):
             ShippingDetailSyncStatus.synced,
         )
         self.assertEqual(db.query(OperationLog).count(), 0)
+        db.close()
+
+    def test_copy_from_previous_skips_order_generated_details(self):
+        db = self.SessionLocal()
+        db.add_all([
+            Issue(issue_number=2652, publish_date=date(2026, 5, 18), status=IssueStatus.draft),
+            Issue(issue_number=2653, publish_date=date(2026, 5, 25), status=IssueStatus.draft),
+            ShippingDetail(
+                issue_number=2652,
+                sheet_name="每周（对公）",
+                channel="渠道订阅",
+                name="手工订阅",
+                quantity=10,
+            ),
+            ShippingDetail(
+                issue_number=2652,
+                sheet_name="每周（对公）",
+                channel="渠道订阅",
+                name="订单订阅",
+                quantity=20,
+                order_id=11,
+                order_item_id=22,
+                fulfillment_target_id=33,
+                source_type=ShippingDetailSourceType.order_generated,
+                sync_status=ShippingDetailSyncStatus.synced,
+            ),
+        ])
+        db.commit()
+
+        copied, skipped_existing = _copy_shipping_details_from_previous(
+            db=db,
+            issue_number=2653,
+            previous_issue_number=2652,
+            user=User(id=1, username="admin", role=UserRole.admin, password_hash="x"),
+        )
+        db.commit()
+
+        copied_details = (
+            db.query(ShippingDetail)
+            .filter(ShippingDetail.issue_number == 2653)
+            .order_by(ShippingDetail.id)
+            .all()
+        )
+        self.assertFalse(skipped_existing)
+        self.assertEqual(copied, 1)
+        self.assertEqual(len(copied_details), 1)
+        self.assertEqual(copied_details[0].name, "手工订阅")
+        self.assertIsNone(copied_details[0].order_id)
+        self.assertIsNone(copied_details[0].order_item_id)
+        self.assertIsNone(copied_details[0].fulfillment_target_id)
+        self.assertNotEqual(
+            copied_details[0].source_type,
+            ShippingDetailSourceType.order_generated,
+        )
+        self.assertEqual(
+            db.query(ShippingDetail)
+            .filter(
+                ShippingDetail.issue_number == 2653,
+                ShippingDetail.source_type == ShippingDetailSourceType.order_generated,
+            )
+            .count(),
+            0,
+        )
         db.close()
 
 

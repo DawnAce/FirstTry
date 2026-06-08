@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
@@ -104,7 +105,13 @@ def _copy_shipping_details_from_previous(
 
     previous_details = (
         db.query(ShippingDetail)
-        .filter(ShippingDetail.issue_number == previous_issue_number)
+        .filter(
+            ShippingDetail.issue_number == previous_issue_number,
+            or_(
+                ShippingDetail.source_type.is_(None),
+                ShippingDetail.source_type != ShippingDetailSourceType.order_generated,
+            ),
+        )
         .order_by(ShippingDetail.id)
         .all()
     )

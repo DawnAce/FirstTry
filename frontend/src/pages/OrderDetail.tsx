@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -706,6 +706,12 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
   const selectedIssueNumberRef = useRef<number | null>(null);
   const [preview, setPreview] = useState<OrderShippingSyncPreview | null>(null);
 
+  useEffect(() => {
+    selectedIssueNumberRef.current = null;
+    setSelectedIssueNumber(null);
+    setPreview(null);
+  }, [orderId]);
+
   const issuesQuery = useQuery({
     queryKey: ['issues', 0, 100],
     queryFn: async () => {
@@ -732,8 +738,12 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
     },
     onSuccess: (data, requestedIssueNumber) => {
       if (
-        data.issue_number !== requestedIssueNumber
-        || data.issue_number !== selectedIssueNumberRef.current
+        !isCurrentShippingSyncPreview(
+          data,
+          orderId,
+          requestedIssueNumber,
+          selectedIssueNumberRef.current,
+        )
       ) {
         return;
       }
@@ -751,7 +761,14 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
       return res.data;
     },
     onSuccess: (data, requestedIssueNumber) => {
-      if (isCurrentShippingSyncPreview(data, requestedIssueNumber, selectedIssueNumberRef.current)) {
+      if (
+        isCurrentShippingSyncPreview(
+          data,
+          orderId,
+          requestedIssueNumber,
+          selectedIssueNumberRef.current,
+        )
+      ) {
         setPreview(data);
         message.success('快递明细同步完成');
       }
@@ -767,6 +784,7 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
         if (
           !isCurrentShippingSyncPreview(
             conflictPreview,
+            orderId,
             requestedIssueNumber,
             selectedIssueNumberRef.current,
           )
@@ -783,8 +801,11 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
 
   const summary = preview?.summary;
   const hasConflicts = (summary?.conflicts ?? 0) > 0;
+  const isPreviewCurrent = preview
+    ? isCurrentShippingSyncPreview(preview, orderId, preview.issue_number, selectedIssueNumber)
+    : false;
   const canApply =
-    !!preview && !hasConflicts && !previewMutation.isPending && !applyMutation.isPending;
+    isPreviewCurrent && !hasConflicts && !previewMutation.isPending && !applyMutation.isPending;
 
   const columns: TableColumnsType<OrderShippingSyncItem> = [
     {
@@ -852,7 +873,7 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
             disabled={!canApply}
             loading={applyMutation.isPending}
             onClick={() => {
-              if (preview) applyMutation.mutate(preview.issue_number);
+              if (preview && isPreviewCurrent) applyMutation.mutate(preview.issue_number);
             }}
           >
             确认同步
@@ -927,10 +948,15 @@ function getShippingSyncConflictPreview(error: unknown): OrderShippingSyncPrevie
 
 function isCurrentShippingSyncPreview(
   preview: OrderShippingSyncPreview,
+  currentOrderId: number,
   requestedIssueNumber: number,
   selectedIssueNumber: number | null,
 ): boolean {
-  return preview.issue_number === requestedIssueNumber && preview.issue_number === selectedIssueNumber;
+  return (
+    preview.order_id === currentOrderId
+    && preview.issue_number === requestedIssueNumber
+    && preview.issue_number === selectedIssueNumber
+  );
 }
 
 function isOrderShippingSyncPreview(value: unknown): value is OrderShippingSyncPreview {
