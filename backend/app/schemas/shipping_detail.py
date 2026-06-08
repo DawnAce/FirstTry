@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from datetime import datetime
 
+from app.models.shipping_detail import ShippingDetailSourceType, ShippingDetailSyncStatus
+
 
 class ShippingDetailCreate(BaseModel):
     issue_number: int
@@ -99,6 +101,11 @@ class ShippingDetailOut(BaseModel):
     confirmation: Optional[str]
     company: Optional[str]
     shipped_at: Optional[datetime]
+    order_id: Optional[int]
+    order_item_id: Optional[int]
+    fulfillment_target_id: Optional[int]
+    source_type: ShippingDetailSourceType
+    sync_status: ShippingDetailSyncStatus
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 

@@ -9,7 +9,16 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
-from app.models import Issue, IssueStatus, OperationLog, ShippingDetail, User, UserRole
+from app.models import (
+    Issue,
+    IssueStatus,
+    OperationLog,
+    ShippingDetail,
+    ShippingDetailSourceType,
+    ShippingDetailSyncStatus,
+    User,
+    UserRole,
+)
 
 
 _fake_cpca = SimpleNamespace(
@@ -18,7 +27,7 @@ _fake_cpca = SimpleNamespace(
 )
 
 with patch.dict("sys.modules", {"cpca": _fake_cpca}):
-    from app.api.shipping_details import _snapshot, clear_shipping_details_by_issue
+    from app.api.shipping_details import _snapshot, clear_shipping_details_by_issue, update_shipping_detail
 from app.schemas.shipping_detail import ShippingDetailCreate, ShippingDetailOut, ShippingDetailUpdate
 
 
@@ -89,6 +98,76 @@ class ShippingDetailsCityRemovalTests(unittest.TestCase):
         )
 
         self.assertNotIn("city", _snapshot(detail))
+
+
+class ShippingDetailsSyncMetadataTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=self.engine)
+        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+
+    def test_shipping_detail_out_exposes_order_sync_metadata(self):
+        detail = ShippingDetail(
+            id=1,
+            issue_number=2652,
+            sheet_name="每周（对公）",
+            channel="渠道订阅",
+            transport="中通物流",
+            frequency="每周",
+            status="正常",
+            name="叶剑",
+            quantity=531,
+            order_id=11,
+            order_item_id=22,
+            fulfillment_target_id=33,
+            source_type=ShippingDetailSourceType.order_generated,
+            sync_status=ShippingDetailSyncStatus.synced,
+        )
+
+        output = ShippingDetailOut.model_validate(detail)
+
+        self.assertEqual(output.order_id, 11)
+        self.assertEqual(output.order_item_id, 22)
+        self.assertEqual(output.fulfillment_target_id, 33)
+        self.assertEqual(output.source_type, ShippingDetailSourceType.order_generated)
+        self.assertEqual(output.sync_status, ShippingDetailSyncStatus.synced)
+
+    def test_update_order_generated_detail_marks_sync_status_manually_modified(self):
+        db = self.SessionLocal()
+        detail = ShippingDetail(
+            issue_number=2652,
+            sheet_name="每周（对公）",
+            channel="渠道订阅",
+            name="叶剑",
+            phone="13800000000",
+            quantity=531,
+            source_type=ShippingDetailSourceType.order_generated,
+            sync_status=ShippingDetailSyncStatus.synced,
+        )
+        db.add(detail)
+        db.commit()
+        db.refresh(detail)
+
+        result = update_shipping_detail(
+            detail.id,
+            ShippingDetailUpdate(phone="13900000000"),
+            db=db,
+            user=User(id=1, username="admin", role=UserRole.admin, password_hash="x"),
+        )
+
+        self.assertEqual(result.sync_status, ShippingDetailSyncStatus.manually_modified)
+        self.assertEqual(
+            db.get(ShippingDetail, detail.id).sync_status,
+            ShippingDetailSyncStatus.manually_modified,
+        )
+        log = db.query(OperationLog).filter(OperationLog.action == "update").one()
+        self.assertIn("phone", log.changes)
+        self.assertIn("sync_status", log.changes)
+        db.close()
 
 
 if __name__ == "__main__":

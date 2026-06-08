@@ -3,7 +3,11 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
 from app.models import Issue
-from app.models.shipping_detail import ShippingDetail
+from app.models.shipping_detail import (
+    ShippingDetail,
+    ShippingDetailSourceType,
+    ShippingDetailSyncStatus,
+)
 from app.models.operation_log import OperationLog
 from app.models.user import User
 from app.auth import get_current_user, require_admin
@@ -25,13 +29,23 @@ _TRACKED_FIELDS = [
     "status", "name", "address", "phone", "quantity", "deadline",
     "notes", "extra_info", "station_name", "station_hall",
     "contact_person", "seq_number", "period_count", "confirmation",
-    "company", "shipped_at",
+    "company", "shipped_at", "order_id", "order_item_id",
+    "fulfillment_target_id", "source_type", "sync_status",
 ]
 
 _COPY_FIELDS = [
     field
     for field in _TRACKED_FIELDS
-    if field not in {"issue_number", "confirmation", "shipped_at"}
+    if field not in {
+        "issue_number",
+        "confirmation",
+        "shipped_at",
+        "order_id",
+        "order_item_id",
+        "fulfillment_target_id",
+        "source_type",
+        "sync_status",
+    }
 ]
 
 
@@ -289,6 +303,14 @@ def update_shipping_detail(
         setattr(detail, key, value)
     new_snapshot = _snapshot(detail)
     changes = _diff(old_snapshot, new_snapshot)
+    if (
+        changes
+        and old_snapshot.get("source_type") == ShippingDetailSourceType.order_generated
+        and detail.sync_status != ShippingDetailSyncStatus.manually_modified
+    ):
+        detail.sync_status = ShippingDetailSyncStatus.manually_modified
+        new_snapshot = _snapshot(detail)
+        changes = _diff(old_snapshot, new_snapshot)
     if changes:
         log = OperationLog(
             table_name="shipping_details",
