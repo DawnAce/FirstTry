@@ -7,9 +7,18 @@ test_order_service_list.py (Steps B and C).
 Uses an in-memory FakeDb pattern (project convention) — no real DB.
 """
 
+import os
+import sys
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("MYSQL_HOST", "localhost")
+os.environ.setdefault("MYSQL_USER", "test")
+os.environ.setdefault("MYSQL_PASSWORD", "test")
+os.environ.setdefault("MYSQL_DATABASE", "test")
 
 import pytest
 from fastapi import HTTPException
