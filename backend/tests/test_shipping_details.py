@@ -1,7 +1,16 @@
+import os
+import sys
 import unittest
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("MYSQL_HOST", "localhost")
+os.environ.setdefault("MYSQL_USER", "test")
+os.environ.setdefault("MYSQL_PASSWORD", "test")
+os.environ.setdefault("MYSQL_DATABASE", "test")
 
 from fastapi import HTTPException
 from sqlalchemy import create_engine
