@@ -1,7 +1,11 @@
 import { Tag } from 'antd';
 import type { TableColumnsType } from 'antd';
 import dayjs from 'dayjs';
-import type { ShippingDetail } from '../api/shippingDetails';
+import type {
+  ShippingDetail,
+  ShippingDetailSourceType,
+  ShippingDetailSyncStatus,
+} from '../api/shippingDetails';
 
 const channelColors: Record<string, string> = {
   '渠道订阅': 'blue',
@@ -18,6 +22,18 @@ const transportColors: Record<string, string> = {
   '邮政物流': 'green',
   '包车运输': 'orange',
   '库房留存': 'default',
+};
+
+const sourceTypeLabels: Record<ShippingDetailSourceType, string> = {
+  manual: '手工',
+  order_generated: '订单生成',
+  historical_import: '历史导入',
+};
+
+const syncStatusLabels: Record<ShippingDetailSyncStatus, string> = {
+  synced: '已同步',
+  manually_modified: '人工修改',
+  orphaned: '孤立',
 };
 
 export const shippingDetailDisplayColumns: TableColumnsType<ShippingDetail> = [
@@ -42,6 +58,25 @@ export const shippingDetailDisplayColumns: TableColumnsType<ShippingDetail> = [
     key: 'company',
     width: 120,
     render: (v: string | null) => v ?? '-',
+  },
+  {
+    title: '来源',
+    dataIndex: 'source_type',
+    key: 'source_type',
+    width: 90,
+    render: (v: ShippingDetailSourceType) => (
+      <Tag color={v === 'order_generated' ? 'blue' : 'default'}>{sourceTypeLabels[v]}</Tag>
+    ),
+  },
+  {
+    title: '同步状态',
+    dataIndex: 'sync_status',
+    key: 'sync_status',
+    width: 100,
+    render: (v: ShippingDetailSyncStatus) => {
+      const color = v === 'manually_modified' ? 'orange' : v === 'orphaned' ? 'red' : 'green';
+      return <Tag color={color}>{syncStatusLabels[v]}</Tag>;
+    },
   },
   {
     title: '地址',
