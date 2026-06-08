@@ -36,8 +36,18 @@ _fake_cpca = SimpleNamespace(
 )
 
 with patch.dict("sys.modules", {"cpca": _fake_cpca}):
-    from app.api.shipping_details import _snapshot, clear_shipping_details_by_issue, update_shipping_detail
-from app.schemas.shipping_detail import ShippingDetailCreate, ShippingDetailOut, ShippingDetailUpdate
+    from app.api.shipping_details import (
+        _snapshot,
+        batch_update_shipping_details,
+        clear_shipping_details_by_issue,
+        update_shipping_detail,
+    )
+from app.schemas.shipping_detail import (
+    ShippingDetailBatchUpdate,
+    ShippingDetailCreate,
+    ShippingDetailOut,
+    ShippingDetailUpdate,
+)
 
 
 class ClearShippingDetailsByIssueTests(unittest.TestCase):
@@ -176,6 +186,69 @@ class ShippingDetailsSyncMetadataTests(unittest.TestCase):
         log = db.query(OperationLog).filter(OperationLog.action == "update").one()
         self.assertIn("phone", log.changes)
         self.assertIn("sync_status", log.changes)
+        db.close()
+
+    def test_batch_update_order_generated_detail_marks_sync_status_manually_modified(self):
+        db = self.SessionLocal()
+        detail = ShippingDetail(
+            issue_number=2652,
+            sheet_name="每周（对公）",
+            channel="渠道订阅",
+            name="叶剑",
+            status="正常",
+            deadline="2026-05-18",
+            quantity=531,
+            source_type=ShippingDetailSourceType.order_generated,
+            sync_status=ShippingDetailSyncStatus.synced,
+        )
+        db.add(detail)
+        db.commit()
+        db.refresh(detail)
+
+        result = batch_update_shipping_details(
+            ShippingDetailBatchUpdate(ids=[detail.id], updates={"status": "暂停"}),
+            db=db,
+            user=User(id=1, username="admin", role=UserRole.admin, password_hash="x"),
+        )
+
+        updated = db.get(ShippingDetail, detail.id)
+        self.assertEqual(result.affected_count, 1)
+        self.assertEqual(updated.status, "暂停")
+        self.assertEqual(updated.sync_status, ShippingDetailSyncStatus.manually_modified)
+        log = db.query(OperationLog).filter(OperationLog.action == "update").one()
+        self.assertIn("status", log.changes)
+        self.assertIn("sync_status", log.changes)
+        db.close()
+
+    def test_batch_update_noop_does_not_mark_sync_status_manually_modified(self):
+        db = self.SessionLocal()
+        detail = ShippingDetail(
+            issue_number=2652,
+            sheet_name="每周（对公）",
+            channel="渠道订阅",
+            name="叶剑",
+            status="正常",
+            deadline="2026-05-18",
+            quantity=531,
+            source_type=ShippingDetailSourceType.order_generated,
+            sync_status=ShippingDetailSyncStatus.synced,
+        )
+        db.add(detail)
+        db.commit()
+        db.refresh(detail)
+
+        result = batch_update_shipping_details(
+            ShippingDetailBatchUpdate(ids=[detail.id], updates={"status": "正常"}),
+            db=db,
+            user=User(id=1, username="admin", role=UserRole.admin, password_hash="x"),
+        )
+
+        self.assertEqual(result.affected_count, 0)
+        self.assertEqual(
+            db.get(ShippingDetail, detail.id).sync_status,
+            ShippingDetailSyncStatus.synced,
+        )
+        self.assertEqual(db.query(OperationLog).count(), 0)
         db.close()
 
 

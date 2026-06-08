@@ -268,6 +268,14 @@ def batch_update_shipping_details(
             setattr(detail, key, value)
         new_snapshot = _snapshot(detail)
         changes = _diff(old_snapshot, new_snapshot)
+        if (
+            changes
+            and old_snapshot.get("source_type") == ShippingDetailSourceType.order_generated
+            and detail.sync_status != ShippingDetailSyncStatus.manually_modified
+        ):
+            detail.sync_status = ShippingDetailSyncStatus.manually_modified
+            new_snapshot = _snapshot(detail)
+            changes = _diff(old_snapshot, new_snapshot)
         if changes:
             affected_count += 1
             db.add(OperationLog(
