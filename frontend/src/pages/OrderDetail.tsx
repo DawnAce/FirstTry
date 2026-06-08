@@ -13,6 +13,7 @@ import {
   Input,
   Modal,
   Row,
+  Select,
   Space,
   Spin,
   Statistic,
@@ -31,9 +32,11 @@ import {
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import {
+  applyOrderShippingSync,
   getOrder,
   listOrderEvents,
   orderQueryKeys,
+  previewOrderShippingSync,
   voidOrder,
 } from '../api/orders';
 import type {
@@ -41,7 +44,11 @@ import type {
   FulfillmentTargetOut,
   OrderEventOut,
   OrderItemOut,
+  OrderShippingSyncAction,
+  OrderShippingSyncItem,
+  OrderShippingSyncPreview,
 } from '../api/orders';
+import { getIssues } from '../api/issues';
 import {
   billingTypeLabel,
   canEditOrder,
@@ -299,17 +306,7 @@ export default function OrderDetail() {
           {
             key: 'shipping',
             label: '关联快递明细',
-            children: (
-              <Empty
-                description={
-                  <span>
-                    该订单尚未参与中通明细同步。
-                    <br />
-                    同步功能将在 V1.3 上线。
-                  </span>
-                }
-              />
-            ),
+            children: <ShippingSyncTab orderId={order.id} />,
           },
           {
             key: 'events',
@@ -697,6 +694,226 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
       />
     </>
   );
+}
+
+// =============================================================================
+// Tab 3: Shipping sync
+// =============================================================================
+
+function ShippingSyncTab({ orderId }: { orderId: number }) {
+  const queryClient = useQueryClient();
+  const [selectedIssueNumber, setSelectedIssueNumber] = useState<number | null>(null);
+  const [preview, setPreview] = useState<OrderShippingSyncPreview | null>(null);
+
+  const issuesQuery = useQuery({
+    queryKey: ['issues', 0, 100],
+    queryFn: async () => {
+      const res = await getIssues(0, 100);
+      return res.data;
+    },
+  });
+
+  const issueOptions = useMemo(
+    () =>
+      [...(issuesQuery.data ?? [])]
+        .sort((a, b) => b.issue_number - a.issue_number)
+        .map((issue) => ({
+          value: issue.issue_number,
+          label: `第 ${issue.issue_number} 期${issue.year_issue_label ? `（${issue.year_issue_label}）` : ''}`,
+        })),
+    [issuesQuery.data],
+  );
+
+  const previewMutation = useMutation({
+    mutationFn: async (issueNumber: number) => {
+      const res = await previewOrderShippingSync(orderId, issueNumber);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setPreview(data);
+      message.success('同步预览已生成');
+    },
+    onError: () => {
+      message.error('生成同步预览失败');
+    },
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: async (issueNumber: number) => {
+      const res = await applyOrderShippingSync(orderId, issueNumber);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setPreview(data);
+      message.success('快递明细同步完成');
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.detail(orderId) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.events(orderId) });
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+      queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
+      queryClient.invalidateQueries({ queryKey: ['report'] });
+    },
+    onError: () => {
+      message.error('同步快递明细失败');
+    },
+  });
+
+  const summary = preview?.summary;
+  const hasConflicts = (summary?.conflicts ?? 0) > 0;
+  const canApply =
+    !!preview && !hasConflicts && !previewMutation.isPending && !applyMutation.isPending;
+
+  const columns: TableColumnsType<OrderShippingSyncItem> = [
+    {
+      title: '动作',
+      dataIndex: 'action',
+      key: 'action',
+      width: 90,
+      render: (action: OrderShippingSyncAction) => (
+        <Tag color={shippingSyncActionColor(action)}>{shippingSyncActionLabel(action)}</Tag>
+      ),
+    },
+    { title: '收件人', dataIndex: 'name', key: 'name', width: 140, render: nullableText },
+    {
+      title: '份数',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      width: 80,
+      align: 'right',
+      render: nullableText,
+    },
+    {
+      title: '订单明细',
+      dataIndex: 'order_item_id',
+      key: 'order_item_id',
+      width: 100,
+      render: nullableText,
+    },
+    {
+      title: '履约目标',
+      dataIndex: 'fulfillment_target_id',
+      key: 'fulfillment_target_id',
+      width: 100,
+      render: nullableText,
+    },
+    { title: '原因', dataIndex: 'reason', key: 'reason', render: nullableText },
+  ];
+
+  return (
+    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Card size="small">
+        <Space wrap>
+          <Select<number>
+            style={{ width: 220 }}
+            loading={issuesQuery.isLoading}
+            options={issueOptions}
+            placeholder="选择目标期号"
+            value={selectedIssueNumber}
+            onChange={(value) => {
+              setSelectedIssueNumber(value);
+              setPreview(null);
+            }}
+          />
+          <Button
+            type="primary"
+            disabled={selectedIssueNumber == null}
+            loading={previewMutation.isPending}
+            onClick={() => {
+              if (selectedIssueNumber != null) previewMutation.mutate(selectedIssueNumber);
+            }}
+          >
+            预览同步
+          </Button>
+          <Button
+            disabled={!canApply}
+            loading={applyMutation.isPending}
+            onClick={() => {
+              if (preview) applyMutation.mutate(preview.issue_number);
+            }}
+          >
+            确认同步
+          </Button>
+        </Space>
+      </Card>
+
+      {preview?.message && (
+        <Alert type="warning" showIcon message={preview.message} />
+      )}
+
+      {hasConflicts && (
+        <Alert
+          type="error"
+          showIcon
+          message="存在同步冲突，请先处理发货明细中的手动改动后再确认同步。"
+        />
+      )}
+
+      {summary && (
+        <Row gutter={12}>
+          <Col span={4}>
+            <Statistic title="候选" value={summary.candidates} />
+          </Col>
+          <Col span={4}>
+            <Statistic title="待新建" value={summary.to_create} />
+          </Col>
+          <Col span={4}>
+            <Statistic title="待更新" value={summary.to_update} />
+          </Col>
+          <Col span={4}>
+            <Statistic title="已跳过" value={summary.skipped} />
+          </Col>
+          <Col span={4}>
+            <Statistic
+              title="冲突"
+              value={summary.conflicts}
+              valueStyle={hasConflicts ? { color: '#cf1322' } : undefined}
+            />
+          </Col>
+        </Row>
+      )}
+
+      <Table<OrderShippingSyncItem>
+        rowKey={(row, index) =>
+          `${row.action}-${row.order_item_id ?? 'item'}-${row.fulfillment_target_id ?? 'target'}-${index}`
+        }
+        size="small"
+        columns={columns}
+        dataSource={preview?.items ?? []}
+        loading={previewMutation.isPending || applyMutation.isPending}
+        pagination={false}
+        locale={{ emptyText: '请选择期号并生成同步预览' }}
+      />
+    </Space>
+  );
+}
+
+function nullableText(value: string | number | null | undefined) {
+  return value ?? '-';
+}
+
+function shippingSyncActionLabel(action: OrderShippingSyncAction): string {
+  switch (action) {
+    case 'create':
+      return '新建';
+    case 'update':
+      return '更新';
+    case 'skip':
+      return '跳过';
+    case 'conflict':
+      return '冲突';
+  }
+}
+
+function shippingSyncActionColor(action: OrderShippingSyncAction): string {
+  switch (action) {
+    case 'create':
+      return 'green';
+    case 'update':
+      return 'blue';
+    case 'skip':
+      return 'default';
+    case 'conflict':
+      return 'red';
+  }
 }
 
 // =============================================================================

@@ -291,6 +291,36 @@ export interface PricingPreviewOut {
   warning: string | null;
 }
 
+export interface OrderShippingSyncSummary {
+  candidates: number;
+  to_create: number;
+  to_update: number;
+  skipped: number;
+  conflicts: number;
+}
+
+export type OrderShippingSyncAction = 'create' | 'update' | 'skip' | 'conflict';
+
+export interface OrderShippingSyncItem {
+  action: OrderShippingSyncAction;
+  order_id: number;
+  order_item_id: number | null;
+  fulfillment_target_id: number | null;
+  shipping_detail_id: number | null;
+  name: string | null;
+  quantity: number | null;
+  reason: string | null;
+  diff: Record<string, unknown> | null;
+}
+
+export interface OrderShippingSyncPreview {
+  order_id: number;
+  issue_number: number;
+  summary: OrderShippingSyncSummary;
+  items: OrderShippingSyncItem[];
+  message: string | null;
+}
+
 // =============================================================================
 // Query params
 // =============================================================================
@@ -358,6 +388,22 @@ export const getOrderProgress = (
   id: number,
 ): Promise<AxiosResponse<FulfillmentProgress[]>> =>
   api.get<FulfillmentProgress[]>(`/orders/${id}/fulfillment-progress`);
+
+export const previewOrderShippingSync = (
+  orderId: number,
+  issueNumber: number,
+): Promise<AxiosResponse<OrderShippingSyncPreview>> =>
+  api.get<OrderShippingSyncPreview>(`/orders/${orderId}/shipping-sync/preview`, {
+    params: { issue_number: issueNumber },
+  });
+
+export const applyOrderShippingSync = (
+  orderId: number,
+  issueNumber: number,
+): Promise<AxiosResponse<OrderShippingSyncPreview>> =>
+  api.post<OrderShippingSyncPreview>(`/orders/${orderId}/shipping-sync/apply`, {
+    issue_number: issueNumber,
+  });
 
 // =============================================================================
 // TanStack Query keys (centralised so invalidation stays consistent)
