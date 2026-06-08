@@ -435,7 +435,7 @@ FirstTry/
 - **订阅定价字段（V1.2A）**：`order_items` 现持久化 `subscription_term`（`half_year` / `one_year` / `custom`）、`delivery_method`（`post_office` / `zto_mf`）与 `term_start_month`（`YYYY-MM`）。这些字段用于保存订阅报价与起订月元数据；覆盖范围的履约权威字段仍然是 `coverage_start_date / coverage_end_date`，因此 2 年等非标周期依旧通过实际日期区间表达。
 - 所有金额字段使用 `DECIMAL(10, 2)`（最大 9999 9999.99 元）；前端 TS 用 `string` 传输，避免 JS 浮点损失
 - 在 active 状态下，`PUT /api/orders/{id}` 仍只允许 `order_service.ACTIVE_EDITABLE_FIELDS` 白名单内的 13 个非结构字段被修改；明细 / 履约目标的结构改动改走 `PUT /api/orders/{id}/items`，并按 `effective_from_issue` 关闭旧 allocation、创建新版本或取消缺失明细
-- **当前业务范围限定**：仍主要覆盖"个人客户预付 + 同事赠阅"两种场景。`paid_amount` 字段虽已建表，但**没有任何业务逻辑读它**（不算欠款、不阻塞 confirm、不做对账、列表不能按"未付清"过滤）。"渠道订单（先履约后付款 / 赊账）"留待 V1.3+ 的财务对账引入「收款流水子表 + 欠款追踪 + 未付清筛选 + Dashboard 欠款卡片」时再激活该字段的业务价值
+- **当前业务范围限定**：仍主要覆盖"个人客户预付 + 同事赠阅"两种场景。`paid_amount` 字段虽已建表，但**没有任何业务逻辑读它**（不算欠款、不阻塞 confirm、不做对账、列表不能按"未付清"过滤）。"渠道订单（先履约后付款 / 赊账）"留待后续版本的财务对账引入「收款流水子表 + 欠款追踪 + 未付清筛选 + Dashboard 欠款卡片」时再激活该字段的业务价值
 - **`source_type` 字段的录入方式收敛**：原 5 个枚举值（`ecommerce` / `corporate_transfer` / `vip_gift` / `manual` / `mail_annual`）实际混杂了 4 个维度的概念（销售渠道 / 付款方式 / 业务性质 / 录入方式），与已有的 `source_platform`（销售渠道）/ `payment_method`（付款方式）/ `billing_type`（业务性质）字段重复。**PR-A 已将 UX 解耦为"录入方式"** —— 前端表单完全隐藏该字段，列表筛选器移除，详情页用 Tag「📥 手工录入」展示；后端 `OrderCreate.source_type` 默认 `manual`、`OrderUpdate` 完全移除该字段（provenance 元数据任何状态下都不可改）。数据迁移 `d8a1f4e7b9c2` 已把全部历史数据规范化为 `manual`。后续版本电商批量导入 / API 同步启用前，建议继续推进 DB schema rename `source_type` → `entry_method`，枚举值收敛为 `manual / excel_import / api_sync`
 - **录入方式与销售渠道的区分**：用户填的"渠道信息"（微信小程序 / 淘宝 / 有赞 + 店铺名）走 `source_platform` / `source_store`，不走 `source_type`；详情页 Descriptions 区有专门展示。这与"录入方式"是两个正交维度（例：吴娟那张订单是"销售渠道 = 微信小程序，录入方式 = 手工录入"）
 
@@ -1725,9 +1725,9 @@ mysqldump -u user -p database_name > backup.sql
 - [x] 订单管理 V1.1（手工创建、确认、作废、偏差跟踪；范围：**个人客户预付 + 同事赠阅**）
 - [x] 订单管理 V1.2（active 状态明细就地编辑、多版本 allocation、订阅期限与套餐价）
 - [x] 订单管理 V1.3 优先级 1：单订单按期手动预览 / 应用同步至 order_generated `shipping_details`
-- [ ] 订单管理 V1.3 优先级 2：电商订单 Excel / API 批量导入
-- [ ] 订单管理 V1.3 优先级 3：财务对账（实付 / 应收 / 退款、欠款追踪、未付清筛选）
-- [ ] 订单管理 V1.3 优先级 4：客户自助下单
+- [ ] post-V1.3：电商订单 Excel / API 批量导入
+- [ ] post-V1.3：财务对账（实付 / 应收 / 退款、欠款追踪、未付清筛选）
+- [ ] post-V1.3：客户自助下单
 - [ ] 数据统计与报表分析
 - [ ] 自动发送邮件通知
 - [ ] 移动端适配
