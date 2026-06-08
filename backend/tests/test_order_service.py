@@ -23,6 +23,7 @@ from app.models import (
     OrderItem,
     OrderSourceType,
     OrderStatus,
+    ShippingDetail,
 )
 from app.models.fulfillment_target import ShippingChannel
 from app.models.order_item import (
@@ -511,11 +512,20 @@ def test_get_order_detail_not_found_404():
 class _FakeCountMaxDb:
     """DB stub for expected_issues_calculator (COUNT vs MAX dispatch)."""
 
-    def __init__(self, count=43, latest: Optional[date] = date(2026, 12, 31)):
+    def __init__(
+        self,
+        count=43,
+        latest: Optional[date] = date(2026, 12, 31),
+        shipping_details=None,
+    ):
         self.count = count
         self.latest = latest
+        self.shipping_details = list(shipping_details or [])
 
     def query(self, expr):
+        if expr is ShippingDetail:
+            return self._ShippingDetailQ(self.shipping_details)
+
         text = str(expr).lower()
 
         class _Q:
@@ -533,6 +543,26 @@ class _FakeCountMaxDb:
         if "max" in text:
             return _Q(self.latest)
         return _Q(None)
+
+    class _ShippingDetailQ:
+        def __init__(self, rows):
+            self._rows = rows
+            self._filters = []
+
+        def filter(self, *clauses, **kwargs):
+            for clause in clauses:
+                key = getattr(getattr(clause, "left", None), "key", None)
+                value = getattr(getattr(clause, "right", None), "value", None)
+                if key is not None:
+                    self._filters.append((key, value))
+            return self
+
+        def count(self):
+            return sum(
+                1
+                for row in self._rows
+                if all(getattr(row, key) == value for key, value in self._filters)
+            )
 
 
 def _make_subscription_item(expected_at_creation=42) -> OrderItem:
@@ -564,6 +594,22 @@ def test_compute_progress_drift_positive_when_schedule_added_issue():
     item = _make_subscription_item(expected_at_creation=42)
     progress = order_service.compute_fulfillment_progress(db, item)
     assert progress.drift == 1
+
+
+def test_compute_progress_synced_count_matches_linked_shipping_details():
+    db = _FakeCountMaxDb(
+        count=42,
+        latest=date(2026, 12, 31),
+        shipping_details=[
+            ShippingDetail(order_id=1, order_item_id=100),
+            ShippingDetail(order_id=1, order_item_id=100),
+            ShippingDetail(order_id=1, order_item_id=101),
+            ShippingDetail(order_id=2, order_item_id=100),
+        ],
+    )
+    item = _make_subscription_item(expected_at_creation=42)
+    progress = order_service.compute_fulfillment_progress(db, item)
+    assert progress.synced_count == 2
 
 
 def test_compute_progress_drift_none_when_baseline_missing():
