@@ -66,6 +66,9 @@ class PreviewRow:
     delivery_overridden_to_zto: bool = False
     warnings: List[str] = field(default_factory=list)
     order_create: Optional[OrderCreate] = None
+    # The raw product-line name that failed to resolve (for the 待确认 queue /
+    # quick-add to catalog). Set only when decision == unresolved due to a miss.
+    unresolved_product: Optional[str] = None
 
 
 @dataclass
@@ -172,6 +175,7 @@ def build_import_preview(
         warnings: List[str] = []
         resolved = []
         miss_reason = None
+        miss_product = None
         for idx, line in enumerate(real_lines):
             # single real line carries (paid − shipping); rare multi-line keeps own price.
             line_paid = (
@@ -182,11 +186,14 @@ def build_import_preview(
             res = resolve_product(products, line.name, line.quantity, line_paid)
             if not res.matched:
                 miss_reason = res.reason
+                miss_product = line.name
                 break
             warnings.extend(res.warnings)
             resolved.extend(res.items)
         if miss_reason:
-            rows.append(_row(po, sm, "unresolved", reason=miss_reason))
+            rows.append(
+                _row(po, sm, "unresolved", reason=miss_reason, unresolved_product=miss_product)
+            )
             continue
 
         items = []
@@ -270,6 +277,7 @@ def _serialize_row(r: PreviewRow) -> dict:
         "delivery_overridden_to_zto": r.delivery_overridden_to_zto,
         "warnings": r.warnings,
         "items": items,
+        "unresolved_product": r.unresolved_product,
     }
 
 
