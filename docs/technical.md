@@ -446,6 +446,49 @@ FirstTry/
 - `alembic/versions/e9b3c5d7f1a4_add_invoice_tax_no_and_email.py`：把"发票抬头"单字段拆出 `invoice_tax_no`（纳税人识别号 VARCHAR(64)）、`invoice_recipient_email`（电子发票送达邮箱 VARCHAR(128)）两个新列，便于后续生成 / 推送电子发票
 - `alembic/versions/f4a8c2d9e6b1_add_order_item_subscription_pricing_fields.py`：为 `order_items` 新增 `subscription_term`、`delivery_method`、`term_start_month` 三个订阅定价字段
 
+### 3.16 商品库（products）+ 电商订单导入（CBJ 小程序）
+
+把电商平台（首个：CBJ 小程序）的订单尽量自动、完整地导入订单管理。采用「商品中心」模式——**借成熟电商的数据模型，不引入重型平台**：商品库是真源 + 映射层，订单行（`order_items`）继续快照属性，所以改商品库永不篡改历史订单。
+
+**商品库 `products` 表（数据驱动的映射表，新促销 = 加一行）**
+
+| 列 | 说明 |
+|----|------|
+| `code`（唯一）/ `display_name` / `aliases`（JSON） | 匹配键：精确编码/名称 → 别名 → 归一化包含（容活动后缀如「618促销活动」） |
+| `publication`（可空，套餐为 NULL）/ `publication_format` / `fulfillment_type` / `subscription_term` / `delivery_method` / `billing_type` | 与 `order_items` 快照字段一一对应，解析时直接拷贝 |
+| `coverage_rule`（`term_from_month` / `latest_issue` / `explicit` / `custom`）/ `coverage_start_date` / `coverage_end_date` | 覆盖期算法；起投时间由导入批次提供，不写死在商品上 |
+| `list_price` | 仅参考/差异提示——实际记录订单行的**实付价** |
+| `is_bundle` / `components`（JSON） | 套餐拆分：固定价腿 + 一个 `remainder` 腿（中国经营报固定 240、商学院拿余额）|
+| `active` / `notes` / 时间戳 | |
+
+**`orders` 表新增列**
+
+| 列 | 说明 |
+|----|------|
+| `entry_method`（由 `source_type` 改名，枚举 `manual / excel_import / api_sync`）| 录入方式 provenance；手工入口固定写 `manual`，导入入口写 `excel_import` |
+| `commercial_status`（`OrderCommercialStatus`：`pending_payment / paid / shipped / refunded / partial_refund / cancelled`，已发货含已完成）| 我们自己的干净商业状态枚举；手工订单为 NULL |
+| `source_status_raw` | 原始平台状态串（参考存档，永不依赖）|
+| `is_historical_archive` | 历史归档标记，归档单不进发货同步、列表可单独筛 |
+
+**导入管线（服务）**：`cbj_order_import_parser.parse_cbj_orders`（解析 Excel：多行产品拆分、X0 丢弃、运费/转中通标记、地址拆姓名/电话/地址/邮编）→ `product_resolver_service.resolve_product`（商品匹配 + 属性拷贝 + 套餐拆分 + 价=实付）→ `order_import_status_service.map_commercial_status`（状态映射 + 收/跳/退款标记策略）→ `cbj_order_import_service.build_import_preview`（覆盖期按批次 `BatchSettings`：邮局/中通起投月 + 截止日，历史模式留空；去重 `external_order_no`；逐单决策 import / skip_status / duplicate / unresolved）→ 缓存（`order_import_cache`，uuid 会话 30 分钟 TTL，单 worker）→ `commit_import`（按年块分配 `order_code`，逐单 `order_service.create_imported_order`，单事务原子提交）。
+
+**关键不变量与业务规则**：
+- 定价取**实付金额**（促销价如 199/576/10），`list_price` 只用于差异提示。
+- 套餐：中国经营报固定 ¥240，商学院 = 实付 − 固定；余额为负时打 warning。
+- 运费补拍行只计入订单总额、不建明细；含「中通」/「转中通」→ 投递改 `zto_mf` 并在预览高亮（漏检会让整年投递走错，后果严重）。
+- 起投时间**人为按批设定**（非写死 15 号）：付款晚于截止日 → 顺延一个月；每单可在预览/订单页改。
+- 状态映射：认得的映到干净枚举，认不得的默认 `paid` + 标黄待核；退款单「收但标记」，绝不静默丢。
+- 未识别商品 → 「待确认」队列（运营到商品库加行后重导），绝不乱猜。
+- `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。
+
+**新增接口**：`GET/POST/PUT /api/products`、`POST /api/products/{id}/deactivate`（商品库 CRUD）；`POST /api/order-import/preview`（上传 Excel + 批次设置）、`POST /api/order-import/commit`（session_id）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式）。
+
+迁移（均已应用到生产）：
+- `b4d6f8a1c3e5`：补 `ordereventtype` 枚举遗漏的 `item_added/removed/modified`（修复 V1.2 在严格模式 MySQL 上的潜在崩溃）
+- `c5e7a9b2d4f6`：`orders.source_type → entry_method`，枚举收敛为 `manual/excel_import/api_sync`（MySQL `CHANGE COLUMN`）
+- `d7f9b1c3e5a8`：建 `products`（商品库）表
+- `e1a3c5b7d9f2`：`orders` 新增 `commercial_status` / `source_status_raw` / `is_historical_archive`
+
 ## 4. API 接口一览
 
 所有 API 路径以 `/api` 为前缀。
