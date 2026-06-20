@@ -13,7 +13,6 @@ import {
   Space,
   Table,
   Tag,
-  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -192,14 +191,7 @@ export default function OrderList() {
       dataIndex: 'source_platform',
       key: 'source_platform',
       width: 140,
-      render: (platform: string | null, row) => {
-        if (!platform) return '-';
-        return row.source_store ? (
-          <Tooltip title={`店铺：${row.source_store}`}>{platform}</Tooltip>
-        ) : (
-          platform
-        );
-      },
+      render: (platform: string | null) => platform ?? '-',
     },
     {
       title: '份数',

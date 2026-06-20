@@ -75,7 +75,6 @@ export default function Dashboard() {
   const weeklyStats = data?.weekly_stats ?? { this_week_total: 0, last_week_total: 0, week_change: 0 };
   const latestReportTime = data?.latest_report_time;
   const nextIssueNumber = data?.next_issue_number;
-  const nextIssuePublishDate = data?.next_issue_publish_date;
 
   // Prepare trend chart data (last 6 issues, sorted ascending)
   const trendData = useMemo(() => {
