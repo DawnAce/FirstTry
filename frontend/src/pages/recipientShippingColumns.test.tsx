@@ -10,7 +10,7 @@ const renderColumn = (key: string, value: unknown) => {
     throw new Error(`Column ${key} does not have a render function`);
   }
 
-  return column.render(value, {} as ShippingDetail, 0);
+  return column.render(value, {} as ShippingDetail, 0) as React.ReactNode;
 };
 
 const expectPlainText = (node: React.ReactNode, text: string) => {

@@ -1081,6 +1081,13 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
     form,
   );
 
+  // Derived (displayed read-only): 应收小计 = 单价 × 每期总份数; 目标合计 = 各履约目标份数之和.
+  const subtotal = (Number(unitPrice) || 0) * (Number(totalQuantity) || 0);
+  const targetSum = (targets ?? []).reduce(
+    (sum, t) => sum + (Number(t?.quantity) || 0),
+    0,
+  );
+
   const requireCoverage = fulfillmentType
     ? COVERAGE_REQUIRED_TYPES.has(fulfillmentType)
     : false;
@@ -1431,7 +1438,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
         <Input.TextArea rows={1} maxLength={500} disabled={disabled} />
       </Form.Item>
 
-      <Divider orientation="left" style={{ margin: '8px 0 12px' }}>
+      <Divider titlePlacement="left" style={{ margin: '8px 0 12px' }}>
         履约目标
         <Tag
           color={targetSum === Number(totalQuantity || 0) ? 'green' : 'orange'}

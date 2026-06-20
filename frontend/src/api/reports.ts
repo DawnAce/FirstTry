@@ -32,6 +32,13 @@ export interface ReportData {
   total: number;
   destination_summary: DestinationSummary[];
   confirmation_summary?: ConfirmationSummary | null;
+  // 实时一致性预警：报数「中通物流公司」合计 vs 当期发货明细合计。
+  shipping_check?: {
+    is_match: boolean;
+    report_zt_total: number;
+    shipping_total: number;
+    delta: number;
+  } | null;
 }
 
 export interface ConfirmReportResponse {
