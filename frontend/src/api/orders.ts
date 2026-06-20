@@ -229,6 +229,7 @@ export interface OrderOut {
   entry_method: OrderEntryMethod;
   source_platform: string | null;
   source_store: string | null;
+  campaign: string | null;
   payer_name: string;
   payer_contact: string | null;
   payment_method: OrderPaymentMethod | null;
@@ -254,6 +255,7 @@ export interface OrderListRow {
   payer_name: string;
   entry_method: OrderEntryMethod;
   source_platform: string | null;
+  campaign: string | null;
   total_quantity: number;
   total_amount: string;
   coverage_start_date: string | null;
@@ -326,6 +328,7 @@ export interface ListOrdersParams {
   status?: OrderStatus;
   entry_method?: OrderEntryMethod;
   payer_name_like?: string;
+  campaign?: string;
   coverage_start?: string;
   coverage_end?: string;
   has_drift?: boolean;

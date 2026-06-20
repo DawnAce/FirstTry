@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import User
+from app.models.order_item import Publication
 from app.services.cbj_order_import_service import (
     BatchSettings,
     commit_import,
@@ -26,6 +27,10 @@ async def preview(
     post_office_start_month: Optional[str] = Form(None),
     zto_start_month: Optional[str] = Form(None),
     cutoff_date: Optional[str] = Form(None),
+    campaign: Optional[str] = Form(None),
+    bonus_months: int = Form(0),
+    gift_publication: Optional[str] = Form(None),
+    gift_note: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
@@ -38,11 +43,21 @@ async def preview(
             cutoff = date.fromisoformat(cutoff_date)
         except ValueError:
             raise HTTPException(status_code=422, detail="截止日格式应为 YYYY-MM-DD")
+    gift_pub = (gift_publication or "").strip() or None
+    if gift_pub is not None:
+        try:
+            Publication(gift_pub)
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"赠品刊物「{gift_pub}」无效")
     settings = BatchSettings(
         mode=mode,
         post_office_start_month=post_office_start_month or None,
         zto_start_month=zto_start_month or None,
         cutoff_date=cutoff,
+        campaign=(campaign or "").strip() or None,
+        bonus_months=max(0, bonus_months or 0),
+        gift_publication=gift_pub,
+        gift_note=(gift_note or "").strip() or None,
     )
     try:
         out, _ = preview_import(db, content, settings)

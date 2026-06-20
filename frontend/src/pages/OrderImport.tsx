@@ -7,7 +7,10 @@ import {
   DatePicker,
   Drawer,
   Form,
+  Input,
+  InputNumber,
   Segmented,
+  Select,
   Space,
   Table,
   Tag,
@@ -21,7 +24,7 @@ import type { Dayjs } from 'dayjs';
 import { commitOrderImport, previewOrderImport } from '../api/orderImport';
 import type { ImportDecision, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
 import { createProduct } from '../api/products';
-import { ProductFormFields, buildProductPayload } from './ProductForm';
+import { ProductFormFields, PUBLICATION_OPTIONS, buildProductPayload } from './ProductForm';
 import type { ProductFormValues } from './ProductForm';
 import { deliveryMethodLabel, formatCoverage, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
 
@@ -74,6 +77,10 @@ export default function OrderImport() {
   const [postOfficeStart, setPostOfficeStart] = useState<Dayjs | null>(null);
   const [ztoStart, setZtoStart] = useState<Dayjs | null>(null);
   const [cutoff, setCutoff] = useState<Dayjs | null>(null);
+  const [campaign, setCampaign] = useState('');
+  const [bonusMonths, setBonusMonths] = useState<number>(0);
+  const [giftPublication, setGiftPublication] = useState<string | undefined>(undefined);
+  const [giftNote, setGiftNote] = useState('');
   const [preview, setPreview] = useState<ImportPreviewOut | null>(null);
 
   const [drawerMode, setDrawerMode] = useState<'quick' | 'detail' | null>(null);
@@ -83,10 +90,16 @@ export default function OrderImport() {
   const previewMutation = useMutation({
     mutationFn: () => {
       const settings: PreviewSettings = { mode };
+      if (campaign.trim()) settings.campaign = campaign.trim();
       if (mode === 'recent') {
         if (postOfficeStart) settings.post_office_start_month = postOfficeStart.format('YYYY-MM');
         if (ztoStart) settings.zto_start_month = ztoStart.format('YYYY-MM');
         if (cutoff) settings.cutoff_date = cutoff.format('YYYY-MM-DD');
+        if (bonusMonths > 0) settings.bonus_months = bonusMonths;
+        if (giftPublication) {
+          settings.gift_publication = giftPublication;
+          if (giftNote.trim()) settings.gift_note = giftNote.trim();
+        }
       }
       return previewOrderImport(file as File, settings);
     },
@@ -189,6 +202,7 @@ export default function OrderImport() {
             {r.delivery_overridden_to_zto && <Tag color="orange">投递→中通（请核对）</Tag>}
             {r.items.map((it, i) => (
               <Text key={i} style={{ fontSize: 12 }}>
+                {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
                 {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
                 {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''} · ¥{it.subtotal} · 覆盖{formatCoverage(it.coverage_start_date, it.coverage_end_date)}
               </Text>
@@ -216,14 +230,36 @@ export default function OrderImport() {
               { label: '历史归档（只补记录）', value: 'historical' },
             ]}
           />
+          <Space wrap>
+            <span>活动标签：<Input value={campaign} onChange={(e) => { setCampaign(e.target.value); setPreview(null); }} placeholder="如 2026-618（可空）" style={{ width: 200 }} allowClear /></span>
+            <Text type="secondary" style={{ fontSize: 12 }}>写到这批每张订单，便于追溯 + 按活动统计</Text>
+          </Space>
           {mode === 'recent' ? (
-            <Space wrap>
-              <span>邮局起投月：<DatePicker picker="month" value={postOfficeStart} onChange={setPostOfficeStart} placeholder="如 2026-07" /></span>
-              <span>中通起投月：<DatePicker picker="month" value={ztoStart} onChange={setZtoStart} placeholder="如 2026-07" /></span>
-              <span>截止日：<DatePicker value={cutoff} onChange={setCutoff} placeholder="此日后付款→下月" /></span>
-            </Space>
+            <>
+              <Space wrap>
+                <span>邮局起投月：<DatePicker picker="month" value={postOfficeStart} onChange={(v) => { setPostOfficeStart(v); setPreview(null); }} placeholder="如 2026-07" /></span>
+                <span>中通起投月：<DatePicker picker="month" value={ztoStart} onChange={(v) => { setZtoStart(v); setPreview(null); }} placeholder="如 2026-07" /></span>
+                <span>截止日：<DatePicker value={cutoff} onChange={(v) => { setCutoff(v); setPreview(null); }} placeholder="此日后付款→下月" /></span>
+              </Space>
+              <Card size="small" type="inner" title="活动赠品（只给本批「含订阅」的订单，单期不送）">
+                <Space wrap align="end">
+                  <span>订期延长：<InputNumber min={0} max={12} value={bonusMonths} onChange={(v) => { setBonusMonths(v ?? 0); setPreview(null); }} addonAfter="个月" style={{ width: 130 }} /></span>
+                  <span>赠送刊物：
+                    <Select
+                      allowClear
+                      placeholder="不送可空"
+                      value={giftPublication}
+                      onChange={(v) => { setGiftPublication(v); setPreview(null); }}
+                      options={PUBLICATION_OPTIONS}
+                      style={{ width: 150 }}
+                    />
+                  </span>
+                  <span>赠品说明：<Input value={giftNote} onChange={(e) => { setGiftNote(e.target.value); setPreview(null); }} placeholder="如《商学院》2-3月合刊（2026-618）" style={{ width: 280 }} disabled={!giftPublication} allowClear /></span>
+                </Space>
+              </Card>
+            </>
           ) : (
-            <Alert type="info" message="历史归档：保留下单日期、只补记录；订期留空（可在订单页补填），不进发货同步。" />
+            <Alert type="info" message="历史归档：保留下单日期、只补记录；订期留空（可在订单页补填），不进发货同步。赠品仅近期模式可设。" />
           )}
         </Space>
       </Card>
@@ -322,6 +358,7 @@ export default function OrderImport() {
               <Card size="small" title="识别明细">
                 {detailRow.items.map((it, i) => (
                   <div key={i} style={{ fontSize: 13 }}>
+                    {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
                     {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
                     {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''} · 份{it.total_quantity} · ¥{it.subtotal} · 覆盖{formatCoverage(it.coverage_start_date, it.coverage_end_date)}
                   </div>

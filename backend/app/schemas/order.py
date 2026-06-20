@@ -148,6 +148,8 @@ class OrderCreate(BaseModel):
     entry_method: OrderEntryMethod = OrderEntryMethod.manual
     source_platform: Optional[str] = Field(default=None, max_length=64)
     source_store: Optional[str] = Field(default=None, max_length=128)
+    # 营销活动标签（如 "2026-618"）；电商导入按批次写入，手工单留空。
+    campaign: Optional[str] = Field(default=None, max_length=64)
     payer_name: str = Field(min_length=1, max_length=128)
     payer_contact: Optional[str] = Field(default=None, max_length=64)
     payment_method: Optional[OrderPaymentMethod] = None
@@ -335,6 +337,7 @@ class OrderOut(BaseModel):
     entry_method: OrderEntryMethod
     source_platform: Optional[str]
     source_store: Optional[str]
+    campaign: Optional[str]
     payer_name: str
     payer_contact: Optional[str]
     payment_method: Optional[OrderPaymentMethod]
@@ -369,6 +372,7 @@ class OrderListRow(BaseModel):
     payer_name: str
     entry_method: OrderEntryMethod
     source_platform: Optional[str]
+    campaign: Optional[str] = None
     total_quantity: int
     total_amount: Decimal
     coverage_start_date: Optional[date]

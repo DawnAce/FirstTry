@@ -499,6 +499,7 @@ def create_imported_order(
         entry_method=OrderEntryMethod.excel_import,
         source_platform=data.source_platform,
         source_store=data.source_store,
+        campaign=data.campaign,
         external_order_no=data.external_order_no,
         payer_name=data.payer_name,
         payer_contact=data.payer_contact,
@@ -840,6 +841,7 @@ def list_orders(
     status: Optional[OrderStatus] = None,
     entry_method: Optional[OrderEntryMethod] = None,
     payer_name_like: Optional[str] = None,
+    campaign: Optional[str] = None,
     coverage_start: Optional[date] = None,
     coverage_end: Optional[date] = None,
     has_drift: Optional[bool] = None,
@@ -870,6 +872,8 @@ def list_orders(
         q = q.filter(Order.entry_method == entry_method)
     if payer_name_like:
         q = q.filter(Order.payer_name.ilike(f"%{payer_name_like}%"))
+    if campaign:
+        q = q.filter(Order.campaign == campaign)
     if coverage_start is not None or coverage_end is not None:
         item_q = db.query(OrderItem.order_id).distinct()
         if coverage_start is not None:
@@ -941,6 +945,7 @@ def list_orders(
                 payer_name=order.payer_name,
                 entry_method=order.entry_method,
                 source_platform=order.source_platform,
+                campaign=order.campaign,
                 total_quantity=total_quantity,
                 total_amount=order.total_amount,
                 coverage_start_date=coverage_start_d,

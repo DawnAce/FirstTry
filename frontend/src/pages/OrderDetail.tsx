@@ -253,6 +253,9 @@ export default function OrderDetail() {
           <Descriptions.Item label="来源单号">
             {order.external_order_no ?? '-'}
           </Descriptions.Item>
+          <Descriptions.Item label="营销活动">
+            {order.campaign ? <Tag color="magenta">{order.campaign}</Tag> : '-'}
+          </Descriptions.Item>
           <Descriptions.Item label="付款联系人">
             {order.payer_contact ?? '-'}
           </Descriptions.Item>

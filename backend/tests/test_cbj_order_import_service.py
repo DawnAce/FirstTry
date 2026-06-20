@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.models import Order, OrderCommercialStatus, OrderEntryMethod, OrderStatus
-from app.models.order_item import DeliveryMethod, Publication
+from app.models.order_item import BillingType, DeliveryMethod, FulfillmentType, Publication
 from app.seeds.products import seed_products
 from app.services.cbj_order_import_parser import ParsedOrder, ProductLine
 from app.services.cbj_order_import_service import BatchSettings, build_import_preview
@@ -36,6 +36,18 @@ RECENT = BatchSettings(
     post_office_start_month="2026-07",
     zto_start_month="2026-07",
     cutoff_date=date(2026, 6, 22),
+)
+
+# A 618-style batch: campaign tag + 1 bonus month + a 商学院 gift issue.
+GIFT = BatchSettings(
+    mode="recent",
+    post_office_start_month="2026-07",
+    zto_start_month="2026-07",
+    cutoff_date=date(2026, 6, 22),
+    campaign="2026-618",
+    bonus_months=1,
+    gift_publication="business_school",
+    gift_note="《商学院》2-3月合刊（2026-618）",
 )
 
 
@@ -146,3 +158,56 @@ def test_counts_summary(db):
     pv = build_import_preview(db, orders, RECENT)
     c = pv.counts
     assert c["total"] == 3 and c["import"] == 1 and c["skip_status"] == 1 and c["unresolved"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Campaign tag + activity gifts (延长月 / 赠送刊物)
+# ---------------------------------------------------------------------------
+
+
+def test_campaign_tag_written_to_order(db):
+    pv = build_import_preview(db, [_po()], GIFT)
+    assert pv.rows[0].order_create.campaign == "2026-618"
+
+
+def test_bonus_months_extend_subscription_coverage(db):
+    pv = build_import_preview(db, [_po()], GIFT)
+    sub = pv.rows[0].order_create.items[0]
+    # one year + 1 bonus month: 2026-07-01 → 2027-07-31 (13 months)
+    assert sub.coverage_start_date == date(2026, 7, 1)
+    assert sub.coverage_end_date == date(2027, 7, 31)
+
+
+def test_gift_item_appended_to_subscription_order(db):
+    pv = build_import_preview(db, [_po()], GIFT)
+    items = pv.rows[0].order_create.items
+    gifts = [i for i in items if i.billing_type == BillingType.free_gift]
+    assert len(gifts) == 1
+    gift = gifts[0]
+    assert gift.publication == Publication.business_school
+    assert gift.fulfillment_type == FulfillmentType.gift
+    assert gift.unit_price == Decimal("0")
+    assert gift.subtotal == Decimal("0")
+    assert gift.total_quantity == 1
+    assert gift.notes == "《商学院》2-3月合刊（2026-618）"
+    # gift ships to the same recipient as the main order
+    assert gift.targets[0].recipient_name == "冯志强"
+    assert gift.targets[0].quantity == 1
+
+
+def test_gift_not_added_to_single_issue_only_order(db):
+    lines = [_line("《中国经营报》最新一期订阅", qty=1, price=Decimal("5"))]
+    pv = build_import_preview(db, [_po(paid=Decimal("5"), lines=lines)], GIFT)
+    oc = pv.rows[0].order_create
+    # campaign is still tagged, but a single-issue order isn't the campaign subject
+    assert oc.campaign == "2026-618"
+    assert all(i.billing_type != BillingType.free_gift for i in oc.items)
+
+
+def test_no_gift_or_bonus_when_not_configured(db):
+    pv = build_import_preview(db, [_po()], RECENT)
+    oc = pv.rows[0].order_create
+    assert oc.campaign is None
+    assert all(i.billing_type != BillingType.free_gift for i in oc.items)
+    # plain one year, no bonus month
+    assert oc.items[0].coverage_end_date == date(2027, 6, 30)
