@@ -44,10 +44,29 @@ class OrderPaymentMethod(str, enum.Enum):
 
 
 class OrderStatus(str, enum.Enum):
+    """Our internal record lifecycle (distinct from the commercial status)."""
+
     draft = "draft"
     pending_confirmation = "pending_confirmation"
     active = "active"
     void = "void"
+
+
+class OrderCommercialStatus(str, enum.Enum):
+    """The order's commercial state on the source e-commerce platform.
+
+    Our own clean, curated vocabulary — the messy/incomplete platform strings are
+    mapped onto this and the raw string is kept in ``source_status_raw`` for
+    reference. NULL for manually-entered orders (no platform status). 已发货 also
+    covers 已完成 (a subscription isn't a one-time shipment).
+    """
+
+    pending_payment = "pending_payment"   # 待付款
+    paid = "paid"                          # 已付款（待发货）
+    shipped = "shipped"                    # 已发货 / 已完成
+    refunded = "refunded"                  # 已退款
+    partial_refund = "partial_refund"      # 部分退款
+    cancelled = "cancelled"                # 已取消 / 已关闭
 
 
 class Order(Base):
@@ -77,6 +96,12 @@ class Order(Base):
         index=True,
     )
     notes = Column(Text, nullable=True)
+    # Commercial status (e-commerce orders): our curated value + the raw platform
+    # string for reference. NULL for manual orders.
+    commercial_status = Column(SAEnum(OrderCommercialStatus), nullable=True)
+    source_status_raw = Column(String(64), nullable=True)
+    # Historical-archive import: kept for records, excluded from shipping sync.
+    is_historical_archive = Column(Boolean, default=False, nullable=False)
     # V2 hooks (V1.1 always NULL)
     import_batch_id = Column(Integer, nullable=True)
     import_row_no = Column(Integer, nullable=True)

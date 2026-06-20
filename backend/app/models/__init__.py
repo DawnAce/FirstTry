@@ -21,6 +21,7 @@ from app.models.publication_schedule_upload import (
 )
 from app.models.order import (
     Order,
+    OrderCommercialStatus,
     OrderEntryMethod,
     OrderPaymentMethod,
     OrderStatus,
@@ -61,7 +62,7 @@ __all__ = [
     "PublicationScheduleUpload",
     "PublicationScheduleUploadStatus",
     # Order management (V1.1)
-    "Order", "OrderEntryMethod", "OrderPaymentMethod", "OrderStatus",
+    "Order", "OrderEntryMethod", "OrderCommercialStatus", "OrderPaymentMethod", "OrderStatus",
     "OrderItem", "Publication", "PublicationFormat",
     "FulfillmentType", "BillingType", "DeliveryMethod", "OrderItemStatus", "SubscriptionTerm",
     "FulfillmentAllocation",

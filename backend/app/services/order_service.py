@@ -41,6 +41,7 @@ from app.models import (
     FulfillmentAllocation,
     FulfillmentTarget,
     Order,
+    OrderCommercialStatus,
     OrderEntryMethod,
     OrderEventType,
     OrderItem,
@@ -470,6 +471,9 @@ def create_imported_order(
     import_batch_id: Optional[int] = None,
     import_row_no: Optional[int] = None,
     import_source_sheet: Optional[str] = None,
+    commercial_status: Optional[OrderCommercialStatus] = None,
+    source_status_raw: Optional[str] = None,
+    is_historical_archive: bool = False,
     operator_id: Optional[int] = None,
 ) -> Order:
     """Create an **active** order from one batch-import row.
@@ -508,6 +512,9 @@ def create_imported_order(
         invoice_recipient_email=data.invoice_recipient_email,
         notes=data.notes,
         status=OrderStatus.active,
+        commercial_status=commercial_status,
+        source_status_raw=source_status_raw,
+        is_historical_archive=is_historical_archive,
         import_batch_id=import_batch_id,
         import_row_no=import_row_no,
         import_source_sheet=import_source_sheet,
