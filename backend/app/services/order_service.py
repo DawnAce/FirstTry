@@ -310,51 +310,33 @@ def _add_new_item(
 # ---------------------------------------------------------------------------
 
 
-def create_order_draft(
+def _build_order_items(
     db: Session,
-    data: OrderCreate,
-    created_by: Optional[int] = None,
-) -> Order:
-    """Persist a new draft order with items + v1 allocation + targets.
+    order: Order,
+    items_data,
+    operator_id: Optional[int],
+    *,
+    apply_package_pricing: bool,
+) -> List[OrderItem]:
+    """Create OrderItem + v1 FulfillmentAllocation + FulfillmentTargets for each
+    item under ``order`` (which must already be flushed so ``order.id`` is set).
+    Returns the created items.
 
-    Returns the refreshed ``Order`` after a successful commit. Caller is
-    expected to surface validation errors via the Pydantic schema before
-    calling this function — there is no business validation here beyond
-    what the model constraints enforce.
+    When ``apply_package_pricing`` is True (manual entry), a standard
+    subscription item (term != custom, with delivery_method + term_start_month)
+    has its coverage/price auto-filled from ``build_pricing_preview``. Import
+    paths pass False: they carry the actual paid price/coverage resolved upstream
+    and must not be overwritten by the standard package price table.
     """
-    order = Order(
-        order_date=data.order_date,
-        # 录入方式 provenance 由服务端控制，不信任客户端传入值。
-        # 本路径仅服务于手工录入入口（FastAPI 前端表单），固定写 manual。
-        # Excel 批量导入 / API 同步由各自的入口函数固定写 `excel_import` / `api_sync`。
-        entry_method=OrderEntryMethod.manual,
-        source_platform=data.source_platform,
-        source_store=data.source_store,
-        external_order_no=data.external_order_no,
-        payer_name=data.payer_name,
-        payer_contact=data.payer_contact,
-        payment_method=data.payment_method,
-        payment_collector=data.payment_collector,
-        total_amount=data.total_amount,
-        paid_amount=data.paid_amount,
-        invoice_required=data.invoice_required,
-        invoice_title=data.invoice_title,
-        invoice_tax_no=data.invoice_tax_no,
-        invoice_recipient_email=data.invoice_recipient_email,
-        notes=data.notes,
-        status=OrderStatus.draft,
-        created_by=created_by,
-    )
-    db.add(order)
-    db.flush()
-
-    for item_data in data.items:
+    created: List[OrderItem] = []
+    for item_data in items_data:
         coverage_start_date = item_data.coverage_start_date
         coverage_end_date = item_data.coverage_end_date
         unit_price = item_data.unit_price
         subtotal = item_data.subtotal
         if (
-            item_data.subscription_term is not None
+            apply_package_pricing
+            and item_data.subscription_term is not None
             and item_data.subscription_term != SubscriptionTerm.custom
             and item_data.delivery_method is not None
             and item_data.term_start_month is not None
@@ -397,7 +379,7 @@ def create_order_draft(
             effective_from_issue=None,
             effective_until_issue=None,
             change_reason="initial",
-            operator_id=created_by,
+            operator_id=operator_id,
         )
         db.add(allocation)
         db.flush()
@@ -418,7 +400,52 @@ def create_order_draft(
             )
             db.add(target)
 
+        created.append(item)
+
     db.flush()
+    return created
+
+
+def create_order_draft(
+    db: Session,
+    data: OrderCreate,
+    created_by: Optional[int] = None,
+) -> Order:
+    """Persist a new draft order with items + v1 allocation + targets.
+
+    Returns the refreshed ``Order`` after a successful commit. Caller is
+    expected to surface validation errors via the Pydantic schema before
+    calling this function — there is no business validation here beyond
+    what the model constraints enforce.
+    """
+    order = Order(
+        order_date=data.order_date,
+        # 录入方式 provenance 由服务端控制，不信任客户端传入值。
+        # 本路径仅服务于手工录入入口（FastAPI 前端表单），固定写 manual。
+        # Excel 批量导入 / API 同步由各自的入口函数固定写 `excel_import` / `api_sync`。
+        entry_method=OrderEntryMethod.manual,
+        source_platform=data.source_platform,
+        source_store=data.source_store,
+        external_order_no=data.external_order_no,
+        payer_name=data.payer_name,
+        payer_contact=data.payer_contact,
+        payment_method=data.payment_method,
+        payment_collector=data.payment_collector,
+        total_amount=data.total_amount,
+        paid_amount=data.paid_amount,
+        invoice_required=data.invoice_required,
+        invoice_title=data.invoice_title,
+        invoice_tax_no=data.invoice_tax_no,
+        invoice_recipient_email=data.invoice_recipient_email,
+        notes=data.notes,
+        status=OrderStatus.draft,
+        created_by=created_by,
+    )
+    db.add(order)
+    db.flush()
+
+    _build_order_items(db, order, data.items, created_by, apply_package_pricing=True)
+
     log_event(
         db,
         order_id=order.id,
@@ -432,6 +459,90 @@ def create_order_draft(
     )
     db.commit()
     db.refresh(order)
+    return order
+
+
+def create_imported_order(
+    db: Session,
+    data: OrderCreate,
+    *,
+    order_code: str,
+    import_batch_id: Optional[int] = None,
+    import_row_no: Optional[int] = None,
+    import_source_sheet: Optional[str] = None,
+    operator_id: Optional[int] = None,
+) -> Order:
+    """Create an **active** order from one batch-import row.
+
+    Unlike :func:`create_order_draft` this entry point:
+
+    * forces ``entry_method=excel_import`` (provenance is owned by the entry
+      point, never trusted from the row);
+    * stamps the import hook columns and emits the ``imported`` audit event;
+    * assigns the (pre-allocated) ``order_code`` and snapshots
+      ``expected_issues_at_creation`` — i.e. confirm-on-commit straight to
+      ``active`` so the order is list-visible and shipping-syncable;
+    * carries the actual paid price / coverage as-is (no package-price override);
+    * **does not commit** — the import service builds many orders and commits
+      the whole batch once, so a mid-batch failure rolls the entire batch back.
+
+    The caller is responsible for allocating a unique ``order_code`` (see
+    ``order_code_service.allocate_order_codes``) and for committing.
+    """
+    order = Order(
+        order_code=order_code,
+        order_date=data.order_date,
+        entry_method=OrderEntryMethod.excel_import,
+        source_platform=data.source_platform,
+        source_store=data.source_store,
+        external_order_no=data.external_order_no,
+        payer_name=data.payer_name,
+        payer_contact=data.payer_contact,
+        payment_method=data.payment_method,
+        payment_collector=data.payment_collector,
+        total_amount=data.total_amount,
+        paid_amount=data.paid_amount,
+        invoice_required=data.invoice_required,
+        invoice_title=data.invoice_title,
+        invoice_tax_no=data.invoice_tax_no,
+        invoice_recipient_email=data.invoice_recipient_email,
+        notes=data.notes,
+        status=OrderStatus.active,
+        import_batch_id=import_batch_id,
+        import_row_no=import_row_no,
+        import_source_sheet=import_source_sheet,
+        created_by=operator_id,
+    )
+    db.add(order)
+    db.flush()
+
+    items = _build_order_items(
+        db, order, data.items, operator_id, apply_package_pricing=False
+    )
+
+    for item in items:
+        item.expected_issues_at_creation = compute_expected_issues(
+            db,
+            coverage_start=item.coverage_start_date,
+            coverage_end=item.coverage_end_date,
+            fulfillment_type=item.fulfillment_type,
+        )
+
+    log_event(
+        db,
+        order_id=order.id,
+        event_type=OrderEventType.imported,
+        payload={
+            "entry_method": OrderEntryMethod.excel_import.value,
+            "order_code": order.order_code,
+            "external_order_no": data.external_order_no,
+            "import_batch_id": import_batch_id,
+            "import_row_no": import_row_no,
+            "items_count": len(data.items),
+        },
+        operator_id=operator_id,
+    )
+    db.flush()
     return order
 
 
