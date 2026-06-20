@@ -6,6 +6,7 @@ export type ImportDecision = 'import' | 'skip_status' | 'duplicate' | 'unresolve
 export interface ImportItemPreview {
   publication: string | null;
   fulfillment_type: string;
+  billing_type: string;
   subscription_term: string | null;
   delivery_method: string | null;
   total_quantity: number;
@@ -48,6 +49,11 @@ export interface PreviewSettings {
   post_office_start_month?: string;
   zto_start_month?: string;
   cutoff_date?: string;
+  // 活动 + 赠品（按批次套用到每张订单，用于追溯 + 按活动统计）
+  campaign?: string;
+  bonus_months?: number;
+  gift_publication?: string;
+  gift_note?: string;
 }
 
 export function previewOrderImport(
@@ -60,6 +66,10 @@ export function previewOrderImport(
   if (settings.post_office_start_month) fd.append('post_office_start_month', settings.post_office_start_month);
   if (settings.zto_start_month) fd.append('zto_start_month', settings.zto_start_month);
   if (settings.cutoff_date) fd.append('cutoff_date', settings.cutoff_date);
+  if (settings.campaign) fd.append('campaign', settings.campaign);
+  if (settings.bonus_months) fd.append('bonus_months', String(settings.bonus_months));
+  if (settings.gift_publication) fd.append('gift_publication', settings.gift_publication);
+  if (settings.gift_note) fd.append('gift_note', settings.gift_note);
   return api.post('/order-import/preview', fd);
 }
 

@@ -79,6 +79,9 @@ class Order(Base):
     entry_method = Column(SAEnum(OrderEntryMethod), nullable=False)
     source_platform = Column(String(64), nullable=True)
     source_store = Column(String(128), nullable=True)
+    # 营销活动标签（如 "2026-618"）。电商导入按批次写入，用于追溯 + 按活动统计；
+    # 手工录入订单为 NULL。同批次的"赠品 / 延长月"履约差异落在订单明细上。
+    campaign = Column(String(64), nullable=True, index=True)
     payer_name = Column(String(128), nullable=False)
     payer_contact = Column(String(64), nullable=True)
     payment_method = Column(SAEnum(OrderPaymentMethod), nullable=True)

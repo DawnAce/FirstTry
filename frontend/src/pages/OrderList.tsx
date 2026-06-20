@@ -59,6 +59,7 @@ const DRIFT_OPTIONS: Array<{ label: string; value: DriftFilter }> = [
 interface FilterState {
   status?: OrderStatus;
   payer_name_like?: string;
+  campaign?: string;
   order_date_range?: [Dayjs, Dayjs] | null;
   coverage_range?: [Dayjs, Dayjs] | null;
   drift: DriftFilter;
@@ -75,6 +76,7 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
   };
   if (filters.status) params.status = filters.status;
   if (filters.payer_name_like) params.payer_name_like = filters.payer_name_like.trim();
+  if (filters.campaign) params.campaign = filters.campaign.trim();
   if (filters.coverage_range?.[0]) {
     params.coverage_start = filters.coverage_range[0].format('YYYY-MM-DD');
   }
@@ -192,6 +194,13 @@ export default function OrderList() {
       key: 'source_platform',
       width: 140,
       render: (platform: string | null) => platform ?? '-',
+    },
+    {
+      title: '活动',
+      dataIndex: 'campaign',
+      key: 'campaign',
+      width: 120,
+      render: (c: string | null) => (c ? <Tag color="magenta">{c}</Tag> : '-'),
     },
     {
       title: '份数',
@@ -320,6 +329,9 @@ export default function OrderList() {
           </Form.Item>
           <Form.Item name="payer_name_like" label="付款主体">
             <Input allowClear placeholder="模糊匹配" style={{ width: 180 }} />
+          </Form.Item>
+          <Form.Item name="campaign" label="活动">
+            <Input allowClear placeholder="如 2026-618" style={{ width: 150 }} />
           </Form.Item>
           <Form.Item name="order_date_range" label="下单日期">
             <RangePicker style={{ width: 240 }} />

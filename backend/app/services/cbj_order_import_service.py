@@ -26,10 +26,17 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models import Order, OrderCommercialStatus, OrderPaymentMethod, Product
-from app.models.order_item import DeliveryMethod, SubscriptionTerm
+from app.models.order_item import (
+    BillingType,
+    DeliveryMethod,
+    FulfillmentType,
+    Publication,
+    PublicationFormat,
+    SubscriptionTerm,
+)
 from app.models.product import CoverageRule
 from app.order_import_cache import pop_order_import_session, save_order_import_session
-from app.schemas.order import FulfillmentTargetIn, OrderCreate
+from app.schemas.order import FulfillmentTargetIn, OrderCreate, OrderItemIn
 from app.services.cbj_order_import_parser import ParsedOrder, parse_cbj_orders
 from app.services.order_code_service import allocate_order_codes
 from app.services.order_import_status_service import map_commercial_status
@@ -51,6 +58,14 @@ class BatchSettings:
     post_office_start_month: Optional[str] = None  # "YYYY-MM"
     zto_start_month: Optional[str] = None
     cutoff_date: Optional[date] = None  # payment strictly after → next month
+    # 营销活动标签（如 "2026-618"）：写到每张订单的 ``campaign``，用于追溯 + 按活动统计。
+    campaign: Optional[str] = None
+    # 赠品·订期延长月数（如 618 送 1 个月）：加到本批订阅明细的覆盖期末（13 个月）。
+    bonus_months: int = 0
+    # 赠品·赠送刊物：给本批每张"含订阅"的订单加一条免费明细（CBJ 导出无此行，按活动
+    # 约定人工补全）。``gift_publication`` 为 Publication 值，``gift_note`` 为说明文案。
+    gift_publication: Optional[str] = None
+    gift_note: Optional[str] = None
 
 
 @dataclass
@@ -121,7 +136,37 @@ def _coverage_for(settings, item, coverage_rule, payment_time):
         return None, None
     start = date(int(start_month[:4]), int(start_month[5:7]), 1)
     months = 6 if item.subscription_term == SubscriptionTerm.half_year else 12
+    months += max(0, settings.bonus_months or 0)  # 活动赠送的延长月数
     return start, _add_months(start, months) - timedelta(days=1)
+
+
+def _gift_item(settings: BatchSettings, po) -> OrderItemIn:
+    """The campaign gift as a free, recorded order line.
+
+    The CBJ export has no row for the gift (it's an off-platform campaign perk),
+    so the operator configures it per batch and we materialize it here for full
+    traceability. ``fulfillment_type=gift`` → not auto-synced to shipping and never
+    counts toward expected-issue drift; the recipient mirrors the main order.
+    """
+    return OrderItemIn(
+        publication=Publication(settings.gift_publication),
+        publication_format=PublicationFormat.paper,
+        fulfillment_type=FulfillmentType.gift,
+        billing_type=BillingType.free_gift,
+        total_quantity=1,
+        unit_price=Decimal("0"),
+        subtotal=Decimal("0"),
+        notes=settings.gift_note,
+        targets=[
+            FulfillmentTargetIn(
+                recipient_name=po.recipient_name or "(未填写)",
+                recipient_phone=po.recipient_phone or None,
+                recipient_address=po.recipient_address or "(未填写)",
+                recipient_postal_code=po.recipient_postal_code,
+                quantity=1,
+            )
+        ],
+    )
 
 
 def _row(po, status_map, decision, **kw) -> PreviewRow:
@@ -215,10 +260,18 @@ def build_import_preview(
             ]
             items.append(item)
 
+        # Campaign gift (e.g. 618 送《商学院》合刊): one free recorded line per order
+        # that contains a subscription. Single-issue-only orders don't get it.
+        if settings.gift_publication and any(
+            it.fulfillment_type == FulfillmentType.subscription for it in items
+        ):
+            items.append(_gift_item(settings, po))
+
         oc = OrderCreate(
             external_order_no=po.external_order_no,
             order_date=order_date,
             source_platform=_SOURCE_PLATFORM,
+            campaign=settings.campaign,
             payer_name=po.recipient_name or "(未填写)",
             payer_contact=po.recipient_phone or None,
             payment_method=_payment_method(po.payment_method_raw),
@@ -256,6 +309,7 @@ def _serialize_row(r: PreviewRow) -> dict:
                 {
                     "publication": it.publication.value if it.publication else None,
                     "fulfillment_type": it.fulfillment_type.value,
+                    "billing_type": it.billing_type.value,
                     "subscription_term": it.subscription_term.value if it.subscription_term else None,
                     "delivery_method": it.delivery_method.value if it.delivery_method else None,
                     "total_quantity": it.total_quantity,
