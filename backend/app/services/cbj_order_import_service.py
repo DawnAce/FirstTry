@@ -16,19 +16,24 @@ Coverage is operator-driven per batch: ``BatchSettings`` carries the start month
 mode leaves coverage blank. Every row stays editable in the preview UI.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models import Order, OrderCommercialStatus, OrderPaymentMethod, Product
 from app.models.order_item import DeliveryMethod, SubscriptionTerm
 from app.models.product import CoverageRule
+from app.order_import_cache import pop_order_import_session, save_order_import_session
 from app.schemas.order import FulfillmentTargetIn, OrderCreate
-from app.services.cbj_order_import_parser import ParsedOrder
+from app.services.cbj_order_import_parser import ParsedOrder, parse_cbj_orders
+from app.services.order_code_service import allocate_order_codes
 from app.services.order_import_status_service import map_commercial_status
+from app.services.order_service import create_imported_order
 from app.services.product_resolver_service import resolve_product
 
 _SOURCE_PLATFORM = "CBJ小程序"
@@ -229,3 +234,112 @@ def build_import_preview(
         )
 
     return ImportPreview(rows)
+
+
+# ---------------------------------------------------------------------------
+# Preview / commit (cached session handoff)
+# ---------------------------------------------------------------------------
+
+
+def _serialize_row(r: PreviewRow) -> dict:
+    items = []
+    if r.order_create:
+        for it in r.order_create.items:
+            items.append(
+                {
+                    "publication": it.publication.value if it.publication else None,
+                    "fulfillment_type": it.fulfillment_type.value,
+                    "subscription_term": it.subscription_term.value if it.subscription_term else None,
+                    "delivery_method": it.delivery_method.value if it.delivery_method else None,
+                    "total_quantity": it.total_quantity,
+                    "unit_price": str(it.unit_price),
+                    "subtotal": str(it.subtotal),
+                    "coverage_start_date": it.coverage_start_date.isoformat() if it.coverage_start_date else None,
+                    "coverage_end_date": it.coverage_end_date.isoformat() if it.coverage_end_date else None,
+                }
+            )
+    return {
+        "external_order_no": r.external_order_no,
+        "recipient_name": r.recipient_name,
+        "paid_amount": str(r.paid_amount),
+        "status_raw": r.status_raw,
+        "commercial_status": r.commercial_status.value if r.commercial_status else None,
+        "decision": r.decision,
+        "reason": r.reason,
+        "status_unknown": r.status_unknown,
+        "delivery_overridden_to_zto": r.delivery_overridden_to_zto,
+        "warnings": r.warnings,
+        "items": items,
+    }
+
+
+def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings) -> Tuple[dict, str]:
+    """Parse + resolve the upload, cache the importable rows, return a preview."""
+    parsed = parse_cbj_orders(file_bytes)
+    preview = build_import_preview(db, parsed, settings)
+
+    commit_rows = [
+        {
+            "order_create": r.order_create.model_dump(mode="json"),
+            "commercial_status": r.commercial_status.value if r.commercial_status else None,
+            "source_status_raw": r.status_raw,
+            "is_historical_archive": settings.mode == "historical",
+        }
+        for r in preview.by_decision("import")
+    ]
+    session_id = save_order_import_session({"mode": settings.mode, "rows": commit_rows})
+
+    out = {
+        "session_id": session_id,
+        "counts": preview.counts,
+        "can_commit": preview.counts.get("import", 0) > 0,
+        "rows": [_serialize_row(r) for r in preview.rows],
+    }
+    return out, session_id
+
+
+def commit_import(db: Session, session_id: str, operator_id: Optional[int] = None) -> dict:
+    """Create the previewed importable orders atomically (single commit)."""
+    payload = pop_order_import_session(session_id)
+    if payload is None:
+        raise HTTPException(status_code=400, detail="导入会话不存在或已过期，请重新预览")
+
+    rows = payload["rows"]
+    existing = {
+        e
+        for (e,) in db.query(Order.external_order_no)
+        .filter(Order.external_order_no.isnot(None))
+        .all()
+    }
+    to_create = [r for r in rows if r["order_create"]["external_order_no"] not in existing]
+    skipped = len(rows) - len(to_create)
+
+    # Block-allocate order codes per order year (historical batches span years).
+    by_year: dict[int, list] = defaultdict(list)
+    for r in to_create:
+        by_year[int(r["order_create"]["order_date"][:4])].append(r)
+    for year, group in by_year.items():
+        for r, code in zip(group, allocate_order_codes(db, year, len(group))):
+            r["_code"] = code
+
+    created = []
+    for r in to_create:
+        order = create_imported_order(
+            db,
+            OrderCreate(**r["order_create"]),
+            order_code=r["_code"],
+            commercial_status=(
+                OrderCommercialStatus(r["commercial_status"]) if r["commercial_status"] else None
+            ),
+            source_status_raw=r["source_status_raw"],
+            is_historical_archive=r["is_historical_archive"],
+            operator_id=operator_id,
+        )
+        created.append(order)
+
+    db.commit()
+    return {
+        "created": len(created),
+        "order_ids": [o.id for o in created],
+        "skipped_duplicates": skipped,
+    }
