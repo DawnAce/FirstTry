@@ -932,7 +932,10 @@ class HistoryImportPreviewTests(unittest.TestCase):
         )
 
         self.assertTrue(result.can_commit)
-        self.assertEqual(result.shipping_detail_count, 7)
+        # Same data as the default-named high-speed sheet (赵叶 + 李四 = 2 rail rows),
+        # only the sheet *name* differs (alias "北京悦途出行（高铁）"), so the count must
+        # match the default workbook's 6 — the alias is normalized to the "高铁展示" sheet.
+        self.assertEqual(result.shipping_detail_count, 6)
         payload = get_history_import_session(result.import_session_id)
         self.assertIsNotNone(payload)
         row_map = {

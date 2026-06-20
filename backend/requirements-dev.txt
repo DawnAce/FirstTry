@@ -1,0 +1,11 @@
+# Development / test-only dependencies.
+# Install with:  pip install -r requirements-dev.txt
+# Kept separate from requirements.txt so production installs stay lean.
+-r requirements.txt
+
+# Test runner. Runs both the pytest-style and unittest.TestCase-style suites.
+pytest==8.3.3
+
+# Required by fastapi.testclient.TestClient (starlette) — used in test_orders_api.py.
+# Pinned to 0.27.x for compatibility with the installed starlette 0.38.x TestClient.
+httpx==0.27.2
