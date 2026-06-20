@@ -66,11 +66,9 @@ import {
 const { Title } = Typography;
 const { TextArea } = Input;
 
-// V1.1：「来源类型」字段已 UX 解耦为「录入方式」，前端表单完全隐藏，
-// 后端 OrderCreate.source_type 默认 'manual'。原 5 项枚举混杂了 4 个维度的概念
-// （销售渠道=ecommerce / 付款方式=corporate_transfer / 业务性质=vip_gift /
-//   录入方式=manual / 历史渠道=mail_annual），与已有的 source_platform /
-// payment_method / billing_type 重复。PR-B 计划做 schema rename → entry_method。
+// 「录入方式」（entry_method）前端表单完全隐藏，后端手工录入入口固定写 'manual'。
+// 销售渠道信息走 source_platform / source_store，付款方式走 payment_method。
+// Excel 批量导入 / API 同步入口会分别写 excel_import / api_sync。
 
 // 来源平台 / 来源店铺：使用 1:1 映射的固定选项
 // 数据库字段仍是自由文本，老数据非标值（如"天猫"）仍可读取展示，但下拉只列以下标准选项
@@ -201,7 +199,7 @@ export interface ItemFormValues {
 
 export interface OrderFormValues {
   order_date: Dayjs;
-  // NOTE: source_type removed from form — V1.1 UI hides it; backend defaults to 'manual'.
+  // NOTE: entry_method removed from form — UI hides it; backend forces 'manual'.
   source_platform?: string | null;
   source_store?: string | null;
   external_order_no?: string | null;
@@ -371,7 +369,7 @@ function formValuesToCreatePayload(values: OrderFormValues): OrderCreatePayload 
   return {
     external_order_no: values.external_order_no ?? null,
     order_date: values.order_date.format('YYYY-MM-DD'),
-    // source_type 不传：后端默认 'manual'（V1.1 录入方式 provenance）
+    // entry_method 不传：后端手工录入入口固定写 'manual'（录入方式 provenance）
     source_platform: values.source_platform ?? null,
     source_store: values.source_store ?? null,
     payer_name: values.payer_name,
@@ -395,7 +393,7 @@ function formValuesToUpdatePayload(
 ): OrderUpdatePayload {
   const all: OrderUpdatePayload = {
     order_date: values.order_date.format('YYYY-MM-DD'),
-    // source_type 不传：V1.1 起 provenance 元数据不可改（后端 OrderUpdate 也已移除该字段）
+    // entry_method 不传：provenance 元数据不可改（后端 OrderUpdate 也未包含该字段）
     source_platform: values.source_platform ?? null,
     source_store: values.source_store ?? null,
     external_order_no: values.external_order_no ?? null,

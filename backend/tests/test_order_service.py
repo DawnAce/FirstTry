@@ -27,10 +27,10 @@ from app.models import (
     FulfillmentAllocation,
     FulfillmentTarget,
     Order,
+    OrderEntryMethod,
     OrderEvent,
     OrderEventType,
     OrderItem,
-    OrderSourceType,
     OrderStatus,
     ShippingDetail,
 )
@@ -135,7 +135,7 @@ def _make_order_create(
 ) -> OrderCreate:
     return OrderCreate(
         order_date=date(2026, 3, 1),
-        source_type=OrderSourceType.ecommerce,
+        entry_method=OrderEntryMethod.excel_import,
         payer_name="Alice",
         payer_contact="13800000000",
         total_amount=Decimal("180"),
@@ -199,34 +199,34 @@ def test_create_order_draft_persists_order_item_allocation_targets_event():
     # Audit event has correct type + payload.
     event = next(o for o in db.added if isinstance(o, OrderEvent))
     assert event.event_type == OrderEventType.created
-    # V1.1: source_type 由服务端硬设为 manual，事件 payload 与持久化值一致
-    assert event.payload_json == {"source_type": "manual", "items_count": 1}
+    # entry_method 由服务端硬设为 manual，事件 payload 与持久化值一致
+    assert event.payload_json == {"entry_method": "manual", "items_count": 1}
     assert event.operator_id == 42
 
     # The transaction completed.
     assert db.committed == 1
 
 
-def test_create_order_draft_normalizes_source_type_to_manual_regardless_of_client_input():
-    """V1.1 PR-A invariant: create_order_draft must persist source_type=manual
-    regardless of what the client passes in OrderCreate.source_type. The field is
-    provenance metadata and only the service-layer entry point is allowed to set it.
+def test_create_order_draft_normalizes_entry_method_to_manual_regardless_of_client_input():
+    """create_order_draft must persist entry_method=manual regardless of what the
+    client passes in OrderCreate.entry_method. The field is provenance metadata and
+    only the service-layer entry point is allowed to set it.
     """
     db = FakeDb()
-    # Client tries to claim the order is from ecommerce; service must ignore.
+    # Client tries to claim the order came in via excel_import; service must ignore.
     data = _make_order_create()
-    assert data.source_type == OrderSourceType.ecommerce, (
+    assert data.entry_method == OrderEntryMethod.excel_import, (
         "Pydantic should still accept the field; enforcement is at the service layer"
     )
 
     order = order_service.create_order_draft(db, data, created_by=1)
 
-    # Persisted value is manual, not ecommerce.
-    assert order.source_type == OrderSourceType.manual
+    # Persisted value is manual, not excel_import.
+    assert order.entry_method == OrderEntryMethod.manual
 
     # Event payload also reflects manual, not the client-claimed value.
     event = next(o for o in db.added if isinstance(o, OrderEvent))
-    assert event.payload_json["source_type"] == "manual"
+    assert event.payload_json["entry_method"] == "manual"
 
 
 def test_create_order_draft_supports_item_without_targets():
@@ -234,7 +234,7 @@ def test_create_order_draft_supports_item_without_targets():
     db = FakeDb()
     data = OrderCreate(
         order_date=date(2026, 3, 1),
-        source_type=OrderSourceType.manual,
+        entry_method=OrderEntryMethod.manual,
         payer_name="No Targets",
         items=[
             OrderItemIn(
@@ -257,7 +257,7 @@ def test_create_order_draft_supports_item_without_targets():
 def _seeded_order(status=OrderStatus.active, order_id=1, **overrides):
     kwargs = dict(
         order_date=date(2026, 3, 1),
-        source_type=OrderSourceType.ecommerce,
+        entry_method=OrderEntryMethod.excel_import,
         payer_name="X",
         status=status,
     )

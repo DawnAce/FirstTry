@@ -108,7 +108,7 @@ def _make_create_payload(
     payer_name="Alice",
     targets_count=2,
     total_quantity=2,
-    source_type="ecommerce",
+    entry_method="excel_import",
     fulfillment_type="subscription",
     coverage_start="2026-03-01",
     coverage_end="2026-12-31",
@@ -123,7 +123,7 @@ def _make_create_payload(
     ]
     return {
         "order_date": "2026-03-01",
-        "source_type": source_type,
+        "entry_method": entry_method,
         "payer_name": payer_name,
         "total_amount": "180",
         "items": [
@@ -151,9 +151,9 @@ def test_create_order_returns_201_with_draft_status(client):
     body = r.json()
     assert body["status"] == "draft"
     assert body["order_code"] is None
-    # V1.1 PR-A: 即使客户端 payload 传 source_type="ecommerce"，
-    # 服务端也会硬归一为 manual（provenance 由 entrypoint 控制）
-    assert body["source_type"] == "manual"
+    # 即使客户端 payload 传 entry_method="excel_import"，服务端也会硬归一为
+    # manual（provenance 由 entrypoint 控制，手工录入接口固定写 manual）
+    assert body["entry_method"] == "manual"
     assert len(body["items"]) == 1
     assert body["items"][0]["total_quantity"] == 2
     # nested progress is computed even at draft (snapshot=None, so drift=None)
@@ -162,17 +162,17 @@ def test_create_order_returns_201_with_draft_status(client):
     assert progress["drift"] is None
 
 
-def test_create_order_ignores_client_source_type_and_persists_manual(client):
-    """V1.1 PR-A invariant via the HTTP layer: even if a stale client (or 3rd-party
-    integration) POSTs a non-manual source_type, the server must persist 'manual'.
+def test_create_order_ignores_client_entry_method_and_persists_manual(client):
+    """Invariant via the HTTP layer: even if a client (or 3rd-party integration)
+    POSTs a non-manual entry_method, the manual-entry endpoint must persist 'manual'.
     Provenance is controlled by the entrypoint, not trusted from the request body.
     """
-    for spoofed in ("ecommerce", "corporate_transfer", "vip_gift", "mail_annual"):
-        payload = _make_create_payload(source_type=spoofed)
+    for spoofed in ("excel_import", "api_sync"):
+        payload = _make_create_payload(entry_method=spoofed)
         r = client.post("/api/orders", json=payload)
         assert r.status_code == 201, f"{spoofed}: {r.text}"
-        assert r.json()["source_type"] == "manual", (
-            f"client claimed source_type={spoofed}, "
+        assert r.json()["entry_method"] == "manual", (
+            f"client claimed entry_method={spoofed}, "
             f"server must normalize to manual"
         )
 

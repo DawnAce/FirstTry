@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import OrderSourceType, OrderStatus, User
+from app.models import OrderEntryMethod, OrderStatus, User
 from app.models.order_event import OrderEvent
 from app.schemas.order import (
     FulfillmentProgress,
@@ -61,7 +61,7 @@ router = APIRouter(prefix="/api/orders", tags=["orders"])
 @router.get("", response_model=dict)
 def list_orders(
     status: Optional[OrderStatus] = None,
-    source_type: Optional[OrderSourceType] = None,
+    entry_method: Optional[OrderEntryMethod] = None,
     payer_name_like: Optional[str] = None,
     coverage_start: Optional[date] = None,
     coverage_end: Optional[date] = None,
@@ -80,7 +80,7 @@ def list_orders(
     rows, total = order_service.list_orders(
         db,
         status=status,
-        source_type=source_type,
+        entry_method=entry_method,
         payer_name_like=payer_name_like,
         coverage_start=coverage_start,
         coverage_end=coverage_end,
@@ -309,7 +309,7 @@ def _build_order_out(db: Session, order) -> OrderOut:
         order_code=order.order_code,
         external_order_no=order.external_order_no,
         order_date=order.order_date,
-        source_type=order.source_type,
+        entry_method=order.entry_method,
         source_platform=order.source_platform,
         source_store=order.source_store,
         payer_name=order.payer_name,

@@ -19,12 +19,18 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 
-class OrderSourceType(str, enum.Enum):
-    ecommerce = "ecommerce"
-    corporate_transfer = "corporate_transfer"
-    vip_gift = "vip_gift"
+class OrderEntryMethod(str, enum.Enum):
+    """How an order entered the system (provenance / 录入方式).
+
+    Distinct from the sales channel (which lives in ``source_platform`` /
+    ``source_store``). Renamed from the legacy ``OrderSourceType`` in PR-B;
+    the old 5 values mixed 4 unrelated dimensions and were normalized to
+    ``manual`` by migration d8a1f4e7b9c2.
+    """
+
     manual = "manual"
-    mail_annual = "mail_annual"
+    excel_import = "excel_import"
+    api_sync = "api_sync"
 
 
 class OrderPaymentMethod(str, enum.Enum):
@@ -51,7 +57,7 @@ class Order(Base):
     order_code = Column(String(64), unique=True, nullable=True, index=True)
     external_order_no = Column(String(128), nullable=True, index=True)
     order_date = Column(Date, nullable=False)
-    source_type = Column(SAEnum(OrderSourceType), nullable=False)
+    entry_method = Column(SAEnum(OrderEntryMethod), nullable=False)
     source_platform = Column(String(64), nullable=True)
     source_store = Column(String(128), nullable=True)
     payer_name = Column(String(128), nullable=False)
@@ -96,6 +102,6 @@ class Order(Base):
     )
 
     __table_args__ = (
-        Index("ix_orders_source_status_date", "source_type", "status", "order_date"),
+        Index("ix_orders_source_status_date", "entry_method", "status", "order_date"),
         Index("ix_orders_payer", "payer_name"),
     )

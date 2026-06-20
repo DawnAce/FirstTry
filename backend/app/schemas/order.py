@@ -22,7 +22,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.fulfillment_target import ShippingChannel, TargetStatus
-from app.models.order import OrderPaymentMethod, OrderSourceType, OrderStatus
+from app.models.order import OrderEntryMethod, OrderPaymentMethod, OrderStatus
 from app.models.order_event import OrderEventType
 from app.models.order_item import (
     BillingType,
@@ -141,10 +141,11 @@ class OrderCreate(BaseModel):
 
     external_order_no: Optional[str] = Field(default=None, max_length=128)
     order_date: date
-    # V1.1：来源类型仅作为录入方式 provenance 元数据，前端不再暴露选择 UI；
-    # 默认 `manual`，未来 V1.2 引入批量导入 / API 同步时再扩展枚举。
+    # 录入方式 provenance；前端不暴露选择 UI。默认 `manual`，服务端的手工
+    # 录入入口固定写 manual（不信任客户端传值）；Excel 批量导入 / API 同步
+    # 入口分别固定写 `excel_import` / `api_sync`。
     # 销售渠道信息（电商平台、店铺）走 source_platform / source_store。
-    source_type: OrderSourceType = OrderSourceType.manual
+    entry_method: OrderEntryMethod = OrderEntryMethod.manual
     source_platform: Optional[str] = Field(default=None, max_length=64)
     source_store: Optional[str] = Field(default=None, max_length=128)
     payer_name: str = Field(min_length=1, max_length=128)
@@ -175,9 +176,9 @@ class OrderUpdate(BaseModel):
       with HTTP 422 — those require the V1.2 version-switching flow.
     * Voided orders: rejected with HTTP 409.
 
-    ``source_type`` is **not** included here. It is provenance metadata
+    ``entry_method`` is **not** included here. It is provenance metadata
     (how the order entered the system) and must not be mutated through
-    a normal edit. V1.2 import / API sync flows will set it via dedicated
+    a normal edit. Excel import / API sync flows set it via dedicated
     creation paths.
 
     Items / targets edits are out of scope here; they will get dedicated
@@ -331,7 +332,7 @@ class OrderOut(BaseModel):
     order_code: Optional[str]
     external_order_no: Optional[str]
     order_date: date
-    source_type: OrderSourceType
+    entry_method: OrderEntryMethod
     source_platform: Optional[str]
     source_store: Optional[str]
     payer_name: str
@@ -366,7 +367,7 @@ class OrderListRow(BaseModel):
     external_order_no: Optional[str]
     order_date: date
     payer_name: str
-    source_type: OrderSourceType
+    entry_method: OrderEntryMethod
     source_platform: Optional[str]
     total_quantity: int
     total_amount: Decimal
