@@ -693,6 +693,23 @@ class _ScalarQ:
         return self._value
 
 
+class _CodeQ:
+    """Stub for ``db.query(Order.order_code)`` used by MAX-based code gen.
+
+    ``.all()`` yields one-tuples of existing codes so ``_max_seq`` can parse
+    their numeric suffix.
+    """
+
+    def __init__(self, code_rows):
+        self._rows = code_rows
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def all(self):
+        return self._rows
+
+
 class FakeConfirmDb:
     """Smart dispatcher for confirm_order's query shapes.
 
@@ -751,6 +768,14 @@ class FakeConfirmDb:
             return _ScalarQ(self.schedule_count)
         if "max(" in text:
             return _ScalarQ(self.schedule_latest)
+        if "order_code" in text:
+            # db.query(Order.order_code) for MAX-based code generation:
+            # return `existing_code_count` existing codes so max+1 = count+1.
+            rows = [
+                (f"ORD-2026-{i:06d}",)
+                for i in range(1, self.existing_code_count + 1)
+            ]
+            return _CodeQ(rows)
         # Otherwise it's db.query(Order)
         return _OrderQ(first_value=self.order, count_value=self.existing_code_count)
 
