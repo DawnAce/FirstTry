@@ -190,7 +190,7 @@ export default function OrderDetail() {
           </Title>
           <Badge status={statusBadgeColor(order.status)} text={statusLabel(order.status)} />
           <Tag icon={<InboxOutlined />} color="default">
-            {entryMethodLabel(order.source_type)}
+            {entryMethodLabel(order.entry_method)}
           </Tag>
         </Space>
         <Space>

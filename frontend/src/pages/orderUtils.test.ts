@@ -7,6 +7,7 @@ import {
   deliveryMethodLabel,
   driftColor,
   driftLabel,
+  entryMethodLabel,
   eventTypeLabel,
   formatCoverage,
   formatCurrency,
@@ -14,7 +15,6 @@ import {
   orderItemStatusLabel,
   paymentMethodLabel,
   publicationLabel,
-  sourceTypeLabel,
   statusBadgeColor,
   statusLabel,
   subscriptionTermLabel,
@@ -22,16 +22,14 @@ import {
   targetStatusLabel,
 } from './orderUtils';
 
-describe('sourceTypeLabel', () => {
-  it('maps known enums', () => {
-    expect(sourceTypeLabel('ecommerce')).toBe('电商');
-    expect(sourceTypeLabel('corporate_transfer')).toBe('对公转账');
-    expect(sourceTypeLabel('vip_gift')).toBe('VIP 赠阅');
-    expect(sourceTypeLabel('manual')).toBe('手工录入');
-    expect(sourceTypeLabel('mail_annual')).toBe('邮局全年');
+describe('entryMethodLabel', () => {
+  it('maps the converged entry-method enums', () => {
+    expect(entryMethodLabel('manual')).toBe('手工录入');
+    expect(entryMethodLabel('excel_import')).toBe('Excel 导入');
+    expect(entryMethodLabel('api_sync')).toBe('API 同步');
   });
   it('returns raw value for unknown', () => {
-    expect(sourceTypeLabel('weird' as unknown as 'manual')).toBe('weird');
+    expect(entryMethodLabel('weird' as unknown as 'manual')).toBe('weird');
   });
 });
 

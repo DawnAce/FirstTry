@@ -7,12 +7,9 @@ import api from './client';
 
 export type OrderStatus = 'draft' | 'pending_confirmation' | 'active' | 'void';
 
-export type OrderSourceType =
-  | 'ecommerce'
-  | 'corporate_transfer'
-  | 'vip_gift'
-  | 'manual'
-  | 'mail_annual';
+// 录入方式（provenance）：数据如何进入系统。与销售渠道（source_platform /
+// source_store）正交。PR-B 从旧的 OrderSourceType 收敛而来。
+export type OrderEntryMethod = 'manual' | 'excel_import' | 'api_sync';
 
 export type OrderPaymentMethod =
   | 'wechat'
@@ -105,9 +102,9 @@ export interface OrderItemIn {
 export interface OrderCreatePayload {
   external_order_no?: string | null;
   order_date: string;
-  // V1.1：录入方式 provenance；前端可以不传（后端默认 manual）。
-  // V1.2 引入批量导入 / API 同步时再暴露选择 UI。
-  source_type?: OrderSourceType;
+  // 录入方式 provenance；前端可不传（后端手工录入入口固定写 manual）。
+  // Excel 批量导入 / API 同步由各自入口设置 excel_import / api_sync。
+  entry_method?: OrderEntryMethod;
   source_platform?: string | null;
   source_store?: string | null;
   payer_name: string;
@@ -126,7 +123,7 @@ export interface OrderCreatePayload {
 
 export interface OrderUpdatePayload {
   order_date?: string;
-  // NOTE: source_type 不在 update payload —— V1.1 起为 provenance 元数据，
+  // NOTE: entry_method 不在 update payload —— 为 provenance 元数据，
   // 任何状态下都不允许通过编辑接口修改（详见 backend OrderUpdate docstring）
   source_platform?: string | null;
   source_store?: string | null;
@@ -229,7 +226,7 @@ export interface OrderOut {
   order_code: string | null;
   external_order_no: string | null;
   order_date: string;
-  source_type: OrderSourceType;
+  entry_method: OrderEntryMethod;
   source_platform: string | null;
   source_store: string | null;
   payer_name: string;
@@ -255,7 +252,7 @@ export interface OrderListRow {
   external_order_no: string | null;
   order_date: string;
   payer_name: string;
-  source_type: OrderSourceType;
+  entry_method: OrderEntryMethod;
   source_platform: string | null;
   total_quantity: number;
   total_amount: string;
@@ -327,7 +324,7 @@ export interface OrderShippingSyncPreview {
 
 export interface ListOrdersParams {
   status?: OrderStatus;
-  source_type?: OrderSourceType;
+  entry_method?: OrderEntryMethod;
   payer_name_like?: string;
   coverage_start?: string;
   coverage_end?: string;

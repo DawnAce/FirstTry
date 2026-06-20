@@ -41,9 +41,9 @@ from app.models import (
     FulfillmentAllocation,
     FulfillmentTarget,
     Order,
+    OrderEntryMethod,
     OrderEventType,
     OrderItem,
-    OrderSourceType,
     OrderStatus,
     ShippingDetail,
 )
@@ -64,7 +64,7 @@ from app.services.order_pricing_service import build_pricing_preview
 
 # Fields safe to edit on an ``active`` order. Structural fields
 # (items / payer_name / order_date) are blocked until V1.2 introduces
-# version-switching. ``source_type`` is provenance metadata — set by
+# version-switching. ``entry_method`` is provenance metadata — set by
 # the entry-point on creation and never editable in any status.
 ACTIVE_EDITABLE_FIELDS = frozenset(
     {
@@ -324,11 +324,10 @@ def create_order_draft(
     """
     order = Order(
         order_date=data.order_date,
-        # V1.1: 录入方式 provenance 由服务端控制，不信任客户端传入值。
+        # 录入方式 provenance 由服务端控制，不信任客户端传入值。
         # 本路径仅服务于手工录入入口（FastAPI 前端表单），固定写 manual。
-        # V1.2 引入 Excel 批量导入 / API 同步时，将由各自的入口函数固定写
-        # `excel_import` / `api_sync`（PR-B 后改为 entry_method 字段）。
-        source_type=OrderSourceType.manual,
+        # Excel 批量导入 / API 同步由各自的入口函数固定写 `excel_import` / `api_sync`。
+        entry_method=OrderEntryMethod.manual,
         source_platform=data.source_platform,
         source_store=data.source_store,
         external_order_no=data.external_order_no,
@@ -425,8 +424,8 @@ def create_order_draft(
         order_id=order.id,
         event_type=OrderEventType.created,
         payload={
-            # 与 order.source_type 保持一致（服务端硬设的 manual），不读 data
-            "source_type": OrderSourceType.manual.value,
+            # 与 order.entry_method 保持一致（服务端硬设的 manual），不读 data
+            "entry_method": OrderEntryMethod.manual.value,
             "items_count": len(data.items),
         },
         operator_id=created_by,
@@ -721,7 +720,7 @@ def compute_fulfillment_progress(
 def list_orders(
     db: Session,
     status: Optional[OrderStatus] = None,
-    source_type: Optional[OrderSourceType] = None,
+    entry_method: Optional[OrderEntryMethod] = None,
     payer_name_like: Optional[str] = None,
     coverage_start: Optional[date] = None,
     coverage_end: Optional[date] = None,
@@ -734,7 +733,7 @@ def list_orders(
     Filters:
 
     * ``status``           — exact match.
-    * ``source_type``      — exact match.
+    * ``entry_method``     — exact match.
     * ``payer_name_like``  — case-insensitive substring (LIKE %s%).
     * ``coverage_start`` / ``coverage_end`` — orders whose item coverage
       overlaps the provided range. NULL coverage on an item counts as
@@ -749,8 +748,8 @@ def list_orders(
     q = db.query(Order)
     if status is not None:
         q = q.filter(Order.status == status)
-    if source_type is not None:
-        q = q.filter(Order.source_type == source_type)
+    if entry_method is not None:
+        q = q.filter(Order.entry_method == entry_method)
     if payer_name_like:
         q = q.filter(Order.payer_name.ilike(f"%{payer_name_like}%"))
     if coverage_start is not None or coverage_end is not None:
@@ -822,7 +821,7 @@ def list_orders(
                 external_order_no=order.external_order_no,
                 order_date=order.order_date,
                 payer_name=order.payer_name,
-                source_type=order.source_type,
+                entry_method=order.entry_method,
                 source_platform=order.source_platform,
                 total_quantity=total_quantity,
                 total_amount=order.total_amount,

@@ -2,10 +2,10 @@ import type {
   BillingType,
   DeliveryMethod,
   FulfillmentType,
+  OrderEntryMethod,
   OrderEventType,
   OrderItemStatus,
   OrderPaymentMethod,
-  OrderSourceType,
   OrderStatus,
   Publication,
   SubscriptionTerm,
@@ -16,33 +16,17 @@ import type {
 // Label maps (Chinese)
 // =============================================================================
 
-const SOURCE_TYPE_LABELS: Record<OrderSourceType, string> = {
-  ecommerce: '电商',
-  corporate_transfer: '对公转账',
-  vip_gift: 'VIP 赠阅',
+// 录入方式（PR-B 起列名为 entry_method，枚举收敛为 manual/excel_import/api_sync）。
+// 手工录入入口固定写 manual；Excel 批量导入 / API 同步入口分别写 excel_import / api_sync。
+const ENTRY_METHOD_LABELS: Record<OrderEntryMethod, string> = {
   manual: '手工录入',
-  mail_annual: '邮局全年',
+  excel_import: 'Excel 导入',
+  api_sync: 'API 同步',
 };
 
-export function sourceTypeLabel(value: OrderSourceType): string {
-  return SOURCE_TYPE_LABELS[value] ?? String(value);
-}
-
-// V1.1：来源类型已 UX 解耦为"录入方式"。
-// 服务端 create_order_draft 已硬设 source_type=manual（不信任客户端传值），
-// 数据迁移 d8a1f4e7b9c2 已规范化所有历史数据为 manual。
-// 此处保留 SOURCE_TYPE_LABELS 兜底，是为了若 DB 中真出现非 manual 残值
-// （比如 PR-B 阶段未跑迁移就部署），UI 能露出真实标签暴露数据漂移，
-// 而不是把异常静默标为"手工录入"误导用户。
-// PR-B 将把列名 rename 为 entry_method 并启用 excel_import / api_sync。
-const ENTRY_METHOD_LABELS: Partial<Record<OrderSourceType, string>> = {
-  manual: '手工录入',
-};
-
-export function entryMethodLabel(value: OrderSourceType): string {
-  // manual 走录入方式标签；其他历史值原样展示（带 sourceTypeLabel 兜底），
-  // 便于运维及时发现数据未归一的情况。
-  return ENTRY_METHOD_LABELS[value] ?? sourceTypeLabel(value);
+export function entryMethodLabel(value: OrderEntryMethod): string {
+  // 未知值原样展示（兜底），便于运维及时发现数据漂移。
+  return ENTRY_METHOD_LABELS[value] ?? String(value);
 }
 
 const PAYMENT_METHOD_LABELS: Record<OrderPaymentMethod, string> = {
