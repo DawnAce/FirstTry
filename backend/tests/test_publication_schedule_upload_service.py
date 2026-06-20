@@ -324,10 +324,11 @@ def test_create_preview_upload_creates_preview_record(tmp_path, monkeypatch):
         "first_issue_number": 2635,
         "last_issue_number": 2635,
         "remarks": None,
+        "page_count": None,
     }
     assert upload.rows_json == [
-        {"publish_date": "2026-01-05", "issue_number": 2635, "is_suspended": False},
-        {"publish_date": "2026-02-16", "issue_number": None, "is_suspended": True},
+        {"publish_date": "2026-01-05", "issue_number": 2635, "is_suspended": False, "page_count": None},
+        {"publish_date": "2026-02-16", "issue_number": None, "is_suspended": True, "page_count": None},
     ]
     assert upload.error_json == ["warning"]
     assert upload.uploaded_by == "alice"
@@ -504,17 +505,27 @@ class FakeCommitQuery:
     def filter(self, *args):
         return self
 
+    def all(self):
+        # ensure_commit_is_safe() queries existing Issue rows; these tests seed none.
+        if self.model is Issue:
+            return self.db.issues
+        raise AssertionError(f"unexpected all() for {self.model}")
+
     def first(self):
         if self.model is PublicationScheduleUpload:
             return self.db.upload
         raise AssertionError(f"unexpected first() for {self.model}")
 
     def delete(self, **kwargs):
-        if self.model is not PublicationSchedule:
-            raise AssertionError(f"unexpected delete() for {self.model}")
-        self.db.deleted_schedule_years.append(self.db.upload.year)
-        self.db.delete_kwargs.append(kwargs)
-        return 1
+        if self.model is PublicationSchedule:
+            self.db.deleted_schedule_years.append(self.db.upload.year)
+            self.db.delete_kwargs.append(kwargs)
+            return 1
+        if self.model is PublicationScheduleUpload:
+            # Auto-cleanup of other pending uploads for the same year (service L298-302).
+            self.db.pending_upload_cleanup_count += 1
+            return 0
+        raise AssertionError(f"unexpected delete() for {self.model}")
 
 
 class FakeCommitDb:
@@ -527,6 +538,8 @@ class FakeCommitDb:
         self.refreshed = None
         self.deleted_schedule_years = []
         self.delete_kwargs = []
+        self.issues = []
+        self.pending_upload_cleanup_count = 0
 
     def query(self, model):
         return FakeCommitQuery(self, model)
@@ -587,9 +600,9 @@ def test_update_schedule_upload_rows_revalidates_and_stores_manual_rows():
     assert result is upload
     assert returned_rows == rows
     assert upload.rows_json == [
-        {"publish_date": "2026-01-05", "issue_number": 2635, "is_suspended": False},
-        {"publish_date": "2026-01-12", "issue_number": 2636, "is_suspended": False},
-        {"publish_date": "2026-01-19", "issue_number": None, "is_suspended": True},
+        {"publish_date": "2026-01-05", "issue_number": 2635, "is_suspended": False, "page_count": None},
+        {"publish_date": "2026-01-12", "issue_number": 2636, "is_suspended": False, "page_count": None},
+        {"publish_date": "2026-01-19", "issue_number": None, "is_suspended": True, "page_count": None},
     ]
     assert upload.summary_json == {
         "total_rows": 3,
@@ -598,6 +611,7 @@ def test_update_schedule_upload_rows_revalidates_and_stores_manual_rows():
         "first_issue_number": 2635,
         "last_issue_number": 2636,
         "remarks": "春节休刊",
+        "page_count": None,
     }
     assert upload.error_json == []
     assert db.commit_count == 1
@@ -654,10 +668,14 @@ def test_commit_schedule_upload_does_not_accept_client_rows():
     upload = make_upload()
     db = FakeCommitDb(upload=upload)
 
+    # commit_schedule_upload(db, upload_id, page_count=None) takes at most 3 positional
+    # args; the schedule rows always come from the stored upload.rows_json, never from the
+    # caller. Passing rows as a 4th positional must still be rejected at call binding.
     with pytest.raises(TypeError):
         service.commit_schedule_upload(
             db,
             upload.id,
+            None,
             [ScheduleRowDraft(date(2026, 1, 5), 9999, False)],
         )
 
