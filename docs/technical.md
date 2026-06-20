@@ -469,8 +469,11 @@ FirstTry/
 | `commercial_status`（`OrderCommercialStatus`：`pending_payment / paid / shipped / refunded / partial_refund / cancelled`，已发货含已完成）| 我们自己的干净商业状态枚举；手工订单为 NULL |
 | `source_status_raw` | 原始平台状态串（参考存档，永不依赖）|
 | `is_historical_archive` | 历史归档标记，归档单不进发货同步、列表可单独筛 |
+| `campaign`（索引）| 营销活动标签（如 `2026-618`），电商导入按批次写入，用于追溯 + 按活动统计；手工单为 NULL |
 
-**导入管线（服务）**：`cbj_order_import_parser.parse_cbj_orders`（解析 Excel：多行产品拆分、X0 丢弃、运费/转中通标记、地址拆姓名/电话/地址/邮编）→ `product_resolver_service.resolve_product`（商品匹配 + 属性拷贝 + 套餐拆分 + 价=实付）→ `order_import_status_service.map_commercial_status`（状态映射 + 收/跳/退款标记策略）→ `cbj_order_import_service.build_import_preview`（覆盖期按批次 `BatchSettings`：邮局/中通起投月 + 截止日，历史模式留空；去重 `external_order_no`；逐单决策 import / skip_status / duplicate / unresolved）→ 缓存（`order_import_cache`，uuid 会话 30 分钟 TTL，单 worker）→ `commit_import`（按年块分配 `order_code`，逐单 `order_service.create_imported_order`，单事务原子提交）。
+**导入管线（服务）**：`cbj_order_import_parser.parse_cbj_orders`（解析 Excel：多行产品拆分、X0 丢弃、运费/转中通标记、地址拆姓名/电话/地址/邮编）→ `product_resolver_service.resolve_product`（商品匹配 + 属性拷贝 + 套餐拆分 + 价=实付）→ `order_import_status_service.map_commercial_status`（状态映射 + 收/跳/退款标记策略）→ `cbj_order_import_service.build_import_preview`（覆盖期按批次 `BatchSettings`：邮局/中通起投月 + 截止日，历史模式留空；**活动标签 `campaign` + 赠品 `bonus_months`/`gift_publication`/`gift_note`**；去重 `external_order_no`；逐单决策 import / skip_status / duplicate / unresolved）→ 缓存（`order_import_cache`，uuid 会话 30 分钟 TTL，单 worker）→ `commit_import`（按年块分配 `order_code`，逐单 `order_service.create_imported_order`，单事务原子提交）。
+
+**活动 + 赠品（按批次落到订单，商品库不按年拆）**：每年 618 等活动的「价格差异」走实付、「基础履约」(618=全年/邮局) 稳定 → 商品库一行兜住、不为每年的活动建行；活动差异写到订单：`campaign` 标签（追溯 + `GET /api/orders?campaign=…` 统计）；`bonus_months` 顺延订阅覆盖期末（如送 1 月 → 13 个月）；`gift_publication`/`gift_note` 生成一条**免费赠品明细**（`fulfillment_type=gift` / `billing_type=free_gift`，收件人同主单 → `compute_expected_issues` 返回 None，不计期数偏差、不进自动同步）。延长与赠品**只作用于含订阅的订单**，单期单跳过。
 
 **关键不变量与业务规则**：
 - 定价取**实付金额**（促销价如 199/576/10），`list_price` 只用于差异提示。
@@ -478,16 +481,17 @@ FirstTry/
 - 运费补拍行只计入订单总额、不建明细；含「中通」/「转中通」→ 投递改 `zto_mf` 并在预览高亮（漏检会让整年投递走错，后果严重）。
 - 起投时间**人为按批设定**（非写死 15 号）：付款晚于截止日 → 顺延一个月；每单可在预览/订单页改。
 - 状态映射：认得的映到干净枚举，认不得的默认 `paid` + 标黄待核；退款单「收但标记」，绝不静默丢。
-- 未识别商品 → 「待确认」队列（运营到商品库加行后重导），绝不乱猜。
+- 未识别商品 → 「待确认」队列：预览页按商品名聚合成「待确认商品汇总」，一键预填快速新增到商品库（智能默认 + `ProductForm` 共享组件）、保存后自动重新预览，绝不乱猜。
 - `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。
 
-**新增接口**：`GET/POST/PUT /api/products`、`POST /api/products/{id}/deactivate`（商品库 CRUD）；`POST /api/order-import/preview`（上传 Excel + 批次设置）、`POST /api/order-import/commit`（session_id）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式）。
+**新增接口**：`GET/POST/PUT /api/products`、`POST /api/products/{id}/deactivate`（商品库 CRUD）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
 
 迁移（均已应用到生产）：
 - `b4d6f8a1c3e5`：补 `ordereventtype` 枚举遗漏的 `item_added/removed/modified`（修复 V1.2 在严格模式 MySQL 上的潜在崩溃）
 - `c5e7a9b2d4f6`：`orders.source_type → entry_method`，枚举收敛为 `manual/excel_import/api_sync`（MySQL `CHANGE COLUMN`）
 - `d7f9b1c3e5a8`：建 `products`（商品库）表
 - `e1a3c5b7d9f2`：`orders` 新增 `commercial_status` / `source_status_raw` / `is_historical_archive`
+- `f3b5d7c9e1a2`：`orders` 新增 `campaign`（营销活动标签，可空 + 索引）
 
 ## 4. API 接口一览
 
