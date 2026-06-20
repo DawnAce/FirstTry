@@ -12,6 +12,8 @@ import ScheduleImport from './pages/ScheduleImport';
 import OrderList from './pages/OrderList';
 import OrderEditor from './pages/OrderEditor';
 import OrderDetail from './pages/OrderDetail';
+import ProductCatalog from './pages/ProductCatalog';
+import OrderImport from './pages/OrderImport';
 import Login from './pages/Login';
 import type { ReactNode } from 'react';
 
@@ -45,8 +47,10 @@ function App() {
             <Route path="/schedule/import" element={<ScheduleImport />} />
             <Route path="/orders" element={<OrderList />} />
             <Route path="/orders/new" element={<OrderEditor />} />
+            <Route path="/orders/import" element={<OrderImport />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/orders/:id/edit" element={<OrderEditor />} />
+            <Route path="/products" element={<ProductCatalog />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
