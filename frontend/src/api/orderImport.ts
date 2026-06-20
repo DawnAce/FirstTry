@@ -27,6 +27,7 @@ export interface ImportPreviewRow {
   delivery_overridden_to_zto: boolean;
   warnings: string[];
   items: ImportItemPreview[];
+  unresolved_product: string | null;
 }
 
 export interface ImportPreviewOut {

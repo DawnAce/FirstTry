@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
   Alert,
   Button,
   Card,
   DatePicker,
+  Drawer,
+  Form,
   Segmented,
   Space,
   Table,
@@ -13,14 +15,14 @@ import {
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined, UploadOutlined } from '@ant-design/icons';
+import { InboxOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
-import {
-  commitOrderImport,
-  previewOrderImport,
-} from '../api/orderImport';
+import { commitOrderImport, previewOrderImport } from '../api/orderImport';
 import type { ImportDecision, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
+import { createProduct } from '../api/products';
+import { ProductFormFields, buildProductPayload } from './ProductForm';
+import type { ProductFormValues } from './ProductForm';
 import { deliveryMethodLabel, formatCoverage, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
 
 const { Title, Text } = Typography;
@@ -34,6 +36,38 @@ const DECISION_META: Record<ImportDecision, { label: string; color: string }> = 
   unresolved: { label: '⚠ 待确认', color: 'red' },
 };
 
+/** Smart defaults for a quick-add product from its name (fewer fields to fill). */
+function guessDefaults(name: string): Partial<ProductFormValues> {
+  const d: Partial<ProductFormValues> = {
+    publication_format: 'paper',
+    billing_type: 'paid',
+    active: true,
+    is_bundle: false,
+    publication: name.includes('商学院') && !name.includes('中国经营报') ? 'business_school' : 'cbj',
+    delivery_method: name.includes('中通') ? 'zto_mf' : 'post_office',
+  };
+  if (name.includes('全年') || name.includes('一年')) {
+    d.fulfillment_type = 'subscription';
+    d.subscription_term = 'one_year';
+    d.coverage_rule = 'term_from_month';
+  } else if (name.includes('半年')) {
+    d.fulfillment_type = 'subscription';
+    d.subscription_term = 'half_year';
+    d.coverage_rule = 'term_from_month';
+  } else if (name.includes('最新一期') || name.includes('刊')) {
+    d.fulfillment_type = 'single_issue';
+    d.coverage_rule = 'latest_issue';
+  } else {
+    d.fulfillment_type = 'subscription';
+    d.coverage_rule = 'term_from_month';
+  }
+  return d;
+}
+
+function suggestCode(): string {
+  return 'CBJ-' + Date.now().toString(36).toUpperCase().slice(-6);
+}
+
 export default function OrderImport() {
   const [mode, setMode] = useState<Mode>('recent');
   const [file, setFile] = useState<File | null>(null);
@@ -41,6 +75,10 @@ export default function OrderImport() {
   const [ztoStart, setZtoStart] = useState<Dayjs | null>(null);
   const [cutoff, setCutoff] = useState<Dayjs | null>(null);
   const [preview, setPreview] = useState<ImportPreviewOut | null>(null);
+
+  const [drawerMode, setDrawerMode] = useState<'quick' | 'detail' | null>(null);
+  const [detailRow, setDetailRow] = useState<ImportPreviewRow | null>(null);
+  const [quickForm] = Form.useForm<ProductFormValues>();
 
   const previewMutation = useMutation({
     mutationFn: () => {
@@ -68,6 +106,47 @@ export default function OrderImport() {
       message.error(err.response?.data?.detail ?? '导入失败'),
   });
 
+  const quickAddMutation = useMutation({
+    mutationFn: (values: ProductFormValues) => createProduct(buildProductPayload(values)),
+    onSuccess: () => {
+      message.success('商品已加入商品库，正在重新识别…');
+      setDrawerMode(null);
+      previewMutation.mutate(); // re-resolve the whole batch against the updated catalog
+    },
+    onError: (err: { response?: { data?: { detail?: string } } }) =>
+      message.error(err.response?.data?.detail ?? '保存失败'),
+  });
+
+  // Group the 待确认 rows by distinct product name → add once, clear many orders.
+  const unresolvedSummary = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of preview?.rows ?? []) {
+      if (r.decision === 'unresolved' && r.unresolved_product) {
+        map.set(r.unresolved_product, (map.get(r.unresolved_product) ?? 0) + 1);
+      }
+    }
+    return [...map.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  }, [preview]);
+
+  const openQuickAdd = (productName: string) => {
+    quickForm.resetFields();
+    quickForm.setFieldsValue({
+      display_name: productName,
+      code: suggestCode(),
+      ...guessDefaults(productName),
+    } as ProductFormValues);
+    setDrawerMode('quick');
+  };
+
+  const handleRowClick = (row: ImportPreviewRow) => {
+    if (row.decision === 'unresolved' && row.unresolved_product) {
+      openQuickAdd(row.unresolved_product);
+    } else {
+      setDetailRow(row);
+      setDrawerMode('detail');
+    }
+  };
+
   const handlePreview = () => {
     if (!file) {
       message.warning('请先选择 CBJ 订单 Excel');
@@ -77,20 +156,12 @@ export default function OrderImport() {
   };
 
   const columns: TableColumnsType<ImportPreviewRow> = [
-    {
-      title: '结果',
-      dataIndex: 'decision',
-      key: 'decision',
-      width: 100,
-      render: (d: ImportDecision) => <Tag color={DECISION_META[d].color}>{DECISION_META[d].label}</Tag>,
-    },
+    { title: '结果', dataIndex: 'decision', key: 'decision', width: 100, render: (d: ImportDecision) => <Tag color={DECISION_META[d].color}>{DECISION_META[d].label}</Tag> },
     { title: '来源单号', dataIndex: 'external_order_no', key: 'ext', width: 160, ellipsis: true },
     { title: '收件人', dataIndex: 'recipient_name', key: 'name', width: 90 },
     { title: '付款', dataIndex: 'paid_amount', key: 'paid', width: 80, align: 'right', render: (v) => `¥${v}` },
     {
-      title: '状态',
-      key: 'status',
-      width: 150,
+      title: '状态', key: 'status', width: 150,
       render: (_: unknown, r) => (
         <Space size={2} direction="vertical">
           <Text style={{ fontSize: 12 }}>{r.status_raw} → {r.commercial_status ?? '-'}</Text>
@@ -99,11 +170,19 @@ export default function OrderImport() {
       ),
     },
     {
-      title: '识别明细',
-      key: 'items',
+      title: '识别明细 / 原因', key: 'items',
       render: (_: unknown, r) => {
         if (r.decision !== 'import') {
-          return <Text type="secondary">{r.reason ?? '-'}</Text>;
+          return (
+            <Space>
+              <Text type="secondary">{r.reason ?? '-'}</Text>
+              {r.decision === 'unresolved' && r.unresolved_product && (
+                <Button type="link" size="small" icon={<PlusOutlined />} onClick={(e) => { e.stopPropagation(); openQuickAdd(r.unresolved_product!); }}>
+                  加入商品库
+                </Button>
+              )}
+            </Space>
+          );
         }
         return (
           <Space direction="vertical" size={0}>
@@ -114,9 +193,7 @@ export default function OrderImport() {
                 {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''} · ¥{it.subtotal} · 覆盖{formatCoverage(it.coverage_start_date, it.coverage_end_date)}
               </Text>
             ))}
-            {r.warnings.map((w, i) => (
-              <Text key={`w${i}`} type="warning" style={{ fontSize: 12 }}>⚠ {w}</Text>
-            ))}
+            {r.warnings.map((w, i) => (<Text key={`w${i}`} type="warning" style={{ fontSize: 12 }}>⚠ {w}</Text>))}
           </Space>
         );
       },
@@ -129,7 +206,6 @@ export default function OrderImport() {
     <div>
       <Title level={3}>电商订单导入</Title>
 
-      {/* Step 1: mode + settings */}
       <Card size="small" title="① 导入模式与起投设置" style={{ marginBottom: 16 }}>
         <Space direction="vertical" style={{ width: '100%' }}>
           <Segmented
@@ -147,15 +223,11 @@ export default function OrderImport() {
               <span>截止日：<DatePicker value={cutoff} onChange={setCutoff} placeholder="此日后付款→下月" /></span>
             </Space>
           ) : (
-            <Alert
-              type="info"
-              message="历史归档：保留下单日期、只补记录；订期留空（可在订单页补填），不进发货同步。"
-            />
+            <Alert type="info" message="历史归档：保留下单日期、只补记录；订期留空（可在订单页补填），不进发货同步。" />
           )}
         </Space>
       </Card>
 
-      {/* Step 2: upload + preview */}
       <Card size="small" title="② 上传 CBJ 订单 Excel" style={{ marginBottom: 16 }}>
         <Space direction="vertical" style={{ width: '100%' }}>
           <Upload.Dragger
@@ -168,45 +240,98 @@ export default function OrderImport() {
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
             <p className="ant-upload-text">点击或拖拽 CBJ 小程序导出的 .xlsx 到此处</p>
           </Upload.Dragger>
-          <Button type="primary" icon={<UploadOutlined />} onClick={handlePreview} loading={previewMutation.isPending} disabled={!file}>
-            预览导入
-          </Button>
+          <Button type="primary" icon={<UploadOutlined />} onClick={handlePreview} loading={previewMutation.isPending} disabled={!file}>预览导入</Button>
         </Space>
       </Card>
 
-      {/* Step 3: preview + commit */}
       {preview && (
-        <Card
-          size="small"
-          title="③ 预览（确认前可在订单页/商品库调整；未识别请到商品库加行后重导）"
-          extra={
-            <Button
-              type="primary"
-              onClick={() => commitMutation.mutate()}
-              loading={commitMutation.isPending}
-              disabled={!preview.can_commit}
+        <>
+          {unresolvedSummary.length > 0 && (
+            <Card
+              size="small"
+              title={`⚠ 待确认商品（${unresolvedSummary.length} 种，共 ${counts.unresolved ?? 0} 单）— 加入商品库后自动重新识别`}
+              style={{ marginBottom: 16, borderColor: '#ffccc7' }}
             >
-              确认导入 {counts.import ?? 0} 单
-            </Button>
-          }
-        >
-          <Space style={{ marginBottom: 12 }} wrap>
-            <Tag color="green">导入 {counts.import ?? 0}</Tag>
-            <Tag color="default">跳过 {counts.skip_status ?? 0}</Tag>
-            <Tag color="blue">重复 {counts.duplicate ?? 0}</Tag>
-            <Tag color="red">待确认 {counts.unresolved ?? 0}</Tag>
-            <Text type="secondary">共 {counts.total ?? 0} 单</Text>
-          </Space>
-          <Table<ImportPreviewRow>
-            rowKey="external_order_no"
-            columns={columns}
-            dataSource={preview.rows}
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {unresolvedSummary.map((u) => (
+                  <Space key={u.name} style={{ justifyContent: 'space-between', width: '100%' }}>
+                    <Text>{u.name} <Text type="secondary">× {u.count} 单</Text></Text>
+                    <Button type="primary" ghost size="small" icon={<PlusOutlined />} onClick={() => openQuickAdd(u.name)}>加入商品库</Button>
+                  </Space>
+                ))}
+                <Text type="secondary" style={{ fontSize: 12 }}>提示：加一个商品，用它的所有订单会一起变为「导入」。逐个加完即可全部识别。</Text>
+              </Space>
+            </Card>
+          )}
+
+          <Card
             size="small"
-            pagination={{ pageSize: 50, showTotal: (t) => `共 ${t} 单` }}
-            scroll={{ x: 1000 }}
-          />
-        </Card>
+            title="③ 预览（点任意行看详情；待确认行可直接加商品）"
+            extra={
+              <Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
+                确认导入 {counts.import ?? 0} 单
+              </Button>
+            }
+          >
+            <Space style={{ marginBottom: 12 }} wrap>
+              <Tag color="green">导入 {counts.import ?? 0}</Tag>
+              <Tag color="default">跳过 {counts.skip_status ?? 0}</Tag>
+              <Tag color="blue">重复 {counts.duplicate ?? 0}</Tag>
+              <Tag color="red">待确认 {counts.unresolved ?? 0}</Tag>
+              <Text type="secondary">共 {counts.total ?? 0} 单</Text>
+            </Space>
+            <Table<ImportPreviewRow>
+              rowKey="external_order_no"
+              columns={columns}
+              dataSource={preview.rows}
+              size="small"
+              pagination={{ pageSize: 50, showTotal: (t) => `共 ${t} 单` }}
+              scroll={{ x: 1000 }}
+              onRow={(row) => ({ onClick: () => handleRowClick(row), style: { cursor: 'pointer' } })}
+            />
+          </Card>
+        </>
       )}
+
+      <Drawer
+        title={drawerMode === 'quick' ? '加入商品库（已预填名称）' : `订单详情 · ${detailRow?.external_order_no ?? ''}`}
+        open={drawerMode !== null}
+        onClose={() => setDrawerMode(null)}
+        width={560}
+        extra={
+          drawerMode === 'quick' ? (
+            <Button type="primary" onClick={() => quickForm.submit()} loading={quickAddMutation.isPending}>保存并重新识别</Button>
+          ) : null
+        }
+      >
+        {drawerMode === 'quick' && (
+          <>
+            <Alert type="info" style={{ marginBottom: 12 }} message="填好这一个商品并保存后，会自动重新预览——用到它的所有订单会一起变为「导入」。" />
+            <Form<ProductFormValues> form={quickForm} layout="vertical" onFinish={(v) => quickAddMutation.mutate(v)}>
+              <ProductFormFields editing={false} />
+            </Form>
+          </>
+        )}
+        {drawerMode === 'detail' && detailRow && (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Text><b>收件人：</b>{detailRow.recipient_name}　<b>付款：</b>¥{detailRow.paid_amount}</Text>
+            <Text><b>平台状态：</b>{detailRow.status_raw} → {detailRow.commercial_status ?? '-'}</Text>
+            <Text><b>结果：</b>{DECISION_META[detailRow.decision].label}{detailRow.reason ? `（${detailRow.reason}）` : ''}</Text>
+            {detailRow.delivery_overridden_to_zto && <Tag color="orange">投递已改中通，请核对</Tag>}
+            {detailRow.items.length > 0 && (
+              <Card size="small" title="识别明细">
+                {detailRow.items.map((it, i) => (
+                  <div key={i} style={{ fontSize: 13 }}>
+                    {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
+                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''} · 份{it.total_quantity} · ¥{it.subtotal} · 覆盖{formatCoverage(it.coverage_start_date, it.coverage_end_date)}
+                  </div>
+                ))}
+              </Card>
+            )}
+            <Text type="secondary" style={{ fontSize: 12 }}>导入后如需改起止日期/状态等，可到「订单管理 → 订单列表」对应订单详情页调整。</Text>
+          </Space>
+        )}
+      </Drawer>
     </div>
   );
 }
