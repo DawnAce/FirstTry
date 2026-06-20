@@ -11,6 +11,7 @@ from app.database import SessionLocal, get_db, engine
 from app.cache import get_dashboard_cache, set_dashboard_cache
 from app.seeds.publication_schedule_2026 import seed_publication_schedule_2026
 from app.seeds.report_templates import seed_report_templates
+from app.seeds.products import seed_products
 from app.api.schedule import router as schedule_router
 from app.api.issues import router as issues_router
 from app.api.reports import router as reports_router
@@ -23,6 +24,7 @@ from app.api.shipping_details import router as shipping_details_router
 from app.api.operation_logs import router as operation_logs_router
 from app.api.history_import import router as history_import_router
 from app.api.orders import router as orders_router
+from app.api.products import router as products_router
 from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule, ReportEntry
 from app.services.issue_service import build_issue_out
@@ -57,6 +59,7 @@ app.include_router(shipping_details_router, dependencies=[Depends(get_current_us
 app.include_router(operation_logs_router, dependencies=[Depends(get_current_user)])
 app.include_router(history_import_router, dependencies=[Depends(get_current_user)])
 app.include_router(orders_router, dependencies=[Depends(get_current_user)])
+app.include_router(products_router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/api/health")
@@ -209,8 +212,12 @@ def run_seeds(_user = Depends(require_admin)):
     try:
         schedule_count = seed_publication_schedule_2026(db)
         template_count = seed_report_templates(db)
+        product_count = seed_products(db)
         return {
-            "message": f"Seeded {schedule_count} schedule entries, {template_count} report templates"
+            "message": (
+                f"Seeded {schedule_count} schedule entries, "
+                f"{template_count} report templates, {product_count} products"
+            )
         }
     finally:
         db.close()

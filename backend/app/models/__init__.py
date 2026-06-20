@@ -42,6 +42,7 @@ from app.models.fulfillment_target import (
     TargetStatus,
 )
 from app.models.order_event import OrderEvent, OrderEventType
+from app.models.product import CoverageRule, Product
 
 __all__ = [
     "PublicationSchedule",
@@ -66,4 +67,6 @@ __all__ = [
     "FulfillmentAllocation",
     "FulfillmentTarget", "ShippingChannel", "TargetStatus",
     "OrderEvent", "OrderEventType",
+    # Product catalog (商品库)
+    "Product", "CoverageRule",
 ]

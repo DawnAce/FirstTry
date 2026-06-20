@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>商品库 + 导入预览（设计效果图）</title>
+<style>
+  :root{
+    --blue:#1677ff; --blue-bg:#e6f4ff; --green:#52c41a; --green-bg:#f6ffed;
+    --orange:#fa8c16; --orange-bg:#fff7e6; --red:#ff4d4f; --red-bg:#fff1f0;
+    --purple:#722ed1; --purple-bg:#f9f0ff; --border:#e8e8e8; --text:#1f1f1f; --sub:#8c8c8c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text);background:#f5f5f5;line-height:1.6}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px}
+  .banner{background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 16px;margin-bottom:20px;font-size:13px;color:#874d00}
+  h1{font-size:22px;margin:0 0 4px}
+  .muted{color:var(--sub);font-size:13px;margin:0 0 20px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:22px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .card .desc{color:var(--sub);font-size:13px;margin:0 0 16px}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .btn{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:default}
+  .btn.ghost{background:#fff;color:var(--text);border:1px solid var(--border)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border-bottom:1px solid var(--border);padding:9px 10px;text-align:left;vertical-align:top}
+  th{background:#fafafa;color:#555;font-weight:600;white-space:nowrap}
+  .tag{display:inline-block;border-radius:4px;padding:1px 8px;font-size:12px;line-height:18px;border:1px solid transparent}
+  .t-blue{background:var(--blue-bg);color:var(--blue);border-color:#91caff}
+  .t-green{background:var(--green-bg);color:var(--green);border-color:#b7eb8f}
+  .t-orange{background:var(--orange-bg);color:var(--orange);border-color:#ffd591}
+  .t-purple{background:var(--purple-bg);color:var(--purple);border-color:#d3adf7}
+  .t-gray{background:#fafafa;color:#888;border-color:#d9d9d9}
+  .code{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#555;background:#f5f5f5;padding:1px 6px;border-radius:4px}
+  .sub{color:var(--sub);font-size:12px}
+  .comp{margin-top:6px;padding:6px 10px;background:#faf5ff;border:1px dashed #d3adf7;border-radius:6px;font-size:12px}
+  .link{color:var(--blue);cursor:default}
+  .form-grid{display:grid;grid-template-columns:140px 1fr;gap:10px 16px;align-items:center;font-size:13px}
+  .form-grid label{color:#555;text-align:right}
+  .input{border:1px solid #d9d9d9;border-radius:6px;padding:5px 10px;background:#fff;min-height:30px;display:flex;align-items:center}
+  .input.dis{background:#f5f5f5;color:#999}
+  .arrow{font-size:20px;color:var(--blue);text-align:center}
+  .resolve{display:grid;grid-template-columns:1fr 44px 1.25fr;gap:10px;align-items:center;margin-bottom:14px}
+  .box{border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:#fff}
+  .box.in{background:#fafafa}
+  .box.ok{border-color:#b7eb8f;background:var(--green-bg)}
+  .box.warn{border-color:#ffccc7;background:var(--red-bg)}
+  .box .h{font-size:12px;color:var(--sub);margin-bottom:4px}
+  .box .big{font-size:13px}
+  .pill{display:inline-block;background:#fff;border:1px solid var(--border);border-radius:14px;padding:1px 9px;font-size:12px;margin:2px 4px 2px 0}
+  .legend{font-size:12px;color:var(--sub);margin-top:8px}
+  .num{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="banner">⚠️ 这是<b>设计效果图（mockup）</b>，用你的真实样例数据填充，方便直观确认方向；<b>不是真实系统、未连数据库</b>。确认或提出修改后，我再按这个样子去建真功能。</div>
+
+  <h1>商品库（商品管理）＋ 电商导入预览</h1>
+  <p class="muted">商品库 = 把电商那些乱七八糟的商品名「翻译」成系统能用的订单信息的一张对照表。运营维护这张表（增/改一行），导入时系统照表自动识别。</p>
+
+  <!-- ============ 商品库管理 ============ -->
+  <div class="card">
+    <h2>① 商品库管理页</h2>
+    <p class="desc">每一行 = 一个电商在卖的「商品」。新出一个促销，只要在这里加一行，不用改代码。</p>
+    <div class="toolbar">
+      <div class="sub">共 3 个商品 · 启用 3</div>
+      <button class="btn">＋ 新增商品</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>商品名称（电商原文）</th><th>刊物</th><th>类型</th><th>期限</th><th>投递</th>
+          <th>覆盖期算法</th><th>参考价</th><th>别名（自动归一）</th><th>状态</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>《中国经营报》全年订阅-618促销活动<div class="sub code">CBJ-FULLYEAR-PROMO</div></td>
+          <td><span class="tag t-blue">中国经营报</span></td>
+          <td><span class="tag t-green">订阅</span></td>
+          <td>一年</td>
+          <td>邮局</td>
+          <td>按付款日推起投月 <span class="sub">↳ ≤14号→次月，≥15号→下下月</span></td>
+          <td class="num">¥199</td>
+          <td><span class="pill">618促销活动</span><span class="pill">双十一订阅优惠</span></td>
+          <td><span class="tag t-green">启用</span></td>
+          <td><span class="link">编辑</span> · <span class="link">停用</span></td>
+        </tr>
+        <tr>
+          <td>《中国经营报》最新一期订阅<div class="sub code">CBJ-LATEST</div></td>
+          <td><span class="tag t-blue">中国经营报</span></td>
+          <td><span class="tag t-orange">单期</span></td>
+          <td>—</td>
+          <td>邮局</td>
+          <td>最新／下一期</td>
+          <td class="num">¥5</td>
+          <td><span class="sub">—</span></td>
+          <td><span class="tag t-green">启用</span></td>
+          <td><span class="link">编辑</span> · <span class="link">停用</span></td>
+        </tr>
+        <tr>
+          <td>《中国经营报》和《商学院》全年订阅（8折优惠）<div class="sub code">CBJ-BS-BUNDLE</div></td>
+          <td><span class="tag t-purple">套餐（两刊）</span></td>
+          <td><span class="tag t-green">订阅</span></td>
+          <td>一年</td>
+          <td>邮局</td>
+          <td>从下单当月起算一年</td>
+          <td class="num">¥576</td>
+          <td><span class="pill">8折优惠</span></td>
+          <td><span class="tag t-green">启用</span></td>
+          <td><span class="link">编辑</span> · <span class="link">停用</span></td>
+        </tr>
+        <tr>
+          <td colspan="10">
+            <div class="comp">📦 <b>套餐拆分</b>（CBJ-BS-BUNDLE）：导入时自动拆成 2 条订单明细 —
+            <span class="pill">中国经营报 · 固定 ¥240</span> ＋ <span class="pill">商学院 · 拿剩余</span>　→　¥576 拆成 <b>¥240 ＋ ¥336</b>；若 ¥612 套餐则 ¥240 ＋ ¥372，以此类推</div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ 编辑表单 ============ -->
+  <div class="card">
+    <h2>② 新增 / 编辑商品（点「编辑」时弹出）</h2>
+    <p class="desc">运营要填的就这些。大部分是下拉选择，填一次以后这个商品的订单都自动识别。</p>
+    <div class="form-grid">
+      <label>商品名称</label><div class="input">《中国经营报》全年订阅-618促销活动</div>
+      <label>商品编码</label><div class="input dis">CBJ-FULLYEAR-PROMO　<span class="sub">（唯一标识，建后不常改）</span></div>
+      <label>刊物</label><div class="input">中国经营报　▾</div>
+      <label>履约类型</label><div class="input">订阅　▾</div>
+      <label>订阅期限</label><div class="input">一年　▾</div>
+      <label>投递方式</label><div class="input">邮局投递　▾　<span class="sub">（默认；遇到「运费补拍-转中通」自动改中通）</span></div>
+      <label>覆盖期算法</label><div class="input">按付款日推起投月（15号规则）　▾</div>
+      <label>参考价</label><div class="input">¥199　<span class="sub">（仅用于对账提示；实际记客户的真实付款）</span></div>
+      <label>别名</label><div class="input"><span class="pill">618促销活动</span><span class="pill">双十一订阅优惠</span>＋</div>
+      <label>状态</label><div class="input">● 启用</div>
+    </div>
+  </div>
+
+  <!-- ============ 导入预览 ============ -->
+  <div class="card">
+    <h2>③ 电商导入预览 · 近期订单模式（要安排投递）</h2>
+    <div style="margin:2px 0 10px"><span class="sub">导入模式：</span>
+      <span class="tag t-blue" style="font-size:13px">● 近期订单（要投递）</span>
+      <span class="tag t-gray" style="font-size:13px">○ 历史归档（只补记录）→ 见下方 ④</span></div>
+    <p class="desc">上传你那份 CBJ 小程序 Excel 后，系统逐单按商品库识别。<b>起投时间由你这批人为设定</b>（下面面板），系统据此自动填、每单还能单独改。</p>
+
+    <div class="box" style="background:#f0f7ff;border-color:#91caff;margin-bottom:16px">
+      <div class="h" style="font-size:13px;color:var(--blue);font-weight:600;margin-bottom:8px">⚙ 本批起投设置（人为设定 · 每单可单独覆盖）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:20px;font-size:13px;align-items:center">
+        <span>邮局起投：<span class="input" style="display:inline-flex">2026-07 ▾</span></span>
+        <span>截止日：<span class="input" style="display:inline-flex">2026-06-22</span> <span class="sub">此日前付款→7月，之后→8月</span></span>
+        <span>中通起投：<span class="input" style="display:inline-flex">随下一期 ▾</span> <span class="sub">更灵活，可随时</span></span>
+        <span class="sub">｜起投可按 <b>月</b> 或 <b>期号</b> 填</span>
+      </div>
+    </div>
+
+    <!-- 普通单 -->
+    <div class="resolve">
+      <div class="box in">
+        <div class="h">原始订单 · 2026060113371095543144</div>
+        <div class="big">冯志强　付款 <b class="num">¥199</b><br>
+          <span class="sub">《中国经营报》全年订阅-618促销活动 ×1</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box ok">
+        <div class="h">✓ 识别为 1 条订单明细</div>
+        <div class="big"><span class="tag t-blue">中国经营报</span> <span class="tag t-green">订阅·一年</span>
+          份数1 · 单价 <b class="num">¥199</b><br>
+          <span class="sub">付款 6/1（早于本批截止 6/22）→ 按本批设置 <b>7月起投</b>；覆盖 2026-07～2027-06 期 · 投递 邮局　<span class="link">✎ 改起止</span></span></div>
+      </div>
+    </div>
+
+    <!-- 带运费补拍 -->
+    <div class="resolve">
+      <div class="box in">
+        <div class="h">原始订单 · ...3158（陈绮琪）</div>
+        <div class="big">付款 <b class="num">¥349</b>、「数量」列=51<br>
+          <span class="sub">全年订阅 ×1（¥199） + 运费补拍（邮局转中通）×50（¥3）</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box ok">
+        <div class="h">✓ 1 条订阅明细（投递改中通 · <span style="color:var(--orange)">待人工核对</span>）</div>
+        <div class="big"><span class="tag t-blue">中国经营报</span> <span class="tag t-green">订阅·一年</span> 份数1 · ¥199<br>
+          <span class="sub">运费 ¥150 计入订单总额；含「转中通」→ 投递改 <b>中通</b>（中通起投更灵活）　<span class="link">✎ 改起止</span><br><span class="tag t-orange">⚠ 投递方式变更，预览高亮提示核对（漏检后果严重）</span></span></div>
+      </div>
+    </div>
+
+    <!-- 套餐单 -->
+    <div class="resolve">
+      <div class="box in">
+        <div class="h">原始订单 · ...（侯女士）</div>
+        <div class="big">付款 <b class="num">¥576</b><br>
+          <span class="sub">《中国经营报》和《商学院》全年订阅（8折优惠）×1</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box ok">
+        <div class="h">✓ 套餐自动拆成 2 条明细（合计 ¥576）</div>
+        <div class="big"><span class="tag t-blue">中国经营报</span> 订阅·一年 · <b class="num">¥288</b><br>
+          <span class="tag t-purple">商学院</span> 订阅·一年 · <b class="num">¥288</b></div>
+      </div>
+    </div>
+
+    <!-- 未匹配 -->
+    <div class="resolve">
+      <div class="box in">
+        <div class="h">原始订单 · ...（某新促销）</div>
+        <div class="big">付款 <b class="num">¥168</b><br>
+          <span class="sub">《中国经营报》季度尝鲜装 ×1　← 商品库里没有</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box warn">
+        <div class="h">⚠ 未识别 → 进「待确认」队列</div>
+        <div class="big">商品库找不到这个商品名。<br>
+          <span class="sub">不会乱猜、也不会丢单；提示运营去商品库加一行，或本单手动处理。</span></div>
+      </div>
+    </div>
+
+    <div class="legend">绿色=自动识别成功直接入库；红色=没见过的商品，挂起等人工，绝不静默出错。运营把新商品在①里加一行后，重新导入即可识别。</div>
+  </div>
+
+  <!-- ============ 历史归档模式 ============ -->
+  <div class="card">
+    <h2>④ 电商导入预览 · 历史归档模式（把一两年历史订单尽量补全）</h2>
+    <div style="margin:2px 0 10px"><span class="sub">导入模式：</span>
+      <span class="tag t-gray" style="font-size:13px">○ 近期订单</span>
+      <span class="tag t-orange" style="font-size:13px">● 历史归档（只补记录）</span></div>
+    <p class="desc">补全历史记录用：<b>保留下单日期</b>（一眼看出是历史单），记客户/金额/商品；<b>订期默认留空、可补填</b>（有就填、没有算了，不自动估算、不卡导入）；打「历史归档」标记、<b>不进发货同步</b>。无「本批起投设置」面板。</p>
+    <table>
+      <thead><tr><th>下单日期</th><th>客户</th><th>商品 → 识别</th><th>金额</th><th>订期（覆盖期）</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>2024-09-12</td><td>王某某</td>
+          <td>全年订阅 → <span class="tag t-blue">中国经营报</span> <span class="tag t-green">订阅·一年</span></td>
+          <td class="num">¥238</td>
+          <td><span class="sub">(可补填)</span> <span class="link">✎ 填起止</span></td>
+          <td><span class="tag t-orange">历史归档</span> <span class="sub">· 不发货同步</span></td>
+        </tr>
+        <tr>
+          <td>2024-11-03</td><td>李某某</td>
+          <td>全年订阅 → <span class="tag t-blue">中国经营报</span> <span class="tag t-green">订阅·一年</span></td>
+          <td class="num">¥199</td>
+          <td>2024-12 ～ 2025-11 <span class="sub">（你记得，手填了）</span></td>
+          <td><span class="tag t-orange">历史归档</span> <span class="sub">· 不发货同步</span></td>
+        </tr>
+        <tr>
+          <td>2023-05-20</td><td>赵某某</td>
+          <td>某老促销装 → <span class="tag t-gray">未识别</span></td>
+          <td class="num">¥150</td>
+          <td><span class="sub">—</span></td>
+          <td><span class="tag" style="background:var(--red-bg);color:var(--red);border-color:#ffccc7">待确认</span> <span class="sub">商品库加一行后重导</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="legend">历史归档单：下单日期一眼可辨；订期有就填、没有留空，绝不卡住导入；不参与发货同步，列表可单独筛。目标——把历史订单/客户/金额尽量补全。</div>
+  </div>
+
+  <p class="muted">说明：<b>起投时间是你每批人为设定的</b>（截止日、按月或按期号、邮局/中通分别设），系统照设定自动填、每单还能单独改——不是写死的 15 号规则。套餐拆分=中国经营报固定240+余额给商学院；发票信息带入订单；活动标签暂缓。你确认这个思路 + 以上修正后，我就照这个去建真功能（管理页 + 导入页 + 后端）。</p>
+</div>
+</body>
+</html>
