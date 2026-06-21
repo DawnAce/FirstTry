@@ -40,13 +40,19 @@ const DECISION_META: Record<ImportDecision, { label: string; color: string }> = 
 };
 
 /** Smart defaults for a quick-add product from its name (fewer fields to fill). */
-function guessDefaults(name: string): Partial<ProductFormValues> {
+export function guessDefaults(name: string): Partial<ProductFormValues> {
+  // 商学院月刊单期的标题形如 “2026年4月刊《…》”“2~3月合刊《…》”，名里并不含“商学院”
+  // 三字，所以按 “N月刊 / N月合刊” 模式 + 不含“中国经营报” 兜底也判为商学院。
+  const looksLikeBusinessSchoolMonthly = /月合?刊/.test(name);
   const d: Partial<ProductFormValues> = {
     publication_format: 'paper',
     billing_type: 'paid',
     active: true,
     is_bundle: false,
-    publication: name.includes('商学院') && !name.includes('中国经营报') ? 'business_school' : 'cbj',
+    publication:
+      !name.includes('中国经营报') && (name.includes('商学院') || looksLikeBusinessSchoolMonthly)
+        ? 'business_school'
+        : 'cbj',
     delivery_method: name.includes('中通') ? 'zto_mf' : 'post_office',
   };
   if (name.includes('全年') || name.includes('一年')) {
