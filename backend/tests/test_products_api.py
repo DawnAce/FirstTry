@@ -24,6 +24,7 @@ from app.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
 from app.models import Product
+from app.models.order_item import Publication
 from app.models.user import User, UserRole
 from app.seeds.products import seed_products
 
@@ -167,7 +168,7 @@ def test_non_bundle_without_publication_rejected(client):
 # ---------------------------------------------------------------------------
 
 
-def test_seed_products_creates_three_then_idempotent():
+def test_seed_products_creates_catalog_then_idempotent():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -176,15 +177,20 @@ def test_seed_products_creates_three_then_idempotent():
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
     try:
-        assert seed_products(db) == 3
-        assert db.query(Product).count() == 3
+        assert seed_products(db) == 4
+        assert db.query(Product).count() == 4
         bundle = db.query(Product).filter(Product.code == "CBJ-BS-BUNDLE-1Y").one()
         assert bundle.is_bundle is True
         assert bundle.publication is None
         assert bundle.components[0]["fixed_price"] == 240
+        # standalone 商学院 annual exists as its own (non-bundle) product so a lone
+        # 商学院 line resolves to a single item instead of substring-matching the bundle
+        bs = db.query(Product).filter(Product.code == "BS-SUB-1Y").one()
+        assert bs.is_bundle is False
+        assert bs.publication == Publication.business_school
         # idempotent: second run inserts nothing
         assert seed_products(db) == 0
-        assert db.query(Product).count() == 3
+        assert db.query(Product).count() == 4
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)

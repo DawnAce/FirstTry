@@ -145,3 +145,55 @@ def test_match_product_priority_exact_over_substring():
     # whose alias '8折优惠' is a substring.
     p = match_product(_catalog(), "《中国经营报》和《商学院》全年订阅（8折优惠）")
     assert p is not None and p.code == "CBJ-BS-BUNDLE-1Y"
+
+
+def _standalone_bs():
+    return Product(
+        code="BS-SUB-1Y",
+        display_name="《商学院》全年订阅",
+        publication=Publication.business_school,
+        publication_format=PublicationFormat.paper,
+        fulfillment_type=FulfillmentType.subscription,
+        subscription_term=SubscriptionTerm.one_year,
+        delivery_method=DeliveryMethod.post_office,
+        billing_type=BillingType.paid,
+        coverage_rule=CoverageRule.term_from_month,
+        is_bundle=False,
+        active=True,
+    )
+
+
+def test_standalone_line_does_not_substring_match_bundle():
+    # Regression: a lone 《商学院》全年订阅 line must NOT match the CBJ+商学院 bundle
+    # just because the bundle display_name literally contains it. With no standalone
+    # 商学院 product in the catalog it routes to the 待确认 queue rather than being
+    # silently fanned out into a 中国经营报 240 + 商学院 remainder split.
+    assert match_product(_catalog(), "《商学院》全年订阅") is None
+    res = resolve_product(_catalog(), "《商学院》全年订阅", 1, Decimal("480"))
+    assert res.matched is False
+    assert res.items == []
+    assert "无匹配" in res.reason
+
+
+def test_standalone_business_school_matches_standalone_product_not_bundle():
+    # With the standalone product present it resolves to a SINGLE 商学院 item at
+    # the actual paid price — not a 2-item bundle split.
+    catalog = _catalog() + [_standalone_bs()]
+    res = resolve_product(catalog, "《商学院》全年订阅", 1, Decimal("480"))
+    assert res.matched and res.product_code == "BS-SUB-1Y"
+    assert len(res.items) == 1
+    item = res.items[0].item
+    assert item.publication == Publication.business_school
+    assert item.fulfillment_type == FulfillmentType.subscription
+    assert item.subscription_term == SubscriptionTerm.one_year
+    assert item.unit_price == Decimal("480.00")
+    assert item.subtotal == Decimal("480.00")
+
+
+def test_real_bundle_still_resolves_after_standalone_added():
+    # Guard: adding the standalone 商学院 product must not steal the real bundle
+    # string — the exact-match tier still wins it for the bundle.
+    catalog = _catalog() + [_standalone_bs()]
+    res = resolve_product(catalog, "《中国经营报》和《商学院》全年订阅（8折优惠）", 1, Decimal("576"))
+    assert res.matched and res.product_code == "CBJ-BS-BUNDLE-1Y"
+    assert len(res.items) == 2

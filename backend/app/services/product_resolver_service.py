@@ -57,6 +57,13 @@ def match_product(products: List[Product], raw_name: str) -> Optional[Product]:
     ``products`` is the candidate set (the caller passes the active rows).
     Priority: exact display_name > exact alias > alias contained in the name >
     display_name overlap (either direction, for campaign-suffix variants).
+
+    The final overlap tier deliberately **skips bundles**: a bundle is high-stakes
+    (it fans out into N priced items and splits the paid amount), so it resolves
+    only by exact display_name or explicit alias. Otherwise a standalone line like
+    ``《商学院》全年订阅`` would substring-match the bundle name
+    ``《中国经营报》和《商学院》全年订阅（8折优惠）`` that literally contains it and get
+    silently mis-split into 中国经营报 + 商学院.
     """
     target = _norm(raw_name)
     if not target:
@@ -73,6 +80,8 @@ def match_product(products: List[Product], raw_name: str) -> Optional[Product]:
             if alias and _norm(alias) in target:
                 return p
     for p in products:
+        if p.is_bundle:
+            continue
         name = _norm(p.display_name)
         if name and (name in target or target in name):
             return p

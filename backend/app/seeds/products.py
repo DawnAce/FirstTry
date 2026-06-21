@@ -42,6 +42,19 @@ PRODUCTS = [
         coverage_rule=CoverageRule.latest_issue,
         list_price=Decimal("5"),
     ),
+    # 《商学院》全年订阅（单刊，¥480）。必须作为独立商品存在：否则纯商学院订单会被
+    # 双刊套餐名（字面含“《商学院》全年订阅”）子串误匹配、无声拆成中国经营报+商学院。
+    # 投递默认邮局，可按单/按品改。
+    dict(
+        code="BS-SUB-1Y",
+        display_name="《商学院》全年订阅",
+        publication=Publication.business_school,
+        fulfillment_type=FulfillmentType.subscription,
+        subscription_term=SubscriptionTerm.one_year,
+        delivery_method=DeliveryMethod.post_office,
+        coverage_rule=CoverageRule.term_from_month,
+        list_price=Decimal("480"),
+    ),
     # 双刊套餐（8折 ¥576）→ 拆两条明细：中国经营报固定 ¥240，商学院拿余额。
     dict(
         code="CBJ-BS-BUNDLE-1Y",
