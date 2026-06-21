@@ -177,8 +177,8 @@ def test_seed_products_creates_catalog_then_idempotent():
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
     try:
-        assert seed_products(db) == 4
-        assert db.query(Product).count() == 4
+        assert seed_products(db) == 9
+        assert db.query(Product).count() == 9
         bundle = db.query(Product).filter(Product.code == "CBJ-BS-BUNDLE-1Y").one()
         assert bundle.is_bundle is True
         assert bundle.publication is None
@@ -188,9 +188,13 @@ def test_seed_products_creates_catalog_then_idempotent():
         bs = db.query(Product).filter(Product.code == "BS-SUB-1Y").one()
         assert bs.is_bundle is False
         assert bs.publication == Publication.business_school
+        # the standard 全年/半年 × 邮局/中通 subscription variants + back-issue retail
+        for code in ("CBJ-SUB-1Y-POST", "CBJ-SUB-1Y-ZTO", "CBJ-SUB-6M-POST",
+                     "CBJ-SUB-6M-ZTO", "CBJ-BACKISSUE"):
+            assert db.query(Product).filter(Product.code == code).count() == 1
         # idempotent: second run inserts nothing
         assert seed_products(db) == 0
-        assert db.query(Product).count() == 4
+        assert db.query(Product).count() == 9
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
