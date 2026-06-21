@@ -1772,7 +1772,7 @@ mysqldump -u user -p database_name > backup.sql
 - [x] 订单管理 V1.1（手工创建、确认、作废、偏差跟踪；范围：**个人客户预付 + 同事赠阅**）
 - [x] 订单管理 V1.2（active 状态明细就地编辑、多版本 allocation、订阅期限与套餐价）
 - [x] 订单管理 V1.3 优先级 1：单订单按期手动预览 / 应用同步至 order_generated `shipping_details`
-- [ ] post-V1.3：电商订单 Excel / API 批量导入
+- [x] post-V1.3：电商订单导入（CBJ 小程序 Excel）+ 商品库 + 活动标签/赠品（详见 §3.16；淘宝/有赞等其它平台与 API 同步留待后续）
 - [ ] post-V1.3：财务对账（实付 / 应收 / 退款、欠款追踪、未付清筛选）
 - [ ] post-V1.3：客户自助下单
 - [ ] 数据统计与报表分析
