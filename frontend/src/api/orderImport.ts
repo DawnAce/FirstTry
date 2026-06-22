@@ -9,6 +9,7 @@ export interface ImportItemPreview {
   billing_type: string;
   subscription_term: string | null;
   delivery_method: string | null;
+  issue_label: string | null;
   total_quantity: number;
   unit_price: string;
   subtotal: string;

@@ -14,6 +14,7 @@ import OrderEditor from './pages/OrderEditor';
 import OrderDetail from './pages/OrderDetail';
 import ProductCatalog from './pages/ProductCatalog';
 import OrderImport from './pages/OrderImport';
+import Analytics from './pages/Analytics';
 import Login from './pages/Login';
 import type { ReactNode } from 'react';
 
@@ -51,6 +52,7 @@ function App() {
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/orders/:id/edit" element={<OrderEditor />} />
             <Route path="/products" element={<ProductCatalog />} />
+            <Route path="/analytics" element={<Analytics />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

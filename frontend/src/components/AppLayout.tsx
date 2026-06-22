@@ -62,6 +62,7 @@ const menuItems: MenuProps['items'] = [
       { key: '/orders/new', label: '新建订单' },
       { key: '/orders/import', label: '电商导入' },
       { key: '/products', label: '商品库' },
+      { key: '/analytics', label: '销售统计' },
     ],
   },
   {
@@ -101,6 +102,7 @@ export default function AppLayout() {
     if (path === '/orders/new') return '/orders/new';
     if (path === '/orders/import') return '/orders/import';
     if (path.startsWith('/products')) return '/products';
+    if (path.startsWith('/analytics')) return '/analytics';
     if (path.startsWith('/orders')) return '/orders';
     return path;
   };
@@ -113,7 +115,7 @@ export default function AppLayout() {
     if (path.startsWith('/schedule')) {
       return ['schedule-management'];
     }
-    if (path.startsWith('/orders') || path.startsWith('/products')) {
+    if (path.startsWith('/orders') || path.startsWith('/products') || path.startsWith('/analytics')) {
       return ['order-management'];
     }
     return [];
