@@ -29,7 +29,21 @@ export default function Analytics() {
   const campaignCols: TableColumnsType<CampaignSummaryRow> = [
     { title: '活动', dataIndex: 'campaign', key: 'campaign', render: (v) => <Tag color="geekblue">{v}</Tag> },
     { title: '订单数', dataIndex: 'order_count', key: 'order_count', align: 'right', sorter: (a, b) => a.order_count - b.order_count },
+    { title: '原价合计', dataIndex: 'total_listed', key: 'total_listed', align: 'right', render: (v) => `¥${v}` },
     { title: '实收金额', dataIndex: 'total_paid', key: 'total_paid', align: 'right', render: (v) => `¥${v}`, sorter: (a, b) => Number(a.total_paid) - Number(b.total_paid) },
+    {
+      title: '折扣',
+      key: 'discount',
+      align: 'right',
+      sorter: (a, b) => Number(a.total_discount) - Number(b.total_discount),
+      render: (_v, r) => {
+        const listed = Number(r.total_listed);
+        const disc = Number(r.total_discount);
+        if (!disc) return <Text type="secondary">—</Text>;
+        const pct = listed > 0 ? Math.round((disc / listed) * 1000) / 10 : 0;
+        return <Text type="success">省¥{r.total_discount}（{pct}%）</Text>;
+      },
+    },
   ];
 
   const issueCols: TableColumnsType<IssueSummaryRow> = [
@@ -57,7 +71,7 @@ export default function Analytics() {
         extra={
           campaignQuery.data && (
             <Text type="secondary">
-              {campaignQuery.data.total_campaigns} 个活动 · 共 {campaignQuery.data.grand_total_orders} 单 · ¥{campaignQuery.data.grand_total_paid}
+              {campaignQuery.data.total_campaigns} 个活动 · 共 {campaignQuery.data.grand_total_orders} 单 · 实收 ¥{campaignQuery.data.grand_total_paid} · 省 ¥{campaignQuery.data.grand_total_discount}
             </Text>
           )
         }

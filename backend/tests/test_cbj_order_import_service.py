@@ -57,10 +57,11 @@ def _line(name, qty=1, price=Decimal("199"), shipping=False, zto=False):
     )
 
 
-def _po(*, ext="EC-1", status="卖家已发货", paid=Decimal("199"),
+def _po(*, ext="EC-1", status="卖家已发货", paid=Decimal("199"), original=None,
         order_date=date(2026, 6, 1), payment_time=datetime(2026, 6, 1, 13, 0, 0), lines=None):
     return ParsedOrder(
-        external_order_no=ext, status_raw=status, paid_amount=paid, original_amount=paid,
+        external_order_no=ext, status_raw=status, paid_amount=paid,
+        original_amount=original if original is not None else paid,
         order_date=order_date, payment_time=payment_time, payment_method_raw="微信", invoice_raw="",
         recipient_name="冯志强", recipient_phone="15103569527", recipient_address="某地址",
         recipient_postal_code="048000", notes="",
@@ -251,6 +252,15 @@ def test_dated_non_issue_lines_not_misbooked_as_business_school(db):
     for name in ["2026年1月新春礼包", "《中国经营报》2026年1月特刊"]:
         pv = build_import_preview(db, [_po(paid=Decimal("88"), lines=[_line(name)])], RECENT)
         assert pv.rows[0].decision == "unresolved", name
+
+
+def test_importer_persists_original_amount_separately(db):
+    # 原价（折前）must be stored on the order; total_amount stays equal to paid.
+    pv = build_import_preview(db, [_po(paid=Decimal("199"), original=Decimal("240"))], RECENT)
+    oc = pv.rows[0].order_create
+    assert oc.paid_amount == Decimal("199")
+    assert oc.total_amount == Decimal("199")
+    assert oc.original_amount == Decimal("240")
 
 
 def test_zto_override_does_not_stamp_business_school_single_issue(db):

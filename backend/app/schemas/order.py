@@ -159,6 +159,8 @@ class OrderCreate(BaseModel):
     payment_collector: Optional[str] = Field(default=None, max_length=64)
     total_amount: Decimal = Decimal("0")
     paid_amount: Decimal = Decimal("0")
+    # 原价（折前）；电商导入按行写入，手工单可空。用于按活动统计折扣深度。
+    original_amount: Optional[Decimal] = None
     invoice_required: bool = False
     invoice_title: Optional[str] = Field(default=None, max_length=200)
     # 纳税人识别号 / 统一社会信用代码（USCC 18 位字母数字）；个人发票可留空

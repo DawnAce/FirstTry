@@ -35,14 +35,17 @@ from app.models.order import Order, OrderEntryMethod, OrderStatus
 from app.models.user import User, UserRole
 
 
-def _order(campaign, paid, listed, *, status=OrderStatus.active, order_date=date(2026, 6, 1)):
+def _order(campaign, paid, listed=None, *, status=OrderStatus.active, order_date=date(2026, 6, 1)):
+    # listed -> original_amount (原价/折前); None = "no list price captured" (legacy/manual).
+    # total_amount tracks the paid amount (import semantics); discount lives in original_amount.
     return Order(
         order_date=order_date,
         entry_method=OrderEntryMethod.excel_import,
         payer_name="X",
         campaign=campaign,
         paid_amount=Decimal(str(paid)),
-        total_amount=Decimal(str(listed)),
+        total_amount=Decimal(str(paid)),
+        original_amount=None if listed is None else Decimal(str(listed)),
         status=status,
     )
 
@@ -60,13 +63,13 @@ def client():
     seed_db = TestingSessionLocal()
     seed_db.add_all(
         [
-            _order("2026-618", 199, 199),
-            _order("2026-618", 200, 200),
+            _order("2026-618", 199, 240),                            # 原价240 实付199 → 省41
+            _order("2026-618", 200, 240),                            # 省40
             _order("2026-618", 240, 240, status=OrderStatus.void),   # void → excluded
-            _order("2026-双十一", 240, 240),
-            _order("2026-618", 999, 999, status=OrderStatus.draft),   # draft → excluded
-            _order(None, 480, 480),                                   # untagged → excluded
-            _order("2025-618", 199, 199, order_date=date(2025, 6, 1)),
+            _order("2026-双十一", 240),                              # 原价未抓 → COALESCE实付, 无折扣
+            _order("2026-618", 999, 999, status=OrderStatus.draft),  # draft → excluded
+            _order(None, 480, 480),                                  # untagged → excluded
+            _order("2025-618", 199, 240, order_date=date(2025, 6, 1)),
         ]
     )
     seed_db.commit()
@@ -109,15 +112,23 @@ def test_campaign_summary_groups_excludes_void_and_untagged(client):
     # 618: two non-void orders, ¥199 + ¥200
     assert by["2026-618"]["order_count"] == 2
     assert _money(by["2026-618"]["total_paid"]) == Decimal("399.00")
+    # discount depth: 原价 480 (240+240) − 实付 399 = 81
+    assert _money(by["2026-618"]["total_listed"]) == Decimal("480.00")
+    assert _money(by["2026-618"]["total_discount"]) == Decimal("81.00")
 
     # 双十一 is NOT merged into 618 — the campaign tag keeps them apart
     assert by["2026-双十一"]["order_count"] == 1
+    # no 原价 captured → COALESCE to paid, zero discount (not a phantom negative/zero list)
+    assert _money(by["2026-双十一"]["total_listed"]) == Decimal("240.00")
+    assert _money(by["2026-双十一"]["total_discount"]) == Decimal("0.00")
     # same campaign name, different YEAR → still a separate row (year is in the tag)
     assert by["2025-618"]["order_count"] == 1
 
     assert data["total_campaigns"] == 3
     assert data["grand_total_orders"] == 4
-    assert _money(data["grand_total_paid"]) == Decimal("838.00")  # 399 + 240 + 199
+    assert _money(data["grand_total_paid"]) == Decimal("838.00")     # 399 + 240 + 199
+    assert _money(data["grand_total_listed"]) == Decimal("960.00")   # 480 + 240 + 240
+    assert _money(data["grand_total_discount"]) == Decimal("122.00") # 81 + 0 + 41
 
 
 def test_campaign_summary_date_filter(client):

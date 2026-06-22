@@ -54,11 +54,14 @@ def summarize_campaigns(
     drafts/pending/void are excluded. The optional ``order_date`` range
     (inclusive on both ends) narrows the reporting window.
     """
+    # 原价缺失（手工 / 历史单）时按"无折扣"计：COALESCE(原价, 实付)。
+    listed_expr = func.coalesce(Order.original_amount, Order.paid_amount)
     q = (
         db.query(
             Order.campaign,
             func.count(Order.id),
             func.sum(Order.paid_amount),
+            func.sum(listed_expr),
         )
         .filter(Order.campaign.isnot(None))
         .filter(Order.status == OrderStatus.active)
@@ -71,19 +74,25 @@ def summarize_campaigns(
         func.count(Order.id).desc(), Order.campaign.asc()
     )
 
-    rows = [
-        CampaignSummaryRow(
-            campaign=campaign,
-            order_count=order_count,
-            total_paid=_money(paid),
+    rows = []
+    for campaign, order_count, paid, listed in q.all():
+        paid_m, listed_m = _money(paid), _money(listed)
+        rows.append(
+            CampaignSummaryRow(
+                campaign=campaign,
+                order_count=order_count,
+                total_paid=paid_m,
+                total_listed=listed_m,
+                total_discount=_money(listed_m - paid_m),
+            )
         )
-        for campaign, order_count, paid in q.all()
-    ]
     return CampaignSummaryOut(
         rows=rows,
         total_campaigns=len(rows),
         grand_total_orders=sum(r.order_count for r in rows),
         grand_total_paid=_money(sum((r.total_paid for r in rows), Decimal("0"))),
+        grand_total_listed=_money(sum((r.total_listed for r in rows), Decimal("0"))),
+        grand_total_discount=_money(sum((r.total_discount for r in rows), Decimal("0"))),
         date_from=date_from,
         date_to=date_to,
     )

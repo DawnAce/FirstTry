@@ -14,15 +14,17 @@ from pydantic import BaseModel
 class CampaignSummaryRow(BaseModel):
     """One marketing campaign's sales roll-up.
 
-    No list-price column: the CBJ importer records only the paid amount
-    (``total_amount == paid_amount``), so a "list price" total would always
-    equal ``total_paid`` and convey nothing. Add it back if/when imports start
-    capturing the pre-discount price separately.
+    ``total_listed`` is the pre-discount 原价 total (``COALESCE(original_amount,
+    paid_amount)`` summed — orders with no captured list price count as
+    no-discount). ``total_discount = total_listed - total_paid`` is the campaign's
+    discount depth in ¥.
     """
 
     campaign: str
     order_count: int
     total_paid: Decimal
+    total_listed: Decimal
+    total_discount: Decimal
 
 
 class CampaignSummaryOut(BaseModel):
@@ -38,6 +40,8 @@ class CampaignSummaryOut(BaseModel):
     total_campaigns: int
     grand_total_orders: int
     grand_total_paid: Decimal
+    grand_total_listed: Decimal
+    grand_total_discount: Decimal
     date_from: Optional[date] = None
     date_to: Optional[date] = None
 

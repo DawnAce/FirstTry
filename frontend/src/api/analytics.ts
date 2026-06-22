@@ -7,6 +7,8 @@ export interface CampaignSummaryRow {
   campaign: string;
   order_count: number;
   total_paid: string;
+  total_listed: string;
+  total_discount: string;
 }
 
 export interface CampaignSummaryOut {
@@ -14,6 +16,8 @@ export interface CampaignSummaryOut {
   total_campaigns: number;
   grand_total_orders: number;
   grand_total_paid: string;
+  grand_total_listed: string;
+  grand_total_discount: string;
   date_from: string | null;
   date_to: string | null;
 }

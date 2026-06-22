@@ -317,6 +317,7 @@ def build_import_preview(
             payment_method=_payment_method(po.payment_method_raw),
             total_amount=po.paid_amount,
             paid_amount=po.paid_amount,
+            original_amount=po.original_amount,
             invoice_required=bool(po.invoice_raw and po.invoice_raw.strip() not in ("", "\\n")),
             notes=po.notes or None,
             items=items,
