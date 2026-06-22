@@ -40,8 +40,13 @@ from app.schemas.order import FulfillmentTargetIn, OrderCreate, OrderItemIn
 from app.services.cbj_order_import_parser import ParsedOrder, parse_cbj_orders
 from app.services.order_code_service import allocate_order_codes
 from app.services.order_import_status_service import map_commercial_status
+from app.services.issue_label import normalize_business_school_issue_label
 from app.services.order_service import create_imported_order
-from app.services.product_resolver_service import resolve_product
+from app.services.product_resolver_service import (
+    ResolvedItem,
+    _make_item,
+    resolve_product,
+)
 
 _SOURCE_PLATFORM = "CBJ小程序"
 
@@ -230,9 +235,42 @@ def build_import_preview(
             )
             res = resolve_product(products, line.name, line.quantity, line_paid)
             if not res.matched:
+                # 商学院月刊单期（"2026年X月刊《…》"）没有稳定的商品库键，按模式直接识别为
+                # 商学院单期，期次身份落 issue_label —— 不在商品库建带年份的行。
+                # 仅当不含「中国经营报」时才兜底为商学院（镜像前端 guessDefaults 的护栏），否则
+                # 一条带日期的中国经营报行会被误记为商学院、且绕过待确认队列。
+                issue_label = normalize_business_school_issue_label(line.name)
+                if issue_label and "中国经营报" not in line.name:
+                    item = _make_item(
+                        publication=Publication.business_school,
+                        publication_format=PublicationFormat.paper,
+                        fulfillment_type=FulfillmentType.single_issue,
+                        billing_type=BillingType.paid,
+                        subscription_term=None,
+                        delivery_method=None,
+                        total_quantity=line.quantity,
+                        share=Decimal(str(line_paid)),
+                    )
+                    item.issue_label = issue_label
+                    resolved.append(
+                        ResolvedItem(item=item, coverage_rule=CoverageRule.custom)
+                    )
+                    continue
                 miss_reason = res.reason
                 miss_product = line.name
                 break
+            # Matched: tag a 商学院 single-issue line (a cataloged monthly issue) with the
+            # label parsed from this line. Guard on publication so a 中国经营报 back-issue —
+            # identified by 期号, never by a month label — is never mislabeled.
+            issue_label = normalize_business_school_issue_label(line.name)
+            if issue_label:
+                for ri in res.items:
+                    if (
+                        ri.item.fulfillment_type == FulfillmentType.single_issue
+                        and ri.item.publication == Publication.business_school
+                        and not ri.item.issue_label
+                    ):
+                        ri.item.issue_label = issue_label
             warnings.extend(res.warnings)
             resolved.extend(res.items)
         if miss_reason:
@@ -244,7 +282,9 @@ def build_import_preview(
         items = []
         for ri in resolved:
             item = ri.item
-            if zto_override:
+            # Flip an item's own channel to 中通, but don't invent one for a line that
+            # deliberately has none (e.g. the 商学院 single-issue fallback, delivery=None).
+            if zto_override and item.delivery_method is not None:
                 item.delivery_method = DeliveryMethod.zto_mf
             item.coverage_start_date, item.coverage_end_date = _coverage_for(
                 settings, item, ri.coverage_rule, po.payment_time
@@ -312,6 +352,7 @@ def _serialize_row(r: PreviewRow) -> dict:
                     "billing_type": it.billing_type.value,
                     "subscription_term": it.subscription_term.value if it.subscription_term else None,
                     "delivery_method": it.delivery_method.value if it.delivery_method else None,
+                    "issue_label": it.issue_label,
                     "total_quantity": it.total_quantity,
                     "unit_price": str(it.unit_price),
                     "subtotal": str(it.subtotal),

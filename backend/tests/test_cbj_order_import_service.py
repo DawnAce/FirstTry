@@ -211,3 +211,61 @@ def test_no_gift_or_bonus_when_not_configured(db):
     assert all(i.billing_type != BillingType.free_gift for i in oc.items)
     # plain one year, no bonus month
     assert oc.items[0].coverage_end_date == date(2027, 6, 30)
+
+
+def test_business_school_monthly_issue_auto_recognized(db):
+    # 商学院月刊单期不在商品库里，但应按 "YYYY年X月刊" 自动识别为商学院单期，
+    # 期次身份落 issue_label —— 不在商品库建带年份的行。
+    lines = [_line("2026年1月刊《AI赋能，乡村新生》", qty=1, price=Decimal("40"))]
+    pv = build_import_preview(db, [_po(paid=Decimal("40"), lines=lines)], RECENT)
+    row = pv.rows[0]
+    assert row.decision == "import"
+    item = row.order_create.items[0]
+    assert item.publication == Publication.business_school
+    assert item.fulfillment_type == FulfillmentType.single_issue
+    assert item.issue_label == "2026-01"
+    assert item.subtotal == Decimal("40.00")
+    # single issue → no subscription coverage window
+    assert item.coverage_start_date is None
+    assert item.coverage_end_date is None
+
+
+def test_combined_monthly_issue_gets_range_label(db):
+    lines = [_line("2026年2~3月合刊《AI+知识产权，迎接新规则时代》", qty=1, price=Decimal("40"))]
+    pv = build_import_preview(db, [_po(paid=Decimal("40"), lines=lines)], RECENT)
+    item = pv.rows[0].order_create.items[0]
+    assert item.fulfillment_type == FulfillmentType.single_issue
+    assert item.issue_label == "2026-02~03"
+
+
+def test_truly_unknown_product_still_unresolved(db):
+    # the monthly-issue fallback must NOT swallow genuinely unrecognised products.
+    lines = [_line("某某神秘商品", qty=1, price=Decimal("99"))]
+    pv = build_import_preview(db, [_po(paid=Decimal("99"), lines=lines)], RECENT)
+    assert pv.rows[0].decision == "unresolved"
+
+
+def test_dated_non_issue_lines_not_misbooked_as_business_school(db):
+    # A dated line that is NOT a 月刊/合刊, or that names 中国经营报, must stay 待确认 —
+    # never get silently booked as a 商学院 single issue (mis-attribution + queue bypass).
+    for name in ["2026年1月新春礼包", "《中国经营报》2026年1月特刊"]:
+        pv = build_import_preview(db, [_po(paid=Decimal("88"), lines=[_line(name)])], RECENT)
+        assert pv.rows[0].decision == "unresolved", name
+
+
+def test_zto_override_does_not_stamp_business_school_single_issue(db):
+    # Mixed order: a 中通 subscription + a 商学院 monthly issue. The single issue is created
+    # with delivery=None and must NOT get 中通 auto-stamped onto it.
+    lines = [
+        _line("《中国经营报》全年订阅（中通 周送）", qty=1, price=Decimal("390"), zto=True),
+        _line("2026年1月刊《AI赋能，乡村新生》", qty=1, price=Decimal("40")),
+    ]
+    pv = build_import_preview(db, [_po(paid=Decimal("430"), lines=lines)], RECENT)
+    row = pv.rows[0]
+    assert row.decision == "import"
+    items = {i.publication: i for i in row.order_create.items}
+    assert items[Publication.cbj].delivery_method == DeliveryMethod.zto_mf
+    bs = items[Publication.business_school]
+    assert bs.fulfillment_type == FulfillmentType.single_issue
+    assert bs.issue_label == "2026-01"
+    assert bs.delivery_method is None

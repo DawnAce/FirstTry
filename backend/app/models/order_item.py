@@ -98,6 +98,10 @@ class OrderItem(Base):
     coverage_start_date = Column(Date, nullable=True)
     coverage_end_date = Column(Date, nullable=True)
     issue_number = Column(Integer, nullable=True)
+    # Normalised single-issue identity for publications without a 期号 (商学院
+    # monthly: "2026-01" / "2026-02~03"). Lets per-issue sales be aggregated
+    # without a year-named product. See services/issue_label.py.
+    issue_label = Column(String(32), nullable=True)
     total_quantity = Column(Integer, default=1, nullable=False)
     unit_price = Column(Numeric(10, 2), default=0, nullable=False)
     subtotal = Column(Numeric(10, 2), default=0, nullable=False)
@@ -140,4 +144,5 @@ class OrderItem(Base):
             "coverage_start_date",
             "coverage_end_date",
         ),
+        Index("ix_order_items_issue_label", "issue_label"),
     )

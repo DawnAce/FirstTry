@@ -29,8 +29,15 @@ PRODUCTS = [
     # 只表示"从某个起投月算一年"，起投月由导入批次设置提供。
     dict(
         code="CBJ-SUB-1Y-PROMO",
-        display_name="《中国经营报》全年订阅-618促销活动",
-        aliases=["618促销活动", "双十一订阅优惠"],
+        # 中性名：具体活动（618 / 双十一 / …）是订单 campaign 字段的事，不焊进商品名
+        # （否则等同"跟着活动走"，明年换个活动就对不上）。旧名与各活动后缀保留为 alias，
+        # 导入时按子串照常命中；活动区分靠 order.campaign（带年，可按活动/按年聚合）。
+        display_name="《中国经营报》全年订阅（促销价）",
+        aliases=[
+            "618促销活动",
+            "双十一订阅优惠",
+            "《中国经营报》全年订阅-618促销活动",
+        ],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,
@@ -68,6 +75,19 @@ PRODUCTS = [
         delivery_method=DeliveryMethod.zto_mf,
         coverage_rule=CoverageRule.term_from_month,
         list_price=Decimal("390"),
+    ),
+    # 中通「月送」：与「周送」同为 zto_mf 投递，但寄送频次/价不同（¥240 vs ¥390）。频次
+    # 目前只体现在商品名与价上（DeliveryMethod 枚举尚未建模 周/月 频次）；若日后要按频次
+    # 结构化统计，再单加字段。源自真实订单行"《中国经营报》全年订阅（中通 月送）"。
+    dict(
+        code="CBJ-SUB-1Y-ZTO-M",
+        display_name="《中国经营报》全年订阅（中通 月送）",
+        publication=Publication.cbj,
+        fulfillment_type=FulfillmentType.subscription,
+        subscription_term=SubscriptionTerm.one_year,
+        delivery_method=DeliveryMethod.zto_mf,
+        coverage_rule=CoverageRule.term_from_month,
+        list_price=Decimal("240"),
     ),
     # 半年订阅——邮局周投 ¥120 / 中通周送 ¥195。
     dict(

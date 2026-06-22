@@ -104,6 +104,9 @@ class OrderItemIn(BaseModel):
     coverage_start_date: Optional[date] = None
     coverage_end_date: Optional[date] = None
     issue_number: Optional[int] = Field(default=None, ge=1)
+    # 单期身份标签（商学院月刊等无连续期号的刊物）：规范化 "YYYY-MM" / "YYYY-MM~MM"，
+    # 供按期统计。年/月落在这里（期次层），不进商品名。
+    issue_label: Optional[str] = Field(default=None, max_length=32)
     total_quantity: int = Field(default=1, ge=1)
     unit_price: Decimal = Decimal("0")
     subtotal: Decimal = Decimal("0")
@@ -307,6 +310,7 @@ class OrderItemOut(BaseModel):
     coverage_start_date: Optional[date]
     coverage_end_date: Optional[date]
     issue_number: Optional[int]
+    issue_label: Optional[str] = None
     total_quantity: int
     unit_price: Decimal
     subtotal: Decimal

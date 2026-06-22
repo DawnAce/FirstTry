@@ -295,6 +295,7 @@ def _build_order_out(db: Session, order) -> OrderOut:
             coverage_start_date=item.coverage_start_date,
             coverage_end_date=item.coverage_end_date,
             issue_number=item.issue_number,
+            issue_label=item.issue_label,
             total_quantity=item.total_quantity,
             unit_price=item.unit_price,
             subtotal=item.subtotal,

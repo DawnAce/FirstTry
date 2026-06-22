@@ -251,6 +251,7 @@ def _add_new_item(
         coverage_start_date=item_data.coverage_start_date,
         coverage_end_date=item_data.coverage_end_date,
         issue_number=item_data.issue_number,
+        issue_label=item_data.issue_label,
         total_quantity=item_data.total_quantity,
         unit_price=item_data.unit_price,
         subtotal=item_data.subtotal,
