@@ -197,3 +197,46 @@ def test_real_bundle_still_resolves_after_standalone_added():
     res = resolve_product(catalog, "《中国经营报》和《商学院》全年订阅（8折优惠）", 1, Decimal("576"))
     assert res.matched and res.product_code == "CBJ-BS-BUNDLE-1Y"
     assert len(res.items) == 2
+
+
+def _bundle_per_delivery():
+    # 套餐顶层投递=邮局，但组件各设自己的投递：中国经营报=邮局、商学院=中通。
+    return Product(
+        code="CBJ-BS-BUNDLE-MIXED",
+        display_name="《中国经营报》和《商学院》全年订阅（混合投递）",
+        publication=None,
+        publication_format=PublicationFormat.paper,
+        fulfillment_type=FulfillmentType.subscription,
+        subscription_term=SubscriptionTerm.one_year,
+        delivery_method=DeliveryMethod.post_office,
+        billing_type=BillingType.paid,
+        coverage_rule=CoverageRule.term_from_month,
+        is_bundle=True,
+        components=[
+            {"publication": "cbj", "delivery_method": "post_office", "fixed_price": 240},
+            {"publication": "business_school", "delivery_method": "zto_mf", "remainder": True},
+        ],
+        active=True,
+    )
+
+
+def test_bundle_per_component_delivery():
+    # 每条明细取各自组件的投递：中国经营报=邮局、商学院=中通。
+    res = resolve_product(
+        [_bundle_per_delivery()], "《中国经营报》和《商学院》全年订阅（混合投递）", 1, Decimal("576")
+    )
+    assert res.matched and len(res.items) == 2
+    by_pub = {r.item.publication: r.item for r in res.items}
+    assert by_pub[Publication.cbj].delivery_method == DeliveryMethod.post_office
+    assert by_pub[Publication.business_school].delivery_method == DeliveryMethod.zto_mf
+    # 价格拆分照旧
+    assert by_pub[Publication.cbj].subtotal == Decimal("240.00")
+    assert by_pub[Publication.business_school].subtotal == Decimal("336.00")
+
+
+def test_bundle_component_delivery_falls_back_to_bundle_level():
+    # 组件未设投递（_catalog 的 bundle 组件没有 delivery_method）→ 回落套餐顶层（邮局）。
+    res = resolve_product(_catalog(), "《中国经营报》和《商学院》全年订阅（8折优惠）", 1, Decimal("576"))
+    by_pub = {r.item.publication: r.item for r in res.items}
+    assert by_pub[Publication.cbj].delivery_method == DeliveryMethod.post_office
+    assert by_pub[Publication.business_school].delivery_method == DeliveryMethod.post_office

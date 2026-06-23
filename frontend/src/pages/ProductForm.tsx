@@ -60,7 +60,7 @@ export interface ProductFormValues {
   coverage_rule?: CoverageRule;
   list_price?: number;
   billing_type?: string;
-  components?: Array<{ publication: string; fixed_price?: number; remainder?: boolean }>;
+  components?: Array<{ publication: string; delivery_method?: string | null; fixed_price?: number; remainder?: boolean }>;
   active?: boolean;
   notes?: string;
 }
@@ -82,6 +82,7 @@ export function buildProductPayload(values: ProductFormValues): ProductCreatePay
     components: values.is_bundle
       ? (values.components ?? []).map((c) => ({
           publication: c.publication as never,
+          delivery_method: (c.delivery_method ?? null) as never,
           fixed_price: c.remainder ? null : (c.fixed_price ?? null),
           remainder: !!c.remainder,
         }))
@@ -148,17 +149,20 @@ export function ProductFormFields({ editing }: { editing: boolean }) {
       </Space>
 
       {isBundle && (
-        <Card size="small" title="套餐组件（按固定价 + 余额拆分）" style={{ marginBottom: 12 }}>
+        <Card size="small" title="套餐组件（按固定价 + 余额拆分；投递可逐刊设）" style={{ marginBottom: 12 }}>
           <Form.List name="components">
             {(fields, { add, remove }) => (
               <>
                 {fields.map((field) => (
-                  <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 4 }}>
+                  <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 4 }} wrap>
                     <Form.Item {...field} name={[field.name, 'publication']} rules={[{ required: true, message: '选刊物' }]}>
-                      <Select options={PUBLICATION_OPTIONS} placeholder="刊物" style={{ width: 150 }} />
+                      <Select options={PUBLICATION_OPTIONS} placeholder="刊物" style={{ width: 130 }} />
+                    </Form.Item>
+                    <Form.Item {...field} name={[field.name, 'delivery_method']} tooltip="留空则随套餐顶层投递">
+                      <Select allowClear options={DELIVERY_OPTIONS} placeholder="投递（默认随套餐）" style={{ width: 170 }} />
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'fixed_price']}>
-                      <InputNumber min={0} placeholder="固定价" prefix="¥" style={{ width: 130 }} />
+                      <InputNumber min={0} placeholder="固定价" prefix="¥" style={{ width: 120 }} />
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'remainder']} valuePropName="checked">
                       <Checkbox>拿余额</Checkbox>

@@ -14,6 +14,7 @@ export type CoverageRule = 'term_from_month' | 'latest_issue' | 'explicit' | 'cu
 export interface ProductComponent {
   publication: Publication;
   subscription_term?: SubscriptionTerm | null;
+  delivery_method?: DeliveryMethod | null;
   coverage_rule?: CoverageRule;
   fixed_price?: string | number | null;
   remainder?: boolean;

@@ -460,7 +460,7 @@ FirstTry/
 | `publication`（可空，套餐为 NULL）/ `publication_format` / `fulfillment_type` / `subscription_term` / `delivery_method` / `billing_type` | 与 `order_items` 快照字段一一对应，解析时直接拷贝 |
 | `coverage_rule`（`term_from_month` / `latest_issue` / `explicit` / `custom`）/ `coverage_start_date` / `coverage_end_date` | 覆盖期算法；起投时间由导入批次提供，不写死在商品上 |
 | `list_price` | 仅参考/差异提示——实际记录订单行的**实付价** |
-| `is_bundle` / `components`（JSON） | 套餐拆分：固定价腿 + 一个 `remainder` 腿（中国经营报固定 240、商学院拿余额）|
+| `is_bundle` / `components`（JSON） | 套餐拆分：固定价腿 + 一个 `remainder` 腿（中国经营报固定 240、商学院拿余额）；每腿可带 `delivery_method` 逐刊设投递（缺省回落套餐顶层 `delivery_method`）|
 | `active` / `notes` / 时间戳 | |
 
 **`orders` 表新增列**
@@ -484,7 +484,7 @@ FirstTry/
 
 **关键不变量与业务规则**：
 - 定价取**实付金额**（促销价如 199/576/10），`list_price` 只用于差异提示。
-- 套餐：中国经营报固定 ¥240，商学院 = 实付 − 固定；余额为负时打 warning。
+- 套餐：中国经营报固定 ¥240，商学院 = 实付 − 固定；余额为负时打 warning。**每组件可设自己的投递**（如中国经营报=邮局、商学院=中通）——组件 `delivery_method` 未设则回落套餐顶层。
 - 运费补拍行只计入订单总额、不建明细；含「中通」/「转中通」→ 投递改 `zto_mf` 并在预览高亮（漏检会让整年投递走错，后果严重）。
 - 起投时间**人为按批设定**（非写死 15 号）：付款晚于截止日 → 顺延一个月；每单可在预览/订单页改。
 - 状态映射：认得的映到干净枚举，认不得的默认 `paid` + 标黄待核；退款单「收但标记」，绝不静默丢。

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional
 
-from app.models.order_item import Publication, SubscriptionTerm
+from app.models.order_item import DeliveryMethod, Publication, SubscriptionTerm
 from app.models.product import CoverageRule, Product
 from app.schemas.order import OrderItemIn
 
@@ -163,6 +163,12 @@ def resolve_product(
                 if c.get("subscription_term")
                 else product.subscription_term
             )
+            # 每组件可设自己的投递（如中国经营报=邮局、商学院=中通）；未设则回落套餐顶层。
+            delivery = (
+                DeliveryMethod(c["delivery_method"])
+                if c.get("delivery_method")
+                else product.delivery_method
+            )
             items.append(
                 ResolvedItem(
                     item=_make_item(
@@ -171,7 +177,7 @@ def resolve_product(
                         fulfillment_type=product.fulfillment_type,
                         billing_type=product.billing_type,
                         subscription_term=term,
-                        delivery_method=product.delivery_method,
+                        delivery_method=delivery,
                         total_quantity=qty,
                         share=share,
                     ),

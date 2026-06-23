@@ -123,6 +123,7 @@ export default function ProductCatalog() {
       billing_type: p.billing_type,
       components: (p.components ?? []).map((c) => ({
         publication: c.publication,
+        delivery_method: c.delivery_method ?? undefined,
         fixed_price: c.fixed_price == null ? undefined : Number(c.fixed_price),
         remainder: !!c.remainder,
       })),

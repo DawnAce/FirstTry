@@ -31,6 +31,8 @@ class ProductComponent(BaseModel):
 
     publication: Publication
     subscription_term: Optional[SubscriptionTerm] = None
+    # 每组件投递方式（如中国经营报=邮局、商学院=中通）；留空则回落套餐顶层 delivery_method。
+    delivery_method: Optional[DeliveryMethod] = None
     coverage_rule: CoverageRule = CoverageRule.term_from_month
     fixed_price: Optional[Decimal] = None
     remainder: bool = False

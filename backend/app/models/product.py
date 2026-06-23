@@ -102,10 +102,13 @@ class Product(Base):
     # "fixed components take their fixed_price, one 'remainder' component
     # absorbs the rest" (e.g. CBJ fixed ¥240, 商学院 = paid - 240).
     # Shape: [{"publication": "cbj", "subscription_term": "one_year",
-    #          "coverage_rule": "term_from_month", "fixed_price": 240},
+    #          "coverage_rule": "term_from_month", "delivery_method": "post_office",
+    #          "fixed_price": 240},
     #         {"publication": "business_school", "subscription_term": "one_year",
-    #          "coverage_rule": "term_from_month", "remainder": true}].
-    # The resolver flags the row for review if the remainder is negative.
+    #          "coverage_rule": "term_from_month", "delivery_method": "zto_mf",
+    #          "remainder": true}].
+    # Each leg may set its own delivery_method (falls back to the bundle's
+    # top-level delivery_method). The resolver flags the row if remainder < 0.
     is_bundle = Column(Boolean, nullable=False, default=False)
     components = Column(JSON, nullable=True)
 
