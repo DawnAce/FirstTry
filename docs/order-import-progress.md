@@ -23,7 +23,7 @@
 | 4a | **期次标识 `issue_label`**：`order_items.issue_label` 归一「无期号刊物」的单期身份 `YYYY-MM` / `YYYY-MM~MM`（主用商学院月刊）——年/月落在期次层（此列），**不写进商品名**；中国经营报单期仍用 `issue_number`（期号）。归一函数 `app/services/issue_label.py::normalize_business_school_issue_label()`。| ✅ 已加列 `b8e3a1c5d7f0`（`String(32)`，带索引）|
 | 4b | **商学院月刊导入自动识别**（替代旧「人工把月刊快速新增为商品」思路）：导入时标题形如「2026年X月刊《…》」/「2026年2~3月合刊《…》」的未匹配行 → 自动识别为 **商学院·单期**（`publication=business_school`、`single_issue`、写 `issue_label`），**不**建年份名商品、**不**进待确认。守卫：须有「月刊/合刊」标记且标题**不含**「中国经营报」（带日期的中国经营报行仍排队待确认），真正未知品（如「2026年1月新春礼包」）仍 → 待确认；该单期 `delivery_method` 留空（不被订单级转中通覆盖盖戳）。| —（无迁移）|
 | 4c | **原价落库 `original_amount`**：`orders.original_amount` 持久化 CBJ 导出「原价（折前标价）」列（旧版解析后丢弃，只写 `total_amount=实付`）；`total_amount` 仍跟实付。支撑「按活动统计」折扣列：原价合计 `= SUM(COALESCE(original_amount, paid))`，折扣额 `= 原价合计 − 实收`（无原价的单按无折扣计）。| ✅ 已加列 `c4f1a9e2b6d3`（`Numeric(10,2)`，可空）|
-| 4d | **销售统计**（新模块）：前端「订单管理 → 销售统计」页（路由 `/analytics`，`frontend/src/pages/Analytics.tsx`），两张表均按**下单日期**区间筛、均**只计有效单**（草稿/待确认/作废不计）：①**按活动统计**（活动/订单数/原价合计/实收金额/折扣 省¥X 及百分比，仅含带活动标签的单）；②**按期统计**（刊物/期次 `issue_label`/销量份/销售额/行数，仅含带 `issue_label` 的单期行，主为商学院月刊）。后端（需鉴权）：`GET /api/analytics/campaigns?date_from&date_to`、`GET /api/analytics/issues?publication&date_from&date_to`。文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`。| —（前端 + 后端）|
+| 4d | **活动订单统计**（新模块）：前端「订单管理 → 活动订单统计」页（路由 `/analytics`，`frontend/src/pages/Analytics.tsx`），两张表均按**下单日期**区间筛、均**只计有效单**（草稿/待确认/作废不计）：①**按活动统计**（活动/订单数/原价合计/实收金额/折扣 省¥X 及百分比，仅含带活动标签的单）；②**按期统计**（刊物/期次 `issue_label`/销量份/销售额/行数，仅含带 `issue_label` 的单期行，主为商学院月刊）。后端（需鉴权）：`GET /api/analytics/campaigns?date_from&date_to`、`GET /api/analytics/issues?publication&date_from&date_to`。文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`。| —（前端 + 后端）|
 | 4e | **商品库 seed 调整**（`app/seeds/products.py`）：新增「《中国经营报》全年订阅（中通 月送）」`CBJ-SUB-1Y-ZTO-M` ¥240（区别于「中通 周送」¥390，频次落名/价而非 `DeliveryMethod` 枚举）；促销品改名为活动中性的「《中国经营报》全年订阅（促销价）」，「618促销活动 / 双十一订阅优惠 / 旧全名」保留为别名（具体活动 618/双十一/年份归 `order.campaign`、可聚合，不进品名）。| —（seed）|
 
 **后端 306 测试、前端 80 测试全绿；`tsc -b` / `npm run build` 通过；真实 CBJ 文件（100 单）预览验证通过。**
@@ -49,10 +49,10 @@
 - **活动 + 赠品（不按年拆商品库）**：每年 618 等活动的「价格差异」走实付、「基础履约」（618=全年/邮局）稳定 → 商品库一行兜住、不按年拆。每批导入设**活动标签**（如 `2026-618`，写到订单 `campaign`，供追溯 + 按活动统计）。活动赠品（CBJ 导出里没有，人为约定）落在订单上：**订期延长 N 月**顺延订阅覆盖期；**赠送刊物**记为一条免费明细（`gift`/`free_gift`，收件人同主单，可追溯）。赠品只给本批「含订阅」的单，单期不送。促销/活动归名：具体活动（618/双十一/年份）归 `order.campaign`（带年份、可聚合），**不进商品名**——商品库促销品用活动中性名 + 别名。
 - **原价 vs 实付**：`orders.original_amount` 记 CBJ「原价（折前标价）」、`total_amount` 仍记实付；二者之差即折扣，供「按活动统计」算省额（无原价的单按无折扣计）。
 - **期次标识**：无期号刊物（主用商学院月刊）的单期身份归一到 `order_items.issue_label`（`YYYY-MM` / `YYYY-MM~MM`），**不写进商品名**；中国经营报单期仍用 `issue_number`（期号）。
-- **销售统计口径**：只计**有效单**（已确认/已导入）；草稿/待确认/作废不计。
+- **活动订单统计口径**：只计**有效单**（已确认/已导入）；草稿/待确认/作废不计。
 
 ## 部署到生产（让它真用上，3 步）
-1. **后端**：代码已全部在 main（含导入增强 + 销售统计）。⚠️ **本次新增两条迁移 `b8e3a1c5d7f0`（`issue_label`）、`c4f1a9e2b6d3`（`original_amount`）尚未在生产应用——部署时须先 `alembic upgrade head` 再重启**（`start.sh`/`start.ps1` 已内置该步，见 README §8）；此前的 `f3b5d7c9e1a2`（`campaign`）等已应用。
+1. **后端**：代码已全部在 main（含导入增强 + 活动订单统计）。⚠️ **本次新增两条迁移 `b8e3a1c5d7f0`（`issue_label`）、`c4f1a9e2b6d3`（`original_amount`）尚未在生产应用——部署时须先 `alembic upgrade head` 再重启**（`start.sh`/`start.ps1` 已内置该步，见 README §8）；此前的 `f3b5d7c9e1a2`（`campaign`）等已应用。
 2. **前端**：`cd frontend && npm run build` 出 `dist/` → 部署（`tsc -b` 现已能通过）。
 3. **seed 商品库**：新装环境调一次 `POST /api/admin/seed` 即加好那批 CBJ/商学院 商品（现 **10** 个）。⚠️ **生产商品库已非空时 seed 不补新商品**（幂等只对空库生效）——需在 `/products` 页手动加齐尚缺的商品（含本次新增的「中通 月送」`CBJ-SUB-1Y-ZTO-M`），或导入时用「待确认一键快速新增」补。匹配器 bug 修复随发布即生效、无需数据操作。
 

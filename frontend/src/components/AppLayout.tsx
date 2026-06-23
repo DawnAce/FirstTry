@@ -62,7 +62,7 @@ const menuItems: MenuProps['items'] = [
       { key: '/orders/new', label: '新建订单' },
       { key: '/orders/import', label: '电商导入' },
       { key: '/products', label: '商品库' },
-      { key: '/analytics', label: '销售统计' },
+      { key: '/analytics', label: '活动订单统计' },
     ],
   },
   {

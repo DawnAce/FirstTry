@@ -38,6 +38,7 @@ import {
   statusBadgeColor,
   statusLabel,
 } from './orderUtils';
+import EcommerceRules from './ecommerceRules';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -311,6 +312,8 @@ export default function OrderList() {
           </Button>
         </Space>
       </div>
+
+      <EcommerceRules />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Form<FilterState>

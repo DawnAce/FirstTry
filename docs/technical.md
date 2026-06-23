@@ -1528,9 +1528,9 @@ draft ──confirm──> active ──void──> void
 - `active`：`PUT /api/orders/{id}` 仅允许 `ACTIVE_EDITABLE_FIELDS`（13 个非结构字段，含发票抬头 / 税号 / 接收邮箱）；items / targets 结构改动走 `PUT /api/orders/{id}/items`，并要求提供新版本生效期号
 - `void`：终态，任何编辑/重新确认返回 409
 
-### 4.15 销售统计（Analytics）
+### 4.15 活动订单统计（Analytics）
 
-订单管理子模块下的「销售统计」页（前端 `/analytics`，`frontend/src/pages/Analytics.tsx`，侧边栏「订单管理 → 销售统计」）。后端文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`，均需 JWT 鉴权。
+订单管理子模块下的「活动订单统计」页（前端 `/analytics`，`frontend/src/pages/Analytics.tsx`，侧边栏「订单管理 → 活动订单统计」）。后端文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`，均需 JWT 鉴权。
 
 两张表均可按**下单日期**区间筛选，且**只统计 active（已确认 / 已导入）订单**——草稿 / 待确认 / 作废一律不计。
 

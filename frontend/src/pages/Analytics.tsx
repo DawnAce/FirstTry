@@ -56,7 +56,7 @@ export default function Analytics() {
 
   return (
     <div>
-      <Title level={3}>销售统计</Title>
+      <Title level={3}>活动订单统计</Title>
       <Space style={{ marginBottom: 16 }} wrap>
         <Text>下单日期：</Text>
         <DatePicker value={from} onChange={setFrom} placeholder="起（可空）" allowClear />

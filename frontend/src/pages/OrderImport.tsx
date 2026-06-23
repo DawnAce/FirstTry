@@ -27,6 +27,7 @@ import { createProduct } from '../api/products';
 import { ProductFormFields, PUBLICATION_OPTIONS, buildProductPayload } from './ProductForm';
 import type { ProductFormValues } from './ProductForm';
 import { deliveryMethodLabel, formatCoverage, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
+import EcommerceRules from './ecommerceRules';
 
 const { Title, Text } = Typography;
 
@@ -225,6 +226,8 @@ export default function OrderImport() {
   return (
     <div>
       <Title level={3}>电商订单导入</Title>
+
+      <EcommerceRules />
 
       <Card size="small" title="① 导入模式与起投设置" style={{ marginBottom: 16 }}>
         <Space direction="vertical" style={{ width: '100%' }}>

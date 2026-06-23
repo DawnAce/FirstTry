@@ -511,7 +511,7 @@ start_date <= publish_date <= end_date
 - ✅ 往期数据导入（基于系统模板）
 - ✅ 年度刊期 PDF 上传、预览、校验与提交
 - ✅ 订单管理（V1.1：手工录入、确认、作废、覆盖期偏差跟踪）
-- ✅ 销售统计（按活动统计含折扣深度、按期统计）
+- ✅ 活动订单统计（按活动统计含折扣深度、按期统计）
 
 ### 10.2 不包含的功能
 
@@ -519,7 +519,7 @@ start_date <= publish_date <= end_date
 - ❌ 财务管理
 - ❌ 库存管理
 - ❌ 物流跟踪
-- ❌ 深度数据统计报表（已提供基础销售统计：按活动 / 按期，见 §10.4）
+- ❌ 深度数据统计报表（已提供基础活动订单统计：按活动 / 按期，见 §10.4）
 - ❌ 移动端 App
 
 ### 10.3 往期导入（第一版）
@@ -577,8 +577,8 @@ V1.1 上线 MVP 级订单管理，目标是把目前散落在 Excel 中的读者
 - ✅ **原价落库**（`orders.original_amount`，迁移 `c4f1a9e2b6d3`，`Numeric(10,2)`，可空）：CBJ 导出的 `原价`（折前标价）列此前被解析后丢弃（导入器只写 `total_amount=实付`），现持久化；`total_amount` 仍记实付。该字段驱动**按活动统计**的折扣列——`原价合计 = SUM(COALESCE(original_amount, paid))`，`折扣额 = 原价合计 − 实收`（未捕获到原价的订单按无折扣计）。
 - ✅ **商品库 seed 调整**（`app/seeds/products.py`）：新增「《中国经营报》全年订阅（中通 月送）」`CBJ-SUB-1Y-ZTO-M`，¥240，与「中通 周送」¥390 区分（频率落在名称/价格，不进 `DeliveryMethod` 枚举）；促销商品改名为活动无关的「《中国经营报》全年订阅（促销价）」，「618促销活动」/「双十一订阅优惠」/旧全称留作别名——具体活动（618/双十一/年份）归 `order.campaign`（带年份、可聚合），不进商品名。运费补拍仍按运费信号处理，**不**作为商品库商品（不变）。
 
-**销售统计（已完成）**：
-- ✅ 新增「订单管理 → 销售统计」页面，路由 `/analytics`（`frontend/src/pages/Analytics.tsx`）。两张表均按**下单日期**区间筛选，且**只统计有效订单**（草稿/待确认/作废**不计**）。
+**活动订单统计（已完成）**：
+- ✅ 新增「订单管理 → 活动订单统计」页面，路由 `/analytics`（`frontend/src/pages/Analytics.tsx`）。两张表均按**下单日期**区间筛选，且**只统计有效订单**（草稿/待确认/作废**不计**）。
 - ✅ **按活动统计**（by campaign）：`活动 / 订单数 / 原价合计 / 实收金额 / 折扣（省 ¥X 及百分比）`。仅统计带活动标签的订单。折扣由 `original_amount` 驱动：`原价合计 = SUM(COALESCE(original_amount, paid))`，`折扣额 = 原价合计 − 实收`。
 - ✅ **按期统计**（by issue）：`刊物 / 期次(issue_label) / 销量(份) / 销售额 / 行数`。统计带 `issue_label` 的单期行（主要是商学院月刊）。
 - ✅ 后端（需鉴权）：`GET /api/analytics/campaigns?date_from&date_to`、`GET /api/analytics/issues?publication&date_from&date_to`。文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`。
