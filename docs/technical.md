@@ -492,7 +492,7 @@ FirstTry/
 - **商学院月刊自动识别（取代旧的「手动快速新增月刊为商品」思路）**：导入时，未匹配行若标题形如「2026年X月刊《…》」/「2026年2~3月合刊《…》」，自动识别为商学院单期（`publication=business_school`、`single_issue`），并填好 `issue_label`；它**不**创建以年份命名的商品库行、也**不**进「待确认」。守卫：必须含「月刊/合刊」标记 **且** 标题不含「中国经营报」（带日期的中国经营报行仍照常排队）；真正未知商品（如「2026年1月新春礼包」）仍 → 「待确认」。该单期的 `delivery_method` 保持为空（不被订单级 zto 覆盖盖成「中通」）。中国经营报单期走 `issue_number`（期号），商学院单期走 `issue_label`。
 - `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。
 
-**新增接口**：`GET/POST/PUT /api/products`、`POST /api/products/{id}/deactivate`（商品库 CRUD）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
+**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
 
 迁移（均已应用到生产）：
 - `b4d6f8a1c3e5`：补 `ordereventtype` 枚举遗漏的 `item_added/removed/modified`（修复 V1.2 在严格模式 MySQL 上的潜在崩溃）

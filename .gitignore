@@ -22,6 +22,9 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 
+# Logs (e.g. ad-hoc uvicorn-restart.*.log)
+*.log
+
 # Superpowers
 .superpowers/
 .worktrees/

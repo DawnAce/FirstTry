@@ -71,4 +71,4 @@
 - `GET /api/orders?campaign=2026-618` → 按活动筛订单（统计基础）
 - `GET /api/analytics/campaigns?date_from&date_to`（需鉴权）→ 按活动统计（订单数/原价合计/实收/折扣）
 - `GET /api/analytics/issues?publication&date_from&date_to`（需鉴权）→ 按期统计（刊物/期次/销量/销售额/行数）
-- `GET/POST/PUT /api/products`、`POST /api/products/{id}/deactivate` → 商品库管理
+- `GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除）、`POST /api/products/{id}/deactivate`（软停用）→ 商品库管理
