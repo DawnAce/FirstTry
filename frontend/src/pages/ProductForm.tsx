@@ -75,7 +75,7 @@ export function buildProductPayload(values: ProductFormValues): ProductCreatePay
     publication_format: (values.publication_format ?? 'paper') as ProductCreatePayload['publication_format'],
     fulfillment_type: values.fulfillment_type as ProductCreatePayload['fulfillment_type'],
     subscription_term: (values.subscription_term as ProductCreatePayload['subscription_term']) ?? null,
-    delivery_method: (values.delivery_method as ProductCreatePayload['delivery_method']) ?? null,
+    delivery_method: (values.is_bundle ? null : (values.delivery_method ?? null)) as ProductCreatePayload['delivery_method'],
     coverage_rule: values.coverage_rule ?? 'term_from_month',
     list_price: values.list_price ?? 0,
     billing_type: (values.billing_type as ProductCreatePayload['billing_type']) ?? 'paid',
@@ -131,9 +131,11 @@ export function ProductFormFields({ editing }: { editing: boolean }) {
         <Form.Item name="subscription_term" label="订阅期限" style={{ width: 140 }}>
           <Select allowClear options={TERM_OPTIONS} />
         </Form.Item>
-        <Form.Item name="delivery_method" label="投递方式（默认）" style={{ width: 180 }}>
-          <Select allowClear options={DELIVERY_OPTIONS} />
-        </Form.Item>
+        {!isBundle && (
+          <Form.Item name="delivery_method" label="投递方式（默认）" style={{ width: 180 }}>
+            <Select allowClear options={DELIVERY_OPTIONS} />
+          </Form.Item>
+        )}
       </Space>
 
       <Space style={{ display: 'flex' }} align="start">
@@ -149,7 +151,7 @@ export function ProductFormFields({ editing }: { editing: boolean }) {
       </Space>
 
       {isBundle && (
-        <Card size="small" title="套餐组件（按固定价 + 余额拆分；投递可逐刊设）" style={{ marginBottom: 12 }}>
+        <Card size="small" title="套餐组件（每刊：投递 + 固定价/拿余额）" style={{ marginBottom: 12 }}>
           <Form.List name="components">
             {(fields, { add, remove }) => (
               <>
@@ -158,8 +160,8 @@ export function ProductFormFields({ editing }: { editing: boolean }) {
                     <Form.Item {...field} name={[field.name, 'publication']} rules={[{ required: true, message: '选刊物' }]}>
                       <Select options={PUBLICATION_OPTIONS} placeholder="刊物" style={{ width: 130 }} />
                     </Form.Item>
-                    <Form.Item {...field} name={[field.name, 'delivery_method']} tooltip="留空则随套餐顶层投递">
-                      <Select allowClear options={DELIVERY_OPTIONS} placeholder="投递（默认随套餐）" style={{ width: 170 }} />
+                    <Form.Item {...field} name={[field.name, 'delivery_method']} rules={[{ required: true, message: '选投递' }]}>
+                      <Select options={DELIVERY_OPTIONS} placeholder="投递方式" style={{ width: 150 }} />
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'fixed_price']}>
                       <InputNumber min={0} placeholder="固定价" prefix="¥" style={{ width: 120 }} />
