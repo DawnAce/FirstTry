@@ -84,6 +84,8 @@ Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{A
 | Windows CMD | `dev.bat` |
 | macOS / Linux | `./dev.sh` |
 
+> `dev.ps1` / `dev.sh` 启动前会自动跑一次 `alembic upgrade head`（dev 下失败不阻断启动，仅告警）；拉了新代码后无需再手动迁移。
+
 ### 多账号 GitHub 切换（可选）
 
 如果本机同时登录了多个 GitHub 账号（例如 Copilot CLI 注入的 `GH_TOKEN`
@@ -99,11 +101,23 @@ gh pr create ...              # 此后 gh / API 调用都是 DawnAce 身份
 User/Machine 环境变量，关闭窗口后自动恢复。
 
 ### 8. 生产部署
+
+一键脚本，会**构建前端 → 应用数据库迁移（`alembic upgrade head`）→ 启动服务**：
+
+| 系统 | 命令 |
+|------|------|
+| Windows PowerShell | `.\start.ps1` |
+| macOS / Linux | `./start.sh` |
+
+端口默认 8000（可用环境变量 `PORT` 覆盖）；`SKIP_BUILD=1` 可跳过前端构建只做迁移+起服务。访问 `http://<host>:8000`。
+
+> ⚠️ **每次部署/升级新版本都要应用迁移**：代码新增的数据库列（如 `order_items.issue_label`、`orders.original_amount`）必须靠 `alembic upgrade head` 补到生产库，漏了会让导入/统计接口报 `Unknown column` 500。脚本已内置这步（幂等，已应用过的会跳过）；如需手动执行：`cd backend && alembic upgrade head`。
+
+手动等价步骤：
 ```bash
 cd frontend && npm run build
-cd ../backend && uvicorn app.main:app --port 8000
+cd ../backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
-访问 `http://localhost:8000`
 
 ## 往期导入工作流
 

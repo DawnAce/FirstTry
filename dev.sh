@@ -30,6 +30,10 @@ if [ ! -d "$ROOT/frontend/node_modules" ]; then
     cd "$ROOT"
 fi
 
+# 应用数据库迁移（幂等；新拉代码后缺列会导致接口 500）。dev 下不阻断启动。
+echo "🗄️  应用数据库迁移..."
+( cd "$ROOT/backend" && alembic upgrade head ) || echo "⚠️  迁移未成功，继续启动（请手动检查 alembic upgrade head）"
+
 # 启动后端（后台运行）
 echo "🐍 启动后端 (http://localhost:8000) ..."
 cd "$ROOT/backend"

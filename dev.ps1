@@ -28,6 +28,13 @@ if (-not (Test-Path "$ROOT\.env")) {
     exit 1
 }
 
+# 应用数据库迁移（幂等；新拉代码后缺列会导致接口 500）。dev 下不阻断启动。
+Write-Host "🗄️  应用数据库迁移..." -ForegroundColor Yellow
+Push-Location "$ROOT\backend"
+& "$ROOT\backend\venv\Scripts\python.exe" -m alembic upgrade head
+if ($LASTEXITCODE -ne 0) { Write-Host "⚠️  迁移未成功，继续启动（请手动检查）" -ForegroundColor DarkYellow }
+Pop-Location
+
 # 启动后端
 Write-Host "🐍 启动后端 (http://localhost:8000) ..." -ForegroundColor Green
 $backend = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$ROOT\backend'; & '$ROOT\backend\venv\Scripts\activate.ps1'; uvicorn app.main:app --reload --port 8000" -PassThru
