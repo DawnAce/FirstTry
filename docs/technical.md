@@ -422,7 +422,7 @@ FirstTry/
 | 表 | 说明 |
 |----|------|
 | `orders` | 订单主体（订单编码、付款主体、来源、状态、金额）。状态机：`draft → active → void`（`pending_confirmation` 为保留状态，目前不会自动跳入）|
-| `order_items` | 订单明细（一笔履约：订阅 / 单期 / 赠阅 / 补寄 / 续订 / 换订），含 `expected_issues_at_creation` 期数快照、`total_quantity`（每期份数）、`unit_price`（订阅 = 单订户覆盖期总价 / 单期 = 每份零售价）、`subtotal`（= total_quantity × unit_price），以及订阅定价元数据 `subscription_term`（`half_year` / `one_year` / `custom`）、`delivery_method`（`post_office` / `zto_mf`）、`term_start_month`（`YYYY-MM`） |
+| `order_items` | 订单明细（一笔履约：订阅 / 单期 / 赠阅 / 补寄 / 续订 / 换订），含 `expected_issues_at_creation` 期数快照、`total_quantity`（每期份数）、`unit_price`（订阅 = 单订户覆盖期总价 / 单期 = 每份零售价）、`subtotal`（= total_quantity × unit_price），以及订阅定价元数据 `subscription_term`（`half_year` / `one_year` / `custom`）、`delivery_method`（`post_office` / `zto_mf`）、`term_start_month`（`YYYY-MM`）、`issue_label`（单期归一化期次，见下） |
 | `fulfillment_allocations` | 分配方案版本（V1.2 起支持 active 订单明细编辑时按生效期号切出 v2+） |
 | `fulfillment_targets` | 履约目标（收件人 / 电话 / 地址 / 邮编 / 份数 = 每期份数），`shipping_channel` V1.1 默认 `zto_outsource` |
 | `order_events` | 订单事件流（created / confirmed / modified / voided / allocation_updated / target_* / item_added / item_removed / item_modified / synced_to_shipping / shipping_sync_conflict） |
@@ -433,6 +433,8 @@ FirstTry/
 - `order_items.allocation_id` 是 NOT NULL FK，因此**草稿创建时即写入 v1 allocation**（避免 confirm 时改 schema）
 - **份数 / 单价语义**：`order_items.total_quantity` 与 `fulfillment_targets.quantity` 均指**每期**份数（与覆盖期长度无关）；`order_items.unit_price` 在订阅场景下是单订户在整个覆盖期内的订阅费，单期/零售场景下是每份零售价；`subtotal = total_quantity × unit_price`，公式与期数无关。每期实际印数 = total_quantity × `expected_issues_at_creation`（在详情页进度卡里展示）
 - **订阅定价字段（V1.2A）**：`order_items` 现持久化 `subscription_term`（`half_year` / `one_year` / `custom`）、`delivery_method`（`post_office` / `zto_mf`）与 `term_start_month`（`YYYY-MM`）。这些字段用于保存订阅报价与起订月元数据；覆盖范围的履约权威字段仍然是 `coverage_start_date / coverage_end_date`，因此 2 年等非标周期依旧通过实际日期区间表达。
+- **单期期次标识 `order_items.issue_label`（迁移 `b8e3a1c5d7f0`，`String(32)`、加索引）**：为没有「期号」的刊物（主要是商学院月刊）记录归一化的单期身份，格式 `YYYY-MM` / `YYYY-MM~MM`（合刊）。年月归属于「期」这一层（即本字段），**不写进任何商品名**。中国经营报单期继续使用 `issue_number`（期号），商学院月刊使用 `issue_label`。归一化辅助函数：`app/services/issue_label.py` 的 `normalize_business_school_issue_label()`。本字段也是 §4.15「按期统计」的聚合维度。
+- **原价列 `orders.original_amount`（迁移 `c4f1a9e2b6d3`，`Numeric(10,2)`、可空）**：CBJ 导出的「原价」（折前标价）列原先解析后被丢弃（导入器只写 `total_amount=实付`），现予以持久化；`total_amount` 仍追踪实付。该列支撑 §4.15「按活动统计」的折扣计算：`原价合计 = SUM(COALESCE(original_amount, paid))`，`折扣额 = 原价合计 − 实收`（未捕获原价的订单按「无折扣」计）。
 - 所有金额字段使用 `DECIMAL(10, 2)`（最大 9999 9999.99 元）；前端 TS 用 `string` 传输，避免 JS 浮点损失
 - 在 active 状态下，`PUT /api/orders/{id}` 仍只允许 `order_service.ACTIVE_EDITABLE_FIELDS` 白名单内的 13 个非结构字段被修改；明细 / 履约目标的结构改动改走 `PUT /api/orders/{id}/items`，并按 `effective_from_issue` 关闭旧 allocation、创建新版本或取消缺失明细
 - **当前业务范围限定**：仍主要覆盖"个人客户预付 + 同事赠阅"两种场景。`paid_amount` 字段虽已建表，但**没有任何业务逻辑读它**（不算欠款、不阻塞 confirm、不做对账、列表不能按"未付清"过滤）。"渠道订单（先履约后付款 / 赊账）"留待后续版本的财务对账引入「收款流水子表 + 欠款追踪 + 未付清筛选 + Dashboard 欠款卡片」时再激活该字段的业务价值
@@ -475,6 +477,11 @@ FirstTry/
 
 **活动 + 赠品（按批次落到订单，商品库不按年拆）**：每年 618 等活动的「价格差异」走实付、「基础履约」(618=全年/邮局) 稳定 → 商品库一行兜住、不为每年的活动建行；活动差异写到订单：`campaign` 标签（追溯 + `GET /api/orders?campaign=…` 统计）；`bonus_months` 顺延订阅覆盖期末（如送 1 月 → 13 个月）；`gift_publication`/`gift_note` 生成一条**免费赠品明细**（`fulfillment_type=gift` / `billing_type=free_gift`，收件人同主单 → `compute_expected_issues` 返回 None，不计期数偏差、不进自动同步）。延长与赠品**只作用于含订阅的订单**，单期单跳过。
 
+**商品库种子（`app/seeds/products.py`）要点**：
+- 新增商品「《中国经营报》全年订阅（中通 月送）」`code = CBJ-SUB-1Y-ZTO-M`、¥240，与「中通 周送」¥390 区分开（发送频率落在商品名/价格上，**不进** `DeliveryMethod` 枚举）。
+- 促销商品改名为活动中性的「《中国经营报》全年订阅（促销价）」；「618促销活动」/「双十一订阅优惠」/旧全名保留为 `aliases`。理由：具体活动（618 / 双十一 / 年份）属于 `order.campaign`（携带年份、可聚合），不属于商品名。
+- 运费补拍仍按运费信号处理，**不是**目录商品（保持不变）。
+
 **关键不变量与业务规则**：
 - 定价取**实付金额**（促销价如 199/576/10），`list_price` 只用于差异提示。
 - 套餐：中国经营报固定 ¥240，商学院 = 实付 − 固定；余额为负时打 warning。
@@ -482,6 +489,7 @@ FirstTry/
 - 起投时间**人为按批设定**（非写死 15 号）：付款晚于截止日 → 顺延一个月；每单可在预览/订单页改。
 - 状态映射：认得的映到干净枚举，认不得的默认 `paid` + 标黄待核；退款单「收但标记」，绝不静默丢。
 - 未识别商品 → 「待确认」队列：预览页按商品名聚合成「待确认商品汇总」，一键预填快速新增到商品库（智能默认 + `ProductForm` 共享组件）、保存后自动重新预览，绝不乱猜。
+- **商学院月刊自动识别（取代旧的「手动快速新增月刊为商品」思路）**：导入时，未匹配行若标题形如「2026年X月刊《…》」/「2026年2~3月合刊《…》」，自动识别为商学院单期（`publication=business_school`、`single_issue`），并填好 `issue_label`；它**不**创建以年份命名的商品库行、也**不**进「待确认」。守卫：必须含「月刊/合刊」标记 **且** 标题不含「中国经营报」（带日期的中国经营报行仍照常排队）；真正未知商品（如「2026年1月新春礼包」）仍 → 「待确认」。该单期的 `delivery_method` 保持为空（不被订单级 zto 覆盖盖成「中通」）。中国经营报单期走 `issue_number`（期号），商学院单期走 `issue_label`。
 - `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。
 
 **新增接口**：`GET/POST/PUT /api/products`、`POST /api/products/{id}/deactivate`（商品库 CRUD）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
@@ -492,6 +500,10 @@ FirstTry/
 - `d7f9b1c3e5a8`：建 `products`（商品库）表
 - `e1a3c5b7d9f2`：`orders` 新增 `commercial_status` / `source_status_raw` / `is_historical_archive`
 - `f3b5d7c9e1a2`：`orders` 新增 `campaign`（营销活动标签，可空 + 索引）
+- `b8e3a1c5d7f0`：`order_items` 新增 `issue_label`（单期归一化期次，`String(32)` + 索引）
+- `c4f1a9e2b6d3`：`orders` 新增 `original_amount`（原价 / 折前标价，`Numeric(10,2)` 可空）
+
+> 部署见 README §8。
 
 ## 4. API 接口一览
 
@@ -1516,8 +1528,22 @@ draft ──confirm──> active ──void──> void
 - `active`：`PUT /api/orders/{id}` 仅允许 `ACTIVE_EDITABLE_FIELDS`（13 个非结构字段，含发票抬头 / 税号 / 接收邮箱）；items / targets 结构改动走 `PUT /api/orders/{id}/items`，并要求提供新版本生效期号
 - `void`：终态，任何编辑/重新确认返回 409
 
+### 4.15 销售统计（Analytics）
 
+订单管理子模块下的「销售统计」页（前端 `/analytics`，`frontend/src/pages/Analytics.tsx`，侧边栏「订单管理 → 销售统计」）。后端文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`，均需 JWT 鉴权。
 
+两张表均可按**下单日期**区间筛选，且**只统计 active（已确认 / 已导入）订单**——草稿 / 待确认 / 作废一律不计。
+
+- **按活动统计**（by campaign）：仅统计**携带 `campaign` 标签**的订单，列为 活动 / 订单数 / 原价合计 / 实收金额 / 折扣（省 ¥X 及百分比）。折扣公式：`原价合计 = SUM(COALESCE(original_amount, paid))`、`折扣额 = 原价合计 − 实收`（未捕获原价的订单按无折扣计）。
+- **按期统计**（by issue）：仅统计携带 `issue_label` 的单期行（主要是商学院月刊），列为 刊物 / 期次（`issue_label`）/ 销量（份）/ 销售额 / 行数。
+
+#### GET /api/analytics/campaigns
+
+按活动汇总。查询参数：`date_from` / `date_to`（下单日期区间）。
+
+#### GET /api/analytics/issues
+
+按期汇总。查询参数：`publication`（刊物）/ `date_from` / `date_to`。
 
 
 发货明细的生成遵循以下优先级规则：
