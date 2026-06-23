@@ -25,6 +25,7 @@
 | 4c | **原价落库 `original_amount`**：`orders.original_amount` 持久化 CBJ 导出「原价（折前标价）」列（旧版解析后丢弃，只写 `total_amount=实付`）；`total_amount` 仍跟实付。支撑「按活动统计」折扣列：原价合计 `= SUM(COALESCE(original_amount, paid))`，折扣额 `= 原价合计 − 实收`（无原价的单按无折扣计）。| ✅ 已加列 `c4f1a9e2b6d3`（`Numeric(10,2)`，可空）|
 | 4d | **活动订单统计**（新模块）：前端「订单管理 → 活动订单统计」页（路由 `/analytics`，`frontend/src/pages/Analytics.tsx`），两张表均按**下单日期**区间筛、均**只计有效单**（草稿/待确认/作废不计）：①**按活动统计**（活动/订单数/原价合计/实收金额/折扣 省¥X 及百分比，仅含带活动标签的单）；②**按期统计**（刊物/期次 `issue_label`/销量份/销售额/行数，仅含带 `issue_label` 的单期行，主为商学院月刊）。后端（需鉴权）：`GET /api/analytics/campaigns?date_from&date_to`、`GET /api/analytics/issues?publication&date_from&date_to`。文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`。| —（前端 + 后端）|
 | 4e | **商品库 seed 调整**（`app/seeds/products.py`）：新增「《中国经营报》全年订阅（中通 月送）」`CBJ-SUB-1Y-ZTO-M` ¥240（区别于「中通 周送」¥390，频次落名/价而非 `DeliveryMethod` 枚举）；促销品改名为活动中性的「《中国经营报》全年订阅（促销价）」，「618促销活动 / 双十一订阅优惠 / 旧全名」保留为别名（具体活动 618/双十一/年份归 `order.campaign`、可聚合，不进品名）。| —（seed）|
+| 4f | **页面内业务规则提示**：共享可折叠面板 `<EcommerceRules>`（`frontend/src/pages/ecommerceRules.tsx`，单一出处）→ 同时挂在**电商导入页** `/orders/import` 与**订单列表** `/orders`，统一展示电商业务规则（商品识别·定价 / 覆盖期 / 投递·运费 / 状态导入策略 / 去重 / **历史归档单**：不自动同步、需「补覆盖期 + 手动触发同步（仅中通）」才发货 / 活动标签·赠品 / 活动订单统计口径）。默认收起，改一处两页同步。| —（前端）|
 
 **后端 306 测试、前端 80 测试全绿；`tsc -b` / `npm run build` 通过；真实 CBJ 文件（100 单）预览验证通过。**
 
