@@ -75,6 +75,18 @@ def _simple_product(**over):
     return payload
 
 
+def test_delete_product_hard_removes_it(client):
+    pid = client.post("/api/products", json=_simple_product(code="DEL-1")).json()["id"]
+    r = client.delete(f"/api/products/{pid}")
+    assert r.status_code == 204, r.text
+    # gone for good
+    assert client.get(f"/api/products/{pid}").status_code == 404
+
+
+def test_delete_missing_product_404(client):
+    assert client.delete("/api/products/999999").status_code == 404
+
+
 def test_create_and_get_product(client):
     r = client.post("/api/products", json=_simple_product())
     assert r.status_code == 201, r.text

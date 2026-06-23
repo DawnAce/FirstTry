@@ -122,3 +122,23 @@ def deactivate_product(
     db.commit()
     db.refresh(product)
     return product
+
+
+@router.delete("/{product_id}", status_code=204)
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Hard-delete a product row.
+
+    Safe by construction: order items snapshot their own attributes and do NOT
+    reference ``products`` (no FK), so deleting a catalog row never touches
+    historical order data. Prefer ``POST /{id}/deactivate`` to retire a product
+    while keeping it on record; use delete to remove a mistake / test row.
+    """
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if product is None:
+        raise HTTPException(status_code=404, detail=f"商品 {product_id} 不存在")
+    db.delete(product)
+    db.commit()

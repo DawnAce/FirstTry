@@ -6,6 +6,7 @@ import {
   Form,
   Input,
   Modal,
+  Popconfirm,
   Space,
   Table,
   Tag,
@@ -17,6 +18,7 @@ import type { TableColumnsType } from 'antd';
 import {
   createProduct,
   deactivateProduct,
+  deleteProduct,
   listProducts,
   productQueryKeys,
   updateProduct,
@@ -77,6 +79,16 @@ export default function ProductCatalog() {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.all });
     },
     onError: () => message.error('停用失败'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteProduct(id),
+    onSuccess: () => {
+      message.success('已删除');
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.all });
+    },
+    onError: (err: { response?: { data?: { detail?: string } } }) =>
+      message.error(err.response?.data?.detail ?? '删除失败'),
   });
 
   const openCreate = () => {
@@ -170,16 +182,26 @@ export default function ProductCatalog() {
       {
         title: '操作',
         key: 'actions',
-        width: 130,
+        width: 180,
         fixed: 'right',
         render: (_: unknown, row) => (
           <Space size={4}>
             <Button type="link" size="small" onClick={() => openEdit(row)}>编辑</Button>
             {row.active ? (
-              <Button type="link" size="small" danger onClick={() => deactivateMutation.mutate(row.id)}>停用</Button>
+              <Button type="link" size="small" onClick={() => deactivateMutation.mutate(row.id)}>停用</Button>
             ) : (
               <Button type="link" size="small" onClick={() => reactivate(row)}>启用</Button>
             )}
+            <Popconfirm
+              title="删除该商品？"
+              description="删除后不可恢复；已导入的订单不受影响（明细是独立快照）。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => deleteMutation.mutate(row.id)}
+            >
+              <Button type="link" size="small" danger>删除</Button>
+            </Popconfirm>
           </Space>
         ),
       },
