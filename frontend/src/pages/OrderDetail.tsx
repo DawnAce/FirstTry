@@ -1099,7 +1099,7 @@ function EventCard({ event }: { event: OrderEventOut }) {
           items={[
             {
               key: 'payload',
-              label: <Text type="secondary" style={{ fontSize: 12 }}>查看完整 payload</Text>,
+              label: <Text type="secondary" style={{ fontSize: 12 }}>查看完整数据</Text>,
               children: (
                 <pre
                   style={{

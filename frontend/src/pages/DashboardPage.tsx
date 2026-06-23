@@ -169,7 +169,7 @@ export default function Dashboard() {
     {
       title: '更新人',
       key: 'updater',
-      render: () => 'admin',
+      render: () => '管理员',
     },
     {
       title: '操作',

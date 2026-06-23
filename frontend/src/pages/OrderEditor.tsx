@@ -462,6 +462,7 @@ function validateBusinessRules(values: OrderFormValues): string[] {
 function showValidationErrors(errors: string[]): void {
   Modal.error({
     title: '请修正以下问题',
+    okText: '确定',
     content: (
       <ul style={{ marginTop: 8, paddingLeft: 20 }}>
         {errors.map((e, i) => (

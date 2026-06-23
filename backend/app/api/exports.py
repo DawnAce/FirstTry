@@ -54,7 +54,7 @@ def _persist_export_snapshot(issue: Issue, snapshot_type: str, db: Session) -> N
 def export_report(issue_id: int, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     output = export_report_excel(issue_id, db)
     _persist_export_snapshot(issue, "report_export", db)
@@ -70,7 +70,7 @@ def export_report(issue_id: int, db: Session = Depends(get_db)):
 def export_shipping(issue_id: int, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     output = export_shipping_excel(issue_id, db)
     _persist_export_snapshot(issue, "shipping_export", db)
@@ -86,7 +86,7 @@ def export_shipping(issue_id: int, db: Session = Depends(get_db)):
 def export_all(issue_id: int, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     report_bytes = export_report_excel(issue_id, db)
     shipping_bytes = export_shipping_excel(issue_id, db)

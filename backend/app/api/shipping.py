@@ -28,7 +28,7 @@ def _to_out(record: ShippingRecord, db: Session) -> ShippingRecordOut:
 def get_shipping(issue_id: int, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     records = db.query(ShippingRecord).filter(ShippingRecord.issue_id == issue_id).all()
     if not records:

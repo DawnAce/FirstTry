@@ -32,7 +32,7 @@ def create_template(body: TemplateCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(
             status_code=409,
-            detail=f"Template with category='{body.category}' and sub_category='{body.sub_category}' already exists",
+            detail=f"类别为「{body.category}」、子类别为「{body.sub_category}」的模板已存在",
         )
     template = ReportItemTemplate(**body.model_dump())
     db.add(template)
@@ -46,7 +46,7 @@ def update_template(template_id: int, body: TemplateUpdate, db: Session = Depend
     """Update an existing report item template."""
     template = db.query(ReportItemTemplate).filter(ReportItemTemplate.id == template_id).first()
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="模板不存在")
 
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -62,7 +62,7 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
     """Delete a report item template."""
     template = db.query(ReportItemTemplate).filter(ReportItemTemplate.id == template_id).first()
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="模板不存在")
 
     db.delete(template)
     db.commit()

@@ -568,12 +568,12 @@ def confirm_order(
     """
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
-        raise HTTPException(status_code=404, detail=f"order {order_id} not found")
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
     if order.status == OrderStatus.active:
-        raise HTTPException(status_code=409, detail="order already active")
+        raise HTTPException(status_code=409, detail="订单已激活")
     if order.status == OrderStatus.void:
         raise HTTPException(
-            status_code=409, detail="voided order cannot be confirmed"
+            status_code=409, detail="已作废的订单无法确认"
         )
 
     if not order.order_code:
@@ -613,9 +613,9 @@ def update_order(
     """
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
-        raise HTTPException(status_code=404, detail=f"order {order_id} not found")
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
     if order.status == OrderStatus.void:
-        raise HTTPException(status_code=409, detail="voided order cannot be updated")
+        raise HTTPException(status_code=409, detail="已作废的订单无法修改")
 
     update_dict = data.model_dump(exclude_unset=True)
     is_active = order.status == OrderStatus.active
@@ -626,8 +626,8 @@ def update_order(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"field '{field}' cannot be edited on active orders "
-                    "(structural edits land in V1.2)"
+                    f"字段「{field}」不可在已激活订单上修改"
+                    "（结构性修改将于 V1.2 版本支持）"
                 ),
             )
         old_val = getattr(order, field, None)
@@ -660,9 +660,9 @@ def void_order(
     """Mark order ``void`` and log the reason."""
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
-        raise HTTPException(status_code=404, detail=f"order {order_id} not found")
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
     if order.status == OrderStatus.void:
-        raise HTTPException(status_code=409, detail="order already void")
+        raise HTTPException(status_code=409, detail="订单已作废")
 
     order.status = OrderStatus.void
     log_event(
@@ -707,11 +707,11 @@ def update_order_items(
     )
 
     if order is None:
-        raise HTTPException(status_code=404, detail=f"order {order_id} not found")
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
     if order.status != OrderStatus.active:
         raise HTTPException(
             status_code=409,
-            detail=f"items can only be edited on active orders (current: {order.status.value})",
+            detail=f"仅可编辑已激活订单的明细（当前状态：{order.status.value}）",
         )
 
     existing_items = {
@@ -723,14 +723,14 @@ def update_order_items(
     if unknown_ids:
         raise HTTPException(
             status_code=422,
-            detail=f"items do not belong to this active order: {sorted(unknown_ids)}",
+            detail=f"以下明细不属于该已激活订单：{sorted(unknown_ids)}",
         )
 
     id_list = [it.id for it in data.items if it.id is not None]
     if len(id_list) != len(set(id_list)):
         raise HTTPException(
             status_code=422,
-            detail="duplicate item IDs in request",
+            detail="请求中存在重复的明细 ID",
         )
 
     for item_id, item in existing_items.items():
@@ -797,7 +797,7 @@ def get_order_detail(db: Session, order_id: int) -> Order:
         .first()
     )
     if order is None:
-        raise HTTPException(status_code=404, detail=f"order {order_id} not found")
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
     return order
 
 

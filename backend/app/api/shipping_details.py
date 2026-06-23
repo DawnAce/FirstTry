@@ -84,7 +84,7 @@ def _copy_shipping_details_from_previous(
         .first()
     )
     if not target_issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_number} not found")
+        raise HTTPException(status_code=404, detail=f"刊期 {issue_number} 不存在")
 
     previous_issue = (
         db.query(Issue.id)
@@ -92,7 +92,7 @@ def _copy_shipping_details_from_previous(
         .first()
     )
     if not previous_issue:
-        raise HTTPException(status_code=404, detail=f"Issue {previous_issue_number} not found")
+        raise HTTPException(status_code=404, detail=f"刊期 {previous_issue_number} 不存在")
 
     locked_existing_ids = (
         db.query(ShippingDetail.id)
@@ -151,7 +151,7 @@ def _ensure_all_ids_found(requested_ids: list[int], details: list[ShippingDetail
     if missing_ids:
         raise HTTPException(
             status_code=404,
-            detail=f"Shipping detail IDs not found: {', '.join(map(str, missing_ids))}",
+            detail=f"未找到发货明细 ID：{', '.join(map(str, missing_ids))}",
         )
 
 
@@ -308,7 +308,7 @@ def update_shipping_detail(
 ):
     detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
     if not detail:
-        raise HTTPException(status_code=404, detail="Shipping detail not found")
+        raise HTTPException(status_code=404, detail="发货明细不存在")
     old_snapshot = _snapshot(detail)
     update_data = data.model_dump(exclude_unset=True)
     if update_data.get("address"):
@@ -375,7 +375,7 @@ def clear_shipping_details_by_issue(
 ):
     issue = db.query(Issue.id).filter(Issue.issue_number == issue_number).first()
     if not issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_number} not found")
+        raise HTTPException(status_code=404, detail=f"刊期 {issue_number} 不存在")
 
     details = (
         db.query(ShippingDetail)
@@ -410,7 +410,7 @@ def delete_shipping_detail(
 ):
     detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
     if not detail:
-        raise HTTPException(status_code=404, detail="Shipping detail not found")
+        raise HTTPException(status_code=404, detail="发货明细不存在")
     log = OperationLog(
         table_name="shipping_details",
         record_id=detail.id,

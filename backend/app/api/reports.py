@@ -110,7 +110,7 @@ def _copy_previous_shipping_details_for_confirm(
 def get_report(issue_id: int, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     entries = (
         db.query(ReportEntry)
@@ -181,7 +181,7 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
 def update_report(issue_id: int, data: ReportDataUpdate, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     if issue.status == IssueStatus.confirmed:
         raise HTTPException(status_code=403, detail="报数已确认，如需修改请先作废")
@@ -207,7 +207,7 @@ def update_report(issue_id: int, data: ReportDataUpdate, db: Session = Depends(g
 def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     issue = db.query(Issue).filter(Issue.id == issue_id).with_for_update().first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     # Validation
     entries = db.query(ReportEntry).filter(ReportEntry.issue_id == issue_id).all()
@@ -273,7 +273,7 @@ def revoke_report(
     """作废当前确认，记录快照，恢复为draft状态。仅管理员可操作。"""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     if issue.status != IssueStatus.confirmed:
         raise HTTPException(status_code=400, detail="该期尚未确认，无需作废")
@@ -340,7 +340,7 @@ def get_temp_print_details(issue_id: int, db: Session = Depends(get_db)):
     """获取临时加印归属明细。"""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     details = (
         db.query(TempPrintDetail)
@@ -360,7 +360,7 @@ def update_temp_print_details(
     """替换临时加印归属明细，并同步更新临时加印_自留条目。"""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     if issue.status == IssueStatus.confirmed:
         raise HTTPException(status_code=403, detail="报数已确认，如需修改请先作废")

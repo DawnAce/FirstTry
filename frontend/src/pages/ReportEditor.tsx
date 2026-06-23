@@ -339,6 +339,7 @@ export default function ReportEditor() {
         Modal.warning({
           title: '中通发货份数不一致',
           content: confirmData.warning,
+          okText: '确定',
           onOk: () => navigate('/'),
         });
       } else {

@@ -201,7 +201,7 @@ def apply_order_shipping_sync(
 def _get_issue(db: Session, issue_number: int) -> Issue:
     issue = db.query(Issue).filter(Issue.issue_number == issue_number).first()
     if issue is None:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_number} not found")
+        raise HTTPException(status_code=404, detail=f"刊期 {issue_number} 不存在")
     return issue
 
 
@@ -218,11 +218,11 @@ def _get_order(db: Session, order_id: int) -> Order:
         .first()
     )
     if order is None:
-        raise HTTPException(status_code=404, detail=f"order {order_id} not found")
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
     if order.status != OrderStatus.active:
         raise HTTPException(
             status_code=409,
-            detail="only active orders can be synced to shipping details",
+            detail="仅可将已激活的订单同步至发货明细",
         )
     return order
 

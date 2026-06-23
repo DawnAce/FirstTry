@@ -71,7 +71,7 @@ def create_recipient(data: RecipientCreate, db: Session = Depends(get_db)):
 def update_recipient(recipient_id: int, data: RecipientUpdate, db: Session = Depends(get_db)):
     recipient = db.query(Recipient).filter(Recipient.id == recipient_id).first()
     if not recipient:
-        raise HTTPException(status_code=404, detail="Recipient not found")
+        raise HTTPException(status_code=404, detail="收件人不存在")
     update_data = data.model_dump()
     if update_data.get("address"):
         parsed = normalize_address(update_data["address"])
@@ -91,7 +91,7 @@ def update_recipient(recipient_id: int, data: RecipientUpdate, db: Session = Dep
 def update_status(recipient_id: int, data: StatusUpdate, db: Session = Depends(get_db)):
     recipient = db.query(Recipient).filter(Recipient.id == recipient_id).first()
     if not recipient:
-        raise HTTPException(status_code=404, detail="Recipient not found")
+        raise HTTPException(status_code=404, detail="收件人不存在")
     recipient.status = data.status
     db.commit()
     db.refresh(recipient)
@@ -114,7 +114,7 @@ def list_subscriptions(recipient_id: int, db: Session = Depends(get_db)):
 def create_subscription(recipient_id: int, data: SubscriptionCreate, db: Session = Depends(get_db)):
     recipient = db.query(Recipient).filter(Recipient.id == recipient_id).first()
     if not recipient:
-        raise HTTPException(status_code=404, detail="Recipient not found")
+        raise HTTPException(status_code=404, detail="收件人不存在")
 
     sub = Subscription(recipient_id=recipient_id, **data.model_dump())
     db.add(sub)

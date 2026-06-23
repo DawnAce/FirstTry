@@ -863,7 +863,7 @@ def test_confirm_order_idempotent_already_active_409():
     with pytest.raises(HTTPException) as exc:
         order_service.confirm_order(db, 1)
     assert exc.value.status_code == 409
-    assert "already active" in str(exc.value.detail)
+    assert "已激活" in str(exc.value.detail)
 
 
 def test_confirm_order_voided_409():
@@ -873,7 +873,7 @@ def test_confirm_order_voided_409():
     with pytest.raises(HTTPException) as exc:
         order_service.confirm_order(db, 1)
     assert exc.value.status_code == 409
-    assert "voided" in str(exc.value.detail)
+    assert "作废" in str(exc.value.detail)
 
 
 def test_confirm_order_not_found_404():

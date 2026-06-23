@@ -23,7 +23,7 @@ def list_issues(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
 def next_issue(db: Session = Depends(get_db)):
     info = get_next_issue_info(db)
     if not info:
-        raise HTTPException(status_code=404, detail="No upcoming issues found in schedule")
+        raise HTTPException(status_code=404, detail="排期表中暂无即将发布的刊期")
     return info
 
 
@@ -37,7 +37,7 @@ def available_issues(db: Session = Depends(get_db)):
 def create_issue(data: IssueCreate, db: Session = Depends(get_db)):
     existing = db.query(Issue).filter(Issue.issue_number == data.issue_number).first()
     if existing:
-        raise HTTPException(status_code=409, detail=f"Issue {data.issue_number} already exists")
+        raise HTTPException(status_code=409, detail=f"刊期 {data.issue_number} 已存在")
     result = create_issue_with_data(db, data.issue_number, data.publish_date, data.notes)
     invalidate_dashboard_cache()
     return build_issue_out(db, result)
@@ -47,7 +47,7 @@ def create_issue(data: IssueCreate, db: Session = Depends(get_db)):
 def get_issue(issue_id: int, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
     return build_issue_out(db, issue)
 
 
@@ -55,7 +55,7 @@ def get_issue(issue_id: int, db: Session = Depends(get_db)):
 def update_issue(issue_id: int, data: IssueUpdate, db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
     if data.page_count is not None:
         issue.page_count = data.page_count
     if data.notes is not None:
@@ -69,7 +69,7 @@ def update_issue(issue_id: int, data: IssueUpdate, db: Session = Depends(get_db)
 def delete_issue(issue_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+        raise HTTPException(status_code=404, detail="刊期不存在")
 
     issue_number = issue.issue_number
     db.query(ShippingDetail).filter(ShippingDetail.issue_number == issue_number).delete()
