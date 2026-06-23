@@ -1770,6 +1770,11 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - SQL 注入防护（SQLAlchemy ORM）
 - CORS 配置
 
+### 8.6 中文本地化（i18n）
+- 全局在 `frontend/src/bootstrap.tsx` 用 `<ConfigProvider locale={zhCN}>`（`antd/locale/zh_CN`）包裹应用，并 `dayjs.locale('zh-cn')`，一次性将所有 Ant Design 内置文案中文化：Modal/Popconfirm 的「确定 / 取消」按钮、表格「暂无数据」空状态、分页、列筛选（搜索/重置）、排序提示、DatePicker 面板（含月份/星期）、Select「无匹配结果」、Upload「删除文件」、Form 默认校验提示等。
+- **静态方法例外**：`Modal.confirm/.error/.warning/.info` 等静态调用在 antd v6 下不消费 `ConfigProvider` 上下文，其默认按钮仍为英文，需在调用处显式传 `okText`（必要时 `cancelText`）。
+- **文案约定**：所有面向用户的文字一律中文，包括后端 `HTTPException.detail` 错误信息——它经 `err.response.data.detail` 在前端 toast 弹出，因此后端报错文案也用中文（f-string 占位符如 `{order_id}` 保持不变）。后端成功响应体的 `message` 字段仅供程序读取、不直接展示给用户，可保留英文（部分被测试断言）。
+
 ## 9. 常见问题
 
 ### Q1: 如何添加新的报数项目？
