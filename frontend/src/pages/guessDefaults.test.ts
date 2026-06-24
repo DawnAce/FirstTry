@@ -43,3 +43,17 @@ describe('guessDefaults — 投递与期限', () => {
     expect(guessDefaults('《中国经营报》半年订阅（邮局周投）').subscription_term).toBe('half_year');
   });
 });
+
+describe('guessDefaults — 单期类型', () => {
+  it('往期零售 → 单期 + 自定义（期号由客服按单告知、人工补）', () => {
+    const d = guessDefaults('《中国经营报》单期 往期零售');
+    expect(d.fulfillment_type).toBe('single_issue');
+    expect(d.coverage_rule).toBe('custom');
+  });
+
+  it('最新一期 → 单期 + 最新一期', () => {
+    const d = guessDefaults('《中国经营报》最新一期订阅');
+    expect(d.fulfillment_type).toBe('single_issue');
+    expect(d.coverage_rule).toBe('latest_issue');
+  });
+});

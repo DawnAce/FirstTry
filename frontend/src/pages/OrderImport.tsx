@@ -64,6 +64,10 @@ export function guessDefaults(name: string): Partial<ProductFormValues> {
     d.fulfillment_type = 'subscription';
     d.subscription_term = 'half_year';
     d.coverage_rule = 'term_from_month';
+  } else if (name.includes('往期') || name.includes('零售')) {
+    // 往期零售：单期，具体期号由客服按单告知 → 自定义、导入后人工补期号
+    d.fulfillment_type = 'single_issue';
+    d.coverage_rule = 'custom';
   } else if (name.includes('最新一期') || name.includes('刊')) {
     d.fulfillment_type = 'single_issue';
     d.coverage_rule = 'latest_issue';

@@ -307,6 +307,21 @@ def test_latest_issue_assigns_issue_number_from_payment_time(db):
     assert not any("翻期临界" in w for w in row.warnings)
 
 
+def test_back_issue_order_flags_missing_issue_number(db):
+    # 往期零售（自定义单期）：导入留空期号 + 标黄提醒补（期号靠客服告知，不在订单里）。
+    po = _po(
+        paid=Decimal("10"),
+        lines=[_line("《中国经营报》单期 往期零售", price=Decimal("10"))],
+    )
+    pv = build_import_preview(db, [po], RECENT)
+    row = pv.rows[0]
+    assert row.decision == "import"
+    item = row.order_create.items[0]
+    assert item.fulfillment_type == FulfillmentType.single_issue
+    assert item.issue_number is None
+    assert any("往期单" in w for w in row.warnings)
+
+
 def test_latest_issue_borderline_friday_night_flags(db):
     _cbj_weekly_schedule(db)
     # Fri 6-19 23:00 → after the ~22:00 flip → upcoming 6-22 issue, within ±4h → flagged.

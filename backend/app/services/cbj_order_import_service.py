@@ -303,6 +303,15 @@ def build_import_preview(
                 item.issue_number = li.issue_number
                 if li.note:
                     warnings.append(li.note)
+            # 往期零售（自定义单期，既无期号也无期次标签）：具体期号靠客服按单告知，
+            # 导入留空 + 标黄提醒补，免得漏填导致发货不知发哪期。
+            elif (
+                ri.coverage_rule == CoverageRule.custom
+                and item.fulfillment_type == FulfillmentType.single_issue
+                and item.issue_number is None
+                and not item.issue_label
+            ):
+                warnings.append("往期单：请补该单实际期号（客服确认）")
             item.targets = [
                 FulfillmentTargetIn(
                     recipient_name=po.recipient_name or "(未填写)",
