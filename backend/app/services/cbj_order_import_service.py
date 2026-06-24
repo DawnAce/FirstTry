@@ -25,7 +25,13 @@ from typing import List, Optional, Tuple
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import Order, OrderCommercialStatus, OrderPaymentMethod, Product
+from app.models import (
+    Order,
+    OrderCommercialStatus,
+    OrderPaymentMethod,
+    Product,
+    PublicationSchedule,
+)
 from app.models.order_item import (
     BillingType,
     DeliveryMethod,
@@ -41,6 +47,7 @@ from app.services.cbj_order_import_parser import ParsedOrder, parse_cbj_orders
 from app.services.order_code_service import allocate_order_codes
 from app.services.order_import_status_service import map_commercial_status
 from app.services.issue_label import normalize_business_school_issue_label
+from app.services.latest_issue_resolver import resolve_latest_issue
 from app.services.order_service import create_imported_order
 from app.services.product_resolver_service import (
     ResolvedItem,
@@ -190,6 +197,7 @@ def build_import_preview(
     db: Session, parsed_orders: List[ParsedOrder], settings: BatchSettings
 ) -> ImportPreview:
     products = db.query(Product).filter(Product.active.is_(True)).all()
+    schedule = db.query(PublicationSchedule).all()
     existing = {
         e
         for (e,) in db.query(Order.external_order_no)
@@ -289,6 +297,12 @@ def build_import_preview(
             item.coverage_start_date, item.coverage_end_date = _coverage_for(
                 settings, item, ri.coverage_rule, po.payment_time
             )
+            # 最新一期：按"付款时间 + 刊期表 + 周五~22点翻期(±4h临界)"自动判期号；临界标黄待核。
+            if ri.coverage_rule == CoverageRule.latest_issue:
+                li = resolve_latest_issue(schedule, po.payment_time)
+                item.issue_number = li.issue_number
+                if li.note:
+                    warnings.append(li.note)
             item.targets = [
                 FulfillmentTargetIn(
                     recipient_name=po.recipient_name or "(未填写)",
@@ -354,6 +368,7 @@ def _serialize_row(r: PreviewRow) -> dict:
                     "subscription_term": it.subscription_term.value if it.subscription_term else None,
                     "delivery_method": it.delivery_method.value if it.delivery_method else None,
                     "issue_label": it.issue_label,
+                    "issue_number": it.issue_number,
                     "total_quantity": it.total_quantity,
                     "unit_price": str(it.unit_price),
                     "subtotal": str(it.subtotal),

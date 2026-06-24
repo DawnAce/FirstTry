@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base
 from app.models import Order, OrderCommercialStatus, OrderEntryMethod, OrderStatus
 from app.models.order_item import BillingType, DeliveryMethod, FulfillmentType, Publication
+from app.models.publication_schedule import PublicationSchedule
 from app.seeds.products import seed_products
 from app.services.cbj_order_import_parser import ParsedOrder, ProductLine
 from app.services.cbj_order_import_service import BatchSettings, build_import_preview
@@ -279,3 +280,42 @@ def test_zto_override_does_not_stamp_business_school_single_issue(db):
     assert bs.fulfillment_type == FulfillmentType.single_issue
     assert bs.issue_label == "2026-01"
     assert bs.delivery_method is None
+
+
+def _cbj_weekly_schedule(db):
+    db.add_all([
+        PublicationSchedule(year=2026, issue_number=2625, publish_date=date(2026, 6, 15)),
+        PublicationSchedule(year=2026, issue_number=2626, publish_date=date(2026, 6, 22)),
+    ])
+    db.commit()
+
+
+def test_latest_issue_assigns_issue_number_from_payment_time(db):
+    _cbj_weekly_schedule(db)
+    # Wed 6-17 → clearly inside the 6-15 issue's window; clean auto-assign, no flag.
+    po = _po(
+        paid=Decimal("5"),
+        lines=[_line("《中国经营报》最新一期订阅", price=Decimal("5"))],
+        payment_time=datetime(2026, 6, 17, 10, 0),
+    )
+    pv = build_import_preview(db, [po], RECENT)
+    row = pv.rows[0]
+    assert row.decision == "import"
+    item = row.order_create.items[0]
+    assert item.fulfillment_type == FulfillmentType.single_issue
+    assert item.issue_number == 2625
+    assert not any("翻期临界" in w for w in row.warnings)
+
+
+def test_latest_issue_borderline_friday_night_flags(db):
+    _cbj_weekly_schedule(db)
+    # Fri 6-19 23:00 → after the ~22:00 flip → upcoming 6-22 issue, within ±4h → flagged.
+    po = _po(
+        paid=Decimal("5"),
+        lines=[_line("《中国经营报》最新一期订阅", price=Decimal("5"))],
+        payment_time=datetime(2026, 6, 19, 23, 0),
+    )
+    pv = build_import_preview(db, [po], RECENT)
+    row = pv.rows[0]
+    assert row.order_create.items[0].issue_number == 2626
+    assert any("翻期临界" in w for w in row.warnings)
