@@ -64,6 +64,7 @@
 - **后续平台**：淘宝、有赞网店（运费逻辑不同：恒有运费 + 折扣）、第三方平台 API 同步。当前暂不考虑。
 - **更后期**：财务对账（实付/应收/退款）、客户自助下单（见 requirements.md 第 11 节）。
 - **可选清理**：导入预览的逐单编辑目前在订单页/商品库做；若需「预览页内逐行改起止/状态再提交」，可在 commit 接口加 overrides。
+- **覆盖期算法 `coverage_rule` 暂不动（2026-06-24 选 C）**：它只在**电商导入**时生效（`cbj_order_import_service._coverage_for`），给订单行算覆盖期（起止日期）；手工新建/确认都不经过它。只有「按起投月算」`term_from_month` 真正算（批次起投月 + 时长），订阅行恒用它；「最新一期」/「自定义」导入时留空。⚠️ **「固定日期」`explicit` 目前没接上**——`_coverage_for` 对它返回空，商品上那对固定起止日期从不被读取，选了≈自定义留空（schema 仍强校验那对日期，但无人消费）。以后清理（可选）：按「履约类型」自动带默认 + 去掉没实现的「固定日期」（option A），或把固定日期真正接上（option B）。
 
 ## 关键接口
 - `POST /api/order-import/preview`（上传 Excel + 批次设置：mode、邮局/中通起投月、截止日、**活动标签 campaign、延长月 bonus_months、赠品刊物 gift_publication + 说明 gift_note**）→ 预览（每单决策 + session_id）
