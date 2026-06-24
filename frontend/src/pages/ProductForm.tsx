@@ -47,6 +47,12 @@ export const COVERAGE_RULE_LABELS: Record<CoverageRule, string> = {
   custom: '自定义',
 };
 
+/** Auto-suggest a stable product code so operators don't have to invent one
+ * (same scheme the import quick-add uses). Editable after it's filled in. */
+export function suggestProductCode(): string {
+  return 'CBJ-' + Date.now().toString(36).toUpperCase().slice(-6);
+}
+
 export interface ProductFormValues {
   code: string;
   display_name: string;

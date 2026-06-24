@@ -28,6 +28,7 @@ import {
   COVERAGE_RULE_LABELS,
   ProductFormFields,
   buildProductPayload,
+  suggestProductCode,
 } from './ProductForm';
 import type { ProductFormValues } from './ProductForm';
 import {
@@ -95,6 +96,7 @@ export default function ProductCatalog() {
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
+      code: suggestProductCode(),
       publication_format: 'paper',
       fulfillment_type: 'subscription',
       coverage_rule: 'term_from_month',
