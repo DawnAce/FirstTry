@@ -227,7 +227,7 @@
     <div style="margin:2px 0 10px"><span class="sub">导入模式：</span>
       <span class="tag t-gray" style="font-size:13px">○ 近期订单</span>
       <span class="tag t-orange" style="font-size:13px">● 历史归档（只补记录）</span></div>
-    <p class="desc">补全历史记录用：<b>保留下单日期</b>（一眼看出是历史单），记客户/金额/商品；<b>订期默认留空、可补填</b>（有就填、没有算了，不自动估算、不卡导入）；打「历史归档」标记、<b>不进发货同步</b>。无「本批起投设置」面板。</p>
+    <p class="desc">补全历史记录用：<b>保留下单日期</b>（一眼看出是历史单），记客户/金额/商品；<b>订期默认留空、可补填</b>（有就填、没有算了，不自动估算、不卡导入）；打「历史归档」标记、<b>默认不自动同步</b>（补齐后可手动同步）。无「本批起投设置」面板。</p>
     <table>
       <thead><tr><th>下单日期</th><th>客户</th><th>商品 → 识别</th><th>金额</th><th>订期（覆盖期）</th><th>状态</th></tr></thead>
       <tbody>
@@ -236,14 +236,14 @@
           <td>全年订阅 → <span class="tag t-blue">中国经营报</span> <span class="tag t-green">订阅·一年</span></td>
           <td class="num">¥238</td>
           <td><span class="sub">(可补填)</span> <span class="link">✎ 填起止</span></td>
-          <td><span class="tag t-orange">历史归档</span> <span class="sub">· 不发货同步</span></td>
+          <td><span class="tag t-orange">历史归档</span> <span class="sub">· 不自动同步</span></td>
         </tr>
         <tr>
           <td>2024-11-03</td><td>李某某</td>
           <td>全年订阅 → <span class="tag t-blue">中国经营报</span> <span class="tag t-green">订阅·一年</span></td>
           <td class="num">¥199</td>
           <td>2024-12 ～ 2025-11 <span class="sub">（你记得，手填了）</span></td>
-          <td><span class="tag t-orange">历史归档</span> <span class="sub">· 不发货同步</span></td>
+          <td><span class="tag t-orange">历史归档</span> <span class="sub">· 不自动同步</span></td>
         </tr>
         <tr>
           <td>2023-05-20</td><td>赵某某</td>
@@ -254,7 +254,7 @@
         </tr>
       </tbody>
     </table>
-    <div class="legend">历史归档单：下单日期一眼可辨；订期有就填、没有留空，绝不卡住导入；不参与发货同步，列表可单独筛。目标——把历史订单/客户/金额尽量补全。</div>
+    <div class="legend">历史归档单：下单日期一眼可辨；订期有就填、没有留空，绝不卡住导入；默认不自动同步（补齐后可手动同步），列表可单独筛。目标——把历史订单/客户/金额尽量补全。</div>
   </div>
 
   <p class="muted">说明：<b>起投时间是你每批人为设定的</b>（截止日、按月或按期号、邮局/中通分别设），系统照设定自动填、每单还能单独改——不是写死的 15 号规则。套餐拆分=中国经营报固定240+余额给商学院；发票信息带入订单；活动标签暂缓。你确认这个思路 + 以上修正后，我就照这个去建真功能（管理页 + 导入页 + 后端）。</p>

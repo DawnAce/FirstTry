@@ -470,7 +470,7 @@ FirstTry/
 | `entry_method`（由 `source_type` 改名，枚举 `manual / excel_import / api_sync`）| 录入方式 provenance；手工入口固定写 `manual`，导入入口写 `excel_import` |
 | `commercial_status`（`OrderCommercialStatus`：`pending_payment / paid / shipped / refunded / partial_refund / cancelled`，已发货含已完成）| 我们自己的干净商业状态枚举；手工订单为 NULL |
 | `source_status_raw` | 原始平台状态串（参考存档，永不依赖）|
-| `is_historical_archive` | 历史归档标记，归档单不进发货同步、列表可单独筛 |
+| `is_historical_archive` | 历史归档标记；归档单**默认不自动同步**（不被硬拦——补齐覆盖期/期号后仍可手动同步）、列表可单独筛 |
 | `campaign`（索引）| 营销活动标签（如 `2026-618`），电商导入按批次写入，用于追溯 + 按活动统计；手工单为 NULL |
 
 **导入管线（服务）**：`cbj_order_import_parser.parse_cbj_orders`（解析 Excel：多行产品拆分、X0 丢弃、运费/转中通标记、地址拆姓名/电话/地址/邮编）→ `product_resolver_service.resolve_product`（商品匹配 + 属性拷贝 + 套餐拆分 + 价=实付）→ `order_import_status_service.map_commercial_status`（状态映射 + 收/跳/退款标记策略）→ `cbj_order_import_service.build_import_preview`（覆盖期按批次 `BatchSettings`：邮局/中通起投月 + 截止日，历史模式留空；**活动标签 `campaign` + 赠品 `bonus_months`/`gift_publication`/`gift_note`**；去重 `external_order_no`；逐单决策 import / skip_status / duplicate / unresolved）→ 缓存（`order_import_cache`，uuid 会话 30 分钟 TTL，单 worker）→ `commit_import`（按年块分配 `order_code`，逐单 `order_service.create_imported_order`，单事务原子提交）。
