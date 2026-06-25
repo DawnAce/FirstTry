@@ -61,10 +61,20 @@ interface FilterState {
   status?: OrderStatus;
   payer_name_like?: string;
   campaign?: string;
+  source_platform?: string;
   order_date_range?: [Dayjs, Dayjs] | null;
   coverage_range?: [Dayjs, Dayjs] | null;
   drift: DriftFilter;
 }
+
+// Distinct source_platform strings the system writes (imports: CBJ小程序 / 淘宝;
+// manual: the OrderEditor dropdown). Exact-match filter for the unified list.
+const PLATFORM_OPTIONS = [
+  { label: '淘宝', value: '淘宝' },
+  { label: 'CBJ小程序', value: 'CBJ小程序' },
+  { label: '微信小程序', value: '微信小程序' },
+  { label: '有赞', value: '有赞' },
+];
 
 const INITIAL_FILTERS: FilterState = { drift: 'all' };
 
@@ -78,6 +88,7 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
   if (filters.status) params.status = filters.status;
   if (filters.payer_name_like) params.payer_name_like = filters.payer_name_like.trim();
   if (filters.campaign) params.campaign = filters.campaign.trim();
+  if (filters.source_platform) params.source_platform = filters.source_platform;
   if (filters.coverage_range?.[0]) {
     params.coverage_start = filters.coverage_range[0].format('YYYY-MM-DD');
   }
@@ -335,6 +346,14 @@ export default function OrderList() {
           </Form.Item>
           <Form.Item name="campaign" label="活动">
             <Input allowClear placeholder="如 2026-618" style={{ width: 150 }} />
+          </Form.Item>
+          <Form.Item name="source_platform" label="平台">
+            <Select
+              allowClear
+              placeholder="全部"
+              options={PLATFORM_OPTIONS}
+              style={{ width: 140 }}
+            />
           </Form.Item>
           <Form.Item name="order_date_range" label="下单日期">
             <RangePicker style={{ width: 240 }} />

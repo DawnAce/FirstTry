@@ -173,7 +173,7 @@ export default function OrderImport() {
 
   const handlePreview = () => {
     if (!file) {
-      message.warning('请先选择 CBJ 订单 Excel');
+      message.warning('请先选择电商订单 Excel');
       return;
     }
     previewMutation.mutate();
@@ -277,7 +277,7 @@ export default function OrderImport() {
         </Space>
       </Card>
 
-      <Card size="small" title="② 上传 CBJ 订单 Excel" style={{ marginBottom: 16 }}>
+      <Card size="small" title="② 上传电商订单 Excel" style={{ marginBottom: 16 }}>
         <Space direction="vertical" style={{ width: '100%' }}>
           <Upload.Dragger
             maxCount={1}
@@ -287,7 +287,7 @@ export default function OrderImport() {
             fileList={file ? [{ uid: '1', name: file.name } as UploadFile] : []}
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-            <p className="ant-upload-text">点击或拖拽 CBJ 小程序导出的 .xlsx 到此处</p>
+            <p className="ant-upload-text">点击或拖拽 CBJ 小程序 / 淘宝 导出的 .xlsx 到此处（自动识别平台）</p>
           </Upload.Dragger>
           <Button type="primary" icon={<UploadOutlined />} onClick={handlePreview} loading={previewMutation.isPending} disabled={!file}>预览导入</Button>
         </Space>

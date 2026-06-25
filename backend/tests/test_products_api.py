@@ -26,7 +26,7 @@ from app.main import app
 from app.models import Product
 from app.models.order_item import Publication
 from app.models.user import User, UserRole
-from app.seeds.products import seed_products
+from app.seeds.products import seed_products, sync_catalog
 
 
 @pytest.fixture
@@ -189,8 +189,8 @@ def test_seed_products_creates_catalog_then_idempotent():
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
     try:
-        assert seed_products(db) == 10
-        assert db.query(Product).count() == 10
+        assert seed_products(db) == 12
+        assert db.query(Product).count() == 12
         bundle = db.query(Product).filter(Product.code == "CBJ-BS-BUNDLE-1Y").one()
         assert bundle.is_bundle is True
         assert bundle.publication is None
@@ -206,7 +206,43 @@ def test_seed_products_creates_catalog_then_idempotent():
             assert db.query(Product).filter(Product.code == code).count() == 1
         # idempotent: second run inserts nothing
         assert seed_products(db) == 0
+        assert db.query(Product).count() == 12
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
+
+
+def test_sync_catalog_upserts_aliases_and_products_idempotently():
+    """sync_catalog brings a NON-empty (already-seeded) catalog up to date:
+    adds missing aliases (union) and inserts new products — without touching a
+    catalog the operator may have customized, and safe to run twice."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(bind=engine)()
+    try:
+        seed_products(db)
+        # Simulate an OLD production catalog: drop the two 淘宝 products and strip a
+        # 淘宝 alias that a deploy would need to (re)add.
+        for code in ("BS-SUB-1Y-ZTO", "BS-SUB-QTR-ZTO"):
+            db.query(Product).filter(Product.code == code).delete()
+        post = db.query(Product).filter(Product.code == "CBJ-SUB-1Y-POST").one()
+        post.aliases = []
+        db.commit()
         assert db.query(Product).count() == 10
+
+        report = sync_catalog(db)
+        assert report["added_products"] == 2
+        assert report["aliases_added"] >= 1
+        assert db.query(Product).count() == 12
+        post = db.query(Product).filter(Product.code == "CBJ-SUB-1Y-POST").one()
+        assert "全年-邮局" in (post.aliases or [])
+
+        # idempotent: a second pass changes nothing
+        assert sync_catalog(db) == {"added_products": 0, "aliases_added": 0}
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
