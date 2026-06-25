@@ -106,7 +106,10 @@ class Order(Base):
     # string for reference. NULL for manual orders.
     commercial_status = Column(SAEnum(OrderCommercialStatus), nullable=True)
     source_status_raw = Column(String(64), nullable=True)
-    # Historical-archive import: kept for records, excluded from shipping sync.
+    # Historical-archive import marker (mode == "historical"): the order is补录 for
+    # records and is NOT auto-synced to shipping. It is NOT hard-excluded, though —
+    # nothing in the sync path filters on this flag, so once coverage / issue_number
+    # is filled in it can still be manually synced (中通). Marker only.
     is_historical_archive = Column(Boolean, default=False, nullable=False)
     # V2 hooks (V1.1 always NULL)
     import_batch_id = Column(Integer, nullable=True)
