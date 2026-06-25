@@ -329,6 +329,7 @@ export interface ListOrdersParams {
   entry_method?: OrderEntryMethod;
   payer_name_like?: string;
   campaign?: string;
+  source_platform?: string;
   coverage_start?: string;
   coverage_end?: string;
   has_drift?: boolean;

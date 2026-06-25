@@ -157,6 +157,20 @@ def _find_header(ws):
     return None, None
 
 
+def is_cbj_export(file_bytes: bytes) -> bool:
+    """Cheap header sniff (mirrors the 淘宝 one) so the dispatcher tells formats apart."""
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        ws = wb[wb.sheetnames[0]]
+        header_row, _ = _find_header(ws)
+        return header_row is not None
+    finally:
+        wb.close()
+
+
 def parse_cbj_orders(file_bytes: bytes) -> List[ParsedOrder]:
     """Parse the CBJ export bytes into ParsedOrder rows.
 

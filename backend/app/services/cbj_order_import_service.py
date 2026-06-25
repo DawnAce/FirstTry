@@ -16,6 +16,7 @@ Coverage is operator-driven per batch: ``BatchSettings`` carries the start month
 mode leaves coverage blank. Every row stays editable in the preview UI.
 """
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -43,7 +44,15 @@ from app.models.order_item import (
 from app.models.product import CoverageRule
 from app.order_import_cache import pop_order_import_session, save_order_import_session
 from app.schemas.order import FulfillmentTargetIn, OrderCreate, OrderItemIn
-from app.services.cbj_order_import_parser import ParsedOrder, parse_cbj_orders
+from app.services.cbj_order_import_parser import (
+    ParsedOrder,
+    is_cbj_export,
+    parse_cbj_orders,
+)
+from app.services.taobao_order_import_parser import (
+    is_taobao_export,
+    parse_taobao_orders,
+)
 from app.services.order_code_service import allocate_order_codes
 from app.services.order_import_status_service import map_commercial_status
 from app.services.issue_label import normalize_business_school_issue_label
@@ -55,7 +64,13 @@ from app.services.product_resolver_service import (
     resolve_product,
 )
 
-_SOURCE_PLATFORM = "CBJ小程序"
+# Source-platform / store labels written onto imported orders. Kept aligned with
+# the frontend OrderEditor dropdown so列表/详情显示一致。``_detect_and_parse`` picks
+# the pair per uploaded file; manual orders set these via the editor.
+CBJ_PLATFORM = "CBJ小程序"
+TAOBAO_PLATFORM = "淘宝"
+TAOBAO_STORE = "中国经营报发行部"
+_SOURCE_PLATFORM = CBJ_PLATFORM  # default for build_import_preview / existing callers
 
 _PAYMENT_MAP = {
     "微信": OrderPaymentMethod.wechat,
@@ -194,7 +209,11 @@ def _row(po, status_map, decision, **kw) -> PreviewRow:
 
 
 def build_import_preview(
-    db: Session, parsed_orders: List[ParsedOrder], settings: BatchSettings
+    db: Session,
+    parsed_orders: List[ParsedOrder],
+    settings: BatchSettings,
+    source_platform: str = _SOURCE_PLATFORM,
+    source_store: Optional[str] = None,
 ) -> ImportPreview:
     products = db.query(Product).filter(Product.active.is_(True)).all()
     schedule = db.query(PublicationSchedule).all()
@@ -243,12 +262,20 @@ def build_import_preview(
             )
             res = resolve_product(products, line.name, line.quantity, line_paid)
             if not res.matched:
-                # 商学院月刊单期（"2026年X月刊《…》"）没有稳定的商品库键，按模式直接识别为
-                # 商学院单期，期次身份落 issue_label —— 不在商品库建带年份的行。
-                # 仅当不含「中国经营报」时才兜底为商学院（镜像前端 guessDefaults 的护栏），否则
-                # 一条带日期的中国经营报行会被误记为商学院、且绕过待确认队列。
+                # 商学院月刊单期没有稳定的商品库键，按模式直接识别为商学院单期，期次身份落
+                # issue_label —— 不在商品库建带年份的行。两种触发：
+                #   (a) 标题/分册名含「YYYY年X月刊」→ 解析出具体期次 issue_label；
+                #   (b) 淘宝多商品单的「【YYYY单期】《商学院》」行（导出无分册名、无月份）→
+                #       仍按商学院单期落库，但期次留空 + 标黄请操作员补。
+                # 均要求不含「中国经营报」（镜像前端 guessDefaults 的护栏），否则一条带日期的
+                # 中国经营报行会被误记为商学院、且绕过待确认队列。
                 issue_label = normalize_business_school_issue_label(line.name)
-                if issue_label and "中国经营报" not in line.name:
+                # 淘宝多商品单的「【YYYY单期】《商学院》」行（无分册名 → 无月份）。要求带 4 位
+                # 年份，避免日后某个含「单期】」的非商学院商品名误命中。
+                is_bs_single_issue = (
+                    bool(re.search(r"【\d{4}\s*单期】", line.name)) and "商学院" in line.name
+                )
+                if "中国经营报" not in line.name and (issue_label or is_bs_single_issue):
                     item = _make_item(
                         publication=Publication.business_school,
                         publication_format=PublicationFormat.paper,
@@ -259,7 +286,12 @@ def build_import_preview(
                         total_quantity=line.quantity,
                         share=Decimal(str(line_paid)),
                     )
-                    item.issue_label = issue_label
+                    if issue_label:
+                        item.issue_label = issue_label
+                    else:
+                        msg = "商学院单期：请补该单期次（导出无分册名）"
+                        if msg not in warnings:
+                            warnings.append(msg)
                     resolved.append(
                         ResolvedItem(item=item, coverage_rule=CoverageRule.custom)
                     )
@@ -308,6 +340,7 @@ def build_import_preview(
             elif (
                 ri.coverage_rule == CoverageRule.custom
                 and item.fulfillment_type == FulfillmentType.single_issue
+                and item.publication == Publication.cbj
                 and item.issue_number is None
                 and not item.issue_label
             ):
@@ -333,7 +366,8 @@ def build_import_preview(
         oc = OrderCreate(
             external_order_no=po.external_order_no,
             order_date=order_date,
-            source_platform=_SOURCE_PLATFORM,
+            source_platform=source_platform,
+            source_store=source_store,
             campaign=settings.campaign,
             payer_name=po.recipient_name or "(未填写)",
             payer_contact=po.recipient_phone or None,
@@ -401,10 +435,36 @@ def _serialize_row(r: PreviewRow) -> dict:
     }
 
 
+def _detect_and_parse(
+    file_bytes: bytes,
+) -> Tuple[List[ParsedOrder], str, Optional[str]]:
+    """Sniff the export format and parse it.
+
+    Returns ``(orders, source_platform, source_store)``. 淘宝 and CBJ exports have
+    disjoint header signatures (订单编号+商品标题 vs 订单号+产品名称), so detection is
+    unambiguous; both produce the same ``ParsedOrder`` shape and feed the identical
+    downstream (resolver / status map / coverage / dedup / order create).
+    """
+    if is_taobao_export(file_bytes):
+        return parse_taobao_orders(file_bytes), TAOBAO_PLATFORM, TAOBAO_STORE
+    if is_cbj_export(file_bytes):
+        return parse_cbj_orders(file_bytes), CBJ_PLATFORM, None
+    raise ValueError(
+        "无法识别的订单导出格式：表头既不匹配 CBJ（订单号 / 产品名称），"
+        "也不匹配淘宝（订单编号 / 商品标题）"
+    )
+
+
 def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings) -> Tuple[dict, str]:
-    """Parse + resolve the upload, cache the importable rows, return a preview."""
-    parsed = parse_cbj_orders(file_bytes)
-    preview = build_import_preview(db, parsed, settings)
+    """Parse + resolve the upload, cache the importable rows, return a preview.
+
+    The platform is auto-detected from the file header so a single upload box serves
+    both CBJ 小程序 and 淘宝 exports, and each order gets the right source_platform.
+    """
+    parsed, source_platform, source_store = _detect_and_parse(file_bytes)
+    preview = build_import_preview(
+        db, parsed, settings, source_platform=source_platform, source_store=source_store
+    )
 
     commit_rows = [
         {

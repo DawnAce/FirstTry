@@ -845,6 +845,7 @@ def list_orders(
     entry_method: Optional[OrderEntryMethod] = None,
     payer_name_like: Optional[str] = None,
     campaign: Optional[str] = None,
+    source_platform: Optional[str] = None,
     coverage_start: Optional[date] = None,
     coverage_end: Optional[date] = None,
     has_drift: Optional[bool] = None,
@@ -877,6 +878,8 @@ def list_orders(
         q = q.filter(Order.payer_name.ilike(f"%{payer_name_like}%"))
     if campaign:
         q = q.filter(Order.campaign == campaign)
+    if source_platform:
+        q = q.filter(Order.source_platform == source_platform)
     if coverage_start is not None or coverage_end is not None:
         item_q = db.query(OrderItem.order_id).distinct()
         if coverage_start is not None:
