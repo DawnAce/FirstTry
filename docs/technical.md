@@ -1537,6 +1537,7 @@ draft ──confirm──> active ──void──> void
 
 - **按活动统计**（by campaign）：仅统计**携带 `campaign` 标签**的订单，列为 活动 / 订单数 / 原价合计 / 实收金额 / 折扣（省 ¥X 及百分比）。折扣公式：`原价合计 = SUM(COALESCE(original_amount, paid))`、`折扣额 = 原价合计 − 实收`（未捕获原价的订单按无折扣计）。
 - **按期统计**（by issue）：仅统计携带 `issue_label` 的单期行（主要是商学院月刊），列为 刊物 / 期次（`issue_label`）/ 销量（份）/ 销售额 / 行数。
+- **按期发行量**（商学院·含订阅）：某期实际发行量 = 单期销量 + 覆盖该期的订阅份数。订阅按 `[coverage_start, coverage_end]` 落到商学院刊历（`bs_issues` 表，迁移 `a3f1c8e2b5d9`）展开成命中各期，**合刊靠 `issue_label` 去重**、每张计 `quantity`；缺覆盖期的订阅计入 `unexpanded_subscriptions` 单独提示；卖出过但不在刊历的期仍列出（`in_calendar=false`）。`summarize_bs_circulation`。
 
 #### GET /api/analytics/campaigns
 
@@ -1545,6 +1546,10 @@ draft ──confirm──> active ──void──> void
 #### GET /api/analytics/issues
 
 按期汇总。查询参数：`publication`（刊物）/ `date_from` / `date_to`。
+
+#### GET /api/analytics/bs-circulation
+
+商学院按期发行量（单期 + 订阅展开）。查询参数：`year`。返回每期 单期 / 订阅 / 合计 + `unexpanded_subscriptions`（缺覆盖期未展开的订阅数）。
 
 
 发货明细的生成遵循以下优先级规则：
@@ -1804,7 +1809,7 @@ mysqldump -u user -p database_name > backup.sql
 - [x] 订单管理 V1.1（手工创建、确认、作废、偏差跟踪；范围：**个人客户预付 + 同事赠阅**）
 - [x] 订单管理 V1.2（active 状态明细就地编辑、多版本 allocation、订阅期限与套餐价）
 - [x] 订单管理 V1.3 优先级 1：单订单按期手动预览 / 应用同步至 order_generated `shipping_details`
-- [x] post-V1.3：电商订单导入（CBJ 小程序 Excel）+ 商品库 + 活动标签/赠品（详见 §3.16；淘宝/有赞等其它平台与 API 同步留待后续）
+- [x] post-V1.3：电商订单导入（**CBJ 小程序 + 淘宝** Excel，上传按表头自动识别平台）+ 商品库（三段式命名，名称与匹配解耦）+ 活动标签/赠品 + **商学院按期发行量**（单期 + 订阅展开）（详见 §3.16；有赞等其它平台与 API 同步留待后续）
 - [ ] post-V1.3：财务对账（实付 / 应收 / 退款、欠款追踪、未付清筛选）
 - [ ] post-V1.3：客户自助下单
 - [ ] 数据统计与报表分析
