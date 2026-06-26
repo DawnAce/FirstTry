@@ -1,13 +1,19 @@
-"""Seed the product catalog (商品库) with the known CBJ 小程序 products.
+"""Seed the product catalog (商品库).
 
-These rows come from the real CBJ 小程序 export — the 618 promo, single-issue /
-back-issue retail, the regular 全年/半年订阅 by 邮局/中通 delivery, the standalone
-《商学院》全年订阅, and the 双刊 bundle. Operators maintain the catalog from the
-admin UI afterwards — a new promo is a row insert, not code.
+These 11 rows mirror the live (operator-curated) catalog: a consistent
+**三段式 display_name**（`刊物 · 套餐 · 投递频次`）+ structured `code`
+（`CBJ-1Y-POST-WK` 等），with every platform export string kept in `aliases`
+so import matching is decoupled from the human-facing name.
+
+Alias convention (important): `aliases` carries ALL strings an e-commerce export
+might use to refer to this product — the legacy display name(s) AND the 淘宝 SKU
+tokens (`全年-邮局`、`分册名` 片段). Renaming `display_name` never breaks matching
+because the old name lives on as an alias. New platform names → add an alias,
+never rename a matching string away.
 
 Note: per-issue 商学院 monthly issues ("2026年X月刊《…》") are intentionally NOT
 seeded — their title changes every issue and carries no stable catalog key, so
-they are handled by import-time quick-add per issue rather than a catalog row.
+they are handled by import-time auto-detection (issue_label) rather than a row.
 """
 
 from decimal import Decimal
@@ -25,42 +31,11 @@ from app.models.product import CoverageRule
 
 
 PRODUCTS = [
-    # 全年订阅（促销价 ¥199）。起投时间不固定（每批人为设定），故 term_from_month
-    # 只表示"从某个起投月算一年"，起投月由导入批次设置提供。
+    # ---- 《中国经营报》订阅 ----
     dict(
-        code="CBJ-SUB-1Y-PROMO",
-        # 中性名：具体活动（618 / 双十一 / …）是订单 campaign 字段的事，不焊进商品名
-        # （否则等同"跟着活动走"，明年换个活动就对不上）。旧名与各活动后缀保留为 alias，
-        # 导入时按子串照常命中；活动区分靠 order.campaign（带年，可按活动/按年聚合）。
-        display_name="《中国经营报》全年订阅（促销价）",
-        aliases=[
-            "618促销活动",
-            "双十一订阅优惠",
-            "《中国经营报》全年订阅-618促销活动",
-        ],
-        publication=Publication.cbj,
-        fulfillment_type=FulfillmentType.subscription,
-        subscription_term=SubscriptionTerm.one_year,
-        delivery_method=DeliveryMethod.post_office,
-        coverage_rule=CoverageRule.term_from_month,
-        list_price=Decimal("199"),
-    ),
-    # 最新一期（单期 ¥5）。
-    dict(
-        code="CBJ-LATEST",
-        display_name="《中国经营报》最新一期订阅",
-        publication=Publication.cbj,
-        fulfillment_type=FulfillmentType.single_issue,
-        delivery_method=DeliveryMethod.post_office,
-        coverage_rule=CoverageRule.latest_issue,
-        list_price=Decimal("5"),
-    ),
-    # 全年订阅（标准价，非促销）——邮局周投 ¥240 / 中通周送 ¥390。投递从商品名定，可按单改。
-    dict(
-        code="CBJ-SUB-1Y-POST",
-        display_name="《中国经营报》全年订阅（邮局周投）",
-        # 淘宝 SKU「分册名:全年-邮局-周投」靠该子串区分投递（标题不带投递信息）。
-        aliases=["全年-邮局"],
+        code="CBJ-1Y-POST-WK",
+        display_name="中国经营报 · 全年订阅 · 邮局周投",
+        aliases=["全年-邮局", "《中国经营报》全年订阅（邮局周投）"],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,
@@ -69,9 +44,9 @@ PRODUCTS = [
         list_price=Decimal("240"),
     ),
     dict(
-        code="CBJ-SUB-1Y-ZTO",
-        display_name="《中国经营报》全年订阅（中通 周送）",
-        aliases=["全年-快递-周寄", "全年-快递-周送"],
+        code="CBJ-1Y-ZTO-WK",
+        display_name="中国经营报 · 全年订阅 · 中通周送",
+        aliases=["全年-快递-周寄", "全年-快递-周送", "《中国经营报》全年订阅（中通 周送）"],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,
@@ -79,13 +54,10 @@ PRODUCTS = [
         coverage_rule=CoverageRule.term_from_month,
         list_price=Decimal("390"),
     ),
-    # 中通「月送」：与「周送」同为 zto_mf 投递，但寄送频次/价不同（¥240 vs ¥390）。频次
-    # 目前只体现在商品名与价上（DeliveryMethod 枚举尚未建模 周/月 频次）；若日后要按频次
-    # 结构化统计，再单加字段。源自真实订单行"《中国经营报》全年订阅（中通 月送）"。
     dict(
-        code="CBJ-SUB-1Y-ZTO-M",
-        display_name="《中国经营报》全年订阅（中通 月送）",
-        aliases=["全年-快递-月寄"],
+        code="CBJ-1Y-ZTO-MO",
+        display_name="中国经营报 · 全年订阅 · 中通月送",
+        aliases=["全年-快递-月寄", "《中国经营报》全年订阅（中通 月送）"],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,
@@ -93,11 +65,22 @@ PRODUCTS = [
         coverage_rule=CoverageRule.term_from_month,
         list_price=Decimal("240"),
     ),
-    # 半年订阅——邮局周投 ¥120 / 中通周送 ¥195。
+    # 促销价：具体活动（618 / 双十一）归 order.campaign，不焊进商品名；旧名 + 活动后缀留 alias。
     dict(
-        code="CBJ-SUB-6M-POST",
-        display_name="《中国经营报》半年订阅（邮局周投）",
-        aliases=["半年-邮局"],
+        code="CBJ-1Y-PROMO",
+        display_name="中国经营报 · 全年订阅 · 促销价",
+        aliases=["618", "双十一", "《中国经营报》全年订阅（促销价）"],
+        publication=Publication.cbj,
+        fulfillment_type=FulfillmentType.subscription,
+        subscription_term=SubscriptionTerm.one_year,
+        delivery_method=DeliveryMethod.post_office,
+        coverage_rule=CoverageRule.term_from_month,
+        list_price=Decimal("0"),
+    ),
+    dict(
+        code="CBJ-6M-POST-WK",
+        display_name="中国经营报 · 半年订阅 · 邮局周投",
+        aliases=["半年-邮局", "《中国经营报》半年订阅（邮局周投）"],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.half_year,
@@ -106,9 +89,9 @@ PRODUCTS = [
         list_price=Decimal("120"),
     ),
     dict(
-        code="CBJ-SUB-6M-ZTO",
-        display_name="《中国经营报》半年订阅（中通 周送）",
-        aliases=["半年-快递"],
+        code="CBJ-6M-ZTO-WK",
+        display_name="中国经营报 · 半年订阅 · 中通周送",
+        aliases=["半年-快递", "《中国经营报》半年订阅（中通 周送）"],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.half_year,
@@ -116,51 +99,55 @@ PRODUCTS = [
         coverage_rule=CoverageRule.term_from_month,
         list_price=Decimal("195"),
     ),
-    # 单期·往期零售（具体期号由操作员按单补；价格随期不同，list_price 仅参考）。
+    # ---- 《中国经营报》单期 ----
     dict(
-        code="CBJ-BACKISSUE",
-        display_name="《中国经营报》单期 往期零售",
-        # 淘宝「单期零售《中国经营报》…」标题映射到往期零售（custom 期号→导入留空 + 标黄补）。
-        aliases=["单期零售《中国经营报》刊社直发正品保证商业财经经济时政新闻热点资讯报刊"],
+        code="CBJ-ISSUE-LATEST",
+        display_name="中国经营报 · 单期 · 最新一期",
+        aliases=["《中国经营报》最新一期订阅"],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.single_issue,
-        delivery_method=DeliveryMethod.post_office,
+        delivery_method=DeliveryMethod.zto_mf,
+        coverage_rule=CoverageRule.latest_issue,
+        list_price=Decimal("0"),
+    ),
+    # 往期零售：具体期号由操作员按单补（custom）；价格随期不同，list_price 仅参考。
+    dict(
+        code="CBJ-ISSUE-BACK",
+        display_name="中国经营报 · 单期 · 往期零售",
+        aliases=[
+            "单期零售《中国经营报》刊社直发正品保证商业财经经济时政新闻热点资讯报刊",
+            "《中国经营报》单期 往期零售",
+        ],
+        publication=Publication.cbj,
+        fulfillment_type=FulfillmentType.single_issue,
+        delivery_method=DeliveryMethod.zto_mf,
         coverage_rule=CoverageRule.custom,
-        list_price=Decimal("10"),
+        list_price=Decimal("0"),
     ),
-    # 《商学院》全年订阅（单刊，¥480）。必须作为独立商品存在：否则纯商学院订单会被
-    # 双刊套餐名（字面含“《商学院》全年订阅”）子串误匹配、无声拆成中国经营报+商学院。
-    # 投递默认邮局，可按单/按品改。
+    # ---- 《商学院》----
+    # 必须作为独立商品存在：否则纯商学院订单会被双刊套餐名子串误匹配、无声拆成两条。
     dict(
-        code="BS-SUB-1Y",
-        display_name="《商学院》全年订阅",
-        publication=Publication.business_school,
-        fulfillment_type=FulfillmentType.subscription,
-        subscription_term=SubscriptionTerm.one_year,
-        delivery_method=DeliveryMethod.post_office,
-        coverage_rule=CoverageRule.term_from_month,
-        list_price=Decimal("480"),
-    ),
-    # 淘宝《商学院》全年「一期一发快递发货」——与上面邮局周送的 BS-SUB-1Y 同刊不同投递，
-    # 单列一条（中通）。SKU「分册名:全年订阅」靠完整标题+「全年订阅」别名区分于季度。
-    # 覆盖期「自由起订时间，下单备注」→ custom（导入留空，操作员按备注补）。
-    dict(
-        code="BS-SUB-1Y-ZTO",
-        display_name="《商学院》全年订阅（中通·一期一发）",
-        aliases=["一期一发快递发货《商学院》杂志订阅商业财经经济热点资讯期刊全年订阅"],
+        code="BS-1Y-ZTO",
+        display_name="商学院 · 全年订阅 · 中通",
+        aliases=[
+            "一期一发快递发货《商学院》杂志订阅商业财经经济热点资讯期刊全年订阅",
+            "《商学院》全年订阅",
+        ],
         publication=Publication.business_school,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,
         delivery_method=DeliveryMethod.zto_mf,
-        coverage_rule=CoverageRule.custom,
+        coverage_rule=CoverageRule.term_from_month,
         list_price=Decimal("480"),
     ),
-    # 淘宝《商学院》季度订阅（中通·一期一发）。季度无独立 SubscriptionTerm 枚举 → custom；
-    # 覆盖期同为自由起订 → CoverageRule.custom（导入留空，操作员补）。list_price 仅参考。
+    # 季度：无独立 SubscriptionTerm 枚举 → custom；自由起订 → coverage custom（导入留空，逐单补）。
     dict(
-        code="BS-SUB-QTR-ZTO",
-        display_name="《商学院》季度订阅（中通·一期一发）",
-        aliases=["一期一发快递发货《商学院》杂志订阅商业财经经济热点资讯期刊季度订阅"],
+        code="BS-QTR-ZTO",
+        display_name="商学院 · 季度订阅 · 中通",
+        aliases=[
+            "一期一发快递发货《商学院》杂志订阅商业财经经济热点资讯期刊季度订阅",
+            "《商学院》季度订阅（中通·一期一发）",
+        ],
         publication=Publication.business_school,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.custom,
@@ -168,29 +155,29 @@ PRODUCTS = [
         coverage_rule=CoverageRule.custom,
         list_price=Decimal("315"),
     ),
-    # 双刊套餐（8折 ¥576）→ 拆两条明细：中国经营报固定 ¥240，商学院拿余额。
+    # ---- 套餐 ----
+    # 双刊 8 折 → 拆两条：中国经营报固定 ¥240（邮局）、商学院拿余额（中通）。
     dict(
-        code="CBJ-BS-BUNDLE-1Y",
-        display_name="《中国经营报》和《商学院》全年订阅（8折优惠）",
-        aliases=["8折优惠"],
+        code="BUNDLE-CBJ-BS-1Y",
+        display_name="中国经营报+商学院 · 全年订阅 · 套餐8折",
+        aliases=["《中国经营报》和《商学院》全年订阅（8折优惠）"],
         publication=None,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,
-        delivery_method=DeliveryMethod.post_office,
         coverage_rule=CoverageRule.term_from_month,
         list_price=Decimal("576"),
         is_bundle=True,
         components=[
             {
                 "publication": "cbj",
-                "subscription_term": "one_year",
                 "coverage_rule": "term_from_month",
+                "delivery_method": "post_office",
                 "fixed_price": 240,
             },
             {
                 "publication": "business_school",
-                "subscription_term": "one_year",
                 "coverage_rule": "term_from_month",
+                "delivery_method": "zto_mf",
                 "remainder": True,
             },
         ],

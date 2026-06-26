@@ -189,24 +189,24 @@ def test_seed_products_creates_catalog_then_idempotent():
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
     try:
-        assert seed_products(db) == 12
-        assert db.query(Product).count() == 12
-        bundle = db.query(Product).filter(Product.code == "CBJ-BS-BUNDLE-1Y").one()
+        assert seed_products(db) == 11
+        assert db.query(Product).count() == 11
+        bundle = db.query(Product).filter(Product.code == "BUNDLE-CBJ-BS-1Y").one()
         assert bundle.is_bundle is True
         assert bundle.publication is None
         assert bundle.components[0]["fixed_price"] == 240
         # standalone 商学院 annual exists as its own (non-bundle) product so a lone
         # 商学院 line resolves to a single item instead of substring-matching the bundle
-        bs = db.query(Product).filter(Product.code == "BS-SUB-1Y").one()
+        bs = db.query(Product).filter(Product.code == "BS-1Y-ZTO").one()
         assert bs.is_bundle is False
         assert bs.publication == Publication.business_school
         # the standard 全年/半年 × 邮局/中通 subscription variants + back-issue retail
-        for code in ("CBJ-SUB-1Y-POST", "CBJ-SUB-1Y-ZTO", "CBJ-SUB-1Y-ZTO-M",
-                     "CBJ-SUB-6M-POST", "CBJ-SUB-6M-ZTO", "CBJ-BACKISSUE"):
+        for code in ("CBJ-1Y-POST-WK", "CBJ-1Y-ZTO-WK", "CBJ-1Y-ZTO-MO",
+                     "CBJ-6M-POST-WK", "CBJ-6M-ZTO-WK", "CBJ-ISSUE-BACK"):
             assert db.query(Product).filter(Product.code == code).count() == 1
         # idempotent: second run inserts nothing
         assert seed_products(db) == 0
-        assert db.query(Product).count() == 12
+        assert db.query(Product).count() == 11
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
@@ -225,20 +225,20 @@ def test_sync_catalog_upserts_aliases_and_products_idempotently():
     db = sessionmaker(bind=engine)()
     try:
         seed_products(db)
-        # Simulate an OLD production catalog: drop the two 淘宝 products and strip a
-        # 淘宝 alias that a deploy would need to (re)add.
-        for code in ("BS-SUB-1Y-ZTO", "BS-SUB-QTR-ZTO"):
+        # Simulate an OLD catalog: drop two products and strip an alias that a
+        # deploy adding catalog rows would need to (re)add.
+        for code in ("BS-QTR-ZTO", "CBJ-1Y-ZTO-MO"):
             db.query(Product).filter(Product.code == code).delete()
-        post = db.query(Product).filter(Product.code == "CBJ-SUB-1Y-POST").one()
+        post = db.query(Product).filter(Product.code == "CBJ-1Y-POST-WK").one()
         post.aliases = []
         db.commit()
-        assert db.query(Product).count() == 10
+        assert db.query(Product).count() == 9
 
         report = sync_catalog(db)
         assert report["added_products"] == 2
         assert report["aliases_added"] >= 1
-        assert db.query(Product).count() == 12
-        post = db.query(Product).filter(Product.code == "CBJ-SUB-1Y-POST").one()
+        assert db.query(Product).count() == 11
+        post = db.query(Product).filter(Product.code == "CBJ-1Y-POST-WK").one()
         assert "全年-邮局" in (post.aliases or [])
 
         # idempotent: a second pass changes nothing
