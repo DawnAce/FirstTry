@@ -86,6 +86,40 @@ def test_sniffer_distinguishes_platforms():
         parse_cbj_orders(taobao)
 
 
+def _corrupt_dimension(xlsx_bytes):
+    """Rewrite the worksheet <dimension> ref to a single cell (A1), mimicking the
+    buggy CBJ exports that ship a wrong dimension (data spans A:L but ref says A1)."""
+    import re
+    import zipfile
+
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(xlsx_bytes)) as zin, zipfile.ZipFile(out, "w") as zout:
+        for name in zin.namelist():
+            data = zin.read(name)
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                data = re.sub(rb'<dimension ref="[^"]*"\s*/>', b'<dimension ref="A1"/>', data)
+            zout.writestr(name, data)
+    return out.getvalue()
+
+
+def test_sniffer_handles_bad_dimension_ref():
+    """Regression: some CBJ exports ship a wrong <dimension> (single column); the
+    sniffer must still detect them (read_only under-read had mis-routed them as 未知,
+    so a valid CBJ file failed to import via the UI dispatcher)."""
+    import openpyxl
+
+    bad = _corrupt_dimension(_cbj_wb_bytes())
+    # the corruption is effective: read_only trusts the bad dimension and under-reads
+    wb = openpyxl.load_workbook(io.BytesIO(bad), read_only=True)
+    ws = wb[wb.sheetnames[0]]
+    assert ws.max_column <= 2  # would be 12 if the corruption didn't take
+    wb.close()
+    # the sniffer (non-read_only) still detects it; the parser reads all columns
+    assert is_cbj_export(bad) is True
+    orders = parse_cbj_orders(bad)
+    assert len(orders) == 1 and orders[0].external_order_no == "EC-1"
+
+
 def test_basic_column_mapping():
     [po] = parse_taobao_orders(_wb_bytes([_row()]))
     assert po.external_order_no == "5118609024991031607"
