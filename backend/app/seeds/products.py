@@ -73,7 +73,12 @@ PRODUCTS = [
     dict(
         code="CBJ-1Y-PROMO",
         display_name="中国经营报 · 全年订阅 · 促销价",
-        aliases=["《中国经营报》全年订阅-618促销活动", "《中国经营报》全年订阅（促销价）"],
+        aliases=[
+            "《中国经营报》全年订阅-618促销活动",
+            "《中国经营报》双十一订阅优惠",
+            "《中国经营报》全年订阅优惠",
+            "《中国经营报》全年订阅（促销价）",
+        ],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,
@@ -84,7 +89,7 @@ PRODUCTS = [
     dict(
         code="CBJ-6M-POST-WK",
         display_name="中国经营报 · 半年订阅 · 邮局周投",
-        aliases=["半年-邮局", "《中国经营报》半年订阅（邮局周投）"],
+        aliases=["半年-邮局", "《中国经营报》半年订阅（邮局周投）", "《中国经营报》半年订阅优惠"],
         publication=Publication.cbj,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.half_year,
@@ -174,7 +179,7 @@ PRODUCTS = [
     dict(
         code="BS-1Y-PROMO",
         display_name="商学院 · 全年订阅 · 促销价",
-        aliases=["《商学院》全年订阅-618促销活动"],
+        aliases=["《商学院》全年订阅-618促销活动", "《商学院》双十一订阅优惠"],
         publication=Publication.business_school,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,
