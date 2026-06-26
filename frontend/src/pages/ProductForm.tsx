@@ -105,13 +105,13 @@ export function ProductFormFields({ editing }: { editing: boolean }) {
 
   return (
     <>
-      <Form.Item name="display_name" label="商品名称（电商原文）" rules={[{ required: true, message: '请填写商品名称' }]}>
-        <Input placeholder="如：《中国经营报》全年订阅-618促销活动" />
+      <Form.Item name="display_name" label="商品名称（规范名）" tooltip="给人看的规范名，建议「刊物 · 套餐 · 投递频次」三段式。电商导出的原始商品名放到下面「别名」里做匹配，二者解耦——改名不影响识别。" rules={[{ required: true, message: '请填写商品名称' }]}>
+        <Input placeholder="如：中国经营报 · 全年订阅 · 邮局周投" />
       </Form.Item>
-      <Form.Item name="code" label="商品编码（唯一）" rules={[{ required: true, message: '请填写编码' }]}>
-        <Input placeholder="如：CBJ-SUB-1Y-PROMO" disabled={editing} />
+      <Form.Item name="code" label="商品编码（唯一）" tooltip="结构化编码，如 CBJ-1Y-POST-WK / BS-1Y-ZTO / BUNDLE-CBJ-BS-1Y。编码不参与导入匹配，可放心规范。" rules={[{ required: true, message: '请填写编码' }]}>
+        <Input placeholder="如：CBJ-1Y-POST-WK" disabled={editing} />
       </Form.Item>
-      <Form.Item name="aliases" label="别名（活动后缀归一）" tooltip="如「618促销活动」「双十一订阅优惠」">
+      <Form.Item name="aliases" label="别名（导入匹配用）" tooltip="电商平台导出的原始商品名 / SKU 片段，导入靠这些匹配。如「618」「全年-邮局」「《中国经营报》全年订阅（邮局周投）」">
         <Select mode="tags" placeholder="回车添加" />
       </Form.Item>
 
