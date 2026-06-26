@@ -67,6 +67,22 @@ def list_schedule(year: int = 2026, db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/years", response_model=List[int])
+def list_schedule_years(db: Session = Depends(get_db)):
+    """Distinct years that actually have schedule rows, ascending.
+
+    The year picker on the 期刊表 page builds its dropdown from this so any
+    imported year (incl. historical ones like 2024) is always reachable.
+    """
+    rows = (
+        db.query(PublicationSchedule.year)
+        .distinct()
+        .order_by(PublicationSchedule.year)
+        .all()
+    )
+    return [r[0] for r in rows]
+
+
 @router.get("/uploads", response_model=list[ScheduleUploadOut])
 def list_schedule_uploads(
     year: int | None = None,
@@ -170,49 +186,6 @@ def update_schedule_upload_rows_endpoint(
                 issue_number=row.issue_number,
                 is_suspended=row.is_suspended,
                 page_count=row.page_count,
-            )
-            for row in rows
-        ],
-        summary=ScheduleSummaryOut(**summary),
-        errors=errors,
-        can_commit=len(errors) == 0,
-    )
-
-
-@router.put("/uploads/{upload_id}/rows", response_model=SchedulePreviewOut)
-def update_schedule_upload_rows_endpoint(
-    upload_id: int,
-    body: ScheduleRowsUpdateIn,
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
-):
-    """Replace preview rows for a pending upload, then re-run validation."""
-    try:
-        upload, rows = update_schedule_upload_rows(
-            db,
-            upload_id,
-            [
-                ScheduleRowDraft(
-                    publish_date=row.publish_date,
-                    issue_number=None if row.is_suspended else row.issue_number,
-                    is_suspended=row.is_suspended,
-                )
-                for row in body.rows
-            ],
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    summary = upload.summary_json or {}
-    errors = upload.error_json or []
-    return SchedulePreviewOut(
-        upload_id=upload.id,
-        year=upload.year,
-        rows=[
-            ScheduleRowIn(
-                publish_date=row.publish_date,
-                issue_number=row.issue_number,
-                is_suspended=row.is_suspended,
             )
             for row in rows
         ],

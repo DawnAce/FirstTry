@@ -5,7 +5,7 @@ import { WarningOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
-import { getSchedule } from '../api/schedule';
+import { getSchedule, getScheduleYears } from '../api/schedule';
 import type { ScheduleEntry } from '../api/schedule';
 import { formatIssueRange, groupScheduleRowsByMonth, summarizeScheduleRows } from './publicationScheduleUtils';
 
@@ -20,9 +20,13 @@ const STATUS_OPTIONS: Array<{ label: string; value: StatusFilterValue }> = [
   { label: '休刊', value: 'suspended' },
 ];
 
-function buildYearOptions(selectedYear: number) {
+function buildYearOptions(selectedYear: number, dataYears: number[]) {
   const currentYear = dayjs().year();
-  return Array.from(new Set([FALLBACK_YEAR, currentYear - 1, currentYear, currentYear + 1, selectedYear]))
+  // Always show the near window for new imports, plus every year that actually
+  // has schedule rows (incl. historical ones like 2024), plus the selected year.
+  return Array.from(
+    new Set([FALLBACK_YEAR, currentYear - 1, currentYear, currentYear + 1, selectedYear, ...dataYears]),
+  )
     .sort((a, b) => a - b)
     .map((year) => ({ label: `${year} 年`, value: year }));
 }
@@ -68,7 +72,18 @@ export default function ScheduleView() {
   const [issueNumber, setIssueNumber] = useState<number | null>(null);
   const [status, setStatus] = useState<StatusFilterValue>('all');
 
-  const yearOptions = useMemo(() => buildYearOptions(year), [year]);
+  const yearsQuery = useQuery({
+    queryKey: ['schedule-years'],
+    queryFn: async () => {
+      const res = await getScheduleYears();
+      return res.data;
+    },
+  });
+
+  const yearOptions = useMemo(
+    () => buildYearOptions(year, yearsQuery.data ?? []),
+    [year, yearsQuery.data],
+  );
 
   const scheduleQuery = useQuery({
     queryKey: ['schedule', year],
