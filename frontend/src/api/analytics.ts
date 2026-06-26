@@ -39,6 +39,25 @@ export interface IssueSummaryOut {
   date_to: string | null;
 }
 
+export interface BsCirculationRow {
+  issue_label: string;
+  year: number | null;
+  title: string | null;
+  single_issue_qty: number;
+  subscription_qty: number;
+  total_qty: number;
+  in_calendar: boolean;
+}
+
+export interface BsCirculationOut {
+  rows: BsCirculationRow[];
+  grand_total_single: number;
+  grand_total_subscription: number;
+  grand_total: number;
+  unexpanded_subscriptions: number;
+  year: number | null;
+}
+
 export interface DateRangeParams {
   date_from?: string;
   date_to?: string;
@@ -54,4 +73,10 @@ export function getIssueSummary(
   params?: DateRangeParams & { publication?: string },
 ): Promise<AxiosResponse<IssueSummaryOut>> {
   return api.get('/analytics/issues', { params });
+}
+
+export function getBsCirculation(
+  params?: { year?: number },
+): Promise<AxiosResponse<BsCirculationOut>> {
+  return api.get('/analytics/bs-circulation', { params });
 }

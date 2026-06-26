@@ -12,6 +12,7 @@ from app.cache import get_dashboard_cache, set_dashboard_cache
 from app.seeds.publication_schedule_2026 import seed_publication_schedule_2026
 from app.seeds.report_templates import seed_report_templates
 from app.seeds.products import seed_products
+from app.seeds.bs_issues import seed_bs_issues
 from app.api.schedule import router as schedule_router
 from app.api.issues import router as issues_router
 from app.api.reports import router as reports_router
@@ -217,10 +218,12 @@ def run_seeds(_user = Depends(require_admin)):
         schedule_count = seed_publication_schedule_2026(db)
         template_count = seed_report_templates(db)
         product_count = seed_products(db)
+        bs_issue_count = seed_bs_issues(db)
         return {
             "message": (
                 f"Seeded {schedule_count} schedule entries, "
-                f"{template_count} report templates, {product_count} products"
+                f"{template_count} report templates, {product_count} products, "
+                f"{bs_issue_count} 商学院刊期"
             )
         }
     finally:

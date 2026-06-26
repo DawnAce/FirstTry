@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, DatePicker, Space, Table, Tag, Typography } from 'antd';
+import { Card, DatePicker, Select, Space, Table, Tag, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
 import type { Dayjs } from 'dayjs';
-import { getCampaignSummary, getIssueSummary } from '../api/analytics';
-import type { CampaignSummaryRow, IssueSummaryRow } from '../api/analytics';
+import { getCampaignSummary, getIssueSummary, getBsCirculation } from '../api/analytics';
+import type { CampaignSummaryRow, IssueSummaryRow, BsCirculationRow } from '../api/analytics';
 import { publicationLabel } from './orderUtils';
 
 const { Title, Text } = Typography;
@@ -24,6 +24,13 @@ export default function Analytics() {
   const issueQuery = useQuery({
     queryKey: ['analytics', 'issues', params],
     queryFn: () => getIssueSummary(params).then((r) => r.data),
+  });
+
+  // 0 = 全部年份
+  const [bsYear, setBsYear] = useState<number>(2026);
+  const bsQuery = useQuery({
+    queryKey: ['analytics', 'bs-circulation', bsYear],
+    queryFn: () => getBsCirculation(bsYear ? { year: bsYear } : {}).then((r) => r.data),
   });
 
   const campaignCols: TableColumnsType<CampaignSummaryRow> = [
@@ -52,6 +59,19 @@ export default function Analytics() {
     { title: '销量(份)', dataIndex: 'total_quantity', key: 'total_quantity', align: 'right', sorter: (a, b) => a.total_quantity - b.total_quantity },
     { title: '销售额', dataIndex: 'total_paid', key: 'total_paid', align: 'right', render: (v) => `¥${v}`, sorter: (a, b) => Number(a.total_paid) - Number(b.total_paid) },
     { title: '行数', dataIndex: 'line_count', key: 'line_count', align: 'right' },
+  ];
+
+  const bsCols: TableColumnsType<BsCirculationRow> = [
+    {
+      title: '期次', dataIndex: 'issue_label', key: 'issue_label',
+      render: (v, r) => (
+        <Space size={4}><Tag>{v}</Tag>{!r.in_calendar && <Tag color="orange">不在刊历</Tag>}</Space>
+      ),
+    },
+    { title: '标题', dataIndex: 'title', key: 'title', render: (v) => v ?? <Text type="secondary">—</Text> },
+    { title: '单期销量', dataIndex: 'single_issue_qty', key: 'single', align: 'right' },
+    { title: '订阅覆盖', dataIndex: 'subscription_qty', key: 'sub', align: 'right' },
+    { title: '合计发行', dataIndex: 'total_qty', key: 'total', align: 'right', render: (v) => <Text strong>{v}</Text>, sorter: (a, b) => a.total_qty - b.total_qty },
   ];
 
   return (
@@ -112,6 +132,51 @@ export default function Analytics() {
         />
         <Text type="secondary" style={{ fontSize: 12 }}>
           期次（2026-01 等）落在订单行 issue_label，年/月在期次层，不在商品名里。
+        </Text>
+      </Card>
+
+      <Card
+        size="small"
+        title="按期发行量（商学院 · 单期 + 订阅）"
+        style={{ marginTop: 16 }}
+        extra={
+          <Space>
+            <Select
+              size="small"
+              value={bsYear}
+              style={{ width: 110 }}
+              onChange={setBsYear}
+              options={[
+                { label: '2026 年', value: 2026 },
+                { label: '2025 年', value: 2025 },
+                { label: '2024 年', value: 2024 },
+                { label: '全部', value: 0 },
+              ]}
+            />
+            {bsQuery.data && (
+              <Text type="secondary">
+                单期 {bsQuery.data.grand_total_single} + 订阅 {bsQuery.data.grand_total_subscription} = 共 {bsQuery.data.grand_total} 份
+              </Text>
+            )}
+          </Space>
+        }
+      >
+        <Table<BsCirculationRow>
+          rowKey="issue_label"
+          size="small"
+          loading={bsQuery.isLoading}
+          columns={bsCols}
+          dataSource={bsQuery.data?.rows ?? []}
+          pagination={false}
+          locale={{ emptyText: '该年暂无商学院发行数据（需先 seed 刊历 + 导入订单）' }}
+        />
+        {!!bsQuery.data?.unexpanded_subscriptions && (
+          <Text type="warning" style={{ fontSize: 12, display: 'block' }}>
+            ⚠ 另有 {bsQuery.data.unexpanded_subscriptions} 张商学院订阅缺覆盖期（历史/未配起投月），未计入任何一期——补齐覆盖期后即可计入。
+          </Text>
+        )}
+        <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+          发行量 = 单期销量 + 覆盖该期的订阅（合刊只计一次）。订阅按覆盖期落到商学院刊历展开。
         </Text>
       </Card>
     </div>
