@@ -44,6 +44,7 @@ from app.models.fulfillment_target import (
 )
 from app.models.order_event import OrderEvent, OrderEventType
 from app.models.product import CoverageRule, Product
+from app.models.bs_issue import BsIssue
 
 __all__ = [
     "PublicationSchedule",
@@ -70,4 +71,6 @@ __all__ = [
     "OrderEvent", "OrderEventType",
     # Product catalog (商品库)
     "Product", "CoverageRule",
+    # 商学院月刊刊期日历
+    "BsIssue",
 ]

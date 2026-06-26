@@ -69,3 +69,35 @@ class IssueSummaryOut(BaseModel):
     grand_total_paid: Decimal
     date_from: Optional[date] = None
     date_to: Optional[date] = None
+
+
+class BsCirculationRow(BaseModel):
+    """商学院某一期的「发行量」= 单期销量 + 覆盖该期的订阅份数。
+
+    ``subscription_qty`` 由订阅覆盖期落到刊历上展开得到（合刊只计一次）。
+    ``in_calendar=False`` 表示该期有单期销量但不在刊历里 —— 订阅无法展开到它
+    （提示把这期补进刊历）。
+    """
+
+    issue_label: str
+    year: Optional[int] = None
+    title: Optional[str] = None
+    single_issue_qty: int
+    subscription_qty: int
+    total_qty: int
+    in_calendar: bool = True
+
+
+class BsCirculationOut(BaseModel):
+    """商学院按期发行量（单期 + 订阅）。只计 ``active`` 订单。
+
+    ``unexpanded_subscriptions`` = 缺覆盖期、无法展开到具体期的商学院订阅张数
+    （历史归档 / 未配起投月）—— 这些没计入任何一期，单独提示。
+    """
+
+    rows: List[BsCirculationRow]
+    grand_total_single: int
+    grand_total_subscription: int
+    grand_total: int
+    unexpanded_subscriptions: int
+    year: Optional[int] = None

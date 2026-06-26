@@ -19,7 +19,11 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import User
 from app.models.order_item import Publication
-from app.schemas.analytics import CampaignSummaryOut, IssueSummaryOut
+from app.schemas.analytics import (
+    BsCirculationOut,
+    CampaignSummaryOut,
+    IssueSummaryOut,
+)
 from app.services import order_analytics_service
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -59,3 +63,18 @@ def issue_summary(
     return order_analytics_service.summarize_issues(
         db, publication=publication, date_from=date_from, date_to=date_to
     )
+
+
+@router.get("/bs-circulation", response_model=BsCirculationOut)
+def bs_circulation(
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """商学院按期发行量（单期销量 + 覆盖该期的订阅份数）。
+
+    订阅按覆盖期落到商学院刊历（``bs_issues``）展开成命中的各期，合刊只计一次。
+    可选 ``year`` 限定年份。缺覆盖期的订阅在 ``unexpanded_subscriptions`` 单独提示。
+    只计 active 订单。
+    """
+    return order_analytics_service.summarize_bs_circulation(db, year=year)
