@@ -171,7 +171,7 @@ export default function ScheduleView() {
         </div>
 
         {scheduleQuery.isError && (
-          <Alert type="error" showIcon message="加载刊期表数据失败，请稍后重试" />
+          <Alert type="error" showIcon title="加载刊期表数据失败，请稍后重试" />
         )}
 
         <Row gutter={[16, 16]}>
@@ -244,11 +244,11 @@ export default function ScheduleView() {
 
         {scheduleRows.length === 0 && !scheduleQuery.isLoading && !scheduleQuery.isError ? (
           <Card>
-            <Alert type="info" showIcon message="暂无该年份刊期表" />
+            <Alert type="info" showIcon title="暂无该年份刊期表" />
           </Card>
         ) : filteredRows.length === 0 && !scheduleQuery.isLoading ? (
           <Card>
-            <Alert type="info" showIcon message="当前筛选条件下暂无刊期记录" />
+            <Alert type="info" showIcon title="当前筛选条件下暂无刊期记录" />
           </Card>
         ) : (
           filteredMonthGroups.map((group) => (

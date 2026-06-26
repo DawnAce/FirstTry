@@ -272,7 +272,7 @@ export default function OrderImport() {
               </Card>
             </>
           ) : (
-            <Alert type="info" message="历史归档：保留下单日期、只补记录；订期留空（可在订单页补填），不进发货同步。赠品仅近期模式可设。" />
+            <Alert type="info" title="历史归档：保留下单日期、只补记录；订期留空（可在订单页补填），不进发货同步。赠品仅近期模式可设。" />
           )}
         </Space>
       </Card>
@@ -355,7 +355,7 @@ export default function OrderImport() {
       >
         {drawerMode === 'quick' && (
           <>
-            <Alert type="info" style={{ marginBottom: 12 }} message="填好这一个商品并保存后，会自动重新预览——用到它的所有订单会一起变为「导入」。" />
+            <Alert type="info" style={{ marginBottom: 12 }} title="填好这一个商品并保存后，会自动重新预览——用到它的所有订单会一起变为「导入」。" />
             <Form<ProductFormValues> form={quickForm} layout="vertical" onFinish={(v) => quickAddMutation.mutate(v)}>
               <ProductFormFields editing={false} />
             </Form>

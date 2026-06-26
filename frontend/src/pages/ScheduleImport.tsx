@@ -378,7 +378,7 @@ export default function ScheduleImport() {
             <Alert
               type="warning"
               showIcon
-              message="仅管理员可上传刊期 PDF"
+              title="仅管理员可上传刊期 PDF"
               description="当前账号没有导入权限，请联系管理员处理年度刊期表导入。"
             />
           ) : (
@@ -400,11 +400,11 @@ export default function ScheduleImport() {
               )}
 
               {previewing && (
-                <Alert type="info" showIcon message="正在解析 PDF，请稍候..." />
+                <Alert type="info" showIcon title="正在解析 PDF，请稍候..." />
               )}
 
               {previewError && (
-                <Alert type="error" showIcon message="解析预览失败" description={previewError} />
+                <Alert type="error" showIcon title="解析预览失败" description={previewError} />
               )}
 
               {preview && (
@@ -412,7 +412,7 @@ export default function ScheduleImport() {
                   <Alert
                     type={preview.can_commit ? 'success' : 'warning'}
                     showIcon
-                    message={preview.can_commit ? '解析完成，可确认保存' : '解析完成，但存在需要处理的问题'}
+                    title={preview.can_commit ? '解析完成，可确认保存' : '解析完成，但存在需要处理的问题'}
                     description={preview.can_commit
                       ? `确认保存后将更新 ${preview.year} 年的正式刊期表（仅影响该年份，其他年份不受影响）。`
                       : '请处理校验问题后再保存；本次预览尚未修改正式刊期表。'}
@@ -506,7 +506,7 @@ export default function ScheduleImport() {
                     <Alert
                       type="error"
                       showIcon
-                      message="解析校验错误"
+                      title="解析校验错误"
                       description={(
                         <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
                           {preview.errors.map((error) => (
@@ -537,7 +537,7 @@ export default function ScheduleImport() {
 
         <Card title="上传记录" loading={uploadsQuery.isLoading}>
           {uploadsQuery.isError ? (
-            <Alert type="error" showIcon message="加载上传记录失败，请稍后重试" />
+            <Alert type="error" showIcon title="加载上传记录失败，请稍后重试" />
           ) : (
             <Table<ScheduleUpload>
               rowKey="id"

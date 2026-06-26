@@ -115,7 +115,7 @@ export default function OrderDetail() {
       <Alert
         type="error"
         showIcon
-        message="无效的订单 ID"
+        title="无效的订单 ID"
         action={
           <Button type="primary" size="small" onClick={() => navigate('/orders')}>
             返回列表
@@ -138,7 +138,7 @@ export default function OrderDetail() {
       <Alert
         type="error"
         showIcon
-        message="加载订单失败"
+        title="加载订单失败"
         description={String(orderQuery.error ?? '订单不存在')}
         action={
           <Space>
@@ -524,7 +524,7 @@ function ProgressPanel({ item }: { item: OrderItemOut }) {
       {progress.skipped_count > 0 && (
         <Alert
           type="info"
-          message={`跳过 ${progress.skipped_count} 期（休刊或缺数据）`}
+          title={`跳过 ${progress.skipped_count} 期（休刊或缺数据）`}
           showIcon
           style={{ marginTop: 8 }}
         />
@@ -684,7 +684,7 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
     <>
       <Alert
         type="info"
-        message="每条明细的履约方案按版本追踪。修改目标（收件人）时会自动创建新版本，旧版本保留历史记录。"
+        title="每条明细的履约方案按版本追踪。修改目标（收件人）时会自动创建新版本，旧版本保留历史记录。"
         showIcon
         style={{ marginBottom: 12 }}
       />
@@ -885,14 +885,14 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
       </Card>
 
       {preview?.message && (
-        <Alert type="warning" showIcon message={preview.message} />
+        <Alert type="warning" showIcon title={preview.message} />
       )}
 
       {hasConflicts && (
         <Alert
           type="error"
           showIcon
-          message="存在同步冲突，请先处理发货明细中的手动改动后再确认同步。"
+          title="存在同步冲突，请先处理发货明细中的手动改动后再确认同步。"
         />
       )}
 
@@ -1021,7 +1021,7 @@ interface EventsTabProps {
 
 function EventsTab({ events, loading, error }: EventsTabProps) {
   if (error) {
-    return <Alert type="error" showIcon message="加载事件失败" description={error} />;
+    return <Alert type="error" showIcon title="加载事件失败" description={error} />;
   }
   if (loading) {
     return (
