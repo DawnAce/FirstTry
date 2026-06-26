@@ -143,9 +143,14 @@ def _find_header(ws):
 
 
 def is_taobao_export(file_bytes: bytes) -> bool:
-    """Cheap header sniff so the import dispatcher can auto-route by platform."""
+    """Cheap header sniff so the import dispatcher can auto-route by platform.
+
+    Loads WITHOUT ``read_only`` (like ``parse_taobao_orders``): read-only mode trusts
+    the worksheet ``<dimension>`` ref, and some exports ship a wrong one (single
+    column) which makes the header sniff under-read and mis-route the file.
+    """
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     except Exception:  # noqa: BLE001
         return False
     try:

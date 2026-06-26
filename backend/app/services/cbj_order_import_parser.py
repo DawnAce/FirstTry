@@ -158,9 +158,16 @@ def _find_header(ws):
 
 
 def is_cbj_export(file_bytes: bytes) -> bool:
-    """Cheap header sniff (mirrors the 淘宝 one) so the dispatcher tells formats apart."""
+    """Cheap header sniff (mirrors the 淘宝 one) so the dispatcher tells formats apart.
+
+    Loads WITHOUT ``read_only`` on purpose: some CBJ exports ship a wrong worksheet
+    ``<dimension>`` ref (e.g. ``A1`` while data spans A:L), and read-only mode trusts
+    it and under-reads to a single column — so the header sniff would miss 产品名称
+    and mis-route a valid CBJ file. The full (non-read-only) load recomputes the real
+    dimension from the cells, matching ``parse_cbj_orders``.
+    """
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     except Exception:  # noqa: BLE001
         return False
     try:
