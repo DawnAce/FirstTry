@@ -83,6 +83,12 @@ def test_parse_product_field_flags_shipping_and_zto():
     assert freight.quantity == 50
 
 
+def test_parse_product_field_flags_kuaidifei_as_shipping():
+    # 「全年快递费用」也是运费类（名里无"运费"），应识别为运费行
+    lines = parse_product_field("《中国经营报》全年快递费用X1,单价:150.0\n")
+    assert len(lines) == 1 and lines[0].is_shipping is True
+
+
 def test_parse_address_splits_name_phone_addr_postal():
     name, phone, addr, postal = parse_address(
         "冯志强,15103569527,晋城市城区西上庄办事处北闫庄星湖湾3#804,048000"

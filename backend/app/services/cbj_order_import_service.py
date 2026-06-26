@@ -208,6 +208,15 @@ def _row(po, status_map, decision, **kw) -> PreviewRow:
     )
 
 
+# 忽略名单：长尾特殊品（第三方刊物如家族企业/深潜、商学院售罄案例辑、电子刊、对公大单、
+# 一次性怪单）—— 不进商品库、不导入、不进待确认，导入时直接跳过。以后在此增删关键词。
+_IGNORED_PRODUCT_KEYWORDS = ("家族企业", "深潜", "深度系列", "电子刊", "对公专用", "利润薄如刀片")
+
+
+def _is_ignored_product(name: str) -> bool:
+    return any(k in (name or "") for k in _IGNORED_PRODUCT_KEYWORDS)
+
+
 def build_import_preview(
     db: Session,
     parsed_orders: List[ParsedOrder],
@@ -244,9 +253,17 @@ def build_import_preview(
             (pl.unit_price * pl.quantity for pl in po.product_lines if pl.is_shipping),
             Decimal("0"),
         )
+        # 忽略名单：整单只有忽略品 → 跳过（不导入、不进待确认）；多商品单里的忽略行被丢弃、
+        # 其余照常导入。
+        ignored_lines = [pl for pl in real_lines if _is_ignored_product(pl.name)]
+        real_lines = [pl for pl in real_lines if not _is_ignored_product(pl.name)]
         zto_override = any(pl.mentions_zto for pl in po.product_lines)
         if not real_lines:
-            rows.append(_row(po, sm, "unresolved", reason="无可识别的商品行"))
+            if ignored_lines:
+                rows.append(_row(po, sm, "skip_status",
+                                 reason="已忽略（特殊品/对公/电子刊等，不导入）"))
+            else:
+                rows.append(_row(po, sm, "unresolved", reason="无可识别的商品行"))
             continue
 
         warnings: List[str] = []

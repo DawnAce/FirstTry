@@ -114,7 +114,7 @@ def parse_product_field(value) -> List[ProductLine]:
             price = _dec(match.group("price"))
         else:
             name, qty, price = seg, 1, Decimal("0")
-        is_shipping = "运费" in name
+        is_shipping = "运费" in name or "快递费" in name  # 运费补拍 / 全年快递费用
         mentions_zto = "中通" in name
         if qty == 0 and not is_shipping:
             continue  # X0 promo placeholder — not purchased
