@@ -192,7 +192,10 @@ PRODUCTS = [
     dict(
         code="BUNDLE-CBJ-BS-1Y",
         display_name="中国经营报+商学院 · 全年订阅 · 套餐8折",
-        aliases=["《中国经营报》和《商学院》全年订阅（8折优惠）"],
+        aliases=[
+            "《中国经营报》和《商学院》全年订阅（8折优惠）",
+            "《商学院》+《中国经营报》组合订阅优惠",
+        ],
         publication=None,
         fulfillment_type=FulfillmentType.subscription,
         subscription_term=SubscriptionTerm.one_year,

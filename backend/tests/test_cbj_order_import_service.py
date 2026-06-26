@@ -70,6 +70,25 @@ def _po(*, ext="EC-1", status="卖家已发货", paid=Decimal("199"), original=N
     )
 
 
+def test_ignored_product_skipped(db):
+    # 忽略名单里的特殊品（家族企业等）→ 跳过，不导入、不进待确认
+    pv = build_import_preview(db, [_po(lines=[_line("《家族企业》全年订阅", price=Decimal("600"))])], RECENT)
+    assert pv.rows[0].decision == "skip_status"
+    assert "已忽略" in pv.rows[0].reason
+
+
+def test_ignored_line_dropped_keeps_rest_in_multi_product(db):
+    # 多商品单：忽略行（深度系列）被丢弃，其余（套餐）照常导入
+    lines = [
+        _line("《中国经营报》和《商学院》全年订阅（8折优惠）", price=Decimal("576")),
+        _line("《商学院》深度系列实战案例辑4册", price=Decimal("218")),
+    ]
+    pv = build_import_preview(db, [_po(paid=Decimal("794"), lines=lines)], RECENT)
+    assert pv.rows[0].decision == "import"
+    pubs = {it.publication.value for it in pv.rows[0].order_create.items if it.publication}
+    assert pubs == {"cbj", "business_school"}  # 套餐拆 2 条；深度系列行已忽略
+
+
 def test_normal_order_imports_with_computed_coverage(db):
     pv = build_import_preview(db, [_po()], RECENT)
     row = pv.rows[0]
