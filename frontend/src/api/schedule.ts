@@ -51,6 +51,8 @@ export interface ScheduleUpload {
 export const getSchedule = (year: number) =>
   api.get<ScheduleEntry[]>('/schedule', { params: { year } });
 
+export const getScheduleYears = () => api.get<number[]>('/schedule/years');
+
 export const getScheduleUploads = (year?: number) =>
   api.get<ScheduleUpload[]>('/schedule/uploads', { params: year ? { year } : undefined });
 
