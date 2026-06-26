@@ -189,8 +189,8 @@ def test_seed_products_creates_catalog_then_idempotent():
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
     try:
-        assert seed_products(db) == 11
-        assert db.query(Product).count() == 11
+        assert seed_products(db) == 13
+        assert db.query(Product).count() == 13
         bundle = db.query(Product).filter(Product.code == "BUNDLE-CBJ-BS-1Y").one()
         assert bundle.is_bundle is True
         assert bundle.publication is None
@@ -206,7 +206,7 @@ def test_seed_products_creates_catalog_then_idempotent():
             assert db.query(Product).filter(Product.code == code).count() == 1
         # idempotent: second run inserts nothing
         assert seed_products(db) == 0
-        assert db.query(Product).count() == 11
+        assert db.query(Product).count() == 13
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
@@ -232,12 +232,12 @@ def test_sync_catalog_upserts_aliases_and_products_idempotently():
         post = db.query(Product).filter(Product.code == "CBJ-1Y-POST-WK").one()
         post.aliases = []
         db.commit()
-        assert db.query(Product).count() == 9
+        assert db.query(Product).count() == 11
 
         report = sync_catalog(db)
         assert report["added_products"] == 2
         assert report["aliases_added"] >= 1
-        assert db.query(Product).count() == 11
+        assert db.query(Product).count() == 13
         post = db.query(Product).filter(Product.code == "CBJ-1Y-POST-WK").one()
         assert "全年-邮局" in (post.aliases or [])
 

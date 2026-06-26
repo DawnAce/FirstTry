@@ -228,6 +228,15 @@ export default function ProductCatalog() {
         <Text type="secondary">
           商品库把电商的商品名「翻译」成订单信息。新出一个促销 = 加一行，不用改代码；导入时系统照此自动识别（识别不到的会进「待确认」）。
         </Text>
+        <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.9 }}>
+          <Text strong>📋 命名规则</Text>
+          <ul style={{ margin: '2px 0 0', paddingInlineStart: 20 }}>
+            <li><Text strong>名称</Text>：「刊物 · 套餐 · 投递频次」三段式 —— 如 <Text code>中国经营报 · 全年订阅 · 邮局周投</Text></li>
+            <li><Text strong>编码</Text>：结构化 —— 如 <Text code>CBJ-1Y-POST-WK</Text> / <Text code>BS-1Y-ZTO</Text> / <Text code>BUNDLE-CBJ-BS-1Y</Text>（不参与匹配，可放心规范）</li>
+            <li><Text strong>别名</Text>：放电商导出的原始商品名 / SKU 片段，导入靠它匹配（<Text strong>改名不影响识别</Text>）；促销用完整活动串（如「…-618促销活动」，别用裸「618」会误命中）</li>
+            <li><Text strong>不建商品</Text>：商学院月刊单期、运费补拍 —— 系统自动识别 / 处理，无需维护</li>
+          </ul>
+        </div>
       </Card>
 
       <Table<Product>
