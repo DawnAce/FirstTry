@@ -192,6 +192,38 @@ def test_create_order_rejects_empty_items(client):
     assert r.status_code == 422
 
 
+def test_refund_and_cancel_endpoints_round_trip(client):
+    payload = _make_create_payload()
+    payload["paid_amount"] = "180"
+    r = client.post("/api/orders", json=payload)
+    assert r.status_code == 201, r.text
+    oid = r.json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+
+    # partial refund (money-only) → partial_refund + refunds[1]
+    rr = client.post(
+        f"/api/orders/{oid}/refund", json={"amount": "60", "reason": "退差价"}
+    )
+    assert rr.status_code == 200, rr.text
+    body = rr.json()
+    assert body["commercial_status"] == "partial_refund"
+    assert float(body["refunded_amount"]) == 60.0
+    assert len(body["refunds"]) == 1
+    assert float(body["refunds"][0]["amount"]) == 60.0
+
+    # over-refund (60 + 200 > 180) → 422
+    bad = client.post(f"/api/orders/{oid}/refund", json={"amount": "200"})
+    assert bad.status_code == 422
+
+    # cancel → full refund of the outstanding 120, status cancelled, two refunds
+    cc = client.post(f"/api/orders/{oid}/cancel", json={"reason": "客户取消"})
+    assert cc.status_code == 200, cc.text
+    cbody = cc.json()
+    assert cbody["commercial_status"] == "cancelled"
+    assert float(cbody["refunded_amount"]) == 180.0
+    assert len(cbody["refunds"]) == 2
+
+
 # ---------------------------------------------------------------------------
 # POST /api/orders/{id}/confirm
 # ---------------------------------------------------------------------------

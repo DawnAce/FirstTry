@@ -91,6 +91,11 @@ class Order(Base):
     # 原价 / pre-discount list price (from the CBJ 原价 column). NULL for manual or
     # legacy orders that never captured it. Discount depth = original_amount − paid.
     original_amount = Column(Numeric(10, 2), nullable=True)
+    # 已退款累计金额（冗余 SUM(refunds.amount)，便于筛选/净额统计）。
+    # 商业状态：0 → 不变；0<refunded<paid → partial_refund；>=paid → refunded。
+    refunded_amount = Column(
+        Numeric(10, 2), default=0, server_default="0", nullable=False
+    )
     invoice_required = Column(Boolean, default=False, nullable=False)
     invoice_title = Column(Text, nullable=True)
     invoice_tax_no = Column(String(64), nullable=True)
@@ -133,6 +138,12 @@ class Order(Base):
         "OrderEvent",
         back_populates="order",
         cascade="all, delete-orphan",
+    )
+    refunds = relationship(
+        "Refund",
+        back_populates="order",
+        cascade="all, delete-orphan",
+        order_by="Refund.id",
     )
 
     __table_args__ = (

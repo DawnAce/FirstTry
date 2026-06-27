@@ -46,6 +46,7 @@ from app.models import (
     OrderEventType,
     OrderItem,
     OrderStatus,
+    Refund,
     ShippingDetail,
 )
 from app.models.fulfillment_target import ShippingChannel
@@ -657,23 +658,34 @@ def update_order(
     return order
 
 
-def _orphan_order_generated_details(db: Session, order_id: int) -> int:
+def _orphan_order_generated_details(
+    db: Session,
+    order_id: int,
+    *,
+    order_item_id: Optional[int] = None,
+    from_issue: Optional[int] = None,
+) -> int:
     """Mark this order's ``order_generated`` shipping_details as ``orphaned``.
 
-    Called on void so the rows stop being exported / shipped. Returns the
-    number of rows touched (already-orphaned rows are skipped). Manual rows
-    (``order_id`` NULL or ``source_type=manual``) are never touched — they
-    aren't owned by this order.
+    Stops the rows being exported / shipped. Returns the number of rows touched
+    (already-orphaned rows are skipped). Manual rows (``order_id`` NULL or
+    ``source_type=manual``) are never touched — they aren't owned by this order.
+
+    Optional scope (used by partial refunds):
+    * ``order_item_id`` — only that item's rows (退某条明细).
+    * ``from_issue``    — only issues ``>= from_issue`` (订阅从某期起停发).
+    No scope → all of the order's generated rows (void / full refund / cancel).
     """
-    rows = (
-        db.query(ShippingDetail)
-        .filter(
-            ShippingDetail.order_id == order_id,
-            ShippingDetail.source_type == ShippingDetailSourceType.order_generated,
-            ShippingDetail.sync_status != ShippingDetailSyncStatus.orphaned,
-        )
-        .all()
+    q = db.query(ShippingDetail).filter(
+        ShippingDetail.order_id == order_id,
+        ShippingDetail.source_type == ShippingDetailSourceType.order_generated,
+        ShippingDetail.sync_status != ShippingDetailSyncStatus.orphaned,
     )
+    if order_item_id is not None:
+        q = q.filter(ShippingDetail.order_item_id == order_item_id)
+    if from_issue is not None:
+        q = q.filter(ShippingDetail.issue_number >= from_issue)
+    rows = q.all()
     for row in rows:
         row.sync_status = ShippingDetailSyncStatus.orphaned
     return len(rows)
@@ -705,6 +717,165 @@ def void_order(
         order_id=order.id,
         event_type=OrderEventType.voided,
         payload={"reason": reason, "orphaned_shipping_details": orphaned_count},
+        operator_id=operator_id,
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def _as_money(value) -> Decimal:
+    """Coerce a possibly-None/int/float DB amount to a 2-dp Decimal."""
+    return Decimal(str(value if value is not None else 0))
+
+
+def refund_order(
+    db: Session,
+    order_id: int,
+    *,
+    amount: Decimal,
+    reason: Optional[str] = None,
+    order_item_id: Optional[int] = None,
+    stop_from_issue: Optional[int] = None,
+    refunded_at: Optional[date] = None,
+    operator_id: Optional[int] = None,
+) -> Order:
+    """Record one refund line (full or partial) against an order.
+
+    Updates ``refunded_amount`` + ``commercial_status`` and stops the scoped
+    delivery (orphans the matching ``order_generated`` shipping rows). Refund is
+    a commercial event — it never touches the internal ``OrderStatus``.
+
+    Scope (covers all three partial-refund shapes):
+    * no scope                  → money-only, delivery unchanged
+    * ``order_item_id``         → orphan that item's future generated rows
+    * ``stop_from_issue``       → orphan that scope from the given issue onward
+    A refund whose cumulative total reaches ``paid_amount`` becomes a full refund
+    (``commercial_status=refunded``) and stops ALL delivery.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
+    if order.status == OrderStatus.void:
+        raise HTTPException(status_code=409, detail="已作废的订单无法退款")
+
+    amount = _as_money(amount)
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="退款金额必须大于 0")
+    if order_item_id is not None and not any(
+        it.id == order_item_id for it in order.items
+    ):
+        raise HTTPException(
+            status_code=422, detail=f"明细 {order_item_id} 不属于该订单"
+        )
+
+    paid = _as_money(order.paid_amount)
+    already = _as_money(order.refunded_amount)
+    if already + amount > paid:
+        raise HTTPException(
+            status_code=422,
+            detail=f"退款额超过可退余额（实付 {paid}、已退 {already}）",
+        )
+
+    db.add(
+        Refund(
+            order_id=order.id,
+            order_item_id=order_item_id,
+            amount=amount,
+            reason=reason,
+            stop_from_issue=stop_from_issue,
+            refunded_at=refunded_at or date.today(),
+            operator_id=operator_id,
+        )
+    )
+    order.refunded_amount = already + amount
+    is_full = order.refunded_amount >= paid
+    order.commercial_status = (
+        OrderCommercialStatus.refunded
+        if is_full
+        else OrderCommercialStatus.partial_refund
+    )
+
+    if is_full:
+        orphaned = _orphan_order_generated_details(db, order_id)
+    elif order_item_id is not None or stop_from_issue is not None:
+        orphaned = _orphan_order_generated_details(
+            db, order_id, order_item_id=order_item_id, from_issue=stop_from_issue
+        )
+    else:
+        orphaned = 0  # 纯退钱、履约不变
+
+    log_event(
+        db,
+        order_id=order.id,
+        event_type=OrderEventType.refunded,
+        payload={
+            "amount": str(amount),
+            "order_item_id": order_item_id,
+            "stop_from_issue": stop_from_issue,
+            "is_full": is_full,
+            "refunded_amount_total": str(order.refunded_amount),
+            "orphaned_shipping_details": orphaned,
+            "reason": reason,
+        },
+        operator_id=operator_id,
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def cancel_order(
+    db: Session,
+    order_id: int,
+    *,
+    reason: str,
+    refunded_at: Optional[date] = None,
+    operator_id: Optional[int] = None,
+) -> Order:
+    """Cancel an order: mark ``commercial_status=cancelled``, record a full refund
+    of the outstanding paid amount (实付 − 已退), and stop ALL delivery.
+
+    Like refund, cancel is a commercial event — the internal ``OrderStatus`` stays
+    as-is (use ``void`` for "this order shouldn't exist").
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
+    if order.status == OrderStatus.void:
+        raise HTTPException(status_code=409, detail="已作废的订单无法取消")
+    if order.commercial_status == OrderCommercialStatus.cancelled:
+        raise HTTPException(status_code=409, detail="订单已取消")
+
+    paid = _as_money(order.paid_amount)
+    already = _as_money(order.refunded_amount)
+    outstanding = paid - already
+    refund_amount = outstanding if outstanding > 0 else Decimal("0")
+    if refund_amount > 0:
+        db.add(
+            Refund(
+                order_id=order.id,
+                order_item_id=None,
+                amount=refund_amount,
+                reason=f"订单取消：{reason}",
+                stop_from_issue=None,
+                refunded_at=refunded_at or date.today(),
+                operator_id=operator_id,
+            )
+        )
+        order.refunded_amount = already + refund_amount
+
+    order.commercial_status = OrderCommercialStatus.cancelled
+    orphaned = _orphan_order_generated_details(db, order_id)
+    log_event(
+        db,
+        order_id=order.id,
+        event_type=OrderEventType.cancelled,
+        payload={
+            "reason": reason,
+            "refund_amount": str(refund_amount),
+            "orphaned_shipping_details": orphaned,
+        },
         operator_id=operator_id,
     )
     db.commit()
@@ -827,6 +998,7 @@ def get_order_detail(db: Session, order_id: int) -> Order:
             .selectinload(OrderItem.allocations)
             .selectinload(FulfillmentAllocation.targets),
             selectinload(Order.items).selectinload(OrderItem.targets),
+            selectinload(Order.refunds),
         )
         .filter(Order.id == order_id)
         .first()
@@ -923,6 +1095,9 @@ def _build_list_row(db: Session, order: Order) -> OrderListRow:
         coverage_start_date=coverage_start_d,
         coverage_end_date=coverage_end_d,
         status=order.status,
+        commercial_status=order.commercial_status,
+        # column default (0) only applies on flush; coerce for unflushed/None rows
+        refunded_amount=_as_money(order.refunded_amount),
         has_drift=order_drift,
         synced_count=0,
         expected_total=expected_total if any_expected else None,

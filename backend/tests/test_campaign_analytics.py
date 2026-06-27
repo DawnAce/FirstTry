@@ -182,3 +182,33 @@ def test_refunded_and_cancelled_excluded_partial_refund_counted():
     assert _money(by["2026-618"].total_paid) == Decimal("400.00")
     db.close()
     Base.metadata.drop_all(bind=engine)
+
+
+def test_partial_refund_amount_is_netted_from_campaign_revenue():
+    """部分退款单：实收按 (实付 − refunded_amount) 净额计，并暴露 total_refunded。"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+
+    full = _order("2026-618", 240, 240)                 # 无退款 → 实收 240
+    partial = _order("2026-618", 240, 240)              # 部分退款 60 → 实收 180
+    partial.commercial_status = OrderCommercialStatus.partial_refund
+    partial.refunded_amount = Decimal("60")
+    db.add_all([full, partial])
+    db.commit()
+
+    out = summarize_campaigns(db)
+    row = {r.campaign: r for r in out.rows}["2026-618"]
+    assert row.order_count == 2
+    assert _money(row.total_paid) == Decimal("420.00")       # 240 + 180 净额
+    assert _money(row.total_refunded) == Decimal("60.00")
+    # 折扣仍按折前原价 − 毛实付：原价 480 − 毛实付 480 = 0（不被退款污染）
+    assert _money(row.total_discount) == Decimal("0.00")
+    assert _money(out.grand_total_paid) == Decimal("420.00")
+    assert _money(out.grand_total_refunded) == Decimal("60.00")
+    db.close()
+    Base.metadata.drop_all(bind=engine)

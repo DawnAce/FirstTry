@@ -22,7 +22,12 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.fulfillment_target import ShippingChannel, TargetStatus
-from app.models.order import OrderEntryMethod, OrderPaymentMethod, OrderStatus
+from app.models.order import (
+    OrderCommercialStatus,
+    OrderEntryMethod,
+    OrderPaymentMethod,
+    OrderStatus,
+)
 from app.models.order_event import OrderEventType
 from app.models.order_item import (
     BillingType,
@@ -215,6 +220,33 @@ class OrderVoidIn(BaseModel):
     reason: str = Field(min_length=1, max_length=255)
 
 
+class RefundIn(BaseModel):
+    """Payload for POST /orders/{id}/refund — one refund line (full or partial).
+
+    The two optional scope knobs cover all three partial-refund shapes:
+    * both NULL                       → money-only, delivery unchanged
+    * ``order_item_id`` set           → that item is the one refunded
+    * ``stop_from_issue`` set         → stop delivery from that issue onward
+    """
+
+    amount: Decimal = Field(gt=0)
+    reason: Optional[str] = Field(default=None, max_length=500)
+    order_item_id: Optional[int] = None
+    stop_from_issue: Optional[int] = Field(default=None, ge=1)
+    # 退款业务日期；省略则服务端取记账当天。
+    refunded_at: Optional[date] = None
+
+
+class OrderCancelIn(BaseModel):
+    """Payload for POST /orders/{id}/cancel.
+
+    Cancelling also records a full refund of the outstanding paid amount
+    (实付 − 已退) and stops all delivery.
+    """
+
+    reason: str = Field(min_length=1, max_length=255)
+
+
 class OrderItemUpdate(OrderItemIn):
     """Extension of OrderItemIn that optionally carries a DB id for matching.
 
@@ -335,6 +367,19 @@ class OrderEventOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RefundOut(BaseModel):
+    id: int
+    order_item_id: Optional[int]
+    amount: Decimal
+    reason: Optional[str]
+    stop_from_issue: Optional[int]
+    refunded_at: date
+    operator_id: Optional[int]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class OrderOut(BaseModel):
     id: int
     order_code: Optional[str]
@@ -355,10 +400,13 @@ class OrderOut(BaseModel):
     invoice_tax_no: Optional[str]
     invoice_recipient_email: Optional[str]
     status: OrderStatus
+    commercial_status: Optional[OrderCommercialStatus] = None
+    refunded_amount: Decimal = Decimal("0")
     notes: Optional[str]
     created_at: datetime
     updated_at: datetime
     items: List[OrderItemOut]
+    refunds: List[RefundOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -384,6 +432,8 @@ class OrderListRow(BaseModel):
     coverage_start_date: Optional[date]
     coverage_end_date: Optional[date]
     status: OrderStatus
+    commercial_status: Optional[OrderCommercialStatus] = None
+    refunded_amount: Decimal = Decimal("0")
     has_drift: bool
     synced_count: int
     expected_total: Optional[int]

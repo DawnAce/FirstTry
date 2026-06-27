@@ -83,6 +83,7 @@ def summarize_campaigns(
             Order.campaign,
             func.count(Order.id),
             func.sum(Order.paid_amount),
+            func.sum(Order.refunded_amount),
             func.sum(listed_expr),
         )
         .filter(Order.campaign.isnot(None))
@@ -98,15 +99,18 @@ def summarize_campaigns(
     )
 
     rows = []
-    for campaign, order_count, paid, listed in q.all():
-        paid_m, listed_m = _money(paid), _money(listed)
+    for campaign, order_count, paid, refunded, listed in q.all():
+        gross_paid, refunded_m, listed_m = _money(paid), _money(refunded), _money(listed)
+        net_paid = _money(gross_paid - refunded_m)
         rows.append(
             CampaignSummaryRow(
                 campaign=campaign,
                 order_count=order_count,
-                total_paid=paid_m,
+                total_paid=net_paid,                        # 实收净额（退款已冲减）
+                total_refunded=refunded_m,
                 total_listed=listed_m,
-                total_discount=_money(listed_m - paid_m),
+                # 折扣 = 折前原价 − 毛实付（纯定价折扣，不含退款）
+                total_discount=_money(listed_m - gross_paid),
             )
         )
     return CampaignSummaryOut(
@@ -114,6 +118,7 @@ def summarize_campaigns(
         total_campaigns=len(rows),
         grand_total_orders=sum(r.order_count for r in rows),
         grand_total_paid=_money(sum((r.total_paid for r in rows), Decimal("0"))),
+        grand_total_refunded=_money(sum((r.total_refunded for r in rows), Decimal("0"))),
         grand_total_listed=_money(sum((r.total_listed for r in rows), Decimal("0"))),
         grand_total_discount=_money(sum((r.total_discount for r in rows), Decimal("0"))),
         date_from=date_from,

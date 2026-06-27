@@ -1,7 +1,7 @@
 # 电商订单导入 — 项目进度备忘
 
 > 最后更新：2026-06-27。围绕「把 CBJ 小程序 / 淘宝 等电商订单导入订单管理系统 + 下游统计」这条线。
-> **状态：CBJ + 淘宝 端到端完成、已合并 main、已部署生产；商品库已规范化（三段式命名 + 结构化 code，生产 13 个稳定品）；新增「商学院按期发行量（单期 + 订阅）」并部署。2026-06-27 修了订单管理 5 个正确性 bug（见「正确性修复」节）。后端 358 测试全绿、前端 `tsc -b && vite build` 通过。**
+> **状态：CBJ + 淘宝 端到端完成、已合并 main、已部署生产；商品库已规范化（三段式命名 + 结构化 code，生产 13 个稳定品）；新增「商学院按期发行量（单期 + 订阅）」并部署。2026-06-27 修了订单管理 5 个正确性 bug（见「正确性修复」节）+ 建了「退款闭环」（见同名节）。后端 369 测试全绿、前端 `tsc -b && vite build` 通过。**
 
 ## 目标
 把电商平台（首个：CBJ 小程序）的订单尽量自动、完整地导入：商品自动识别、状态/金额/收件人落库，支持近期单（要安排投递）和历史单（只补记录）两种模式。
@@ -118,6 +118,18 @@
 **新增/改动测试**：新建 `test_order_list_filters.py`（真 SQLite 跑 #3/#4 分页 + 日期筛正确性）；`test_expected_issues_calculator.py` 加商学院期数 6 例；`test_order_shipping_sync_service.py` 加退款/取消跳过 + 作废孤儿/导出排除；`test_campaign_analytics.py` 加退款/取消排除、部分退款仍计；`test_order_service.py` 修正两个旧 has_drift 断言（它们断言的正是被修掉的错误 total）。
 
 **遗留边界**（刻意留给退款模块）：`partial_refund` 仍发货、仍按毛额计；bug #1 只挡「导入即退款」的单（它们从没同步过），「先同步后退款」要等退款域操作落地时一并 orphan 已生成行。
+
+## 退款闭环（2026-06-27，拆 2 个 commit）
+> 审计里排第一的高价值缺口。把「退款这件事发生后，状态/停发/营收/审计每层都跟着反应」做成闭环。后端 369 测试全绿、前端构建通过。
+
+**统一模型**：一张 `refunds` 子表，两个范围旋钮覆盖三种部分退款场景——`order_item_id` 空 + `stop_from_issue` 空 = 纯退钱（履约不动）；`order_item_id` 有值 = 退某条明细（那条停发）；`stop_from_issue` 有值 = 订阅从该期起停发。全额退/取消 = 范围都空 + 整单停发。
+
+- **数据层**：`refunds` 表（迁移 `f7a2c4e6b8d0`，当前 head）+ `orders.refunded_amount` 列 + `OrderEventType` 加 `refunded`/`cancelled`（MySQL 枚举 ALTER，与 `test_order_event_enum_migration_consistency` 对齐）。
+- **服务层**：`order_service.refund_order(amount, reason?, order_item_id?, stop_from_issue?)` —— 累加 `refunded_amount`、推 `commercial_status`（累计≥实付→`refunded`，否则 `partial_refund`）、按范围 orphan 已生成发货行（**闭合「先同步后退款」**）、超退余额报 422。`cancel_order(reason)` —— 标 `cancelled` + 把未退实付记一笔全额退款（**用户拍板「cancel 顺手全额退」**）+ 整单停发。`_orphan_order_generated_details` 通用化（带 `order_item_id` / `from_issue` 范围）。两者**只改 `commercial_status`，不动 `OrderStatus`**（退款是正常业务，不是录错作废）。
+- **接口**：`POST /api/orders/{id}/refund`、`/cancel`，返回带 `commercial_status` / `refunded_amount` / `refunds` 台账的完整订单。
+- **统计**：`summarize_campaigns` 实收改 **净额（实付−退款）** + 暴露 `total_refunded`；折扣仍按折前−毛实付。⚠️ **按份数的口径**（按期统计 / 商学院发行量）退款净额**留作后续**（要动覆盖期展开）。
+- **前端**：订单详情页加「退款」「取消订单」按钮 + 弹窗（金额/原因/可选明细/可选起停期）+「退款台账」表 + 头部商业状态标签 + 已退金额展示（`OrderDetail.tsx` / `orderUtils.ts` / `api/orders.ts`）。
+- **测试 +11**（358→369）：全退/部分退/三场景停发/超退防呆/退款拒作废单/cancel 全额退/cancel 接部分退/cancel 幂等/营收净额/API 往返。
 
 ## 待办 / 后续
 - **真导一批（CBJ / 淘宝）**：代码 + 商品库（13 品）+ 刊历都**已部署生产**；干跑预览验证过（CBJ 94/6、淘宝 36/6/1）。待业务真导：传 Excel → 预览 → 确认导入 → 订阅单在详情页补收件人 / 订期再同步中通。淘宝遗留：多商品单单价按标题均摊（需人工核拆）；商家备注里起止期未自动解析（批次起投月 + 逐单核）；季度用 custom 建模。

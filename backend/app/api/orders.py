@@ -36,6 +36,7 @@ from app.models import OrderEntryMethod, OrderStatus, User
 from app.models.order_event import OrderEvent
 from app.schemas.order import (
     FulfillmentProgress,
+    OrderCancelIn,
     OrderCreate,
     OrderEventOut,
     OrderShippingSyncApplyIn,
@@ -47,6 +48,7 @@ from app.schemas.order import (
     OrderVoidIn,
     PricingPreviewIn,
     PricingPreviewOut,
+    RefundIn,
 )
 from app.services import order_service
 from app.services.order_shipping_sync_service import (
@@ -218,6 +220,45 @@ def void_order(
     return _build_order_out(db, fresh)
 
 
+@router.post("/{order_id}/refund", response_model=OrderOut)
+def refund_order(
+    order_id: int,
+    payload: RefundIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Record a refund (full or partial). Optional ``order_item_id`` /
+    ``stop_from_issue`` scope the stop-delivery; no scope = money-only."""
+    order = order_service.refund_order(
+        db,
+        order_id,
+        amount=payload.amount,
+        reason=payload.reason,
+        order_item_id=payload.order_item_id,
+        stop_from_issue=payload.stop_from_issue,
+        refunded_at=payload.refunded_at,
+        operator_id=user.id,
+    )
+    fresh = order_service.get_order_detail(db, order.id)
+    return _build_order_out(db, fresh)
+
+
+@router.post("/{order_id}/cancel", response_model=OrderOut)
+def cancel_order(
+    order_id: int,
+    payload: OrderCancelIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Cancel the order: mark cancelled, record a full refund of the outstanding
+    paid amount, and stop all delivery."""
+    order = order_service.cancel_order(
+        db, order_id, reason=payload.reason, operator_id=user.id
+    )
+    fresh = order_service.get_order_detail(db, order.id)
+    return _build_order_out(db, fresh)
+
+
 @router.put("/{order_id}/items", response_model=OrderOut)
 def update_items(
     order_id: int,
@@ -282,6 +323,7 @@ def _build_order_out(db: Session, order) -> OrderOut:
     from app.schemas.order import (
         FulfillmentAllocationOut,
         OrderItemOut,
+        RefundOut,
     )
 
     item_outs = []
@@ -333,8 +375,11 @@ def _build_order_out(db: Session, order) -> OrderOut:
         invoice_tax_no=order.invoice_tax_no,
         invoice_recipient_email=order.invoice_recipient_email,
         status=order.status,
+        commercial_status=order.commercial_status,
+        refunded_amount=order.refunded_amount,
         notes=order.notes,
         created_at=order.created_at,
         updated_at=order.updated_at,
         items=item_outs,
+        refunds=[RefundOut.model_validate(r) for r in order.refunds],
     )
