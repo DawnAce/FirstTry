@@ -7,6 +7,15 @@ import api from './client';
 
 export type OrderStatus = 'draft' | 'pending_confirmation' | 'active' | 'void';
 
+// 平台商业状态（与内部 OrderStatus 正交）。手工单为 null。
+export type OrderCommercialStatus =
+  | 'pending_payment'
+  | 'paid'
+  | 'shipped'
+  | 'refunded'
+  | 'partial_refund'
+  | 'cancelled';
+
 // 录入方式（provenance）：数据如何进入系统。与销售渠道（source_platform /
 // source_store）正交。PR-B 从旧的 OrderSourceType 收敛而来。
 export type OrderEntryMethod = 'manual' | 'excel_import' | 'api_sync';
@@ -145,6 +154,20 @@ export interface OrderVoidPayload {
   reason: string;
 }
 
+export interface RefundPayload {
+  amount: number | string;
+  reason?: string | null;
+  // 退某条明细（场景②③）；空 = 订单级。
+  order_item_id?: number | null;
+  // 从该期起停发（场景③订阅中途退订）。
+  stop_from_issue?: number | null;
+  refunded_at?: string | null;
+}
+
+export interface OrderCancelPayload {
+  reason: string;
+}
+
 export interface OrderItemUpdate extends OrderItemIn {
   id?: number | null;
 }
@@ -221,6 +244,17 @@ export interface OrderEventOut {
   created_at: string;
 }
 
+export interface RefundOut {
+  id: number;
+  order_item_id: number | null;
+  amount: string;
+  reason: string | null;
+  stop_from_issue: number | null;
+  refunded_at: string;
+  operator_id: number | null;
+  created_at: string;
+}
+
 export interface OrderOut {
   id: number;
   order_code: string | null;
@@ -241,10 +275,13 @@ export interface OrderOut {
   invoice_tax_no: string | null;
   invoice_recipient_email: string | null;
   status: OrderStatus;
+  commercial_status: OrderCommercialStatus | null;
+  refunded_amount: string;
   notes: string | null;
   created_at: string;
   updated_at: string;
   items: OrderItemOut[];
+  refunds: RefundOut[];
 }
 
 export interface OrderListRow {
@@ -261,6 +298,8 @@ export interface OrderListRow {
   coverage_start_date: string | null;
   coverage_end_date: string | null;
   status: OrderStatus;
+  commercial_status: OrderCommercialStatus | null;
+  refunded_amount: string;
   has_drift: boolean;
   synced_count: number;
   expected_total: number | null;
@@ -369,6 +408,18 @@ export const voidOrder = (
   reason: string,
 ): Promise<AxiosResponse<OrderOut>> =>
   api.post<OrderOut>(`/orders/${id}/void`, { reason } satisfies OrderVoidPayload);
+
+export const refundOrder = (
+  id: number,
+  payload: RefundPayload,
+): Promise<AxiosResponse<OrderOut>> =>
+  api.post<OrderOut>(`/orders/${id}/refund`, payload);
+
+export const cancelOrder = (
+  id: number,
+  reason: string,
+): Promise<AxiosResponse<OrderOut>> =>
+  api.post<OrderOut>(`/orders/${id}/cancel`, { reason } satisfies OrderCancelPayload);
 
 export const listOrderEvents = (
   id: number,
