@@ -9,7 +9,14 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Issue, Order, OrderStatus, PublicationSchedule, ShippingDetail
+from app.models import (
+    Issue,
+    Order,
+    OrderCommercialStatus,
+    OrderStatus,
+    PublicationSchedule,
+    ShippingDetail,
+)
 from app.models.fulfillment_allocation import FulfillmentAllocation
 from app.models.fulfillment_target import FulfillmentTarget, ShippingChannel, TargetStatus
 from app.models.order_event import OrderEventType
@@ -51,6 +58,14 @@ COVERAGE_BASED_FULFILLMENT_TYPES = {
     FulfillmentType.gift,
     FulfillmentType.extension,
     FulfillmentType.replacement,
+}
+
+# 商业状态为「已退款 / 已取消」的订单不再生成发货明细（停发）。其余状态
+# （待付款/已付款/已发货/部分退款）以及手工单（commercial_status 为 NULL）照常。
+# 部分退款暂仍发货——精确到份数的停发依赖退款模块（refunded_amount），见 backlog。
+_NON_SHIPPABLE_COMMERCIAL_STATUSES = {
+    OrderCommercialStatus.refunded: "订单已退款，不生成发货明细",
+    OrderCommercialStatus.cancelled: "订单已取消，不生成发货明细",
 }
 
 
@@ -252,6 +267,13 @@ def _build_candidates(
 ) -> tuple[list[SyncCandidate], list[OrderShippingSyncItem]]:
     candidates: list[SyncCandidate] = []
     skipped: list[OrderShippingSyncItem] = []
+    non_shippable_reason = _NON_SHIPPABLE_COMMERCIAL_STATUSES.get(
+        order.commercial_status
+    )
+    if non_shippable_reason is not None:
+        for item in order.items:
+            skipped.append(_skip_item(order.id, item.id, None, non_shippable_reason))
+        return candidates, skipped
     for item in order.items:
         if item.status != OrderItemStatus.active:
             skipped.append(_skip_item(order.id, item.id, None, "订单明细已取消"))

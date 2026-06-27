@@ -31,8 +31,14 @@ from sqlalchemy.pool import StaticPool
 from app.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
-from app.models.order import Order, OrderEntryMethod, OrderStatus
+from app.models.order import (
+    Order,
+    OrderCommercialStatus,
+    OrderEntryMethod,
+    OrderStatus,
+)
 from app.models.user import User, UserRole
+from app.services.order_analytics_service import summarize_campaigns
 
 
 def _order(campaign, paid, listed=None, *, status=OrderStatus.active, order_date=date(2026, 6, 1)):
@@ -147,3 +153,32 @@ def test_campaign_summary_empty(client):
     assert data["total_campaigns"] == 0
     assert data["grand_total_orders"] == 0
     assert _money(data["grand_total_paid"]) == Decimal("0.00")
+
+
+def test_refunded_and_cancelled_excluded_partial_refund_counted():
+    """退款/取消单不计入营收；部分退款仍按毛额计；手工单(NULL)照常计入。"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+
+    counted_plain = _order("2026-618", 200, 240)            # active, NULL 商业状态 → 计
+    refunded = _order("2026-618", 200, 240)                 # 退款 → 不计
+    refunded.commercial_status = OrderCommercialStatus.refunded
+    cancelled = _order("2026-618", 200, 240)                # 取消 → 不计
+    cancelled.commercial_status = OrderCommercialStatus.cancelled
+    partial = _order("2026-618", 200, 240)                  # 部分退款 → 仍按毛额计
+    partial.commercial_status = OrderCommercialStatus.partial_refund
+    db.add_all([counted_plain, refunded, cancelled, partial])
+    db.commit()
+
+    out = summarize_campaigns(db)
+    by = {r.campaign: r for r in out.rows}
+    # 仅 counted_plain + partial 计入 → 2 单、实收 400
+    assert by["2026-618"].order_count == 2
+    assert _money(by["2026-618"].total_paid) == Decimal("400.00")
+    db.close()
+    Base.metadata.drop_all(bind=engine)

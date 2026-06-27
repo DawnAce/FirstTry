@@ -16,6 +16,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
+from openpyxl import load_workbook
+
 from app.models import (
     BillingType,
     DeliveryMethod,
@@ -25,6 +27,7 @@ from app.models import (
     Issue,
     IssueStatus,
     Order,
+    OrderCommercialStatus,
     OrderEntryMethod,
     OrderEvent,
     OrderEventType,
@@ -39,6 +42,8 @@ from app.models import (
     ShippingDetailSyncStatus,
     SubscriptionTerm,
 )
+from app.services.excel_service import export_shipping_excel
+from app.services.order_service import void_order
 from app.services.order_shipping_sync_service import (
     apply_order_shipping_sync,
     preview_order_shipping_sync,
@@ -280,3 +285,61 @@ def test_non_zto_target_is_skipped(db):
     assert preview.summary.candidates == 0
     assert preview.summary.skipped == 1
     assert preview.items[0].action == "skip"
+
+
+def test_refunded_order_is_not_shipped(db):
+    # 退款单（commercial_status=refunded）即便 status=active 也不生成发货明细。
+    seed_issue(db)
+    order, item, _, _ = seed_active_subscription_order(db)
+    order.commercial_status = OrderCommercialStatus.refunded
+    db.commit()
+
+    preview = preview_order_shipping_sync(db, order.id, 2655)
+    assert preview.summary.candidates == 0
+    assert preview.summary.to_create == 0
+    assert preview.summary.skipped == 1
+    assert preview.items[0].action == "skip"
+    assert "退款" in preview.items[0].reason
+
+    # apply 也不应建任何发货行
+    apply_order_shipping_sync(db, order.id, 2655, operator_id=7)
+    assert db.query(ShippingDetail).count() == 0
+
+
+def test_cancelled_order_is_not_shipped(db):
+    seed_issue(db)
+    order, _, _, _ = seed_active_subscription_order(db)
+    order.commercial_status = OrderCommercialStatus.cancelled
+    db.commit()
+
+    preview = preview_order_shipping_sync(db, order.id, 2655)
+    assert preview.summary.candidates == 0
+    assert "取消" in preview.items[0].reason
+
+
+def test_void_orphans_generated_details_and_export_excludes_them(db):
+    # 作废订单 → 已生成的 order_generated 发货行置 orphaned，且中通导出排除它们。
+    issue = seed_issue(db)
+    order, _, _, _ = seed_active_subscription_order(db)
+    apply_order_shipping_sync(db, order.id, 2655, operator_id=7)
+    assert db.query(ShippingDetail).count() == 1
+
+    # 作废前：导出含该行（1 表头 + 1 数据行）
+    before = load_workbook(export_shipping_excel(issue.id, db)).active
+    assert before.max_row == 2
+
+    void_order(db, order.id, reason="客户取消", operator_id=7)
+
+    detail = db.query(ShippingDetail).one()
+    assert detail.sync_status == ShippingDetailSyncStatus.orphaned
+
+    # 作废后：导出仅剩表头，孤儿行被排除
+    after = load_workbook(export_shipping_excel(issue.id, db)).active
+    assert after.max_row == 1
+
+    event = (
+        db.query(OrderEvent)
+        .filter(OrderEvent.event_type == OrderEventType.voided)
+        .one()
+    )
+    assert event.payload_json["orphaned_shipping_details"] == 1

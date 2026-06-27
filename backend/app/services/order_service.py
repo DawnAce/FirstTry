@@ -50,6 +50,10 @@ from app.models import (
 )
 from app.models.fulfillment_target import ShippingChannel
 from app.models.order_item import OrderItemStatus, SubscriptionTerm
+from app.models.shipping_detail import (
+    ShippingDetailSourceType,
+    ShippingDetailSyncStatus,
+)
 from app.schemas.order import (
     FulfillmentProgress,
     OrderCreate,
@@ -537,6 +541,7 @@ def create_imported_order(
             coverage_start=item.coverage_start_date,
             coverage_end=item.coverage_end_date,
             fulfillment_type=item.fulfillment_type,
+            publication=item.publication,
         )
 
     log_event(
@@ -585,6 +590,7 @@ def confirm_order(
             coverage_start=item.coverage_start_date,
             coverage_end=item.coverage_end_date,
             fulfillment_type=item.fulfillment_type,
+            publication=item.publication,
         )
 
     order.status = OrderStatus.active
@@ -651,13 +657,41 @@ def update_order(
     return order
 
 
+def _orphan_order_generated_details(db: Session, order_id: int) -> int:
+    """Mark this order's ``order_generated`` shipping_details as ``orphaned``.
+
+    Called on void so the rows stop being exported / shipped. Returns the
+    number of rows touched (already-orphaned rows are skipped). Manual rows
+    (``order_id`` NULL or ``source_type=manual``) are never touched — they
+    aren't owned by this order.
+    """
+    rows = (
+        db.query(ShippingDetail)
+        .filter(
+            ShippingDetail.order_id == order_id,
+            ShippingDetail.source_type == ShippingDetailSourceType.order_generated,
+            ShippingDetail.sync_status != ShippingDetailSyncStatus.orphaned,
+        )
+        .all()
+    )
+    for row in rows:
+        row.sync_status = ShippingDetailSyncStatus.orphaned
+    return len(rows)
+
+
 def void_order(
     db: Session,
     order_id: int,
     reason: str,
     operator_id: Optional[int] = None,
 ) -> Order:
-    """Mark order ``void`` and log the reason."""
+    """Mark order ``void``, orphan its generated shipping details, log it.
+
+    Voiding an order that already produced ``order_generated`` 发货明细 must
+    retract those rows, otherwise the courier export would still ship a
+    cancelled order. The rows are flipped to ``orphaned`` (not deleted) so the
+    audit trail and any manual edits survive; the ZTO export filters them out.
+    """
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
         raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
@@ -665,11 +699,12 @@ def void_order(
         raise HTTPException(status_code=409, detail="订单已作废")
 
     order.status = OrderStatus.void
+    orphaned_count = _orphan_order_generated_details(db, order_id)
     log_event(
         db,
         order_id=order.id,
         event_type=OrderEventType.voided,
-        payload={"reason": reason},
+        payload={"reason": reason, "orphaned_shipping_details": orphaned_count},
         operator_id=operator_id,
     )
     db.commit()
@@ -818,6 +853,7 @@ def compute_fulfillment_progress(
         coverage_start=order_item.coverage_start_date,
         coverage_end=order_item.coverage_end_date,
         fulfillment_type=order_item.fulfillment_type,
+        publication=order_item.publication,
     )
     drift = None
     if expected_at_creation is not None and current_expected is not None:
@@ -839,6 +875,60 @@ def compute_fulfillment_progress(
     )
 
 
+def _build_list_row(db: Session, order: Order) -> OrderListRow:
+    """Build one ``OrderListRow`` for ``order``, computing the derived
+    coverage span, per-order drift, and ``expected_total`` against the live
+    schedule. Drift compares each item's ``expected_issues_at_creation`` with
+    the freshly-computed expectation."""
+    items = list(order.items)
+    total_quantity = sum((i.total_quantity or 0) for i in items)
+
+    starts = [i.coverage_start_date for i in items if i.coverage_start_date]
+    ends = [i.coverage_end_date for i in items if i.coverage_end_date]
+    coverage_start_d = min(starts) if starts else None
+    coverage_end_d = max(ends) if ends else None
+
+    order_drift = False
+    expected_total: Optional[int] = 0
+    any_expected = False
+    for item in items:
+        current = compute_expected_issues(
+            db,
+            coverage_start=item.coverage_start_date,
+            coverage_end=item.coverage_end_date,
+            fulfillment_type=item.fulfillment_type,
+            publication=item.publication,
+        )
+        if current is not None:
+            expected_total += current
+            any_expected = True
+        if (
+            item.expected_issues_at_creation is not None
+            and current is not None
+            and current != item.expected_issues_at_creation
+        ):
+            order_drift = True
+
+    return OrderListRow(
+        id=order.id,
+        order_code=order.order_code,
+        external_order_no=order.external_order_no,
+        order_date=order.order_date,
+        payer_name=order.payer_name,
+        entry_method=order.entry_method,
+        source_platform=order.source_platform,
+        campaign=order.campaign,
+        total_quantity=total_quantity,
+        total_amount=order.total_amount,
+        coverage_start_date=coverage_start_d,
+        coverage_end_date=coverage_end_d,
+        status=order.status,
+        has_drift=order_drift,
+        synced_count=0,
+        expected_total=expected_total if any_expected else None,
+    )
+
+
 def list_orders(
     db: Session,
     status: Optional[OrderStatus] = None,
@@ -848,6 +938,8 @@ def list_orders(
     source_platform: Optional[str] = None,
     coverage_start: Optional[date] = None,
     coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
     has_drift: Optional[bool] = None,
     skip: int = 0,
     limit: int = 50,
@@ -862,12 +954,21 @@ def list_orders(
     * ``coverage_start`` / ``coverage_end`` — orders whose item coverage
       overlaps the provided range. NULL coverage on an item counts as
       open-ended on that side.
-    * ``has_drift``        — post-filter computed per-order by comparing
-      ``expected_issues_at_creation`` with the current schedule snapshot.
+    * ``order_date_start`` / ``order_date_end`` — 下单日期闭区间（含端点），
+      DB 层过滤（不再前端逐页客户端过滤，避免跨页不准）。
+    * ``has_drift``        — per-order drift computed against the live
+      schedule snapshot.
 
-    Returns ``(rows, total)``. ``total`` reflects the DB-level filter
-    count *before* the in-memory drift filter so paging metadata stays
-    consistent with what the server actually returned.
+    Returns ``(rows, total)``.
+
+    Pagination semantics depend on ``has_drift``:
+
+    * ``has_drift is None`` — paginate at the SQL level; ``total`` is the
+      DB-level filter count.
+    * ``has_drift`` set — drift is a Python-computed predicate that can't be
+      pushed into SQL, so the full filtered set is materialised, drift-filtered,
+      and paginated in memory. ``total`` then reflects the **post-drift** count
+      so every page is full and the count matches what's returned.
     """
     q = db.query(Order)
     if status is not None:
@@ -880,6 +981,10 @@ def list_orders(
         q = q.filter(Order.campaign == campaign)
     if source_platform:
         q = q.filter(Order.source_platform == source_platform)
+    if order_date_start is not None:
+        q = q.filter(Order.order_date >= order_date_start)
+    if order_date_end is not None:
+        q = q.filter(Order.order_date <= order_date_end)
     if coverage_start is not None or coverage_end is not None:
         item_q = db.query(OrderItem.order_id).distinct()
         if coverage_start is not None:
@@ -898,69 +1003,17 @@ def list_orders(
             )
         q = q.filter(Order.id.in_(item_q))
 
-    total = q.count()
-    orders = (
-        q.options(selectinload(Order.items))
-        .order_by(Order.id.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    base = q.options(selectinload(Order.items)).order_by(Order.id.desc())
 
-    rows: List[OrderListRow] = []
-    for order in orders:
-        items = list(order.items)
-        total_quantity = sum((i.total_quantity or 0) for i in items)
+    if has_drift is None:
+        # 不按偏差筛 → 直接在 SQL 层分页（每行的偏差仅用于展示，按本页逐单算）。
+        total = q.count()
+        rows = [_build_list_row(db, order) for order in base.offset(skip).limit(limit).all()]
+        return rows, total
 
-        starts = [i.coverage_start_date for i in items if i.coverage_start_date]
-        ends = [i.coverage_end_date for i in items if i.coverage_end_date]
-        coverage_start_d = min(starts) if starts else None
-        coverage_end_d = max(ends) if ends else None
-
-        order_drift = False
-        expected_total: Optional[int] = 0
-        any_expected = False
-        for item in items:
-            current = compute_expected_issues(
-                db,
-                coverage_start=item.coverage_start_date,
-                coverage_end=item.coverage_end_date,
-                fulfillment_type=item.fulfillment_type,
-            )
-            if current is not None:
-                expected_total += current
-                any_expected = True
-            if (
-                item.expected_issues_at_creation is not None
-                and current is not None
-                and current != item.expected_issues_at_creation
-            ):
-                order_drift = True
-
-        if has_drift is True and not order_drift:
-            continue
-        if has_drift is False and order_drift:
-            continue
-
-        rows.append(
-            OrderListRow(
-                id=order.id,
-                order_code=order.order_code,
-                external_order_no=order.external_order_no,
-                order_date=order.order_date,
-                payer_name=order.payer_name,
-                entry_method=order.entry_method,
-                source_platform=order.source_platform,
-                campaign=order.campaign,
-                total_quantity=total_quantity,
-                total_amount=order.total_amount,
-                coverage_start_date=coverage_start_d,
-                coverage_end_date=coverage_end_d,
-                status=order.status,
-                has_drift=order_drift,
-                synced_count=0,
-                expected_total=expected_total if any_expected else None,
-            )
-        )
-
-    return rows, total
+    # 按偏差筛：偏差是 Python 端按实时刊期表算的，无法下推到 SQL。取整批过滤后的订单、
+    # 逐单算偏差、按 has_drift 过滤，再在内存里分页——这样每页都满 limit 条、且 total
+    # 反映过滤后的真实条数（修正旧版"先 SQL 分页再丢行"导致的页面残缺 + total 不符）。
+    all_rows = [_build_list_row(db, order) for order in base.all()]
+    matched = [row for row in all_rows if row.has_drift == has_drift]
+    return matched[skip : skip + limit], len(matched)

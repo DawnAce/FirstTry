@@ -89,6 +89,12 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
   if (filters.payer_name_like) params.payer_name_like = filters.payer_name_like.trim();
   if (filters.campaign) params.campaign = filters.campaign.trim();
   if (filters.source_platform) params.source_platform = filters.source_platform;
+  if (filters.order_date_range?.[0]) {
+    params.order_date_start = filters.order_date_range[0].format('YYYY-MM-DD');
+  }
+  if (filters.order_date_range?.[1]) {
+    params.order_date_end = filters.order_date_range[1].format('YYYY-MM-DD');
+  }
   if (filters.coverage_range?.[0]) {
     params.coverage_start = filters.coverage_range[0].format('YYYY-MM-DD');
   }
@@ -98,12 +104,6 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
   if (filters.drift === 'with_drift') params.has_drift = true;
   if (filters.drift === 'no_drift') params.has_drift = false;
   return params;
-}
-
-function rowMatchesOrderDateRange(row: OrderListRow, range: FilterState['order_date_range']) {
-  if (!range || !range[0] || !range[1]) return true;
-  const d = row.order_date;
-  return d >= range[0].format('YYYY-MM-DD') && d <= range[1].format('YYYY-MM-DD');
 }
 
 export default function OrderList() {
@@ -126,10 +126,7 @@ export default function OrderList() {
     },
   });
 
-  const filteredRows = useMemo(() => {
-    const rows = ordersQuery.data?.rows ?? [];
-    return rows.filter((r) => rowMatchesOrderDateRange(r, filters.order_date_range));
-  }, [ordersQuery.data, filters.order_date_range]);
+  const rows = ordersQuery.data?.rows ?? [];
 
   const voidMutation = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) => voidOrder(id, reason),
@@ -378,7 +375,7 @@ export default function OrderList() {
       <Table<OrderListRow>
         rowKey="id"
         columns={columns}
-        dataSource={filteredRows}
+        dataSource={rows}
         loading={ordersQuery.isLoading}
         scroll={{ x: 1500 }}
         pagination={{

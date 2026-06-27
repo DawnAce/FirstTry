@@ -61,9 +61,10 @@ from app.services import order_service
 class _FakeQuery:
     """A chainable query stub that returns a preset value on terminal calls."""
 
-    def __init__(self, target=None, count_value: int = 0):
+    def __init__(self, target=None, count_value: int = 0, all_value=None):
         self._target = target          # row to return from .first()
         self._count_value = count_value
+        self._all_value = all_value     # rows to return from .all()
 
     def options(self, *args, **kwargs):
         return self
@@ -76,6 +77,9 @@ class _FakeQuery:
 
     def count(self):
         return self._count_value
+
+    def all(self):
+        return list(self._all_value or [])
 
 
 class FakeDb:
@@ -276,7 +280,11 @@ def test_void_order_sets_void_status_and_logs_event():
     assert result.status == OrderStatus.void
     event = next(o for o in db.added if isinstance(o, OrderEvent))
     assert event.event_type == OrderEventType.voided
-    assert event.payload_json == {"reason": "customer cancelled"}
+    # void now also orphans order_generated shipping details (0 here — no rows)
+    assert event.payload_json == {
+        "reason": "customer cancelled",
+        "orphaned_shipping_details": 0,
+    }
     assert event.operator_id == 7
     assert db.committed == 1
 
@@ -1054,8 +1062,9 @@ def test_list_orders_has_drift_filter_true_excludes_non_drift():
     rows, total = order_service.list_orders(db, has_drift=True)
     # baseline 43 == current 43 -> no drift -> filtered out
     assert rows == []
-    # total still reflects DB-level filter result (drift is post-filter)
-    assert total == 1
+    # total reflects the POST-drift count so paging stays consistent (the only
+    # order is filtered out -> 0). See the has_drift pagination fix.
+    assert total == 0
 
 
 def test_list_orders_has_drift_filter_false_excludes_drifting():
@@ -1071,7 +1080,8 @@ def test_list_orders_has_drift_filter_false_excludes_drifting():
     db = FakeListDb(orders=[drifting], schedule_count=43, schedule_latest=date(2026, 12, 31))
     rows, total = order_service.list_orders(db, has_drift=False)
     assert rows == []
-    assert total == 1
+    # post-drift count: the single drifting order is excluded -> 0
+    assert total == 0
 
 
 def test_list_orders_expected_total_none_when_all_items_unknown():

@@ -332,6 +332,8 @@ export interface ListOrdersParams {
   source_platform?: string;
   coverage_start?: string;
   coverage_end?: string;
+  order_date_start?: string;
+  order_date_end?: string;
   has_drift?: boolean;
   skip?: number;
   limit?: number;

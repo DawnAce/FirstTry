@@ -202,3 +202,113 @@ def test_subscription_same_day_coverage_returns_known_zero_or_one():
     )
     # 0 days remaining // 7 == 0; no known issues
     assert n == 0
+
+
+# ---------------------------------------------------------------------------
+# 商学院 (business_school) subscriptions are MONTHLY — counted off the
+# bs_issues calendar, NOT the weekly publication_schedule. Uses a real
+# in-memory DB because the branch queries BsIssue.
+# ---------------------------------------------------------------------------
+
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+
+from app.database import Base  # noqa: E402
+from app.models.order_item import Publication  # noqa: E402
+from app.seeds.bs_issues import seed_bs_issues  # noqa: E402
+
+
+def _bs_db():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(bind=engine)()
+    seed_bs_issues(db)
+    return db
+
+
+def test_business_school_full_year_counts_eleven_issues():
+    # 2026 商学院刊历 = 11 期（1 + 2~3合刊 + 4..12）。全年订阅应 = 11，不是 ~52。
+    db = _bs_db()
+    n = calc.compute_expected_issues(
+        db,
+        coverage_start=date(2026, 1, 1),
+        coverage_end=date(2026, 12, 31),
+        fulfillment_type=FulfillmentType.subscription,
+        publication=Publication.business_school,
+    )
+    assert n == 11
+    db.close()
+
+
+def test_business_school_not_overcounted_as_weekly():
+    # 关键回归：旧逻辑把月刊当周刊会得 ~52；新逻辑必须远小于 20。
+    db = _bs_db()
+    n = calc.compute_expected_issues(
+        db,
+        coverage_start=date(2026, 1, 1),
+        coverage_end=date(2026, 12, 31),
+        fulfillment_type=FulfillmentType.subscription,
+        publication=Publication.business_school,
+    )
+    assert n < 20
+    db.close()
+
+
+def test_business_school_half_year_counts_five_issues():
+    # 01, 02~03, 04, 05, 06 → 5 期（合刊算一期，且 07 月刊不在半年内）。
+    db = _bs_db()
+    n = calc.compute_expected_issues(
+        db,
+        coverage_start=date(2026, 1, 1),
+        coverage_end=date(2026, 6, 30),
+        fulfillment_type=FulfillmentType.subscription,
+        publication=Publication.business_school,
+    )
+    assert n == 5
+    db.close()
+
+
+def test_business_school_single_month_hits_one_issue():
+    db = _bs_db()
+    n = calc.compute_expected_issues(
+        db,
+        coverage_start=date(2026, 5, 1),
+        coverage_end=date(2026, 5, 31),
+        fulfillment_type=FulfillmentType.subscription,
+        publication=Publication.business_school,
+    )
+    assert n == 1
+    db.close()
+
+
+def test_business_school_single_issue_still_one():
+    # single_issue 始终 1，与 publication 无关。
+    db = _bs_db()
+    n = calc.compute_expected_issues(
+        db,
+        coverage_start=None,
+        coverage_end=None,
+        fulfillment_type=FulfillmentType.single_issue,
+        publication=Publication.business_school,
+    )
+    assert n == 1
+    db.close()
+
+
+def test_business_school_year_without_calendar_falls_back_to_months():
+    # 刊历无 2099 → 退回 ~1 期/月 粗估，而不是返回 0。
+    db = _bs_db()
+    n = calc.compute_expected_issues(
+        db,
+        coverage_start=date(2099, 1, 1),
+        coverage_end=date(2099, 12, 31),
+        fulfillment_type=FulfillmentType.subscription,
+        publication=Publication.business_school,
+    )
+    assert n == 12
+    db.close()

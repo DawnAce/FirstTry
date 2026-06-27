@@ -4,8 +4,10 @@ from datetime import date, timedelta
 from typing import Optional
 
 from openpyxl import load_workbook, Workbook
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from app.models import Issue, ReportEntry, ShippingDetail
+from app.models import Issue, Order, OrderStatus, ReportEntry, ShippingDetail
+from app.models.shipping_detail import ShippingDetailSyncStatus
 from app.services.issue_service import format_chinese_issue_number, get_year_issue_index
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
@@ -311,9 +313,16 @@ def export_shipping_excel(issue_id: int, db: Session) -> io.BytesIO:
     ws = wb.active
     ws.title = "ZTO-MF"
 
+    # 排除已作废订单产生的发货行：order_generated 行在订单作废时被置 orphaned，
+    # 且兜底排除任何 link 到 void 订单的行（覆盖本次修复前历史遗留的孤儿行）。
     details = (
         db.query(ShippingDetail)
+        .outerjoin(Order, ShippingDetail.order_id == Order.id)
         .filter(ShippingDetail.issue_number == issue.issue_number)
+        .filter(ShippingDetail.sync_status != ShippingDetailSyncStatus.orphaned)
+        .filter(
+            or_(ShippingDetail.order_id.is_(None), Order.status != OrderStatus.void)
+        )
         .order_by(ShippingDetail.id)
         .all()
     )

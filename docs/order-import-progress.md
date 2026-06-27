@@ -1,7 +1,7 @@
 # 电商订单导入 — 项目进度备忘
 
-> 最后更新：2026-06-26。围绕「把 CBJ 小程序 / 淘宝 等电商订单导入订单管理系统 + 下游统计」这条线。
-> **状态：CBJ + 淘宝 端到端完成、已合并 main、已部署生产；商品库已规范化（三段式命名 + 结构化 code，生产 13 个稳定品）；新增「商学院按期发行量（单期 + 订阅）」并部署。后端 337 / 前端 82 测试全绿。**
+> 最后更新：2026-06-27。围绕「把 CBJ 小程序 / 淘宝 等电商订单导入订单管理系统 + 下游统计」这条线。
+> **状态：CBJ + 淘宝 端到端完成、已合并 main、已部署生产；商品库已规范化（三段式命名 + 结构化 code，生产 13 个稳定品）；新增「商学院按期发行量（单期 + 订阅）」并部署。2026-06-27 修了订单管理 5 个正确性 bug（见「正确性修复」节）。后端 358 测试全绿、前端 `tsc -b && vite build` 通过。**
 
 ## 目标
 把电商平台（首个：CBJ 小程序）的订单尽量自动、完整地导入：商品自动识别、状态/金额/收件人落库，支持近期单（要安排投递）和历史单（只补记录）两种模式。
@@ -105,6 +105,19 @@
 - **促销别名（PR #30）**：补真实促销名 —— 双十一/全年订阅优惠 → `CBJ-1Y-PROMO`；半年订阅优惠（实付 ¥100/120、备注"放邮箱"=邮局）→ `CBJ-6M-POST-WK`；商学院双十一 → `BS-1Y-PROMO`。
 - **运费/忽略/套餐（PR #31）**：运费识别扩到「快递费用」+ 忽略名单（见「已确定的业务规则」）；组合订阅优惠 → 套餐别名 `BUNDLE-CBJ-BS-1Y`（=双刊 8 折 ¥576）。
 - **结果**：740 单 → **725 导入 / 6 跳过 / 2 重复 / 7 待确认**（待确认全是纯运费单，人工并单）。识别率从「全部失败」（嗅探 bug 时）收敛到接近全收。
+
+## 正确性修复（2026-06-27，订单管理 5 个 bug，单 commit）
+> 来自一次订单管理全面审计（详见对话）。这 5 个是「已经在悄悄出错」的正确性/会误发问题，优先于补功能。后端 358 测试全绿、前端构建通过。
+
+1. **退款/取消单仍发货 + 仍计营收** → 修：发货同步 `order_shipping_sync_service._build_candidates` 顶部按 `commercial_status ∈ {refunded, cancelled}` 整单跳过（停发）；统计 `order_analytics_service` 加 `_revenue_eligible()` 过滤，挂到 campaigns / issues / bs-circulation **全部 5 个查询**。手工单 `commercial_status=NULL` 照常计入；`partial_refund` 暂按毛额（净额冲减待退款模块）。
+2. **作废订单不清发货明细、仍被中通导出** → 修：`order_service.void_order` 调 `_orphan_order_generated_details` 把该单 `order_generated` 行置 `sync_status=orphaned`（事件 payload 记 `orphaned_shipping_details` 计数）；`excel_service.export_shipping_excel` 改 `outerjoin Order` 排除 orphaned 行 + 任何 link 到 void 订单的行（兜底历史遗留）。
+3. **`has_drift` 筛选破坏分页 + total 不符** → 修：`list_orders` 拆两路——无偏差筛走 SQL 分页（`total`=DB count）；有偏差筛取全集 → Python 过滤 → 内存分页（`total`=过滤后条数，每页满）。抽出 `_build_list_row` helper。
+4. **下单日期筛选只在当前页客户端过滤** → 修：`list_orders` + `api/orders.py` 加 `order_date_start/end` 服务端参数；前端 `orders.ts` / `OrderList.tsx` 改服务端筛，删掉 `rowMatchesOrderDateRange` / `filteredRows` 客户端过滤。
+5. **商学院月刊期数被当周刊高估 ~4.7×、污染 drift** → 修：`compute_expected_issues` 加 `publication` 参数，`business_school` 按 `bs_issues` 刊历数命中期数（全年=11 而非 ~52）；4 个调用点全传 `item.publication`。`publication=None` 仍走周报路径（兼容）。
+
+**新增/改动测试**：新建 `test_order_list_filters.py`（真 SQLite 跑 #3/#4 分页 + 日期筛正确性）；`test_expected_issues_calculator.py` 加商学院期数 6 例；`test_order_shipping_sync_service.py` 加退款/取消跳过 + 作废孤儿/导出排除；`test_campaign_analytics.py` 加退款/取消排除、部分退款仍计；`test_order_service.py` 修正两个旧 has_drift 断言（它们断言的正是被修掉的错误 total）。
+
+**遗留边界**（刻意留给退款模块）：`partial_refund` 仍发货、仍按毛额计；bug #1 只挡「导入即退款」的单（它们从没同步过），「先同步后退款」要等退款域操作落地时一并 orphan 已生成行。
 
 ## 待办 / 后续
 - **真导一批（CBJ / 淘宝）**：代码 + 商品库（13 品）+ 刊历都**已部署生产**；干跑预览验证过（CBJ 94/6、淘宝 36/6/1）。待业务真导：传 Excel → 预览 → 确认导入 → 订阅单在详情页补收件人 / 订期再同步中通。淘宝遗留：多商品单单价按标题均摊（需人工核拆）；商家备注里起止期未自动解析（批次起投月 + 逐单核）；季度用 custom 建模。

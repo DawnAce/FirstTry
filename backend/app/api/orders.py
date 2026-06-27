@@ -67,6 +67,8 @@ def list_orders(
     source_platform: Optional[str] = None,
     coverage_start: Optional[date] = None,
     coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
     has_drift: Optional[bool] = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
@@ -75,9 +77,10 @@ def list_orders(
 ):
     """Return ``{"rows": [...], "total": N}``.
 
-    ``total`` reflects the DB-side filter result *before* the in-memory
-    ``has_drift`` post-filter, so paging metadata stays stable across
-    pages of the same query.
+    With ``has_drift`` unset, ``total`` is the DB-side filter count and paging
+    is done in SQL. With ``has_drift`` set, drift is computed in Python over the
+    full filtered set, so ``total`` reflects the post-drift count and every page
+    stays full (see ``order_service.list_orders``).
     """
     rows, total = order_service.list_orders(
         db,
@@ -88,6 +91,8 @@ def list_orders(
         source_platform=source_platform,
         coverage_start=coverage_start,
         coverage_end=coverage_end,
+        order_date_start=order_date_start,
+        order_date_end=order_date_end,
         has_drift=has_drift,
         skip=skip,
         limit=limit,
