@@ -224,6 +224,41 @@ def test_refund_and_cancel_endpoints_round_trip(client):
     assert len(cbody["refunds"]) == 2
 
 
+def test_batch_shipping_sync_endpoints_round_trip(client):
+    # 创建并确认一张订阅单（coverage 2026-03-01~12-31，覆盖刊期 2625）
+    r = client.post("/api/orders", json=_make_create_payload())
+    assert r.status_code == 201, r.text
+    oid = r.json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+
+    # 漏期报表：2 个收件人待排（路由不被 /{order_id} 抢占）
+    gap = client.get("/api/orders/shipping-sync/issues/2625/gap-report")
+    assert gap.status_code == 200, gap.text
+    gbody = gap.json()
+    assert gbody["issue_number"] == 2625
+    assert gbody["synced_count"] == 0
+    assert len(gbody["missing"]) == 2
+
+    # 本单同步全部期 → 排进 2625（2 行）
+    alli = client.post(f"/api/orders/{oid}/shipping-sync/apply-all-issues")
+    assert alli.status_code == 200, alli.text
+    assert alli.json()["issues_synced"] == 1
+    assert alli.json()["rows_created"] == 2
+
+    # 报表现在已同步
+    gap2 = client.get("/api/orders/shipping-sync/issues/2625/gap-report").json()
+    assert gap2["synced_count"] == 2
+    assert len(gap2["missing"]) == 0
+
+    # 某期批量：已排 → unchanged，不再建行
+    batch = client.post("/api/orders/shipping-sync/issues/2625/apply-all")
+    assert batch.status_code == 200, batch.text
+    bbody = batch.json()
+    assert bbody["orders_total"] == 1
+    assert bbody["orders_unchanged"] == 1
+    assert bbody["rows_created"] == 0
+
+
 # ---------------------------------------------------------------------------
 # POST /api/orders/{id}/confirm
 # ---------------------------------------------------------------------------

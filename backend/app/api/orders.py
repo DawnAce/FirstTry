@@ -35,7 +35,10 @@ from app.database import get_db
 from app.models import OrderEntryMethod, OrderStatus, User
 from app.models.order_event import OrderEvent
 from app.schemas.order import (
+    BatchSyncSummary,
     FulfillmentProgress,
+    IssueGapReport,
+    OrderAllIssuesSyncSummary,
     OrderCancelIn,
     OrderCreate,
     OrderEventOut,
@@ -51,6 +54,11 @@ from app.schemas.order import (
     RefundIn,
 )
 from app.services import order_service
+from app.services.order_shipping_batch_service import (
+    apply_all_for_issue,
+    apply_all_issues_for_order,
+    gap_report,
+)
 from app.services.order_shipping_sync_service import (
     apply_order_shipping_sync,
     preview_order_shipping_sync,
@@ -151,6 +159,45 @@ def apply_shipping_sync(
         data.issue_number,
         operator_id=user.id,
     )
+
+
+@router.get(
+    "/shipping-sync/issues/{issue_number}/gap-report",
+    response_model=IssueGapReport,
+)
+def issue_shipping_gap_report(
+    issue_number: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """某期「谁该排却没排」报表（只读，不写库）。"""
+    return gap_report(db, issue_number)
+
+
+@router.post(
+    "/shipping-sync/issues/{issue_number}/apply-all",
+    response_model=BatchSyncSummary,
+)
+def apply_all_orders_for_issue(
+    issue_number: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """某期一键排发所有活跃订单。冲突单只报告、不覆盖、不中断整批。"""
+    return apply_all_for_issue(db, issue_number, operator_id=user.id)
+
+
+@router.post(
+    "/{order_id}/shipping-sync/apply-all-issues",
+    response_model=OrderAllIssuesSyncSummary,
+)
+def apply_all_issues_for_one_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """单订单覆盖期内所有期一次排齐（仅 `issues` 表已存在的期）。"""
+    return apply_all_issues_for_order(db, order_id, operator_id=user.id)
 
 
 @router.get("/{order_id}", response_model=OrderOut)

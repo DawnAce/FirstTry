@@ -469,3 +469,70 @@ class OrderShippingSyncPreview(BaseModel):
     summary: OrderShippingSyncSummary
     items: list[OrderShippingSyncItem]
     message: str | None = None
+
+
+# --- Batch shipping sync (某期一键排发 / 漏期报表 / 本单全部期) ---------------
+
+
+class IssueGapRow(BaseModel):
+    """One (order, recipient) candidate's status for an issue's gap report."""
+
+    order_id: int
+    order_code: Optional[str] = None
+    order_item_id: Optional[int] = None
+    fulfillment_target_id: Optional[int] = None
+    recipient_name: Optional[str] = None
+    quantity: Optional[int] = None
+    reason: Optional[str] = None
+
+
+class IssueGapReport(BaseModel):
+    """某期「谁该排却没排」报表。``missing`` 待排、``stale`` 已建但字段有变化、
+    ``conflict`` 人工改过待核、``skipped`` 因覆盖期缺失/休刊/缺收件人等跳过。
+    ``synced_count`` 为已同步且无变化的收件人数。"""
+
+    issue_number: int
+    publish_date: date
+    suspended: bool = False
+    total_orders: int = 0
+    synced_count: int = 0
+    missing: list[IssueGapRow] = Field(default_factory=list)
+    stale: list[IssueGapRow] = Field(default_factory=list)
+    conflict: list[IssueGapRow] = Field(default_factory=list)
+    skipped: list[IssueGapRow] = Field(default_factory=list)
+
+
+class BatchSyncConflict(BaseModel):
+    order_id: int
+    order_code: Optional[str] = None
+    conflict_count: int
+
+
+class BatchSyncSummary(BaseModel):
+    """某期批量排发结果。冲突单不中断整批、计入 ``conflicts`` 供人工核对。"""
+
+    issue_number: int
+    suspended: bool = False
+    orders_total: int = 0
+    orders_applied: int = 0
+    orders_unchanged: int = 0
+    orders_skipped: int = 0
+    orders_conflict: int = 0
+    rows_created: int = 0
+    rows_updated: int = 0
+    conflicts: list[BatchSyncConflict] = Field(default_factory=list)
+    skipped_reasons: dict[str, int] = Field(default_factory=dict)
+    message: Optional[str] = None
+
+
+class OrderAllIssuesSyncSummary(BaseModel):
+    """单订单「同步全部生效期」结果。``issues_no_calendar`` 为覆盖期推出、但
+    ``issues`` 表里还没有的期（无法同步，提示先建刊期）。"""
+
+    order_id: int
+    issues_total: int = 0
+    issues_synced: int = 0
+    rows_created: int = 0
+    rows_updated: int = 0
+    conflict_issues: list[int] = Field(default_factory=list)
+    issues_no_calendar: list[int] = Field(default_factory=list)
