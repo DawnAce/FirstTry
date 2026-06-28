@@ -769,6 +769,26 @@ function ProgressPanel({ item }: { item: OrderItemOut }) {
           />
         </Col>
       </Row>
+      <Row gutter={8} style={{ marginTop: 8 }}>
+        <Col span={12}>
+          <Statistic
+            title="已发"
+            value={progress.shipped_count}
+            valueStyle={{ fontSize: 18 }}
+          />
+        </Col>
+        <Col span={12}>
+          <Statistic
+            title="未发缺口"
+            value={Math.max(0, progress.synced_count - progress.shipped_count)}
+            valueStyle={{
+              fontSize: 18,
+              color:
+                progress.synced_count - progress.shipped_count > 0 ? '#fa8c16' : '#3f8600',
+            }}
+          />
+        </Col>
+      </Row>
       {progress.skipped_count > 0 && (
         <Alert
           type="info"

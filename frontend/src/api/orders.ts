@@ -211,6 +211,7 @@ export interface FulfillmentProgress {
   current_expected: number | null;
   drift: number | null;
   synced_count: number;
+  shipped_count: number;
   skipped_count: number;
 }
 
@@ -414,6 +415,31 @@ export interface OrderAllIssuesSyncSummary {
   issues_no_calendar: number[];
 }
 
+export interface ReconUnshippedRow {
+  order_id: number | null;
+  order_code: string | null;
+  shipping_detail_id: number;
+  recipient_name: string | null;
+  quantity: number | null;
+}
+
+export interface IssueReconciliation {
+  issue_number: number;
+  publish_date: string;
+  planned_rows: number;
+  planned_quantity: number;
+  shipped_rows: number;
+  shipped_quantity: number;
+  shortfall_quantity: number;
+  unshipped: ReconUnshippedRow[];
+}
+
+export interface ShipBatchResult {
+  issue_number: number;
+  shipped_rows: number;
+  shipped_at: string | null;
+}
+
 // =============================================================================
 // Query params
 // =============================================================================
@@ -528,6 +554,19 @@ export const applyAllIssuesForOrder = (
   orderId: number,
 ): Promise<AxiosResponse<OrderAllIssuesSyncSummary>> =>
   api.post<OrderAllIssuesSyncSummary>(`/orders/${orderId}/shipping-sync/apply-all-issues`);
+
+export const getIssueReconciliation = (
+  issueNumber: number,
+): Promise<AxiosResponse<IssueReconciliation>> =>
+  api.get<IssueReconciliation>(`/orders/shipping-sync/issues/${issueNumber}/reconciliation`);
+
+export const shipAllForIssue = (
+  issueNumber: number,
+  shippedAt?: string | null,
+): Promise<AxiosResponse<ShipBatchResult>> =>
+  api.post<ShipBatchResult>(`/orders/shipping-sync/issues/${issueNumber}/ship-all`, {
+    shipped_at: shippedAt ?? null,
+  });
 
 // =============================================================================
 // TanStack Query keys (centralised so invalidation stays consistent)

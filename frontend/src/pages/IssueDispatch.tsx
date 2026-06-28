@@ -16,8 +16,14 @@ import {
 } from 'antd';
 import { ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
-import { applyAllForIssue, getIssueGapReport } from '../api/orders';
-import type { IssueGapRow } from '../api/orders';
+import {
+  applyAllForIssue,
+  getIssueGapReport,
+  getIssueReconciliation,
+  shipAllForIssue,
+} from '../api/orders';
+import type { IssueGapRow, ReconUnshippedRow } from '../api/orders';
+import { shipShippingDetail } from '../api/shippingDetails';
 import { getIssues } from '../api/issues';
 
 const { Title } = Typography;
@@ -106,12 +112,80 @@ export default function IssueDispatch() {
       if (data.orders_skipped) parts.push(`${data.orders_skipped} 单跳过`);
       message.success(parts.join('；'));
       queryClient.invalidateQueries({ queryKey: ['issueGap', issueNumber] });
+      queryClient.invalidateQueries({ queryKey: ['issueRecon', issueNumber] });
       queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
     },
     onError: () => message.error('批量排发失败'),
   });
 
+  const reconQuery = useQuery({
+    queryKey: ['issueRecon', issueNumber],
+    queryFn: async () => (await getIssueReconciliation(issueNumber as number)).data,
+    enabled: issueNumber != null,
+  });
+
+  const shipAllMutation = useMutation({
+    mutationFn: async () => (await shipAllForIssue(issueNumber as number)).data,
+    onSuccess: (data) => {
+      message.success(`已标记 ${data.shipped_rows} 行为已发`);
+      queryClient.invalidateQueries({ queryKey: ['issueRecon', issueNumber] });
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+    },
+    onError: () => message.error('标记已发失败'),
+  });
+
+  const shipOneMutation = useMutation({
+    mutationFn: async (detailId: number) => (await shipShippingDetail(detailId)).data,
+    onSuccess: () => {
+      message.success('已标记该行已发');
+      queryClient.invalidateQueries({ queryKey: ['issueRecon', issueNumber] });
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+    },
+    onError: () => message.error('标记失败'),
+  });
+
+  const reconColumns: TableColumnsType<ReconUnshippedRow> = [
+    {
+      title: '订单',
+      dataIndex: 'order_code',
+      key: 'order_code',
+      width: 170,
+      render: (v: string | null, r) => v ?? `#${r.order_id}`,
+    },
+    {
+      title: '收件人',
+      dataIndex: 'recipient_name',
+      key: 'recipient_name',
+      width: 160,
+      render: (v: string | null) => v ?? '-',
+    },
+    {
+      title: '份数',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      width: 80,
+      align: 'right',
+      render: (v: number | null) => v ?? '-',
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 100,
+      render: (_: unknown, r) => (
+        <Button
+          type="link"
+          size="small"
+          loading={shipOneMutation.isPending}
+          onClick={() => shipOneMutation.mutate(r.shipping_detail_id)}
+        >
+          标已发
+        </Button>
+      ),
+    },
+  ];
+
   const report = gapQuery.data;
+  const recon = reconQuery.data;
 
   return (
     <div>
@@ -186,6 +260,58 @@ export default function IssueDispatch() {
               </Col>
             </Row>
           </Card>
+
+          {recon && (
+            <Card
+              size="small"
+              title="本期对账（应发 vs 实发）"
+              style={{ marginBottom: 16 }}
+              extra={
+                <Button
+                  type="primary"
+                  loading={shipAllMutation.isPending}
+                  disabled={recon.planned_rows === 0}
+                  onClick={() => shipAllMutation.mutate()}
+                >
+                  一键标记本期已发
+                </Button>
+              }
+            >
+              <Row gutter={12}>
+                <Col span={6}>
+                  <Statistic title="应发份数" value={recon.planned_quantity} />
+                </Col>
+                <Col span={6}>
+                  <Statistic title="已发份数" value={recon.shipped_quantity} />
+                </Col>
+                <Col span={6}>
+                  <Statistic
+                    title="缺口"
+                    value={recon.shortfall_quantity}
+                    valueStyle={
+                      recon.shortfall_quantity
+                        ? { color: '#cf1322' }
+                        : { color: '#3f8600' }
+                    }
+                  />
+                </Col>
+                <Col span={6}>
+                  <Statistic title="未发行数" value={recon.unshipped.length} />
+                </Col>
+              </Row>
+              {recon.unshipped.length > 0 && (
+                <Table<ReconUnshippedRow>
+                  rowKey="shipping_detail_id"
+                  size="small"
+                  style={{ marginTop: 12 }}
+                  columns={reconColumns}
+                  dataSource={recon.unshipped}
+                  pagination={false}
+                  title={() => '未发清单（已排但未标已发）'}
+                />
+              )}
+            </Card>
+          )}
 
           <GapSection title="待排（缺发货明细）" rows={report.missing} />
           {report.stale.length > 0 && <GapSection title="需更新（已建但字段有变化）" rows={report.stale} />}
