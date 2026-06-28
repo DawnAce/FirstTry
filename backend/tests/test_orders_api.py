@@ -259,6 +259,47 @@ def test_batch_shipping_sync_endpoints_round_trip(client):
     assert bbody["rows_created"] == 0
 
 
+def test_shipped_writeback_and_reconciliation_endpoints(client):
+    r = client.post("/api/orders", json=_make_create_payload())
+    oid = r.json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+    client.post(f"/api/orders/{oid}/shipping-sync/apply-all-issues")  # 排 2 行
+
+    # 对账：应发 2 / 已发 0 / 缺口 2
+    recon = client.get("/api/orders/shipping-sync/issues/2625/reconciliation").json()
+    assert recon["planned_quantity"] == 2
+    assert recon["shipped_quantity"] == 0
+    assert recon["shortfall_quantity"] == 2
+    assert len(recon["unshipped"]) == 2
+
+    # 一键标已发
+    ship = client.post(
+        "/api/orders/shipping-sync/issues/2625/ship-all",
+        json={"shipped_at": "2026-06-30"},
+    )
+    assert ship.status_code == 200, ship.text
+    assert ship.json()["shipped_rows"] == 2
+
+    # 对账：缺口 0
+    recon2 = client.get("/api/orders/shipping-sync/issues/2625/reconciliation").json()
+    assert recon2["shipped_quantity"] == 2
+    assert recon2["shortfall_quantity"] == 0
+
+    # 订单进度卡 shipped_count
+    prog = client.get(f"/api/orders/{oid}").json()["items"][0]["progress"]
+    assert prog["synced_count"] == 2
+    assert prog["shipped_count"] == 2
+
+    # 单行 unship / 部分实发 ship
+    did = client.get("/api/shipping-details", params={"issue_number": 2625}).json()[0]["id"]
+    un = client.post(f"/api/shipping-details/{did}/unship")
+    assert un.status_code == 200
+    assert un.json()["shipped_at"] is None
+    sh = client.post(f"/api/shipping-details/{did}/ship", json={"shipped_quantity": 0})
+    assert sh.status_code == 200
+    assert sh.json()["shipped_quantity"] == 0
+
+
 # ---------------------------------------------------------------------------
 # POST /api/orders/{id}/confirm
 # ---------------------------------------------------------------------------

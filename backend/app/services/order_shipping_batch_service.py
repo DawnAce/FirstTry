@@ -17,16 +17,24 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, time
+from typing import Optional
+
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
     Issue,
+    OperationLog,
     Order,
     OrderItem,
     OrderItemStatus,
     OrderStatus,
     PublicationSchedule,
+    ShippingDetail,
+    ShippingDetailSourceType,
+    ShippingDetailSyncStatus,
+    User,
 )
 from app.models.order_item import FulfillmentType, PublicationFormat
 from app.schemas.order import (
@@ -34,7 +42,10 @@ from app.schemas.order import (
     BatchSyncSummary,
     IssueGapReport,
     IssueGapRow,
+    IssueReconciliation,
     OrderAllIssuesSyncSummary,
+    ReconUnshippedRow,
+    ShipBatchResult,
 )
 from app.services.order_shipping_sync_service import (
     COVERAGE_BASED_FULFILLMENT_TYPES,
@@ -244,3 +255,111 @@ def apply_all_issues_for_order(
             summary.issues_synced += 1
 
     return summary
+
+
+# --- 已发货回写 + 应发vs实发对账 -------------------------------------------------
+
+
+def _order_generated_rows_for_issue(db: Session, issue_number: int):
+    """This issue's non-orphaned order_generated shipping_details (= 应发清单)."""
+    return (
+        db.query(ShippingDetail)
+        .filter(
+            ShippingDetail.issue_number == issue_number,
+            ShippingDetail.source_type == ShippingDetailSourceType.order_generated,
+            ShippingDetail.sync_status != ShippingDetailSyncStatus.orphaned,
+        )
+        .order_by(ShippingDetail.id)
+        .all()
+    )
+
+
+def ship_all_for_issue(
+    db: Session,
+    issue_number: int,
+    shipped_at: Optional[date],
+    operator_id: int | None,
+) -> ShipBatchResult:
+    """按期一键标已发：把本期已生成且未发的行标为已发（实发=计划份数）。"""
+    _get_issue(db, issue_number)  # 404 if not exist
+    ship_date = shipped_at or date.today()
+    when = datetime.combine(ship_date, time())
+    rows = [
+        r
+        for r in _order_generated_rows_for_issue(db, issue_number)
+        if r.shipped_at is None
+    ]
+    for r in rows:
+        r.shipped_at = when
+        if r.shipped_quantity is None:
+            r.shipped_quantity = r.quantity
+    if rows:
+        username = (
+            db.query(User.username).filter(User.id == operator_id).scalar()
+            if operator_id is not None
+            else None
+        )
+        db.add(
+            OperationLog(
+                table_name="shipping_details",
+                record_id=0,
+                record_name=f"批量标记 {issue_number} 期已发",
+                action="ship_batch",
+                changes={
+                    "issue_number": issue_number,
+                    "count": len(rows),
+                    "shipped_at": ship_date.isoformat(),
+                },
+                user_id=operator_id,
+                username=username,
+            )
+        )
+    db.commit()
+    return ShipBatchResult(
+        issue_number=issue_number, shipped_rows=len(rows), shipped_at=ship_date
+    )
+
+
+def reconcile_issue(db: Session, issue_number: int) -> IssueReconciliation:
+    """某期「应发 vs 实发」对账（只读）。"""
+    issue = _get_issue(db, issue_number)
+    rows = _order_generated_rows_for_issue(db, issue_number)
+
+    planned_qty = 0
+    shipped_qty = 0
+    shipped_rows = 0
+    unshipped = []
+    for r in rows:
+        planned_qty += r.quantity or 0
+        if r.shipped_at is not None:
+            shipped_rows += 1
+            shipped_qty += (
+                r.shipped_quantity if r.shipped_quantity is not None else (r.quantity or 0)
+            )
+        else:
+            unshipped.append(r)
+
+    code_map = _order_code_map(
+        db, [r.order_id for r in unshipped if r.order_id is not None]
+    )
+    unshipped_list = [
+        ReconUnshippedRow(
+            order_id=r.order_id,
+            order_code=code_map.get(r.order_id),
+            shipping_detail_id=r.id,
+            recipient_name=r.name,
+            quantity=r.quantity,
+        )
+        for r in unshipped
+    ]
+
+    return IssueReconciliation(
+        issue_number=issue_number,
+        publish_date=issue.publish_date,
+        planned_rows=len(rows),
+        planned_quantity=planned_qty,
+        shipped_rows=shipped_rows,
+        shipped_quantity=shipped_qty,
+        shortfall_quantity=planned_qty - shipped_qty,
+        unshipped=unshipped_list,
+    )

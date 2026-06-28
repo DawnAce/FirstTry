@@ -1,8 +1,17 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 
 from app.models.shipping_detail import ShippingDetailSourceType, ShippingDetailSyncStatus
+
+
+class ShipDetailIn(BaseModel):
+    """Payload for POST /shipping-details/{id}/ship — mark one row shipped."""
+
+    # 省略则取记账当天；实发份数省略则默认 = 计划 quantity。
+    shipped_at: Optional[date] = None
+    shipped_quantity: Optional[int] = Field(default=None, ge=0)
+    tracking_no: Optional[str] = Field(default=None, max_length=64)
 
 
 class ShippingDetailCreate(BaseModel):
@@ -51,6 +60,8 @@ class ShippingDetailUpdate(BaseModel):
     confirmation: Optional[str] = None
     company: Optional[str] = None
     shipped_at: Optional[str] = None
+    shipped_quantity: Optional[int] = None
+    tracking_no: Optional[str] = None
 
 
 class ShippingDetailBatchPatch(BaseModel):
@@ -101,6 +112,8 @@ class ShippingDetailOut(BaseModel):
     confirmation: Optional[str]
     company: Optional[str]
     shipped_at: Optional[datetime]
+    shipped_quantity: Optional[int]
+    tracking_no: Optional[str]
     order_id: Optional[int]
     order_item_id: Optional[int]
     fulfillment_target_id: Optional[int]

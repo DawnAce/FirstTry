@@ -1030,19 +1030,18 @@ def compute_fulfillment_progress(
     drift = None
     if expected_at_creation is not None and current_expected is not None:
         drift = current_expected - expected_at_creation
-    synced_count = (
-        db.query(ShippingDetail)
-        .filter(
-            ShippingDetail.order_id == order_item.order_id,
-            ShippingDetail.order_item_id == order_item.id,
-        )
-        .count()
+    linked = db.query(ShippingDetail).filter(
+        ShippingDetail.order_id == order_item.order_id,
+        ShippingDetail.order_item_id == order_item.id,
     )
+    synced_count = linked.count()
+    shipped_count = linked.filter(ShippingDetail.shipped_at.isnot(None)).count()
     return FulfillmentProgress(
         expected_at_creation=expected_at_creation,
         current_expected=current_expected,
         drift=drift,
         synced_count=synced_count,
+        shipped_count=shipped_count,
         skipped_count=0,
     )
 

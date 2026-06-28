@@ -38,6 +38,8 @@ from app.schemas.order import (
     BatchSyncSummary,
     FulfillmentProgress,
     IssueGapReport,
+    IssueReconciliation,
+    IssueShipAllIn,
     OrderAllIssuesSyncSummary,
     OrderCancelIn,
     OrderCreate,
@@ -52,12 +54,15 @@ from app.schemas.order import (
     PricingPreviewIn,
     PricingPreviewOut,
     RefundIn,
+    ShipBatchResult,
 )
 from app.services import order_service
 from app.services.order_shipping_batch_service import (
     apply_all_for_issue,
     apply_all_issues_for_order,
     gap_report,
+    reconcile_issue,
+    ship_all_for_issue,
 )
 from app.services.order_shipping_sync_service import (
     apply_order_shipping_sync,
@@ -198,6 +203,35 @@ def apply_all_issues_for_one_order(
 ):
     """单订单覆盖期内所有期一次排齐（仅 `issues` 表已存在的期）。"""
     return apply_all_issues_for_order(db, order_id, operator_id=user.id)
+
+
+@router.get(
+    "/shipping-sync/issues/{issue_number}/reconciliation",
+    response_model=IssueReconciliation,
+)
+def issue_shipping_reconciliation(
+    issue_number: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """某期「应发 vs 实发」对账（只读）：应发/已发/缺口 + 未发清单。"""
+    return reconcile_issue(db, issue_number)
+
+
+@router.post(
+    "/shipping-sync/issues/{issue_number}/ship-all",
+    response_model=ShipBatchResult,
+)
+def ship_all_orders_for_issue(
+    issue_number: int,
+    payload: IssueShipAllIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """按期一键标已发：把本期已生成且未发的行标为已发（实发=计划份数）。"""
+    return ship_all_for_issue(
+        db, issue_number, shipped_at=payload.shipped_at, operator_id=user.id
+    )
 
 
 @router.get("/{order_id}", response_model=OrderOut)

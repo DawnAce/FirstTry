@@ -5,7 +5,7 @@
 
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -44,6 +44,8 @@ from app.services.order_shipping_batch_service import (
     apply_all_for_issue,
     apply_all_issues_for_order,
     gap_report,
+    reconcile_issue,
+    ship_all_for_issue,
 )
 from app.services.order_shipping_sync_service import apply_order_shipping_sync
 
@@ -284,3 +286,62 @@ def test_apply_all_issues_reports_issues_without_calendar_row(db):
     assert summary.issues_total == 1  # 只有 2655 可同步
     assert summary.issues_synced == 1
     assert summary.issues_no_calendar == [2660]
+
+
+# --- 已发货回写 + 对账 -------------------------------------------------------
+
+
+def test_ship_all_marks_generated_rows_shipped_and_is_idempotent(db):
+    _seed_issue(db, 2655, date(2026, 6, 1))
+    _mk_order(db, "ORD-1")
+    _mk_order(db, "ORD-2")
+    apply_all_for_issue(db, 2655, operator_id=1)  # 生成 2 行
+
+    result = ship_all_for_issue(db, 2655, shipped_at=date(2026, 6, 2), operator_id=1)
+    assert result.shipped_rows == 2
+    assert (
+        db.query(ShippingDetail).filter(ShippingDetail.shipped_at.isnot(None)).count()
+        == 2
+    )
+    # 实发份数默认 = 计划份数
+    assert all(
+        r.shipped_quantity == r.quantity
+        for r in db.query(ShippingDetail).all()
+    )
+    # 幂等：已发的不再重标
+    again = ship_all_for_issue(db, 2655, shipped_at=date(2026, 6, 2), operator_id=1)
+    assert again.shipped_rows == 0
+
+
+def test_reconcile_issue_planned_shipped_shortfall(db):
+    _seed_issue(db, 2655, date(2026, 6, 1))
+    _mk_order(db, "ORD-1")
+    _mk_order(db, "ORD-2")
+    apply_all_for_issue(db, 2655, operator_id=1)  # 2 行，各 1 份 → 应发 2
+
+    # 只发其中一行
+    one = db.query(ShippingDetail).order_by(ShippingDetail.id).first()
+    one.shipped_at = datetime(2026, 6, 2)
+    one.shipped_quantity = 1
+    db.commit()
+
+    recon = reconcile_issue(db, 2655)
+    assert recon.planned_quantity == 2
+    assert recon.shipped_quantity == 1
+    assert recon.shortfall_quantity == 1
+    assert len(recon.unshipped) == 1
+    assert recon.unshipped[0].order_code in ("ORD-1", "ORD-2")
+    assert recon.unshipped[0].recipient_name == "张三"
+
+
+def test_reconcile_full_shipped_no_shortfall(db):
+    _seed_issue(db, 2655, date(2026, 6, 1))
+    _mk_order(db, "ORD-1")
+    apply_all_for_issue(db, 2655, operator_id=1)
+    ship_all_for_issue(db, 2655, shipped_at=date(2026, 6, 2), operator_id=1)
+
+    recon = reconcile_issue(db, 2655)
+    assert recon.planned_quantity == 1
+    assert recon.shipped_quantity == 1
+    assert recon.shortfall_quantity == 0
+    assert recon.unshipped == []

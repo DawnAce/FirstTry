@@ -329,6 +329,8 @@ class FulfillmentProgress(BaseModel):
     current_expected: Optional[int]
     drift: Optional[int]
     synced_count: int
+    # 已发数：关联到本明细且 shipped_at 非空的发货明细行数。缺口 = synced_count − shipped_count。
+    shipped_count: int = 0
     skipped_count: int
 
 
@@ -536,3 +538,41 @@ class OrderAllIssuesSyncSummary(BaseModel):
     rows_updated: int = 0
     conflict_issues: list[int] = Field(default_factory=list)
     issues_no_calendar: list[int] = Field(default_factory=list)
+
+
+# --- 已发货回写 + 应发vs实发对账 ---
+
+
+class IssueShipAllIn(BaseModel):
+    """Payload for POST …/issues/{n}/ship-all — 按期一键标已发。"""
+
+    # 省略则取记账当天。只标本期已生成且未发的行，实发份数默认 = 计划 quantity。
+    shipped_at: Optional[date] = None
+
+
+class ShipBatchResult(BaseModel):
+    issue_number: int
+    shipped_rows: int = 0
+    shipped_at: Optional[date] = None
+
+
+class ReconUnshippedRow(BaseModel):
+    order_id: Optional[int] = None
+    order_code: Optional[str] = None
+    shipping_detail_id: int
+    recipient_name: Optional[str] = None
+    quantity: Optional[int] = None
+
+
+class IssueReconciliation(BaseModel):
+    """某期「应发 vs 实发」对账。应发=Σ已生成行计划份数；已发=Σ实发份数(标已发的行，
+    实发缺省按计划计)；缺口=应发−已发；``unshipped`` 为已排但未发的行清单。"""
+
+    issue_number: int
+    publish_date: date
+    planned_rows: int = 0
+    planned_quantity: int = 0
+    shipped_rows: int = 0
+    shipped_quantity: int = 0
+    shortfall_quantity: int = 0
+    unshipped: list[ReconUnshippedRow] = Field(default_factory=list)
