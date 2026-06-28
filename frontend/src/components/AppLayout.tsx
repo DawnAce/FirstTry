@@ -61,6 +61,7 @@ const menuItems: MenuProps['items'] = [
       { key: '/orders', label: '订单列表' },
       { key: '/orders/new', label: '新建订单' },
       { key: '/orders/import', label: '电商导入' },
+      { key: '/orders/dispatch', label: '按期排发' },
       { key: '/products', label: '商品库' },
       { key: '/analytics', label: '活动订单统计' },
     ],
@@ -101,6 +102,7 @@ export default function AppLayout() {
     if (path.startsWith('/templates')) return '/templates';
     if (path === '/orders/new') return '/orders/new';
     if (path === '/orders/import') return '/orders/import';
+    if (path === '/orders/dispatch') return '/orders/dispatch';
     if (path.startsWith('/products')) return '/products';
     if (path.startsWith('/analytics')) return '/analytics';
     if (path.startsWith('/orders')) return '/orders';

@@ -359,6 +359,61 @@ export interface OrderShippingSyncPreview {
   message: string | null;
 }
 
+// --- 批量排发 / 漏期报表 ---
+
+export interface IssueGapRow {
+  order_id: number;
+  order_code: string | null;
+  order_item_id: number | null;
+  fulfillment_target_id: number | null;
+  recipient_name: string | null;
+  quantity: number | null;
+  reason: string | null;
+}
+
+export interface IssueGapReport {
+  issue_number: number;
+  publish_date: string;
+  suspended: boolean;
+  total_orders: number;
+  synced_count: number;
+  missing: IssueGapRow[];
+  stale: IssueGapRow[];
+  conflict: IssueGapRow[];
+  skipped: IssueGapRow[];
+}
+
+export interface BatchSyncConflict {
+  order_id: number;
+  order_code: string | null;
+  conflict_count: number;
+}
+
+export interface BatchSyncSummary {
+  issue_number: number;
+  suspended: boolean;
+  orders_total: number;
+  orders_applied: number;
+  orders_unchanged: number;
+  orders_skipped: number;
+  orders_conflict: number;
+  rows_created: number;
+  rows_updated: number;
+  conflicts: BatchSyncConflict[];
+  skipped_reasons: Record<string, number>;
+  message: string | null;
+}
+
+export interface OrderAllIssuesSyncSummary {
+  order_id: number;
+  issues_total: number;
+  issues_synced: number;
+  rows_created: number;
+  rows_updated: number;
+  conflict_issues: number[];
+  issues_no_calendar: number[];
+}
+
 // =============================================================================
 // Query params
 // =============================================================================
@@ -458,6 +513,21 @@ export const applyOrderShippingSync = (
   api.post<OrderShippingSyncPreview>(`/orders/${orderId}/shipping-sync/apply`, {
     issue_number: issueNumber,
   });
+
+export const getIssueGapReport = (
+  issueNumber: number,
+): Promise<AxiosResponse<IssueGapReport>> =>
+  api.get<IssueGapReport>(`/orders/shipping-sync/issues/${issueNumber}/gap-report`);
+
+export const applyAllForIssue = (
+  issueNumber: number,
+): Promise<AxiosResponse<BatchSyncSummary>> =>
+  api.post<BatchSyncSummary>(`/orders/shipping-sync/issues/${issueNumber}/apply-all`);
+
+export const applyAllIssuesForOrder = (
+  orderId: number,
+): Promise<AxiosResponse<OrderAllIssuesSyncSummary>> =>
+  api.post<OrderAllIssuesSyncSummary>(`/orders/${orderId}/shipping-sync/apply-all-issues`);
 
 // =============================================================================
 // TanStack Query keys (centralised so invalidation stays consistent)

@@ -35,6 +35,7 @@ import {
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import {
+  applyAllIssuesForOrder,
   applyOrderShippingSync,
   cancelOrder,
   getOrder,
@@ -1049,6 +1050,26 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
     },
   });
 
+  const allIssuesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await applyAllIssuesForOrder(orderId);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      const parts = [`同步 ${data.issues_synced}/${data.issues_total} 期，建 ${data.rows_created} 行`];
+      if (data.conflict_issues.length) parts.push(`冲突期 ${data.conflict_issues.join('、')}（人工改过，已跳过）`);
+      if (data.issues_no_calendar.length) parts.push(`未建刊期 ${data.issues_no_calendar.join('、')}（先在刊期表建期）`);
+      message.success(parts.join('；'));
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.detail(orderId) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.events(orderId) });
+      queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+      setPreview(null);
+    },
+    onError: () => {
+      message.error('同步全部期失败');
+    },
+  });
+
   const summary = preview?.summary;
   const hasConflicts = (summary?.conflicts ?? 0) > 0;
   const isPreviewCurrent = preview
@@ -1127,6 +1148,13 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
             }}
           >
             确认同步
+          </Button>
+          <Button
+            loading={allIssuesMutation.isPending}
+            onClick={() => allIssuesMutation.mutate()}
+            title="把本单覆盖期内所有刊期一次排齐（仅同步已建的刊期；冲突单跳过）"
+          >
+            同步全部期
           </Button>
         </Space>
       </Card>

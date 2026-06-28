@@ -14,6 +14,7 @@ import OrderEditor from './pages/OrderEditor';
 import OrderDetail from './pages/OrderDetail';
 import ProductCatalog from './pages/ProductCatalog';
 import OrderImport from './pages/OrderImport';
+import IssueDispatch from './pages/IssueDispatch';
 import Analytics from './pages/Analytics';
 import Login from './pages/Login';
 import type { ReactNode } from 'react';
@@ -49,6 +50,7 @@ function App() {
             <Route path="/orders" element={<OrderList />} />
             <Route path="/orders/new" element={<OrderEditor />} />
             <Route path="/orders/import" element={<OrderImport />} />
+            <Route path="/orders/dispatch" element={<IssueDispatch />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/orders/:id/edit" element={<OrderEditor />} />
             <Route path="/products" element={<ProductCatalog />} />
