@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import User
 from app.models.order_item import Publication
@@ -74,6 +74,6 @@ class CommitIn(BaseModel):
 def commit(
     body: CommitIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     return commit_import(db, body.session_id, operator_id=getattr(user, "id", None))

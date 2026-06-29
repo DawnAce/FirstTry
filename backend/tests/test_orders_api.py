@@ -392,6 +392,31 @@ def test_export_orders_xlsx(client):
     assert len(resp.content) > 0
 
 
+def test_sensitive_endpoints_require_admin(client):
+    # 默认 fixture 是 admin：先建一单
+    oid = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+
+    # 切到 operator
+    operator = User(id=2, username="op", password_hash="x", role=UserRole.operator)
+    app.dependency_overrides[get_current_user] = lambda: operator
+
+    # 敏感操作 → operator 403
+    assert client.post(f"/api/orders/{oid}/void", json={"reason": "xx"}).status_code == 403
+    assert client.post(f"/api/orders/{oid}/refund", json={"amount": "1"}).status_code == 403
+    assert client.post(f"/api/orders/{oid}/cancel", json={"reason": "xx"}).status_code == 403
+    assert client.post("/api/orders/bulk-confirm", json={"order_ids": [oid]}).status_code == 403
+    assert (
+        client.post("/api/orders/bulk-void", json={"order_ids": [oid], "reason": "xx"}).status_code
+        == 403
+    )
+    assert client.get("/api/orders/export").status_code == 403
+
+    # 运营日常 → 放行（非 403）
+    assert client.get("/api/orders").status_code == 200
+    assert client.post("/api/orders", json=_make_create_payload()).status_code == 201
+    assert client.post(f"/api/orders/{oid}/payments", json={"amount": "1"}).status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # POST /api/orders/{id}/confirm
 # ---------------------------------------------------------------------------

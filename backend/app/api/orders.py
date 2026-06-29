@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import OrderEntryMethod, OrderStatus, User
 from app.models.order_event import OrderEvent
@@ -147,7 +147,7 @@ def export_orders(
     sort: Optional[str] = None,
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Export the filtered order list (no pagination) as an .xlsx. Same filters
     as ``GET /api/orders``; capped at 50000 rows."""
@@ -182,7 +182,7 @@ def export_orders(
 def bulk_confirm(
     payload: BulkConfirmIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     """Batch confirm orders (draft → active). Per-order failure collected, not
     aborting the batch."""
@@ -195,7 +195,7 @@ def bulk_confirm(
 def bulk_void(
     payload: BulkVoidIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     """Batch void orders with one shared reason. Per-order failure collected."""
     return order_service.bulk_void_orders(
@@ -379,7 +379,7 @@ def void_order(
     order_id: int,
     payload: OrderVoidIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     """Mark the order void. ``payload.reason`` is required + non-empty."""
     order = order_service.void_order(
@@ -394,7 +394,7 @@ def refund_order(
     order_id: int,
     payload: RefundIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     """Record a refund (full or partial). Optional ``order_item_id`` /
     ``stop_from_issue`` scope the stop-delivery; no scope = money-only."""
@@ -417,7 +417,7 @@ def cancel_order(
     order_id: int,
     payload: OrderCancelIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     """Cancel the order: mark cancelled, record a full refund of the outstanding
     paid amount, and stop all delivery."""
