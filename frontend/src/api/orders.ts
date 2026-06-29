@@ -477,8 +477,16 @@ export interface ListOrdersParams {
   order_date_end?: string;
   unpaid?: boolean;
   has_drift?: boolean;
+  search?: string;
+  sort?: 'order_date' | 'total_amount' | 'outstanding';
+  order?: 'asc' | 'desc';
   skip?: number;
   limit?: number;
+}
+
+export interface BulkOpResult {
+  succeeded: number[];
+  failed: Array<{ order_id: number; detail: string }>;
 }
 
 // =============================================================================
@@ -529,6 +537,22 @@ export const recordPayment = (
   payload: PaymentPayload,
 ): Promise<AxiosResponse<OrderOut>> =>
   api.post<OrderOut>(`/orders/${id}/payments`, payload);
+
+export const bulkConfirmOrders = (
+  orderIds: number[],
+): Promise<AxiosResponse<BulkOpResult>> =>
+  api.post<BulkOpResult>('/orders/bulk-confirm', { order_ids: orderIds });
+
+export const bulkVoidOrders = (
+  orderIds: number[],
+  reason: string,
+): Promise<AxiosResponse<BulkOpResult>> =>
+  api.post<BulkOpResult>('/orders/bulk-void', { order_ids: orderIds, reason });
+
+export const exportOrders = (
+  params?: ListOrdersParams,
+): Promise<AxiosResponse<Blob>> =>
+  api.get('/orders/export', { params, responseType: 'blob' });
 
 export const listOrderEvents = (
   id: number,

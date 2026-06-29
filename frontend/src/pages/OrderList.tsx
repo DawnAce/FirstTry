@@ -16,10 +16,20 @@ import {
   Typography,
   message,
 } from 'antd';
-import { PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
-import type { TableColumnsType } from 'antd';
+import {
+  CheckOutlined,
+  DownloadOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  StopOutlined,
+} from '@ant-design/icons';
+import type { TableColumnsType, TableProps } from 'antd';
 import type { Dayjs } from 'dayjs';
 import {
+  bulkConfirmOrders,
+  bulkVoidOrders,
+  confirmOrder,
+  exportOrders,
   listOrders,
   orderQueryKeys,
   voidOrder,
@@ -30,6 +40,7 @@ import type {
   OrderStatus,
 } from '../api/orders';
 import {
+  canConfirmOrder,
   canVoidOrder,
   driftColor,
   driftLabel,
@@ -67,6 +78,7 @@ const PAYMENT_OPTIONS: Array<{ label: string; value: PaymentFilter }> = [
 
 interface FilterState {
   status?: OrderStatus;
+  search?: string;
   payer_name_like?: string;
   campaign?: string;
   source_platform?: string;
@@ -75,6 +87,8 @@ interface FilterState {
   drift: DriftFilter;
   payment: PaymentFilter;
 }
+
+type SortField = NonNullable<ListOrdersParams['sort']>;
 
 // Distinct source_platform strings the system writes (imports: CBJ小程序 / 淘宝;
 // manual: the OrderEditor dropdown). Exact-match filter for the unified list.
@@ -95,6 +109,7 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
     limit: PAGE_SIZE,
   };
   if (filters.status) params.status = filters.status;
+  if (filters.search) params.search = filters.search.trim();
   if (filters.payer_name_like) params.payer_name_like = filters.payer_name_like.trim();
   if (filters.campaign) params.campaign = filters.campaign.trim();
   if (filters.source_platform) params.source_platform = filters.source_platform;
@@ -123,11 +138,23 @@ export default function OrderList() {
   const [form] = Form.useForm<FilterState>();
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
   const [page, setPage] = useState(1);
+  const [sorter, setSorter] = useState<{ field?: SortField; order?: 'asc' | 'desc' }>({});
+  const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidingRow, setVoidingRow] = useState<OrderListRow | null>(null);
   const [voidReason, setVoidReason] = useState('');
+  const [bulkVoidOpen, setBulkVoidOpen] = useState(false);
+  const [bulkVoidReason, setBulkVoidReason] = useState('');
+  const [exporting, setExporting] = useState(false);
 
-  const queryParams = useMemo(() => buildQueryParams(filters, page), [filters, page]);
+  const queryParams = useMemo(() => {
+    const p = buildQueryParams(filters, page);
+    if (sorter.field) {
+      p.sort = sorter.field;
+      p.order = sorter.order ?? 'desc';
+    }
+    return p;
+  }, [filters, page, sorter]);
 
   const ordersQuery = useQuery({
     queryKey: orderQueryKeys.list(queryParams),
@@ -152,6 +179,79 @@ export default function OrderList() {
       message.error('作废失败');
     },
   });
+
+  const confirmMutation = useMutation({
+    mutationFn: (id: number) => confirmOrder(id),
+    onSuccess: () => {
+      message.success('订单已确认生效');
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.all });
+    },
+    onError: () => message.error('确认失败'),
+  });
+
+  const reportBulk = (res: { succeeded: number[]; failed: Array<{ order_id: number; detail: string }> }, verb: string) => {
+    if (res.failed.length === 0) {
+      message.success(`已${verb} ${res.succeeded.length} 单`);
+    } else {
+      message.warning(`${verb} ${res.succeeded.length} 单成功，${res.failed.length} 单失败（如状态不符）`);
+    }
+    setSelectedKeys([]);
+    queryClient.invalidateQueries({ queryKey: orderQueryKeys.all });
+  };
+
+  const bulkConfirmMutation = useMutation({
+    mutationFn: (ids: number[]) => bulkConfirmOrders(ids).then((r) => r.data),
+    onSuccess: (res) => reportBulk(res, '确认'),
+    onError: () => message.error('批量确认失败'),
+  });
+
+  const bulkVoidMutation = useMutation({
+    mutationFn: ({ ids, reason }: { ids: number[]; reason: string }) =>
+      bulkVoidOrders(ids, reason).then((r) => r.data),
+    onSuccess: (res) => {
+      reportBulk(res, '作废');
+      setBulkVoidOpen(false);
+      setBulkVoidReason('');
+    },
+    onError: () => message.error('批量作废失败'),
+  });
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      // skip/limit 透传给 /export 会被后端忽略（导出取全量），无需剥离。
+      const res = await exportOrders(queryParams);
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `订单导出_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      message.error('导出失败');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleTableChange: NonNullable<TableProps<OrderListRow>['onChange']> = (
+    _pagination,
+    _filters,
+    srt,
+  ) => {
+    const s = Array.isArray(srt) ? srt[0] : srt;
+    const keyMap: Record<string, SortField> = {
+      order_date: 'order_date',
+      total_amount: 'total_amount',
+      outstanding_amount: 'outstanding',
+    };
+    if (s && s.order && typeof s.columnKey === 'string' && keyMap[s.columnKey]) {
+      setPage(1);
+      setSorter({ field: keyMap[s.columnKey], order: s.order === 'ascend' ? 'asc' : 'desc' });
+    } else {
+      setSorter({});
+    }
+  };
 
   const handleApplyFilters = (values: FilterState) => {
     setPage(1);
@@ -200,6 +300,7 @@ export default function OrderList() {
       dataIndex: 'order_date',
       key: 'order_date',
       width: 110,
+      sorter: true,
     },
     {
       title: '付款主体',
@@ -235,6 +336,7 @@ export default function OrderList() {
       key: 'total_amount',
       width: 110,
       align: 'right',
+      sorter: true,
       render: (v: string) => formatCurrency(v),
     },
     {
@@ -243,6 +345,7 @@ export default function OrderList() {
       key: 'outstanding_amount',
       width: 110,
       align: 'right',
+      sorter: true,
       render: (v: string) =>
         Number(v) > 0 ? (
           <Typography.Text type="danger">{formatCurrency(v)}</Typography.Text>
@@ -298,6 +401,17 @@ export default function OrderList() {
           <Button type="link" size="small" onClick={() => navigate(`/orders/${row.id}`)}>
             查看
           </Button>
+          {canConfirmOrder(row.status) && (
+            <Button
+              type="link"
+              size="small"
+              icon={<CheckOutlined />}
+              loading={confirmMutation.isPending}
+              onClick={() => confirmMutation.mutate(row.id)}
+            >
+              确认生效
+            </Button>
+          )}
           {canVoidOrder(row.status) && (
             <Button
               type="link"
@@ -335,6 +449,9 @@ export default function OrderList() {
           >
             刷新
           </Button>
+          <Button icon={<DownloadOutlined />} onClick={handleExport} loading={exporting}>
+            导出
+          </Button>
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -354,6 +471,9 @@ export default function OrderList() {
           initialValues={INITIAL_FILTERS}
           onFinish={handleApplyFilters}
         >
+          <Form.Item name="search" label="单号">
+            <Input allowClear placeholder="订单编码 / 来源单号" style={{ width: 180 }} />
+          </Form.Item>
           <Form.Item name="status" label="状态">
             <Select
               allowClear
@@ -399,12 +519,46 @@ export default function OrderList() {
         </Form>
       </Card>
 
+      {selectedKeys.length > 0 && (
+        <Space style={{ marginBottom: 12 }}>
+          <span>已选 {selectedKeys.length} 单：</span>
+          <Button
+            size="small"
+            icon={<CheckOutlined />}
+            loading={bulkConfirmMutation.isPending}
+            onClick={() => bulkConfirmMutation.mutate(selectedKeys)}
+          >
+            批量确认生效
+          </Button>
+          <Button
+            size="small"
+            danger
+            icon={<StopOutlined />}
+            onClick={() => {
+              setBulkVoidReason('');
+              setBulkVoidOpen(true);
+            }}
+          >
+            批量作废
+          </Button>
+          <Button size="small" type="link" onClick={() => setSelectedKeys([])}>
+            清除选择
+          </Button>
+        </Space>
+      )}
+
       <Table<OrderListRow>
         rowKey="id"
         columns={columns}
         dataSource={rows}
         loading={ordersQuery.isLoading}
         scroll={{ x: 1500 }}
+        onChange={handleTableChange}
+        rowSelection={{
+          selectedRowKeys: selectedKeys,
+          onChange: (keys) => setSelectedKeys(keys as number[]),
+          preserveSelectedRowKeys: true,
+        }}
         pagination={{
           current: page,
           pageSize: PAGE_SIZE,
@@ -443,6 +597,35 @@ export default function OrderList() {
           maxLength={500}
           showCount
           placeholder="例如：客户取消、重复下单……"
+        />
+      </Modal>
+
+      <Modal
+        title={`批量作废 ${selectedKeys.length} 单`}
+        open={bulkVoidOpen}
+        onCancel={() => setBulkVoidOpen(false)}
+        onOk={() => {
+          const reason = bulkVoidReason.trim();
+          if (reason.length < 2) {
+            message.warning('请填写作废理由（至少 2 个字符）');
+            return;
+          }
+          bulkVoidMutation.mutate({ ids: selectedKeys, reason });
+        }}
+        okText="确认批量作废"
+        okButtonProps={{ danger: true, loading: bulkVoidMutation.isPending }}
+        cancelText="取消"
+      >
+        <p style={{ marginBottom: 8 }}>
+          将对选中的 {selectedKeys.length} 单统一作废（已作废的会跳过）。请输入作废理由：
+        </p>
+        <Input.TextArea
+          value={bulkVoidReason}
+          onChange={(e) => setBulkVoidReason(e.target.value)}
+          rows={3}
+          maxLength={500}
+          showCount
+          placeholder="例如：批量重复下单、活动取消……"
         />
       </Modal>
     </div>
