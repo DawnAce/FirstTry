@@ -22,6 +22,7 @@ import { InboxOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { commitOrderImport, previewOrderImport } from '../api/orderImport';
+import { useAuth } from '../contexts/AuthContext';
 import type { ImportDecision, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
 import { createProduct } from '../api/products';
 import { ProductFormFields, PUBLICATION_OPTIONS, buildProductPayload } from './ProductForm';
@@ -83,6 +84,7 @@ function suggestCode(): string {
 }
 
 export default function OrderImport() {
+  const { isAdmin } = useAuth();
   const [mode, setMode] = useState<Mode>('recent');
   const [file, setFile] = useState<File | null>(null);
   const [postOfficeStart, setPostOfficeStart] = useState<Dayjs | null>(null);
@@ -317,9 +319,13 @@ export default function OrderImport() {
             size="small"
             title="③ 预览（点任意行看详情；待确认行可直接加商品）"
             extra={
-              <Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
-                确认导入 {counts.import ?? 0} 单
-              </Button>
+              isAdmin ? (
+                <Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
+                  确认导入 {counts.import ?? 0} 单
+                </Button>
+              ) : (
+                <Text type="secondary">确认导入需管理员权限</Text>
+              )
             }
           >
             <Space style={{ marginBottom: 12 }} wrap>

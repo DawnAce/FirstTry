@@ -50,6 +50,7 @@ import {
   statusLabel,
 } from './orderUtils';
 import EcommerceRules from './ecommerceRules';
+import { useAuth } from '../contexts/AuthContext';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -135,6 +136,7 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
 export default function OrderList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const [form] = Form.useForm<FilterState>();
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
   const [page, setPage] = useState(1);
@@ -412,7 +414,7 @@ export default function OrderList() {
               确认生效
             </Button>
           )}
-          {canVoidOrder(row.status) && (
+          {isAdmin && canVoidOrder(row.status) && (
             <Button
               type="link"
               size="small"
@@ -449,9 +451,11 @@ export default function OrderList() {
           >
             刷新
           </Button>
-          <Button icon={<DownloadOutlined />} onClick={handleExport} loading={exporting}>
-            导出
-          </Button>
+          {isAdmin && (
+            <Button icon={<DownloadOutlined />} onClick={handleExport} loading={exporting}>
+              导出
+            </Button>
+          )}
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -519,7 +523,7 @@ export default function OrderList() {
         </Form>
       </Card>
 
-      {selectedKeys.length > 0 && (
+      {isAdmin && selectedKeys.length > 0 && (
         <Space style={{ marginBottom: 12 }}>
           <span>已选 {selectedKeys.length} 单：</span>
           <Button
@@ -554,11 +558,15 @@ export default function OrderList() {
         loading={ordersQuery.isLoading}
         scroll={{ x: 1500 }}
         onChange={handleTableChange}
-        rowSelection={{
-          selectedRowKeys: selectedKeys,
-          onChange: (keys) => setSelectedKeys(keys as number[]),
-          preserveSelectedRowKeys: true,
-        }}
+        rowSelection={
+          isAdmin
+            ? {
+                selectedRowKeys: selectedKeys,
+                onChange: (keys) => setSelectedKeys(keys as number[]),
+                preserveSelectedRowKeys: true,
+              }
+            : undefined
+        }
         pagination={{
           current: page,
           pageSize: PAGE_SIZE,

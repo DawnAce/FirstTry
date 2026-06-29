@@ -61,6 +61,7 @@ import type {
   RefundPayload,
 } from '../api/orders';
 import { getIssues } from '../api/issues';
+import { useAuth } from '../contexts/AuthContext';
 import {
   billingTypeLabel,
   canCancelOrder,
@@ -88,6 +89,7 @@ import {
 const { Title, Text } = Typography;
 
 export default function OrderDetail() {
+  const { isAdmin } = useAuth();
   const params = useParams<{ id: string }>();
   const orderId = params.id ? Number(params.id) : NaN;
   const navigate = useNavigate();
@@ -382,12 +384,12 @@ export default function OrderDetail() {
               记一笔收款
             </Button>
           )}
-          {canRefundOrder(order.status, order.commercial_status) && (
+          {isAdmin && canRefundOrder(order.status, order.commercial_status) && (
             <Button icon={<RollbackOutlined />} onClick={openRefundModal}>
               退款
             </Button>
           )}
-          {canCancelOrder(order.status, order.commercial_status) && (
+          {isAdmin && canCancelOrder(order.status, order.commercial_status) && (
             <Button
               danger
               icon={<CloseCircleOutlined />}
@@ -399,7 +401,7 @@ export default function OrderDetail() {
               取消订单
             </Button>
           )}
-          {canVoidOrder(order.status) && (
+          {isAdmin && canVoidOrder(order.status) && (
             <Button danger icon={<StopOutlined />} onClick={handleVoidClick}>
               作废
             </Button>
