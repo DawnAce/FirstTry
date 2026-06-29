@@ -28,6 +28,7 @@ import {
 import {
   ArrowLeftOutlined,
   CloseCircleOutlined,
+  DollarOutlined,
   EditOutlined,
   InboxOutlined,
   RollbackOutlined,
@@ -42,6 +43,7 @@ import {
   listOrderEvents,
   orderQueryKeys,
   previewOrderShippingSync,
+  recordPayment,
   refundOrder,
   voidOrder,
 } from '../api/orders';
@@ -53,6 +55,8 @@ import type {
   OrderShippingSyncAction,
   OrderShippingSyncItem,
   OrderShippingSyncPreview,
+  PaymentOut,
+  PaymentPayload,
   RefundOut,
   RefundPayload,
 } from '../api/orders';
@@ -97,6 +101,10 @@ export default function OrderDetail() {
   const [refundStopIssue, setRefundStopIssue] = useState<number | null>(null);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<number | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<string | undefined>(undefined);
+  const [paymentNotes, setPaymentNotes] = useState('');
 
   const orderQuery = useQuery({
     queryKey: orderQueryKeys.detail(orderId),
@@ -154,6 +162,18 @@ export default function OrderDetail() {
     },
     onError: (err: unknown) => {
       message.error(serverDetail(err) ?? '取消失败');
+    },
+  });
+
+  const paymentMutation = useMutation({
+    mutationFn: (payload: PaymentPayload) => recordPayment(orderId, payload),
+    onSuccess: () => {
+      message.success('已记录收款');
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.all });
+      setPaymentModalOpen(false);
+    },
+    onError: (err: unknown) => {
+      message.error(serverDetail(err) ?? '收款失败');
     },
   });
 
@@ -245,6 +265,49 @@ export default function OrderDetail() {
     cancelMutation.mutate(reason);
   };
 
+  const openPaymentModal = () => {
+    setPaymentAmount(null);
+    setPaymentMethod(undefined);
+    setPaymentNotes('');
+    setPaymentModalOpen(true);
+  };
+  const handlePaymentSubmit = () => {
+    if (!paymentAmount || paymentAmount <= 0) {
+      message.warning('请输入收款金额（大于 0）');
+      return;
+    }
+    paymentMutation.mutate({
+      amount: paymentAmount,
+      method: paymentMethod ?? null,
+      notes: paymentNotes.trim() || null,
+    });
+  };
+
+  const paymentColumns: TableColumnsType<PaymentOut> = [
+    { title: '到账日期', dataIndex: 'collected_at', key: 'collected_at', width: 120 },
+    {
+      title: '金额',
+      dataIndex: 'amount',
+      key: 'amount',
+      width: 120,
+      align: 'right',
+      render: (v: string) => <Text type="success">{formatCurrency(v)}</Text>,
+    },
+    {
+      title: '方式',
+      dataIndex: 'method',
+      key: 'method',
+      width: 120,
+      render: (v: string | null) => v ?? '-',
+    },
+    {
+      title: '备注',
+      dataIndex: 'notes',
+      key: 'notes',
+      render: (v: string | null) => v ?? '-',
+    },
+  ];
+
   const refundColumns: TableColumnsType<RefundOut> = [
     { title: '退款日期', dataIndex: 'refunded_at', key: 'refunded_at', width: 120 },
     {
@@ -312,6 +375,11 @@ export default function OrderDetail() {
               onClick={() => navigate(`/orders/${order.id}/edit`)}
             >
               编辑
+            </Button>
+          )}
+          {order.status === 'active' && (
+            <Button icon={<DollarOutlined />} onClick={openPaymentModal}>
+              记一笔收款
             </Button>
           )}
           {canRefundOrder(order.status, order.commercial_status) && (
@@ -413,6 +481,13 @@ export default function OrderDetail() {
               '-'
             )}
           </Descriptions.Item>
+          <Descriptions.Item label="欠款">
+            {Number(order.outstanding_amount) > 0 ? (
+              <Text type="danger">{formatCurrency(order.outstanding_amount)}</Text>
+            ) : (
+              <Text type="success">已付清</Text>
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="开票">
             {order.invoice_required ? '是' : '否'}
           </Descriptions.Item>
@@ -436,6 +511,19 @@ export default function OrderDetail() {
           )}
         </Descriptions>
       </Card>
+
+      {/* Payment ledger */}
+      {order.payments.length > 0 && (
+        <Card size="small" title="收款台账" style={{ marginBottom: 16 }}>
+          <Table<PaymentOut>
+            rowKey="id"
+            size="small"
+            pagination={false}
+            columns={paymentColumns}
+            dataSource={order.payments}
+          />
+        </Card>
+      )}
 
       {/* Refund ledger */}
       {order.refunds.length > 0 && (
@@ -591,6 +679,62 @@ export default function OrderDetail() {
           showCount
           placeholder="取消理由"
         />
+      </Modal>
+
+      <Modal
+        title={`记一笔收款 ${order.order_code ?? `#${order.id}`}`}
+        open={paymentModalOpen}
+        onCancel={() => setPaymentModalOpen(false)}
+        onOk={handlePaymentSubmit}
+        okText="确认收款"
+        okButtonProps={{ loading: paymentMutation.isPending }}
+        cancelText="取消"
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <div>
+            <Text>
+              收款金额（应收 {formatCurrency(order.total_amount)}、已收{' '}
+              {formatCurrency(order.paid_amount)}、欠款{' '}
+              {formatCurrency(order.outstanding_amount)}）
+            </Text>
+            <InputNumber
+              value={paymentAmount}
+              onChange={(v) => setPaymentAmount(v as number | null)}
+              min={0.01}
+              precision={2}
+              style={{ width: '100%', marginTop: 4 }}
+              placeholder="本次到账金额"
+            />
+          </div>
+          <div>
+            <Text type="secondary">收款方式（可选）</Text>
+            <Select
+              allowClear
+              value={paymentMethod}
+              onChange={(v) => setPaymentMethod(v)}
+              style={{ width: '100%', marginTop: 4 }}
+              placeholder="如 对公转账 / 微信 / 支付宝"
+              options={[
+                { value: '对公转账', label: '对公转账' },
+                { value: '微信', label: '微信' },
+                { value: '支付宝', label: '支付宝' },
+                { value: '银行卡', label: '银行卡' },
+                { value: '现金', label: '现金' },
+                { value: '其他', label: '其他' },
+              ]}
+            />
+          </div>
+          <div>
+            <Text type="secondary">备注（可选）</Text>
+            <Input.TextArea
+              value={paymentNotes}
+              onChange={(e) => setPaymentNotes(e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder="如 第一期定金 / 到账流水号"
+            />
+          </div>
+        </Space>
       </Modal>
     </div>
   );

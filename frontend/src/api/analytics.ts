@@ -58,6 +58,13 @@ export interface BsCirculationOut {
   year: number | null;
 }
 
+export interface OutstandingSummary {
+  total_receivable: string;
+  total_paid: string;
+  total_outstanding: string;
+  unpaid_orders: number;
+}
+
 export interface DateRangeParams {
   date_from?: string;
   date_to?: string;
@@ -79,4 +86,8 @@ export function getBsCirculation(
   params?: { year?: number },
 ): Promise<AxiosResponse<BsCirculationOut>> {
   return api.get('/analytics/bs-circulation', { params });
+}
+
+export function getOutstandingSummary(): Promise<AxiosResponse<OutstandingSummary>> {
+  return api.get('/analytics/outstanding');
 }

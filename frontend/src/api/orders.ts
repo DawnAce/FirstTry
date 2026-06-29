@@ -256,6 +256,23 @@ export interface RefundOut {
   created_at: string;
 }
 
+export interface PaymentOut {
+  id: number;
+  amount: string;
+  method: string | null;
+  collected_at: string;
+  notes: string | null;
+  operator_id: number | null;
+  created_at: string;
+}
+
+export interface PaymentPayload {
+  amount: number | string;
+  method?: string | null;
+  collected_at?: string | null;
+  notes?: string | null;
+}
+
 export interface OrderOut {
   id: number;
   order_code: string | null;
@@ -278,11 +295,13 @@ export interface OrderOut {
   status: OrderStatus;
   commercial_status: OrderCommercialStatus | null;
   refunded_amount: string;
+  outstanding_amount: string;
   notes: string | null;
   created_at: string;
   updated_at: string;
   items: OrderItemOut[];
   refunds: RefundOut[];
+  payments: PaymentOut[];
 }
 
 export interface OrderListRow {
@@ -296,6 +315,8 @@ export interface OrderListRow {
   campaign: string | null;
   total_quantity: number;
   total_amount: string;
+  paid_amount: string;
+  outstanding_amount: string;
   coverage_start_date: string | null;
   coverage_end_date: string | null;
   status: OrderStatus;
@@ -454,6 +475,7 @@ export interface ListOrdersParams {
   coverage_end?: string;
   order_date_start?: string;
   order_date_end?: string;
+  unpaid?: boolean;
   has_drift?: boolean;
   skip?: number;
   limit?: number;
@@ -501,6 +523,12 @@ export const cancelOrder = (
   reason: string,
 ): Promise<AxiosResponse<OrderOut>> =>
   api.post<OrderOut>(`/orders/${id}/cancel`, { reason } satisfies OrderCancelPayload);
+
+export const recordPayment = (
+  id: number,
+  payload: PaymentPayload,
+): Promise<AxiosResponse<OrderOut>> =>
+  api.post<OrderOut>(`/orders/${id}/payments`, payload);
 
 export const listOrderEvents = (
   id: number,

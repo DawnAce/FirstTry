@@ -57,6 +57,14 @@ const DRIFT_OPTIONS: Array<{ label: string; value: DriftFilter }> = [
   { label: '无偏差', value: 'no_drift' },
 ];
 
+type PaymentFilter = 'all' | 'unpaid' | 'paid';
+
+const PAYMENT_OPTIONS: Array<{ label: string; value: PaymentFilter }> = [
+  { label: '全部', value: 'all' },
+  { label: '未付清', value: 'unpaid' },
+  { label: '已付清', value: 'paid' },
+];
+
 interface FilterState {
   status?: OrderStatus;
   payer_name_like?: string;
@@ -65,6 +73,7 @@ interface FilterState {
   order_date_range?: [Dayjs, Dayjs] | null;
   coverage_range?: [Dayjs, Dayjs] | null;
   drift: DriftFilter;
+  payment: PaymentFilter;
 }
 
 // Distinct source_platform strings the system writes (imports: CBJ小程序 / 淘宝;
@@ -76,7 +85,7 @@ const PLATFORM_OPTIONS = [
   { label: '有赞', value: '有赞' },
 ];
 
-const INITIAL_FILTERS: FilterState = { drift: 'all' };
+const INITIAL_FILTERS: FilterState = { drift: 'all', payment: 'all' };
 
 const PAGE_SIZE = 20;
 
@@ -103,6 +112,8 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
   }
   if (filters.drift === 'with_drift') params.has_drift = true;
   if (filters.drift === 'no_drift') params.has_drift = false;
+  if (filters.payment === 'unpaid') params.unpaid = true;
+  if (filters.payment === 'paid') params.unpaid = false;
   return params;
 }
 
@@ -225,6 +236,19 @@ export default function OrderList() {
       width: 110,
       align: 'right',
       render: (v: string) => formatCurrency(v),
+    },
+    {
+      title: '欠款',
+      dataIndex: 'outstanding_amount',
+      key: 'outstanding_amount',
+      width: 110,
+      align: 'right',
+      render: (v: string) =>
+        Number(v) > 0 ? (
+          <Typography.Text type="danger">{formatCurrency(v)}</Typography.Text>
+        ) : (
+          '-'
+        ),
     },
     {
       title: '覆盖期',
@@ -360,6 +384,9 @@ export default function OrderList() {
           </Form.Item>
           <Form.Item name="drift" label="期数偏差">
             <Select options={DRIFT_OPTIONS} style={{ width: 120 }} />
+          </Form.Item>
+          <Form.Item name="payment" label="付款">
+            <Select options={PAYMENT_OPTIONS} style={{ width: 120 }} />
           </Form.Item>
           <Form.Item>
             <Space>
