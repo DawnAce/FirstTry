@@ -38,7 +38,10 @@ from app.models.order import (
     OrderStatus,
 )
 from app.models.user import User, UserRole
-from app.services.order_analytics_service import summarize_campaigns
+from app.services.order_analytics_service import (
+    summarize_campaigns,
+    summarize_outstanding,
+)
 
 
 def _order(campaign, paid, listed=None, *, status=OrderStatus.active, order_date=date(2026, 6, 1)):
@@ -210,5 +213,46 @@ def test_partial_refund_amount_is_netted_from_campaign_revenue():
     assert _money(row.total_discount) == Decimal("0.00")
     assert _money(out.grand_total_paid) == Decimal("420.00")
     assert _money(out.grand_total_refunded) == Decimal("60.00")
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+
+
+def _ord(total, paid, *, status=OrderStatus.active, commercial=None):
+    o = Order(
+        order_date=date(2026, 6, 1),
+        entry_method=OrderEntryMethod.excel_import,
+        payer_name="X",
+        status=status,
+        total_amount=Decimal(str(total)),
+        paid_amount=Decimal(str(paid)),
+        commercial_status=commercial,
+    )
+    return o
+
+
+def test_outstanding_summary_clamps_per_order():
+    """欠款逐单 max(0,应收−实付) 求和：超付单不抵销欠款单；void/退款单排除。"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+
+    a = _ord(200, 50)                                    # 欠 150、未付清
+    b = _ord(100, 100)                                   # 付清
+    c = _ord(80, 120)                                    # 超付 → 欠款 clamp 0，不抵销 A
+    d = _ord(300, 0, status=OrderStatus.void)            # 作废 → 排除
+    e = _ord(500, 0, commercial=OrderCommercialStatus.refunded)  # 退款 → 排除
+    db.add_all([a, b, c, d, e])
+    db.commit()
+
+    out = summarize_outstanding(db)
+    assert out.total_outstanding == Decimal("150.00")   # 仅 A；C 超付不抵销
+    assert out.unpaid_orders == 1                        # 仅 A
+    # 应收/实付仅 active 且非退款：A+B+C
+    assert out.total_receivable == Decimal("380.00")
+    assert out.total_paid == Decimal("270.00")
     db.close()
     Base.metadata.drop_all(bind=engine)

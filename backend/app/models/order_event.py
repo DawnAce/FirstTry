@@ -32,6 +32,7 @@ class OrderEventType(str, enum.Enum):
     shipping_sync_conflict = "shipping_sync_conflict"   # V1.3
     refunded = "refunded"                               # 退款（全额/部分）
     cancelled = "cancelled"                             # 订单取消（连带全额退款）
+    payment_recorded = "payment_recorded"               # 记一笔收款（到账）
 
 
 class OrderEvent(Base):

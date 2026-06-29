@@ -300,6 +300,48 @@ def test_shipped_writeback_and_reconciliation_endpoints(client):
     assert sh.json()["shipped_quantity"] == 0
 
 
+def test_payment_collection_outstanding_and_unpaid_filter(client):
+    payload = _make_create_payload()  # total 180, paid 0
+    r = client.post("/api/orders", json=payload)
+    oid = r.json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+
+    d = client.get(f"/api/orders/{oid}").json()
+    assert float(d["total_amount"]) == 180.0
+    assert float(d["paid_amount"]) == 0.0
+    assert float(d["outstanding_amount"]) == 180.0
+    assert d["payments"] == []
+
+    # 未付清筛选包含它
+    rows = client.get("/api/orders", params={"unpaid": "true"}).json()["rows"]
+    assert any(row["id"] == oid for row in rows)
+
+    # 记一笔收款 100 → 欠款 80
+    p1 = client.post(f"/api/orders/{oid}/payments", json={"amount": "100", "method": "对公转账"})
+    assert p1.status_code == 200, p1.text
+    b1 = p1.json()
+    assert float(b1["paid_amount"]) == 100.0
+    assert float(b1["outstanding_amount"]) == 80.0
+    assert len(b1["payments"]) == 1
+    assert float(b1["payments"][0]["amount"]) == 100.0
+    assert b1["payments"][0]["method"] == "对公转账"
+
+    # 再收 80 → 付清
+    b2 = client.post(f"/api/orders/{oid}/payments", json={"amount": "80"}).json()
+    assert float(b2["paid_amount"]) == 180.0
+    assert float(b2["outstanding_amount"]) == 0.0
+    assert len(b2["payments"]) == 2
+
+    # 付清后未付清筛选不再包含它
+    rows2 = client.get("/api/orders", params={"unpaid": "true"}).json()["rows"]
+    assert all(row["id"] != oid for row in rows2)
+
+    # 欠款汇总
+    summ = client.get("/api/analytics/outstanding").json()
+    assert float(summ["total_outstanding"]) == 0.0
+    assert summ["unpaid_orders"] == 0
+
+
 # ---------------------------------------------------------------------------
 # POST /api/orders/{id}/confirm
 # ---------------------------------------------------------------------------

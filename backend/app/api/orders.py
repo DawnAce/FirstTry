@@ -25,6 +25,7 @@ can render pagination metadata without an extra round-trip.
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -51,6 +52,7 @@ from app.schemas.order import (
     OrderOut,
     OrderUpdate,
     OrderVoidIn,
+    PaymentIn,
     PricingPreviewIn,
     PricingPreviewOut,
     RefundIn,
@@ -84,6 +86,7 @@ def list_orders(
     coverage_end: Optional[date] = None,
     order_date_start: Optional[date] = None,
     order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
@@ -108,6 +111,7 @@ def list_orders(
         coverage_end=coverage_end,
         order_date_start=order_date_start,
         order_date_end=order_date_end,
+        unpaid=unpaid,
         has_drift=has_drift,
         skip=skip,
         limit=limit,
@@ -340,6 +344,27 @@ def cancel_order(
     return _build_order_out(db, fresh)
 
 
+@router.post("/{order_id}/payments", response_model=OrderOut)
+def record_order_payment(
+    order_id: int,
+    payload: PaymentIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """记一笔收款（到账）：建收款流水 + 累加实付金额。"""
+    order = order_service.record_payment(
+        db,
+        order_id,
+        amount=payload.amount,
+        method=payload.method,
+        collected_at=payload.collected_at,
+        notes=payload.notes,
+        operator_id=user.id,
+    )
+    fresh = order_service.get_order_detail(db, order.id)
+    return _build_order_out(db, fresh)
+
+
 @router.put("/{order_id}/items", response_model=OrderOut)
 def update_items(
     order_id: int,
@@ -404,6 +429,7 @@ def _build_order_out(db: Session, order) -> OrderOut:
     from app.schemas.order import (
         FulfillmentAllocationOut,
         OrderItemOut,
+        PaymentOut,
         RefundOut,
     )
 
@@ -458,9 +484,19 @@ def _build_order_out(db: Session, order) -> OrderOut:
         status=order.status,
         commercial_status=order.commercial_status,
         refunded_amount=order.refunded_amount,
+        outstanding_amount=_outstanding(order),
         notes=order.notes,
         created_at=order.created_at,
         updated_at=order.updated_at,
         items=item_outs,
         refunds=[RefundOut.model_validate(r) for r in order.refunds],
+        payments=[PaymentOut.model_validate(p) for p in order.payments],
     )
+
+
+def _outstanding(order) -> Decimal:
+    """欠款 = max(0, 应收 − 实付)。"""
+    total = Decimal(str(order.total_amount or 0))
+    paid = Decimal(str(order.paid_amount or 0))
+    diff = total - paid
+    return diff if diff > 0 else Decimal("0")

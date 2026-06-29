@@ -145,6 +145,12 @@ class Order(Base):
         cascade="all, delete-orphan",
         order_by="Refund.id",
     )
+    payments = relationship(
+        "Payment",
+        back_populates="order",
+        cascade="all, delete-orphan",
+        order_by="Payment.id",
+    )
 
     __table_args__ = (
         Index("ix_orders_source_status_date", "entry_method", "status", "order_date"),

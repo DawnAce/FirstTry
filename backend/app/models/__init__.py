@@ -44,6 +44,7 @@ from app.models.fulfillment_target import (
 )
 from app.models.order_event import OrderEvent, OrderEventType
 from app.models.refund import Refund
+from app.models.payment import Payment
 from app.models.product import CoverageRule, Product
 from app.models.bs_issue import BsIssue
 
@@ -71,6 +72,7 @@ __all__ = [
     "FulfillmentTarget", "ShippingChannel", "TargetStatus",
     "OrderEvent", "OrderEventType",
     "Refund",
+    "Payment",
     # Product catalog (商品库)
     "Product", "CoverageRule",
     # 商学院月刊刊期日历

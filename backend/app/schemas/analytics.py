@@ -93,6 +93,15 @@ class BsCirculationRow(BaseModel):
     in_calendar: bool = True
 
 
+class OutstandingSummary(BaseModel):
+    """欠款汇总：只计 active 且非退款/取消单。欠款 = Σ max(0, 应收 − 实付)。"""
+
+    total_receivable: Decimal   # Σ 应收(total_amount)
+    total_paid: Decimal         # Σ 实付(paid_amount)
+    total_outstanding: Decimal  # Σ max(0, 应收 − 实付)
+    unpaid_orders: int          # 未付清订单数(实付 < 应收)
+
+
 class BsCirculationOut(BaseModel):
     """商学院按期发行量（单期 + 订阅）。只计 ``active`` 订单。
 

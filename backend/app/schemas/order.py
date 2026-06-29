@@ -247,6 +247,15 @@ class OrderCancelIn(BaseModel):
     reason: str = Field(min_length=1, max_length=255)
 
 
+class PaymentIn(BaseModel):
+    """Payload for POST /orders/{id}/payments — 记一笔收款（到账）。"""
+
+    amount: Decimal = Field(gt=0)
+    method: Optional[str] = Field(default=None, max_length=32)
+    collected_at: Optional[date] = None  # 省略则取记账当天
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
 class OrderItemUpdate(OrderItemIn):
     """Extension of OrderItemIn that optionally carries a DB id for matching.
 
@@ -382,6 +391,18 @@ class RefundOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PaymentOut(BaseModel):
+    id: int
+    amount: Decimal
+    method: Optional[str]
+    collected_at: date
+    notes: Optional[str]
+    operator_id: Optional[int]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class OrderOut(BaseModel):
     id: int
     order_code: Optional[str]
@@ -404,11 +425,14 @@ class OrderOut(BaseModel):
     status: OrderStatus
     commercial_status: Optional[OrderCommercialStatus] = None
     refunded_amount: Decimal = Decimal("0")
+    # 欠款 = max(0, 应收 total_amount − 实付 paid_amount)
+    outstanding_amount: Decimal = Decimal("0")
     notes: Optional[str]
     created_at: datetime
     updated_at: datetime
     items: List[OrderItemOut]
     refunds: List[RefundOut] = Field(default_factory=list)
+    payments: List[PaymentOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -431,6 +455,8 @@ class OrderListRow(BaseModel):
     campaign: Optional[str] = None
     total_quantity: int
     total_amount: Decimal
+    paid_amount: Decimal = Decimal("0")
+    outstanding_amount: Decimal = Decimal("0")
     coverage_start_date: Optional[date]
     coverage_end_date: Optional[date]
     status: OrderStatus

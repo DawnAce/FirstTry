@@ -46,6 +46,7 @@ from app.models import (
     OrderEventType,
     OrderItem,
     OrderStatus,
+    Payment,
     Refund,
     ShippingDetail,
 )
@@ -883,6 +884,59 @@ def cancel_order(
     return order
 
 
+def record_payment(
+    db: Session,
+    order_id: int,
+    *,
+    amount: Decimal,
+    method: Optional[str] = None,
+    collected_at: Optional[date] = None,
+    notes: Optional[str] = None,
+    operator_id: Optional[int] = None,
+) -> Order:
+    """记一笔收款（到账）：建收款流水行 + 累加 ``paid_amount`` + 记审计事件。
+
+    收款是商业事件，不动内部 ``OrderStatus``。允许超付应收（预付/定金/应收后调），
+    不硬拦；欠款按 max(0, 应收 − 实付) 展示。
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
+    if order.status == OrderStatus.void:
+        raise HTTPException(status_code=409, detail="已作废的订单无法收款")
+
+    amount = _as_money(amount)
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="收款金额必须大于 0")
+
+    db.add(
+        Payment(
+            order_id=order.id,
+            amount=amount,
+            method=method,
+            collected_at=collected_at or date.today(),
+            notes=notes,
+            operator_id=operator_id,
+        )
+    )
+    order.paid_amount = _as_money(order.paid_amount) + amount
+    log_event(
+        db,
+        order_id=order.id,
+        event_type=OrderEventType.payment_recorded,
+        payload={
+            "amount": str(amount),
+            "method": method,
+            "paid_amount_total": str(order.paid_amount),
+            "notes": notes,
+        },
+        operator_id=operator_id,
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 def update_order_items(
     db: Session,
     order_id: int,
@@ -999,6 +1053,7 @@ def get_order_detail(db: Session, order_id: int) -> Order:
             .selectinload(FulfillmentAllocation.targets),
             selectinload(Order.items).selectinload(OrderItem.targets),
             selectinload(Order.refunds),
+            selectinload(Order.payments),
         )
         .filter(Order.id == order_id)
         .first()
@@ -1054,6 +1109,12 @@ def _build_list_row(db: Session, order: Order) -> OrderListRow:
     items = list(order.items)
     total_quantity = sum((i.total_quantity or 0) for i in items)
 
+    paid = _as_money(order.paid_amount)
+    total = _as_money(order.total_amount)
+    outstanding = total - paid
+    if outstanding < 0:
+        outstanding = Decimal("0")
+
     starts = [i.coverage_start_date for i in items if i.coverage_start_date]
     ends = [i.coverage_end_date for i in items if i.coverage_end_date]
     coverage_start_d = min(starts) if starts else None
@@ -1091,6 +1152,8 @@ def _build_list_row(db: Session, order: Order) -> OrderListRow:
         campaign=order.campaign,
         total_quantity=total_quantity,
         total_amount=order.total_amount,
+        paid_amount=paid,
+        outstanding_amount=outstanding,
         coverage_start_date=coverage_start_d,
         coverage_end_date=coverage_end_d,
         status=order.status,
@@ -1114,6 +1177,7 @@ def list_orders(
     coverage_end: Optional[date] = None,
     order_date_start: Optional[date] = None,
     order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
     skip: int = 0,
     limit: int = 50,
@@ -1159,6 +1223,10 @@ def list_orders(
         q = q.filter(Order.order_date >= order_date_start)
     if order_date_end is not None:
         q = q.filter(Order.order_date <= order_date_end)
+    if unpaid is True:
+        q = q.filter(Order.paid_amount < Order.total_amount)
+    elif unpaid is False:
+        q = q.filter(Order.paid_amount >= Order.total_amount)
     if coverage_start is not None or coverage_end is not None:
         item_q = db.query(OrderItem.order_id).distinct()
         if coverage_start is not None:

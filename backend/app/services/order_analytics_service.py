@@ -26,7 +26,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.bs_issue import BsIssue
@@ -55,6 +55,7 @@ from app.schemas.analytics import (
     CampaignSummaryRow,
     IssueSummaryOut,
     IssueSummaryRow,
+    OutstandingSummary,
 )
 
 
@@ -194,6 +195,39 @@ def _issue_covers(issue: BsIssue, cov_start: date, cov_end: date) -> bool:
     last_day = _calendar.monthrange(issue.year, issue.month_end)[1]
     last = date(issue.year, issue.month_end, last_day)
     return first <= cov_end and last >= cov_start
+
+
+def summarize_outstanding(db: Session) -> OutstandingSummary:
+    """欠款汇总（应收/实付/欠款合计 + 未付清单数）。
+
+    只计 ``active`` 且非退款/取消单。欠款按**逐单** ``max(0, 应收 − 实付)`` 求和
+    （超付的单不抵销欠款的单），不是 Σ应收 − Σ实付。
+    """
+    outstanding_expr = case(
+        (
+            Order.total_amount > Order.paid_amount,
+            Order.total_amount - Order.paid_amount,
+        ),
+        else_=0,
+    )
+    unpaid_expr = case((Order.paid_amount < Order.total_amount, 1), else_=0)
+    total_recv, total_paid, total_out, unpaid = (
+        db.query(
+            func.sum(Order.total_amount),
+            func.sum(Order.paid_amount),
+            func.sum(outstanding_expr),
+            func.sum(unpaid_expr),
+        )
+        .filter(Order.status == OrderStatus.active)
+        .filter(_revenue_eligible())
+        .one()
+    )
+    return OutstandingSummary(
+        total_receivable=_money(total_recv),
+        total_paid=_money(total_paid),
+        total_outstanding=_money(total_out),
+        unpaid_orders=int(unpaid or 0),
+    )
 
 
 def summarize_bs_circulation(db: Session, year: Optional[int] = None) -> BsCirculationOut:
