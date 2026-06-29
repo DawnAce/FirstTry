@@ -256,6 +256,29 @@ class PaymentIn(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=500)
 
 
+class BulkConfirmIn(BaseModel):
+    """Payload for POST /orders/bulk-confirm."""
+
+    order_ids: List[int] = Field(min_length=1)
+
+
+class BulkVoidIn(BaseModel):
+    """Payload for POST /orders/bulk-void (one shared reason for all)."""
+
+    order_ids: List[int] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=255)
+
+
+class BulkOpFailure(BaseModel):
+    order_id: int
+    detail: str
+
+
+class BulkOpResult(BaseModel):
+    succeeded: List[int]
+    failed: List[BulkOpFailure]
+
+
 class OrderItemUpdate(OrderItemIn):
     """Extension of OrderItemIn that optionally carries a DB id for matching.
 

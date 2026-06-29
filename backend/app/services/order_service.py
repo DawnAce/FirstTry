@@ -937,6 +937,43 @@ def record_payment(
     return order
 
 
+def bulk_confirm_orders(
+    db: Session,
+    order_ids: List[int],
+    operator_id: Optional[int] = None,
+) -> dict:
+    """Confirm many orders. Each is committed independently; a per-order failure
+    (404 / 409 — e.g. already active) is collected, not aborting the batch."""
+    succeeded: List[int] = []
+    failed: List[dict] = []
+    for oid in order_ids:
+        try:
+            confirm_order(db, oid, operator_id=operator_id)
+            succeeded.append(oid)
+        except HTTPException as exc:
+            failed.append({"order_id": oid, "detail": str(exc.detail)})
+    return {"succeeded": succeeded, "failed": failed}
+
+
+def bulk_void_orders(
+    db: Session,
+    order_ids: List[int],
+    reason: str,
+    operator_id: Optional[int] = None,
+) -> dict:
+    """Void many orders (with one shared reason). Per-order failure collected,
+    batch continues; each void commits independently (orphans its shipping rows)."""
+    succeeded: List[int] = []
+    failed: List[dict] = []
+    for oid in order_ids:
+        try:
+            void_order(db, oid, reason=reason, operator_id=operator_id)
+            succeeded.append(oid)
+        except HTTPException as exc:
+            failed.append({"order_id": oid, "detail": str(exc.detail)})
+    return {"succeeded": succeeded, "failed": failed}
+
+
 def update_order_items(
     db: Session,
     order_id: int,
@@ -1179,6 +1216,9 @@ def list_orders(
     order_date_end: Optional[date] = None,
     unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: str = "desc",
     skip: int = 0,
     limit: int = 50,
 ) -> Tuple[List[OrderListRow], int]:
@@ -1227,6 +1267,14 @@ def list_orders(
         q = q.filter(Order.paid_amount < Order.total_amount)
     elif unpaid is False:
         q = q.filter(Order.paid_amount >= Order.total_amount)
+    if search:
+        like = f"%{search.strip()}%"
+        q = q.filter(
+            or_(
+                Order.order_code.ilike(like),
+                Order.external_order_no.ilike(like),
+            )
+        )
     if coverage_start is not None or coverage_end is not None:
         item_q = db.query(OrderItem.order_id).distinct()
         if coverage_start is not None:
@@ -1245,7 +1293,17 @@ def list_orders(
             )
         q = q.filter(Order.id.in_(item_q))
 
-    base = q.options(selectinload(Order.items)).order_by(Order.id.desc())
+    # 排序：仅限 DB 列（偏差/份数是 Python 端聚合算的，不进 SQL 排序）。默认 id 倒序。
+    sort_col = {
+        "order_date": Order.order_date,
+        "total_amount": Order.total_amount,
+        "outstanding": Order.total_amount - Order.paid_amount,
+    }.get(sort)
+    if sort_col is not None:
+        primary = sort_col.asc() if order == "asc" else sort_col.desc()
+        base = q.options(selectinload(Order.items)).order_by(primary, Order.id.desc())
+    else:
+        base = q.options(selectinload(Order.items)).order_by(Order.id.desc())
 
     if has_drift is None:
         # 不按偏差筛 → 直接在 SQL 层分页（每行的偏差仅用于展示，按本页逐单算）。

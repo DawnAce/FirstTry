@@ -29,6 +29,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -37,6 +38,9 @@ from app.models import OrderEntryMethod, OrderStatus, User
 from app.models.order_event import OrderEvent
 from app.schemas.order import (
     BatchSyncSummary,
+    BulkConfirmIn,
+    BulkOpResult,
+    BulkVoidIn,
     FulfillmentProgress,
     IssueGapReport,
     IssueReconciliation,
@@ -71,6 +75,7 @@ from app.services.order_shipping_sync_service import (
     preview_order_shipping_sync,
 )
 from app.services.order_pricing_service import build_pricing_preview
+from app.services.excel_service import export_orders_excel
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -88,6 +93,9 @@ def list_orders(
     order_date_end: Optional[date] = None,
     unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -113,10 +121,86 @@ def list_orders(
         order_date_end=order_date_end,
         unpaid=unpaid,
         has_drift=has_drift,
+        search=search,
+        sort=sort,
+        order=order,
         skip=skip,
         limit=limit,
     )
     return {"rows": rows, "total": total}
+
+
+@router.get("/export")
+def export_orders(
+    status: Optional[OrderStatus] = None,
+    entry_method: Optional[OrderEntryMethod] = None,
+    payer_name_like: Optional[str] = None,
+    campaign: Optional[str] = None,
+    source_platform: Optional[str] = None,
+    coverage_start: Optional[date] = None,
+    coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
+    has_drift: Optional[bool] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Export the filtered order list (no pagination) as an .xlsx. Same filters
+    as ``GET /api/orders``; capped at 50000 rows."""
+    rows, _ = order_service.list_orders(
+        db,
+        status=status,
+        entry_method=entry_method,
+        payer_name_like=payer_name_like,
+        campaign=campaign,
+        source_platform=source_platform,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        order_date_start=order_date_start,
+        order_date_end=order_date_end,
+        unpaid=unpaid,
+        has_drift=has_drift,
+        search=search,
+        sort=sort,
+        order=order,
+        skip=0,
+        limit=50000,
+    )
+    output = export_orders_excel(rows)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=orders.xlsx"},
+    )
+
+
+@router.post("/bulk-confirm", response_model=BulkOpResult)
+def bulk_confirm(
+    payload: BulkConfirmIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Batch confirm orders (draft → active). Per-order failure collected, not
+    aborting the batch."""
+    return order_service.bulk_confirm_orders(
+        db, payload.order_ids, operator_id=user.id
+    )
+
+
+@router.post("/bulk-void", response_model=BulkOpResult)
+def bulk_void(
+    payload: BulkVoidIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Batch void orders with one shared reason. Per-order failure collected."""
+    return order_service.bulk_void_orders(
+        db, payload.order_ids, reason=payload.reason, operator_id=user.id
+    )
 
 
 @router.post("/pricing-preview", response_model=PricingPreviewOut)

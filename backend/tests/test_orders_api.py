@@ -342,6 +342,56 @@ def test_payment_collection_outstanding_and_unpaid_filter(client):
     assert summ["unpaid_orders"] == 0
 
 
+def test_list_search_and_sort(client):
+    p1 = _make_create_payload()
+    p1["external_order_no"] = "EXT-AAA"
+    p1["total_amount"] = "100"
+    p2 = _make_create_payload()
+    p2["external_order_no"] = "EXT-BBB"
+    p2["total_amount"] = "300"
+    id1 = client.post("/api/orders", json=p1).json()["id"]
+    client.post("/api/orders", json=p2)
+
+    # 按来源单号搜索
+    rows = client.get("/api/orders", params={"search": "AAA"}).json()["rows"]
+    assert [r["id"] for r in rows] == [id1]
+
+    # 按金额排序
+    asc = client.get("/api/orders", params={"sort": "total_amount", "order": "asc"}).json()["rows"]
+    amounts = [float(r["total_amount"]) for r in asc]
+    assert amounts == sorted(amounts) and amounts[0] == 100.0
+    desc = client.get("/api/orders", params={"sort": "total_amount", "order": "desc"}).json()["rows"]
+    assert float(desc[0]["total_amount"]) == 300.0
+
+
+def test_bulk_confirm_and_void(client):
+    id1 = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+    id2 = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+
+    res = client.post("/api/orders/bulk-confirm", json={"order_ids": [id1, id2]}).json()
+    assert sorted(res["succeeded"]) == sorted([id1, id2])
+    assert res["failed"] == []
+
+    # 再次确认 → 都已激活 → 全部 failed（不中断）
+    res2 = client.post("/api/orders/bulk-confirm", json={"order_ids": [id1, id2]}).json()
+    assert res2["succeeded"] == []
+    assert len(res2["failed"]) == 2
+
+    vres = client.post(
+        "/api/orders/bulk-void", json={"order_ids": [id1, id2], "reason": "批量作废"}
+    ).json()
+    assert sorted(vres["succeeded"]) == sorted([id1, id2])
+    assert client.get(f"/api/orders/{id1}").json()["status"] == "void"
+
+
+def test_export_orders_xlsx(client):
+    client.post("/api/orders", json=_make_create_payload())
+    resp = client.get("/api/orders/export")
+    assert resp.status_code == 200, resp.text
+    assert "spreadsheet" in resp.headers["content-type"]
+    assert len(resp.content) > 0
+
+
 # ---------------------------------------------------------------------------
 # POST /api/orders/{id}/confirm
 # ---------------------------------------------------------------------------
