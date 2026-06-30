@@ -70,7 +70,6 @@ const menuItems: MenuProps['items'] = [
     key: '/customers',
     icon: <TeamOutlined />,
     label: '客户管理',
-    disabled: true,
   },
   {
     key: '/contracts',
@@ -164,7 +163,7 @@ export default function AppLayout() {
               selectedKeys={[getSelectedKey()]}
               defaultOpenKeys={getOpenKeys()}
               onClick={({ key }) => {
-                if (!key.startsWith('/dashboard') && !key.startsWith('/customers') && !key.startsWith('/contracts') && !key.startsWith('/finance')) {
+                if (!key.startsWith('/dashboard') && !key.startsWith('/contracts') && !key.startsWith('/finance')) {
                   navigate(key);
                 }
               }}
