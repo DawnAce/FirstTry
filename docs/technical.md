@@ -78,7 +78,7 @@ FirstTry/
 │   │   ├── api/                # API 客户端
 │   │   │   └── auth.ts         # 认证 API
 │   │   ├── components/         # 通用组件
-│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知铃铛、帮助、用户头像）+ 可折叠侧边栏（Logo、印数报数/印数管理/刊期表管理等菜单）
+│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知铃铛、帮助、用户头像）+ 可折叠侧边栏（Logo、印数管理/物流管理/刊期表管理/订单管理/商品管理/客户管理/合同管理/财务管理 等一级菜单；物流管理与订单管理为展开式子菜单）
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
 │   │   ├── pages/              # 页面组件
@@ -88,7 +88,9 @@ FirstTry/
 │   │   │   ├── Login.tsx       # 登录页面
 │   │   │   ├── ScheduleView.tsx              # 期刊表页面（/schedule）
 │   │   │   ├── ScheduleImport.tsx            # 导入期刊表页面（/schedule/import）
-│   │   │   ├── Recipients.tsx
+│   │   │   ├── Recipients.tsx     # 物流管理子菜单（/recipients「ZTO-MF」、/recipients?tab=recipients「收件人」两标签）
+│   │   │   ├── PostDelivery.tsx    # 邮局投递占位页（/post-delivery，侧边栏「物流管理 > 邮局投递」，功能待接入）
+│   │   │   ├── ProductCatalog.tsx  # 商品管理页（/products，侧边栏一级菜单「商品管理」）
 │   │   │   ├── ReportEditor.tsx
 │   │   │   ├── ShippingPreview.tsx
 │   │   │   └── Templates.tsx    # 报数模板页（/templates，侧边栏「印数管理 > 报数模板」）
@@ -493,7 +495,7 @@ FirstTry/
 - **「最新一期」自动判期号**：导入时 `coverage_rule=latest_issue` 的单期行，按"付款时间 + `publication_schedule` + 周五约 22 点翻期"算出 `issue_number`（中国经营报周一出刊；某期在其出刊周一前的周五 22:00 起售，订单期号 = 付款时间落入的起售窗口对应的期）。`app/services/latest_issue_resolver.py`（`FLIP_WEEKDAY/FLIP_HOUR/BORDERLINE_HOURS` 可配）。翻期点 ±4h 内的临界单加 warning 标黄待核（仍自动判、正常导入）；覆盖期仍留空（单期不走 term_from_month）。
 - `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。
 
-**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
+**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品管理，独立一级侧边栏菜单）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
 
 迁移（均已应用到生产）：
 - `b4d6f8a1c3e5`：补 `ordereventtype` 枚举遗漏的 `item_added/removed/modified`（修复 V1.2 在严格模式 MySQL 上的潜在崩溃）
