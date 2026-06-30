@@ -14,6 +14,7 @@ import {
   FileTextOutlined,
   TeamOutlined,
   DollarOutlined,
+  ShoppingOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -67,9 +68,13 @@ const menuItems: MenuProps['items'] = [
       { key: '/orders/new', label: '新建订单' },
       { key: '/orders/import', label: '电商导入' },
       { key: '/orders/dispatch', label: '按期排发' },
-      { key: '/products', label: '商品库' },
       { key: '/analytics', label: '活动订单统计' },
     ],
+  },
+  {
+    key: '/products',
+    icon: <ShoppingOutlined />,
+    label: '商品管理',
   },
   {
     key: '/customers',
@@ -125,7 +130,7 @@ export default function AppLayout() {
     if (path.startsWith('/schedule')) {
       return ['schedule-management'];
     }
-    if (path.startsWith('/orders') || path.startsWith('/products') || path.startsWith('/analytics')) {
+    if (path.startsWith('/orders') || path.startsWith('/analytics')) {
       return ['order-management'];
     }
     return [];
