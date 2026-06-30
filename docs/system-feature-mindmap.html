@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中国经营报 · 发行系统 — 功能思维导图</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#fff; --ink:#1e293b; --muted:#64748b; --line:#e2e8f0;
+    --chip:#f1f5f9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Microsoft YaHei","PingFang SC","Segoe UI",system-ui,sans-serif;
+       background:linear-gradient(160deg,#0f172a,#1e293b);color:var(--ink)}
+  header{padding:22px 28px 16px;color:#fff}
+  header h1{margin:0;font-size:22px;font-weight:800;letter-spacing:.5px}
+  header .sub{margin-top:4px;color:#94a3b8;font-size:13px}
+  .stats{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+  .stat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+        border-radius:10px;padding:8px 14px;color:#e2e8f0;font-size:13px}
+  .stat b{font-size:18px;color:#fff;margin-right:6px}
+  .toolbar{position:sticky;top:0;z-index:5;display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+           padding:12px 28px;background:rgba(15,23,42,.85);backdrop-filter:blur(6px);
+           border-bottom:1px solid rgba(255,255,255,.08)}
+  .toolbar input{flex:1;min-width:180px;max-width:340px;padding:8px 12px;border-radius:8px;
+        border:1px solid #334155;background:#0b1222;color:#e2e8f0;font-size:14px;outline:none}
+  .toolbar input::placeholder{color:#64748b}
+  .btn{padding:7px 13px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;
+       font-size:13px;cursor:pointer;transition:.15s}
+  .btn:hover{background:#334155;color:#fff}
+  .btn.active{background:#2563eb;border-color:#2563eb;color:#fff}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;padding:10px 28px;color:#94a3b8;font-size:12px}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
+  .canvas{margin:18px 22px 60px;background:var(--panel);border-radius:16px;
+          padding:22px 26px;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+  /* tree */
+  .node{position:relative}
+  .row{display:flex;align-items:flex-start;gap:8px;padding:3px 6px;border-radius:8px;cursor:default;
+       transition:background .12s}
+  .row.has-children{cursor:pointer}
+  .row:hover{background:#f8fafc}
+  .caret{flex:none;width:18px;height:22px;display:flex;align-items:center;justify-content:center;
+         color:#94a3b8;font-size:11px;transition:transform .15s}
+  .collapsed > .row > .caret{transform:rotate(-90deg)}
+  .caret.empty{visibility:hidden}
+  .label{font-size:14.5px;line-height:1.5;color:var(--ink)}
+  .children{margin-left:20px;padding-left:14px;border-left:2px solid var(--line)}
+  .collapsed > .children{display:none}
+  /* level/role styles */
+  .lv-root > .row > .label{font-size:18px;font-weight:800}
+  .lv-branch > .row{padding:6px 8px;margin-top:4px}
+  .lv-branch > .row > .label{font-size:16px;font-weight:800}
+  .lv-group > .row > .label{font-weight:700;color:#334155}
+  .lv-feature > .row > .label{font-weight:600}
+  .lv-cap > .row{cursor:default}
+  .lv-cap > .row > .label{font-size:13px;color:#475569}
+  .lv-cap > .row:hover{background:#f8fafc}
+  .bdot{width:11px;height:11px;border-radius:50%;flex:none;margin-top:6px}
+  .badge{display:inline-block;margin-left:8px;background:#16a34a;color:#fff;font-size:10px;
+         font-weight:700;border-radius:6px;padding:1px 7px;vertical-align:middle}
+  .route{display:inline-block;margin-left:8px;font-family:ui-monospace,Consolas,monospace;
+         font-size:11px;color:#2563eb;background:#eff6ff;border-radius:5px;padding:1px 6px}
+  .api{display:inline-block;margin-left:6px;font-size:11px;color:#94a3b8;cursor:help}
+  .note{margin-left:8px;font-size:11.5px;color:#94a3b8;font-style:italic}
+  mark{background:#fde68a;color:#92400e;border-radius:3px;padding:0 2px}
+  .hidden{display:none !important}
+  .count{font-size:11px;color:#94a3b8;font-weight:500;margin-left:6px}
+  footer{color:#64748b;font-size:12px;text-align:center;padding:0 0 28px}
+</style>
+</head>
+<body>
+<header>
+  <h1>中国经营报 · 发行系统 — 功能思维导图</h1>
+  <div class="sub">按子系统梳理的当前全量功能（点击节点展开/折叠，可搜索）。绿色「新」= 本轮新增的客户/合同/财务模块。</div>
+  <div class="stats" id="stats"></div>
+</header>
+<div class="toolbar">
+  <input id="search" placeholder="🔎 搜索功能 / 能力（如：退款、排发、PDF、冲红…）">
+  <button class="btn" id="expandAll">展开全部</button>
+  <button class="btn" id="collapseAll">折叠到模块</button>
+  <button class="btn" id="onlyNew">只看新增</button>
+</div>
+<div class="legend" id="legend"></div>
+<div class="canvas"><div id="tree"></div></div>
+<footer>由代码库自动盘点生成 · 节点对应真实页面/接口能力</footer>
+
+<script>
+/* ---- 数据：每个节点 n=名称 r=路由 e=[接口] d=备注 b=徽章 c=[子节点] color=分支色 ---- */
+const cap = a => a.map(n => ({n}));
+const DATA = {
+  n:"中国经营报 · 发行系统", c:[
+  { n:"平台 · 账户 · 仪表盘", color:"#64748b", c:[
+    { n:"用户登录", e:["POST /api/auth/login","GET /api/auth/me"], c:cap(["用户名密码登录","获取当前用户与角色","72 小时 JWT 令牌有效期","登录态自动存本地"]) },
+    { n:"角色权限", e:["GET /api/auth/me"], c:cap(["admin 管理员 / operator 操作员","admin 独占删除刊期等敏感权限","写操作普遍 require_admin","头像处展示角色标签"]) },
+    { n:"仪表盘", r:"/", e:["GET /api/dashboard"], c:cap(["本周印数统计与环比","最近报数时间","待确认报数期数与数量","近期印数列表 + 趋势图","一键创建当期报数 / 补录历史期数","报数流程步骤指引 + 快捷入口","待处理事项实时计数"]) },
+    { n:"顶部导航栏", c:cap(["菜单展开/收起","全局搜索框（期号/报刊/状态）","通知中心（预留）","帮助文档按钮","用户头像与退出登录"]) },
+  ]},
+  { n:"印数管理", color:"#6366f1", c:[
+    { n:"印数报数", r:"/report/:id", e:["GET/PUT /api/issues/{id}/report","GET/PUT …/report/temp-details"], c:cap(["多目的地分类录入（北京邮发/报零/广州/成都/国图贸/社用报/合订本）","按类别·子类别分组，自动算小计与总印数","实时自动保存（1.5 秒无操作即存）","变动项 / 固定项标记","临时加印单独管理（自留 vs 快递分配）","按部门拆分临时加印","计划版数 vs 实际版数编辑","发货目的地汇总","中通份数一致性实时预警","确认快照追溯"]) },
+    { n:"历史期数", r:"/history", e:["GET /api/issues","PATCH /api/issues/{id}"], c:cap(["期号搜索 + 日期范围筛选","状态筛选（草稿/已确认/已导出）","分页列表，快速进报数编辑","查看中通发货明细","一键导出当期报数+发货"]) },
+    { n:"报数模板", r:"/templates", e:["GET/POST/PUT/DELETE /api/templates"], c:cap(["按类别创建/编辑模板项 + 默认值","标记变动项（影响确认必填校验）","自定义排序权重","新期数自动从模板/前期初始化"]) },
+    { n:"报数确认", e:["POST /api/issues/{id}/report/confirm"], c:cap(["变动项完整性 + 非负校验","自动从前期复制中通发货明细","快照记录（报数/发货/差值/匹配）","中通份数不一致预警","确认后锁定编辑"]) },
+    { n:"报数作废（管理员）", e:["POST …/report/revoke","GET …/report/revisions"], c:cap(["管理员撤销已确认报数","记录作废原因/时间，恢复草稿","作废历史追溯 + 变更时间轴"]) },
+    { n:"报数导出", e:["GET …/export/report | shipping | all"], c:cap(["PDF/Excel 报数详情表","Excel 中通发货明细表","报数+发货打包 ZIP","导出快照记录"]) },
+    { n:"往期数据导入", r:"/history-import", e:["POST /api/history-import/preview | commit"], c:cap(["下载报数/中通发货导入模板","Excel 批量导入历史期数 + 发货明细","导入前预览校验（查重/格式）","手动补充临时加印明细","导入后自动同步中通明细+算差值"]) },
+  ]},
+  { n:"物流管理", color:"#0d9488", c:[
+    { n:"收件人管理", r:"/recipients", e:["GET/POST/PUT /api/recipients","PATCH …/status"], d:"地址省市自动解析", c:cap(["新增/编辑收件人（姓名/电话/地址/省市）","按类型（对公/读者/样报）与频率（周/半月/月）","搜索筛选","停发/恢复状态切换"]) },
+    { n:"收件人订阅管理", e:["GET/POST /api/recipients/{id}/subscriptions"], c:cap(["新订/续订登记（类型+起止）","订阅时长/数量","历史订阅查看","订阅期内自动开启发送"]) },
+    { n:"ZTO 发货明细管理", e:["GET/POST/PUT/DELETE /api/shipping-details","POST …/batch-update | batch-delete"], d:"来源：手动添加 / 订单生成 / 历史导入", c:cap(["按期号查看 ZTO 发货明细","多维筛选（渠道/子渠道/公司/频率/运输/状态）+ 姓名搜索","新增单条/批量明细","编辑地址/电话/份数/截止日期/备注","批量改状态 / 改截止日期 / 批量删除"]) },
+    { n:"发货标记与运单回写", e:["POST /api/shipping-details/{id}/ship | unship"], c:cap(["标记已发（记发货时间）","填运单号 + 实发份数（可异于计划）","撤销已发标记","按期批量标记已发"]) },
+    { n:"发货明细导出", e:["GET /api/issues/{id}/export/shipping"], c:cap(["导出指定期号 ZTO 明细到 Excel","文件名自动带期号+出版日期"]) },
+    { n:"发货明细版本历史", e:["GET /api/operation-logs"], c:cap(["单条明细完整操作日志","字段级变更（字段/原值/新值）","记录操作人与时间"]) },
+    { n:"地址规范化", e:["POST /api/shipping-details/normalize-addresses"], c:cap(["批量解析省市（cpca 中国地址解析）"]) },
+    { n:"发货明细期号复制", e:["POST /api/shipping-details/copy-from-previous"], c:cap(["从上一期复制（排除订单生成行）","自动锁定防重复复制"]) },
+    { n:"报数与发货对账", e:["GET /api/issues/{id}/report"], c:cap(["报数合计 vs 发货合计一致性检查","确认时快照（当时报数/发货/差值）","确认后明细漂移提醒"]) },
+    { n:"清空本期发货明细（管理员）", e:["DELETE /api/shipping-details/by-issue/{n}"], c:cap(["删某期全部 ZTO 明细，保留报数","高危操作带二次确认 + 日志"]) },
+  ]},
+  { n:"刊期表管理", color:"#d97706", c:[
+    { n:"年度刊期表查看", r:"/schedule", e:["GET /api/schedule","GET /api/schedule/years"], c:cap(["按年份切换年度出版安排","按月份分组展示","按出版日期/期号/状态多维筛选","计划版数 vs 实际版数高亮","统计发行期数/休刊次数/期号范围"]) },
+    { n:"刊期 PDF 导入与预览", r:"/schedule/import", e:["POST …/uploads/preview","POST …/uploads/{id}/commit"], c:cap(["拖拽/点击上传年度刊期 PDF","自动解析年份/出版日期/期号","从备注识别对开版数（如「对开32版」）","预览表格 + 完整校验（年份/唯一/连号/休刊不填期号）","手动编辑/增删预览行后重新校验","仅校验通过才可保存","按年份整体替换（不影响其他年份）"]) },
+    { n:"上传记录管理", e:["GET/DELETE /api/schedule/uploads"], c:cap(["历史上传记录（文件名/状态/上传人/时间）","按状态分类（待确认/已保存/失败）","删除待确认记录"]) },
+    { n:"商学院月刊刊历", d:"轻量「月→期」日历，独立于周报数字期号", c:cap(["无数字期号月刊（标签如 2026-01 / 2026-02~03 合刊）","每期映射到自然月份区间","与订单行 issue_label 对齐","支持覆盖期展开（某期发行量=单期销量+覆盖订阅）"]) },
+  ]},
+  { n:"订单管理", color:"#2563eb", c:[
+    { n:"核心（列表 / 录单 / 详情 / 收退款 / 履约）", color:"#2563eb", c:[
+      { n:"订单列表", r:"/orders", e:["GET /api/orders","GET /api/orders/export"], c:cap(["分页列表（每页 20）","多维搜索筛选（编码/来源单号/付款方/平台/活动/偏差/付款状态）","按下单日/覆盖期范围过滤","按日期/金额/欠款排序","管理员导出 XLSX（含全部筛选，上限 5 万行）","多选批量确认生效 / 批量作废（带失败收集）"]) },
+      { n:"新建 / 编辑订单", r:"/orders/new", e:["POST/PUT /api/orders","PUT /api/orders/{id}/items"], c:cap(["基本信息（下单日/平台/店铺/外部单号/付款方/支付方式/金额）","发票字段（抬头/税号/邮箱/开票标志）","多条明细（订阅/单期/赠阅/补寄/续订/换订）","履约动态定价预览（期限+投递+起投月+份数）","履约目标（收件人/电话/地址/份数），份数之和=明细总份数","保存草稿 / 确认生效（自动生成编码、算预期期数）","生效单受限编辑 + 改派自动建新履约版本"]) },
+      { n:"订单详情", r:"/orders/:id", e:["GET /api/orders/{id}","GET …/events","GET …/fulfillment-progress"], c:cap(["总览 + 详细信息卡（来源/活动/付款/发票/备注）","收款台账 + 退款台账展示","订单明细 Tab（覆盖期/期限/投递/单价/小计）","履约进度面板（预估/已同步/已发/缺口/休刊跳过）","履约目标表（收件人/状态：有效/暂停/已替换）","分配方案版本 Tab（版本历史）","关联快递明细 Tab（按期同步预览→确认）","事件流 Tab（审计日志 + JSON 详情）"]) },
+      { n:"状态生命周期", e:["POST /api/orders/{id}/confirm | void","POST /api/orders/bulk-confirm"], c:cap(["草稿 → 待确认/生效 → 作废","确认生效：生成编码+算预期期数+记事件","作废（管理员，需理由）保留历史","批量确认/作废（失败单独收集）"]) },
+      { n:"退款管理（管理员）", e:["POST /api/orders/{id}/refund"], c:cap(["单笔退款（全额/部分），显示已付/已退/可退","退款范围：纯退钱 / 退指定明细 / 从某期起停发","一表覆盖三种部分退款场景","商业状态自动推导（部分退款/已退款）","退款历史完整保留对账"]) },
+      { n:"收款流水", e:["POST /api/orders/{id}/payments"], c:cap(["逐笔记收款（金额/日期/方式/备注）","分期收款汇总为 paid_amount","实时显示应收/已收/欠款","欠款=0 自动推导为已付款"]) },
+      { n:"订单取消（管理员）", e:["POST /api/orders/{id}/cancel"], c:cap(["取消生效单：自动记全额退款（未退部分）","停止所有未发快递明细","商业状态推导为已取消"]) },
+      { n:"履约目标分配与版本", e:["PUT /api/orders/{id}/items"], c:cap(["改派收件人自动建新 allocation 版本","版本号递增（生效起/止期/变更原因/操作者）","快递同步按期取最匹配版本","支持期中目标替换（暂停/已替换）"]) },
+      { n:"订单事件审计", e:["GET /api/orders/{id}/events"], c:cap(["全量操作日志（创建/导入/确认/作废/同步/冲突…）","每条记类型/时间/操作者/JSON 变更","时间倒序 + 展开看 diff","用于追溯与合规审计"]) },
+      { n:"商业状态推导", c:cap(["五态：待付款/已付款/已发货/已退款/部分退款/已取消","基于支付+退款+快递同步+取消自动联动","列表与详情均展示"]) },
+      { n:"期数同步与偏差检测", e:["GET …/shipping-sync/preview","POST …/shipping-sync/apply | apply-all-issues"], c:cap(["列表展示 已同步/预估总期数","偏差标记 + 颜色（绿齐发/橙多发/红缺发）","按期逐期同步预览→确认","一键同步全期，冲突期自动跳过","手工改过的行提示冲突、不覆盖"]) },
+    ]},
+    { n:"导入 · 排发 · 统计", color:"#3b82f6", c:[
+      { n:"电商导入 + 平台自动识别", r:"/orders/import", e:["POST /api/order-import/preview | commit"], c:cap(["CBJ 小程序 / 淘宝 Excel 自动识别","单次 N 张订单分决策（导入/跳过/重复/待确认）","单张多刊物多类型组合识别","收件人登记（淘宝脱敏需手工补登）","平台订单状态自动映射，违规态过滤"]) },
+      { n:"批次/活动标签 + 赠品", e:["POST /api/order-import/commit"], c:cap(["活动标签 campaign（如 2026-618）写入每单","赠品：延长订期 + 指定赠刊及文案","近期模式（安排投递）vs 历史模式（只补记录）","邮局/中通分别设起投月 + 截止日判断"]) },
+      { n:"商品库映射与快速新增", r:"/products", e:["GET/POST/PUT/DELETE /api/products"], c:cap(["编码/名称/别名维护（别名做导入匹配源）","刊物/履约/投递/期限/覆盖期算法编目","套餐：多刊合售按成分配价","预览待确认商品一键入库后自动重识别","启用/停用/删除（删除安全，不影响历史快照）"]) },
+      { n:"收件人脱敏补登 + 订单调整", r:"/orders/:id", e:["PUT /api/orders/{id}"], c:cap(["淘宝单脱敏地址留空，操作员后补","订单行起止/期号/投递方式调整","补充历史单或满足特殊需求"]) },
+      { n:"按期批量排发 + 漏期报表", r:"/orders/dispatch", e:["GET …/issues/{n}/gap-report","POST …/issues/{n}/apply-all"], c:cap(["某期漏期报表（应排未排/缺收件人/缺覆盖期/已退款）","一键排发本期（只活跃单、冲突单只报告不覆盖）","订单集合=覆盖该期纸刊明细","单订单覆盖期内全期一次排齐"]) },
+      { n:"应发 vs 实发对账", e:["GET …/issues/{n}/reconciliation","POST …/issues/{n}/ship-all"], c:cap(["对账面板：应发 vs 已发 + 缺口（红警示）","未发清单：逐行或一键标记已发","计划份数映射实发份数","期号候选/已同步/需更新/冲突/跳过统计"]) },
+      { n:"活动订单统计", r:"/analytics", e:["GET /api/analytics/campaigns | issues | outstanding"], c:cap(["按活动：订单数/原价/实收/折扣（可按时间过滤）","按期：商学院单期销量/销售额/行数","欠款汇总：应收/实付/欠款/未付清单数","欠款逐单 max(0, 应收−实付)"]) },
+      { n:"商学院发行量月报", e:["GET /api/analytics/bs-circulation"], c:cap(["按期发行量=单期销量+覆盖订阅（合刊只计一次）","订阅按刊历展开成命中期数","年份过滤（2024/2025/2026/全部）","缺覆盖期订阅单独提示"]) },
+      { n:"导入预览决策与模式", e:["POST /api/order-import/preview"], c:cap(["预览表（导入✅/跳过⏭/重复♻/待确认⚠）","识别明细（刊物/履约/投递/期号/单价/覆盖日期）","待确认商品汇总，逐个入库后整批重识别","仅管理员可确认导入，操作员可预览调整","近期 / 历史归档两种导入模式 + 起投参数"]) },
+    ]},
+  ]},
+  { n:"客户管理", color:"#16a34a", b:"新", c:[
+    { n:"客户管理（= 收报人聚合）", r:"/customers", e:["GET /api/customers","GET /api/customers/detail"], d:"客户=收报人，按 姓名+电话 聚合", c:cap(["按收报人姓名+电话聚合订单履约目标","展示在订份数/涉及刊物/订单数/最近下单","按姓名/电话/地址模糊搜索","抽屉看该收报人全部在订明细","多地址标记 + 地址数统计"]) },
+  ]},
+  { n:"合同管理", color:"#9333ea", b:"新", c:[
+    { n:"合作渠道管理", r:"/contracts · 合作渠道", e:["GET/POST/PUT/DELETE /api/partners"], c:cap(["登记上游物流/发行/零售渠道（中通/北京发行局…）","按类型分类（物流/发行/零售/其他）","记录联系人/电话/结算账户","启用/停用 + 搜索筛选","管理员增删改，普通用户查看"]) },
+    { n:"合同档案管理", r:"/contracts · 合同", e:["GET/POST/PUT/DELETE /api/contracts","POST/GET/DELETE …/{id}/attachment"], c:cap(["按年度归档渠道合同（标题/编号/签署年度/有效期/金额/状态）","状态流转（生效/到期/已归档/作废）","快到期预警（30 天窗口）","上传/下载/删除扫描件（PDF/JPG/PNG，≤20MB）","按渠道/状态/年度筛选 + 标题/合同号搜索"]) },
+  ]},
+  { n:"财务管理", color:"#e11d48", b:"新", c:[
+    { n:"订单发票工作台", r:"/finance · 订单发票", e:["GET /api/invoices/orders","POST/PUT/DELETE /api/invoices"], d:"应收/欠款汇总见「活动订单统计」", c:cap(["以订单为中心追踪（待开票/已开票/需冲红）","展示订单号/付款方/应收/已退款/抬头/税号","登记正票与红冲（票号/金额/开票日/备注）","需冲红按金额口径（已冲红累计 < 退款累计）","已作废但未冲红正票保留为合规待办","待开票/需冲红数量汇总 + 搜索筛选"]) },
+    { n:"渠道结算与进项发票", r:"/finance · 渠道结算", e:["GET/POST/PUT/DELETE /api/settlements","POST/GET/DELETE …/{id}/attachment"], c:cap(["登记对账打款（应结/已打款/打款日）","打款时效（按时/逾期）","进项发票（是否已开/票号）","结算周期自定义（如 2026-Q1 / 2026-05）","状态流转（待结算/已打款/已开票/已归档）","上传/下载/删除结算单或进项发票（≤20MB）","按渠道/状态筛选 + 周期/票号搜索，可关联合同"]) },
+  ]},
+]};
+
+/* ---- 渲染 ---- */
+const tree = document.getElementById('tree');
+let nFeat=0, nCap=0, nMod=0;
+function build(node, depth, color){
+  const lv = depth===0?'root':depth===1?'branch':(node.c&&node.c.length&&depth===2&&node.color?'group':(node.c&&node.c.length?'feature':'cap'));
+  const div = document.createElement('div');
+  div.className = 'node lv-'+lv;
+  const hasKids = node.c && node.c.length;
+  if(depth===1) nMod++;
+  if(lv==='feature') nFeat++;
+  if(lv==='cap') nCap++;
+  const branchColor = node.color || color;
+
+  const row = document.createElement('div');
+  row.className = 'row'+(hasKids?' has-children':'');
+  let inner = `<span class="caret${hasKids?'':' empty'}">▶</span>`;
+  if(depth>=1) inner += `<span class="bdot" style="background:${branchColor}"></span>`;
+  inner += `<span class="label">${esc(node.n)}`;
+  if(node.b) inner += `<span class="badge">${node.b}</span>`;
+  if(node.r) inner += `<span class="route">${esc(node.r)}</span>`;
+  if(node.e && node.e.length) inner += `<span class="api" title="${esc(node.e.join('\n'))}">· ${node.e.length} 接口</span>`;
+  if(node.d) inner += `<span class="note">${esc(node.d)}</span>`;
+  if(hasKids && lv!=='cap') inner += `<span class="count">(${count(node)})</span>`;
+  inner += `</span>`;
+  row.innerHTML = inner;
+  div.appendChild(row);
+
+  if(hasKids){
+    const kids = document.createElement('div');
+    kids.className = 'children';
+    node.c.forEach(ch => kids.appendChild(build(ch, depth+1, branchColor)));
+    div.appendChild(kids);
+    row.addEventListener('click', e=>{ e.stopPropagation(); div.classList.toggle('collapsed'); });
+  }
+  return div;
+}
+function count(node){ // 统计叶子能力数
+  if(!node.c) return 0;
+  let s=0; node.c.forEach(c=> s += (c.c&&c.c.length)?count(c):1); return s;
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+tree.appendChild(build(DATA,0,'#334155'));
+
+/* 默认：模块以下折叠（展开到 branch + group） */
+function setCollapsedBelow(level){
+  document.querySelectorAll('.node').forEach(n=>{
+    const isFeature = n.classList.contains('lv-feature');
+    const isGroup = n.classList.contains('lv-group');
+    if(isFeature) n.classList.add('collapsed');
+    else n.classList.remove('collapsed');
+  });
+}
+setCollapsedBelow();
+
+/* 统计卡 */
+document.getElementById('stats').innerHTML =
+  `<div class="stat"><b>${nMod}</b>大模块</div>`+
+  `<div class="stat"><b>${nFeat}</b>项功能</div>`+
+  `<div class="stat"><b>${nCap}</b>能力点</div>`+
+  `<div class="stat" style="border-color:#16a34a55"><b style="color:#4ade80">3</b>新增模块（客户/合同/财务）</div>`;
+
+/* 图例 */
+const branches = DATA.c.map(b=>({n:b.n,c:b.color}));
+document.getElementById('legend').innerHTML = branches.map(b=>
+  `<span><i class="dot" style="background:${b.c}"></i>${esc(b.n)}</span>`).join('');
+
+/* 工具栏 */
+document.getElementById('expandAll').onclick = ()=> document.querySelectorAll('.node').forEach(n=>n.classList.remove('collapsed'));
+document.getElementById('collapseAll').onclick = ()=> setCollapsedBelow();
+let onlyNew=false;
+document.getElementById('onlyNew').onclick = function(){
+  onlyNew=!onlyNew; this.classList.toggle('active',onlyNew);
+  document.querySelectorAll('#tree > .node > .children > .node').forEach(branch=>{
+    const isNew = branch.querySelector(':scope > .row .badge');
+    branch.classList.toggle('hidden', onlyNew && !isNew);
+  });
+};
+
+/* 搜索：高亮 + 自动展开命中路径，隐藏无关分支 */
+const search = document.getElementById('search');
+search.addEventListener('input', ()=>{
+  const q = search.value.trim().toLowerCase();
+  document.querySelectorAll('mark').forEach(m=> m.replaceWith(m.textContent));
+  if(!q){ document.querySelectorAll('.node').forEach(n=>n.classList.remove('hidden')); setCollapsedBelow(); return; }
+  function walk(node){
+    const label = node.querySelector(':scope > .row > .label');
+    const own = label ? label.textContent.toLowerCase().includes(q) : false;
+    let childMatch=false;
+    node.querySelectorAll(':scope > .children > .node').forEach(ch=>{ if(walk(ch)) childMatch=true; });
+    const match = own || childMatch;
+    node.classList.toggle('hidden', !match);
+    if(match){ node.classList.remove('collapsed'); if(own && label) highlight(label,q); }
+    return match;
+  }
+  document.querySelectorAll('#tree > .node').forEach(walk);
+});
+function highlight(label,q){
+  const t=label.childNodes[0]; // 仅处理纯文本首节点
+  label.querySelectorAll('*').forEach(()=>{});
+  const text = label.firstChild;
+  if(text && text.nodeType===3){
+    const i = text.textContent.toLowerCase().indexOf(q);
+    if(i>=0){
+      const span=document.createElement('span');
+      const before=text.textContent.slice(0,i), hit=text.textContent.slice(i,i+q.length), after=text.textContent.slice(i+q.length);
+      span.appendChild(document.createTextNode(before));
+      const m=document.createElement('mark'); m.textContent=hit; span.appendChild(m);
+      span.appendChild(document.createTextNode(after));
+      text.replaceWith(span);
+    }
+  }
+}
+</script>
+</body>
+</html>
