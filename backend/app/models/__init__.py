@@ -49,6 +49,8 @@ from app.models.product import CoverageRule, Product
 from app.models.bs_issue import BsIssue
 from app.models.partner import Partner, PartnerType
 from app.models.contract import Contract, ContractStatus
+from app.models.invoice import Invoice, InvoiceType
+from app.models.channel_settlement import ChannelSettlement, SettlementStatus
 
 __all__ = [
     "PublicationSchedule",
@@ -82,4 +84,7 @@ __all__ = [
     # 合同管理（合作渠道 + 渠道合同）
     "Partner", "PartnerType",
     "Contract", "ContractStatus",
+    # 财务管理（订单发票 + 渠道结算）
+    "Invoice", "InvoiceType",
+    "ChannelSettlement", "SettlementStatus",
 ]

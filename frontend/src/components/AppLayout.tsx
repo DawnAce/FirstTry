@@ -80,7 +80,6 @@ const menuItems: MenuProps['items'] = [
     key: '/finance',
     icon: <DollarOutlined />,
     label: '财务管理',
-    disabled: true,
   },
 ];
 
@@ -162,7 +161,7 @@ export default function AppLayout() {
               selectedKeys={[getSelectedKey()]}
               defaultOpenKeys={getOpenKeys()}
               onClick={({ key }) => {
-                if (!key.startsWith('/dashboard') && !key.startsWith('/finance')) {
+                if (!key.startsWith('/dashboard')) {
                   navigate(key);
                 }
               }}

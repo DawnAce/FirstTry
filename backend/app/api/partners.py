@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import Contract, Partner, User
+from app.models import ChannelSettlement, Contract, Partner, User
 from app.schemas.contract import PartnerCreate, PartnerOut, PartnerUpdate
 
 router = APIRouter(prefix="/api/partners", tags=["partners"])
@@ -79,17 +79,27 @@ def delete_partner(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    """删除合作渠道。若仍有合同引用则拒绝（先处理合同 / 或把渠道停用）。"""
+    """删除合作渠道。若仍被合同或渠道结算引用则拒绝（先处理引用 / 或把渠道停用）。"""
     partner = db.query(Partner).filter(Partner.id == partner_id).first()
     if partner is None:
         raise HTTPException(status_code=404, detail=f"合作渠道 {partner_id} 不存在")
-    contract_count = (
-        db.query(Contract).filter(Contract.partner_id == partner_id).count()
+    # partners 是上游锚点：合同(contracts) 与 渠道结算(channel_settlements) 都硬引用它，
+    # 任一存在都拒删，避免生产 MySQL 触发外键 500 / SQLite 留孤儿。
+    contract_count = db.query(Contract).filter(Contract.partner_id == partner_id).count()
+    settlement_count = (
+        db.query(ChannelSettlement)
+        .filter(ChannelSettlement.partner_id == partner_id)
+        .count()
     )
-    if contract_count > 0:
+    if contract_count or settlement_count:
+        parts = []
+        if contract_count:
+            parts.append(f"{contract_count} 份合同")
+        if settlement_count:
+            parts.append(f"{settlement_count} 条结算记录")
         raise HTTPException(
             status_code=409,
-            detail=f"该渠道下还有 {contract_count} 份合同，不能删除（可改为「停用」）",
+            detail=f"该渠道下还有 {' / '.join(parts)}，不能删除（可改为「停用」）",
         )
     db.delete(partner)
     db.commit()

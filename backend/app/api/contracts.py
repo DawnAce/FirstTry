@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import Contract, ContractStatus, Partner, User
+from app.models import ChannelSettlement, Contract, ContractStatus, Partner, User
 from app.schemas.contract import ContractCreate, ContractOut, ContractUpdate
 from app.services import attachment_service
 
@@ -150,6 +150,18 @@ def delete_contract(
     _admin: User = Depends(require_admin),
 ):
     contract = _get_or_404(db, contract_id)
+    # 渠道结算可经 contract_id 引用本合同（可空外键，无 ON DELETE）——有引用则拒删，
+    # 避免生产 MySQL 外键 500 / SQLite 留悬空引用。
+    settlement_count = (
+        db.query(ChannelSettlement)
+        .filter(ChannelSettlement.contract_id == contract_id)
+        .count()
+    )
+    if settlement_count:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该合同被 {settlement_count} 条结算记录引用，请先解除关联（或将合同状态改为「作废」）",
+        )
     stored_path = contract.attachment_path
     db.delete(contract)
     db.commit()
