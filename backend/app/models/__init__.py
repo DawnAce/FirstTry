@@ -47,6 +47,8 @@ from app.models.refund import Refund
 from app.models.payment import Payment
 from app.models.product import CoverageRule, Product
 from app.models.bs_issue import BsIssue
+from app.models.partner import Partner, PartnerType
+from app.models.contract import Contract, ContractStatus
 
 __all__ = [
     "PublicationSchedule",
@@ -77,4 +79,7 @@ __all__ = [
     "Product", "CoverageRule",
     # 商学院月刊刊期日历
     "BsIssue",
+    # 合同管理（合作渠道 + 渠道合同）
+    "Partner", "PartnerType",
+    "Contract", "ContractStatus",
 ]

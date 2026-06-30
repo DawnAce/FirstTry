@@ -75,7 +75,6 @@ const menuItems: MenuProps['items'] = [
     key: '/contracts',
     icon: <FileTextOutlined />,
     label: '合同管理',
-    disabled: true,
   },
   {
     key: '/finance',
@@ -163,7 +162,7 @@ export default function AppLayout() {
               selectedKeys={[getSelectedKey()]}
               defaultOpenKeys={getOpenKeys()}
               onClick={({ key }) => {
-                if (!key.startsWith('/dashboard') && !key.startsWith('/contracts') && !key.startsWith('/finance')) {
+                if (!key.startsWith('/dashboard') && !key.startsWith('/finance')) {
                   navigate(key);
                 }
               }}

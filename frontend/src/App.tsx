@@ -17,6 +17,7 @@ import OrderImport from './pages/OrderImport';
 import IssueDispatch from './pages/IssueDispatch';
 import Analytics from './pages/Analytics';
 import CustomerList from './pages/CustomerList';
+import ContractManagement from './pages/ContractManagement';
 import Login from './pages/Login';
 import type { ReactNode } from 'react';
 
@@ -57,6 +58,7 @@ function App() {
             <Route path="/products" element={<ProductCatalog />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/customers" element={<CustomerList />} />
+            <Route path="/contracts" element={<ContractManagement />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
