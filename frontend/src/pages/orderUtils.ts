@@ -2,6 +2,7 @@ import type {
   BillingType,
   DeliveryMethod,
   FulfillmentType,
+  OrderCommercialStatus,
   OrderEntryMethod,
   OrderEventType,
   OrderItemStatus,
@@ -66,6 +67,38 @@ const STATUS_BADGE_COLORS: Record<OrderStatus, BadgeStatus> = {
 
 export function statusBadgeColor(value: OrderStatus): BadgeStatus {
   return STATUS_BADGE_COLORS[value] ?? 'default';
+}
+
+const COMMERCIAL_STATUS_LABELS: Record<OrderCommercialStatus, string> = {
+  pending_payment: '待付款',
+  paid: '已付款',
+  shipped: '已发货',
+  refunded: '已退款',
+  partial_refund: '部分退款',
+  cancelled: '已取消',
+};
+
+export function commercialStatusLabel(
+  value: OrderCommercialStatus | null | undefined,
+): string {
+  if (!value) return '-';
+  return COMMERCIAL_STATUS_LABELS[value] ?? String(value);
+}
+
+const COMMERCIAL_STATUS_COLORS: Record<OrderCommercialStatus, string> = {
+  pending_payment: 'orange',
+  paid: 'blue',
+  shipped: 'green',
+  refunded: 'red',
+  partial_refund: 'volcano',
+  cancelled: 'default',
+};
+
+export function commercialStatusColor(
+  value: OrderCommercialStatus | null | undefined,
+): string {
+  if (!value) return 'default';
+  return COMMERCIAL_STATUS_COLORS[value] ?? 'default';
 }
 
 const FULFILLMENT_TYPE_LABELS: Record<FulfillmentType, string> = {
@@ -222,4 +255,23 @@ export function canConfirmOrder(status: OrderStatus): boolean {
 
 export function canVoidOrder(status: OrderStatus): boolean {
   return status !== 'void';
+}
+
+// 退款 / 取消是「生效订单」上的商业操作；已作废订单不可退；已全额退款 / 已取消不再可退/可取消。
+export function canRefundOrder(
+  status: OrderStatus,
+  commercialStatus: OrderCommercialStatus | null,
+): boolean {
+  return (
+    status === 'active' &&
+    commercialStatus !== 'refunded' &&
+    commercialStatus !== 'cancelled'
+  );
+}
+
+export function canCancelOrder(
+  status: OrderStatus,
+  commercialStatus: OrderCommercialStatus | null,
+): boolean {
+  return status === 'active' && commercialStatus !== 'cancelled';
 }

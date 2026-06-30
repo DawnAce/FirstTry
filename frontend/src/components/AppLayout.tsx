@@ -61,6 +61,7 @@ const menuItems: MenuProps['items'] = [
       { key: '/orders', label: '订单列表' },
       { key: '/orders/new', label: '新建订单' },
       { key: '/orders/import', label: '电商导入' },
+      { key: '/orders/dispatch', label: '按期排发' },
       { key: '/products', label: '商品库' },
       { key: '/analytics', label: '活动订单统计' },
     ],
@@ -69,19 +70,16 @@ const menuItems: MenuProps['items'] = [
     key: '/customers',
     icon: <TeamOutlined />,
     label: '客户管理',
-    disabled: true,
   },
   {
     key: '/contracts',
     icon: <FileTextOutlined />,
     label: '合同管理',
-    disabled: true,
   },
   {
     key: '/finance',
     icon: <DollarOutlined />,
     label: '财务管理',
-    disabled: true,
   },
 ];
 
@@ -101,6 +99,7 @@ export default function AppLayout() {
     if (path.startsWith('/templates')) return '/templates';
     if (path === '/orders/new') return '/orders/new';
     if (path === '/orders/import') return '/orders/import';
+    if (path === '/orders/dispatch') return '/orders/dispatch';
     if (path.startsWith('/products')) return '/products';
     if (path.startsWith('/analytics')) return '/analytics';
     if (path.startsWith('/orders')) return '/orders';
@@ -162,7 +161,7 @@ export default function AppLayout() {
               selectedKeys={[getSelectedKey()]}
               defaultOpenKeys={getOpenKeys()}
               onClick={({ key }) => {
-                if (!key.startsWith('/dashboard') && !key.startsWith('/customers') && !key.startsWith('/contracts') && !key.startsWith('/finance')) {
+                if (!key.startsWith('/dashboard')) {
                   navigate(key);
                 }
               }}

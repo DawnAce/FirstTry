@@ -22,7 +22,12 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.fulfillment_target import ShippingChannel, TargetStatus
-from app.models.order import OrderEntryMethod, OrderPaymentMethod, OrderStatus
+from app.models.order import (
+    OrderCommercialStatus,
+    OrderEntryMethod,
+    OrderPaymentMethod,
+    OrderStatus,
+)
 from app.models.order_event import OrderEventType
 from app.models.order_item import (
     BillingType,
@@ -215,6 +220,65 @@ class OrderVoidIn(BaseModel):
     reason: str = Field(min_length=1, max_length=255)
 
 
+class RefundIn(BaseModel):
+    """Payload for POST /orders/{id}/refund — one refund line (full or partial).
+
+    The two optional scope knobs cover all three partial-refund shapes:
+    * both NULL                       → money-only, delivery unchanged
+    * ``order_item_id`` set           → that item is the one refunded
+    * ``stop_from_issue`` set         → stop delivery from that issue onward
+    """
+
+    amount: Decimal = Field(gt=0)
+    reason: Optional[str] = Field(default=None, max_length=500)
+    order_item_id: Optional[int] = None
+    stop_from_issue: Optional[int] = Field(default=None, ge=1)
+    # 退款业务日期；省略则服务端取记账当天。
+    refunded_at: Optional[date] = None
+
+
+class OrderCancelIn(BaseModel):
+    """Payload for POST /orders/{id}/cancel.
+
+    Cancelling also records a full refund of the outstanding paid amount
+    (实付 − 已退) and stops all delivery.
+    """
+
+    reason: str = Field(min_length=1, max_length=255)
+
+
+class PaymentIn(BaseModel):
+    """Payload for POST /orders/{id}/payments — 记一笔收款（到账）。"""
+
+    amount: Decimal = Field(gt=0)
+    method: Optional[str] = Field(default=None, max_length=32)
+    collected_at: Optional[date] = None  # 省略则取记账当天
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class BulkConfirmIn(BaseModel):
+    """Payload for POST /orders/bulk-confirm."""
+
+    order_ids: List[int] = Field(min_length=1)
+
+
+class BulkVoidIn(BaseModel):
+    """Payload for POST /orders/bulk-void (one shared reason for all)."""
+
+    order_ids: List[int] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=255)
+
+
+class BulkOpFailure(BaseModel):
+    order_id: int
+    detail: str
+
+
+class BulkOpResult(BaseModel):
+    succeeded: List[int]
+    failed: List[BulkOpFailure]
+
+
 class OrderItemUpdate(OrderItemIn):
     """Extension of OrderItemIn that optionally carries a DB id for matching.
 
@@ -297,6 +361,8 @@ class FulfillmentProgress(BaseModel):
     current_expected: Optional[int]
     drift: Optional[int]
     synced_count: int
+    # 已发数：关联到本明细且 shipped_at 非空的发货明细行数。缺口 = synced_count − shipped_count。
+    shipped_count: int = 0
     skipped_count: int
 
 
@@ -335,6 +401,31 @@ class OrderEventOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RefundOut(BaseModel):
+    id: int
+    order_item_id: Optional[int]
+    amount: Decimal
+    reason: Optional[str]
+    stop_from_issue: Optional[int]
+    refunded_at: date
+    operator_id: Optional[int]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PaymentOut(BaseModel):
+    id: int
+    amount: Decimal
+    method: Optional[str]
+    collected_at: date
+    notes: Optional[str]
+    operator_id: Optional[int]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class OrderOut(BaseModel):
     id: int
     order_code: Optional[str]
@@ -355,10 +446,16 @@ class OrderOut(BaseModel):
     invoice_tax_no: Optional[str]
     invoice_recipient_email: Optional[str]
     status: OrderStatus
+    commercial_status: Optional[OrderCommercialStatus] = None
+    refunded_amount: Decimal = Decimal("0")
+    # 欠款 = max(0, 应收 total_amount − 实付 paid_amount)
+    outstanding_amount: Decimal = Decimal("0")
     notes: Optional[str]
     created_at: datetime
     updated_at: datetime
     items: List[OrderItemOut]
+    refunds: List[RefundOut] = Field(default_factory=list)
+    payments: List[PaymentOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -381,9 +478,13 @@ class OrderListRow(BaseModel):
     campaign: Optional[str] = None
     total_quantity: int
     total_amount: Decimal
+    paid_amount: Decimal = Decimal("0")
+    outstanding_amount: Decimal = Decimal("0")
     coverage_start_date: Optional[date]
     coverage_end_date: Optional[date]
     status: OrderStatus
+    commercial_status: Optional[OrderCommercialStatus] = None
+    refunded_amount: Decimal = Decimal("0")
     has_drift: bool
     synced_count: int
     expected_total: Optional[int]
@@ -419,3 +520,108 @@ class OrderShippingSyncPreview(BaseModel):
     summary: OrderShippingSyncSummary
     items: list[OrderShippingSyncItem]
     message: str | None = None
+
+
+# --- Batch shipping sync (某期一键排发 / 漏期报表 / 本单全部期) ---------------
+
+
+class IssueGapRow(BaseModel):
+    """One (order, recipient) candidate's status for an issue's gap report."""
+
+    order_id: int
+    order_code: Optional[str] = None
+    order_item_id: Optional[int] = None
+    fulfillment_target_id: Optional[int] = None
+    recipient_name: Optional[str] = None
+    quantity: Optional[int] = None
+    reason: Optional[str] = None
+
+
+class IssueGapReport(BaseModel):
+    """某期「谁该排却没排」报表。``missing`` 待排、``stale`` 已建但字段有变化、
+    ``conflict`` 人工改过待核、``skipped`` 因覆盖期缺失/休刊/缺收件人等跳过。
+    ``synced_count`` 为已同步且无变化的收件人数。"""
+
+    issue_number: int
+    publish_date: date
+    suspended: bool = False
+    total_orders: int = 0
+    synced_count: int = 0
+    missing: list[IssueGapRow] = Field(default_factory=list)
+    stale: list[IssueGapRow] = Field(default_factory=list)
+    conflict: list[IssueGapRow] = Field(default_factory=list)
+    skipped: list[IssueGapRow] = Field(default_factory=list)
+
+
+class BatchSyncConflict(BaseModel):
+    order_id: int
+    order_code: Optional[str] = None
+    conflict_count: int
+
+
+class BatchSyncSummary(BaseModel):
+    """某期批量排发结果。冲突单不中断整批、计入 ``conflicts`` 供人工核对。"""
+
+    issue_number: int
+    suspended: bool = False
+    orders_total: int = 0
+    orders_applied: int = 0
+    orders_unchanged: int = 0
+    orders_skipped: int = 0
+    orders_conflict: int = 0
+    rows_created: int = 0
+    rows_updated: int = 0
+    conflicts: list[BatchSyncConflict] = Field(default_factory=list)
+    skipped_reasons: dict[str, int] = Field(default_factory=dict)
+    message: Optional[str] = None
+
+
+class OrderAllIssuesSyncSummary(BaseModel):
+    """单订单「同步全部生效期」结果。``issues_no_calendar`` 为覆盖期推出、但
+    ``issues`` 表里还没有的期（无法同步，提示先建刊期）。"""
+
+    order_id: int
+    issues_total: int = 0
+    issues_synced: int = 0
+    rows_created: int = 0
+    rows_updated: int = 0
+    conflict_issues: list[int] = Field(default_factory=list)
+    issues_no_calendar: list[int] = Field(default_factory=list)
+
+
+# --- 已发货回写 + 应发vs实发对账 ---
+
+
+class IssueShipAllIn(BaseModel):
+    """Payload for POST …/issues/{n}/ship-all — 按期一键标已发。"""
+
+    # 省略则取记账当天。只标本期已生成且未发的行，实发份数默认 = 计划 quantity。
+    shipped_at: Optional[date] = None
+
+
+class ShipBatchResult(BaseModel):
+    issue_number: int
+    shipped_rows: int = 0
+    shipped_at: Optional[date] = None
+
+
+class ReconUnshippedRow(BaseModel):
+    order_id: Optional[int] = None
+    order_code: Optional[str] = None
+    shipping_detail_id: int
+    recipient_name: Optional[str] = None
+    quantity: Optional[int] = None
+
+
+class IssueReconciliation(BaseModel):
+    """某期「应发 vs 实发」对账。应发=Σ已生成行计划份数；已发=Σ实发份数(标已发的行，
+    实发缺省按计划计)；缺口=应发−已发；``unshipped`` 为已排但未发的行清单。"""
+
+    issue_number: int
+    publish_date: date
+    planned_rows: int = 0
+    planned_quantity: int = 0
+    shipped_rows: int = 0
+    shipped_quantity: int = 0
+    shortfall_quantity: int = 0
+    unshipped: list[ReconUnshippedRow] = Field(default_factory=list)

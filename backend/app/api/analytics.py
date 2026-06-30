@@ -23,6 +23,7 @@ from app.schemas.analytics import (
     BsCirculationOut,
     CampaignSummaryOut,
     IssueSummaryOut,
+    OutstandingSummary,
 )
 from app.services import order_analytics_service
 
@@ -78,3 +79,13 @@ def bs_circulation(
     只计 active 订单。
     """
     return order_analytics_service.summarize_bs_circulation(db, year=year)
+
+
+@router.get("/outstanding", response_model=OutstandingSummary)
+def outstanding_summary(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """欠款汇总：应收/实付/欠款 合计 + 未付清单数。只计 active 且非退款/取消单。
+    欠款按逐单 max(0, 应收 − 实付) 求和。"""
+    return order_analytics_service.summarize_outstanding(db)

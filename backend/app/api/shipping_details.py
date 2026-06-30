@@ -1,3 +1,5 @@
+from datetime import date, datetime, time
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from app.models.operation_log import OperationLog
 from app.models.user import User
 from app.auth import get_current_user, require_admin
 from app.schemas.shipping_detail import (
+    ShipDetailIn,
     ShippingDetailBatchDelete,
     ShippingDetailBatchResult,
     ShippingDetailBatchUpdate,
@@ -30,7 +33,8 @@ _TRACKED_FIELDS = [
     "status", "name", "address", "phone", "quantity", "deadline",
     "notes", "extra_info", "station_name", "station_hall",
     "contact_person", "seq_number", "period_count", "confirmation",
-    "company", "shipped_at", "order_id", "order_item_id",
+    "company", "shipped_at", "shipped_quantity", "tracking_no",
+    "order_id", "order_item_id",
     "fulfillment_target_id", "source_type", "sync_status",
 ]
 
@@ -41,6 +45,8 @@ _COPY_FIELDS = [
         "issue_number",
         "confirmation",
         "shipped_at",
+        "shipped_quantity",
+        "tracking_no",
         "order_id",
         "order_item_id",
         "fulfillment_target_id",
@@ -337,6 +343,74 @@ def update_shipping_detail(
             username=user.username,
         )
         db.add(log)
+    db.commit()
+    db.refresh(detail)
+    return detail
+
+
+@router.post("/{detail_id}/ship", response_model=ShippingDetailOut)
+def ship_shipping_detail(
+    detail_id: int,
+    data: ShipDetailIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """标记一行已发货：写 shipped_at（默认今天）、实发份数（默认=计划 quantity）、运单号。
+
+    shipped_at 非 SYNC_FIELD，标已发不会把 order_generated 行置 manually_modified。
+    """
+    detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
+    if not detail:
+        raise HTTPException(status_code=404, detail="发货明细不存在")
+    old_snapshot = _snapshot(detail)
+    ship_date = data.shipped_at or date.today()
+    detail.shipped_at = datetime.combine(ship_date, time())
+    detail.shipped_quantity = (
+        data.shipped_quantity if data.shipped_quantity is not None else detail.quantity
+    )
+    if data.tracking_no is not None:
+        detail.tracking_no = data.tracking_no
+    changes = _diff(old_snapshot, _snapshot(detail))
+    if changes:
+        db.add(OperationLog(
+            table_name="shipping_details",
+            record_id=detail.id,
+            record_name=detail.name,
+            action="ship",
+            changes=changes,
+            user_id=user.id,
+            username=user.username,
+        ))
+    db.commit()
+    db.refresh(detail)
+    return detail
+
+
+@router.post("/{detail_id}/unship", response_model=ShippingDetailOut)
+def unship_shipping_detail(
+    detail_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """撤销已发：清空 shipped_at / 实发份数 / 运单号。"""
+    detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
+    if not detail:
+        raise HTTPException(status_code=404, detail="发货明细不存在")
+    old_snapshot = _snapshot(detail)
+    detail.shipped_at = None
+    detail.shipped_quantity = None
+    detail.tracking_no = None
+    changes = _diff(old_snapshot, _snapshot(detail))
+    if changes:
+        db.add(OperationLog(
+            table_name="shipping_details",
+            record_id=detail.id,
+            record_name=detail.name,
+            action="unship",
+            changes=changes,
+            user_id=user.id,
+            username=user.username,
+        ))
     db.commit()
     db.refresh(detail)
     return detail

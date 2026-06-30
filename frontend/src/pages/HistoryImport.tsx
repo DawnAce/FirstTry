@@ -293,7 +293,7 @@ export default function HistoryImport() {
             <Alert
               type="warning"
               showIcon
-              message="导入注意事项"
+              title="导入注意事项"
               description={
                 <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
                   {preview.warnings.map((w, i) => <li key={i}>{w}</li>)}
@@ -306,7 +306,7 @@ export default function HistoryImport() {
           {manualTempRequired > 0 && (
             <Alert
               type={manualTempValid ? 'warning' : 'error'}
-              message={`临时加印需要手动分配：共 ${manualTempRequired} 份`}
+              title={`临时加印需要手动分配：共 ${manualTempRequired} 份`}
               description={
                 <div>
                   <div style={{ marginBottom: 12 }}>
@@ -384,7 +384,7 @@ export default function HistoryImport() {
           {preview.errors.length > 0 ? (
             <Alert
               type="error"
-              message={`发现 ${preview.errors.length} 个错误，请修正后重新上传`}
+              title={`发现 ${preview.errors.length} 个错误，请修正后重新上传`}
               description={
                 <ul style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
                   {preview.errors.map((err, i) => <li key={i}>{err}</li>)}
@@ -395,7 +395,7 @@ export default function HistoryImport() {
           ) : manualTempRequired === 0 ? (
             <Alert
               type="success"
-              message="数据验证通过，可以提交导入"
+              title="数据验证通过，可以提交导入"
               style={{ marginBottom: 16 }}
             />
           ) : null}

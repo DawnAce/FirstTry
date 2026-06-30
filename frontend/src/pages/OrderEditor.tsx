@@ -672,7 +672,7 @@ export default function OrderEditor() {
       <Alert
         type="error"
         showIcon
-        message="加载订单失败"
+        title="加载订单失败"
         description={String(detailQuery.error)}
         action={
           <Button onClick={() => detailQuery.refetch()} type="primary" size="small">
@@ -711,7 +711,7 @@ export default function OrderEditor() {
         <Alert
           type="error"
           showIcon
-          message="该订单已作废"
+          title="该订单已作废"
           description="已作废订单不可再编辑。"
           style={{ marginBottom: 16 }}
         />
@@ -720,7 +720,7 @@ export default function OrderEditor() {
         <Alert
           type="info"
           showIcon
-          message="正在编辑已生效订单"
+          title="正在编辑已生效订单"
           description="生效订单的非结构字段（备注、金额等）可直接编辑。修改明细目标（收件人）将创建新版本的履约方案，需要填写生效起始期号。"
           style={{ marginBottom: 16 }}
         />
@@ -920,7 +920,7 @@ export default function OrderEditor() {
           {!itemsReadOnly && (
             <Alert
               type="info"
-              message={
+              title={
                 <div>
                   每条明细对应一笔履约（订阅/单期/赠阅等）；每条明细下至少 1 个履约目标。
                   <br />
@@ -1315,7 +1315,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
         <Alert
           type={previewQuery.data?.schedule_incomplete ? 'warning' : 'info'}
           showIcon
-          message={previewQuery.isLoading ? '正在计算套餐价...' : previewQuery.data?.price_label ?? '请选择起始月份和投递方式'}
+          title={previewQuery.isLoading ? '正在计算套餐价...' : previewQuery.data?.price_label ?? '请选择起始月份和投递方式'}
           description={
             previewQuery.data ? (
               <Space direction="vertical" size={2}>

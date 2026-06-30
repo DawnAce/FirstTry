@@ -11,7 +11,8 @@ interface AuthContextType {
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType>({
+// 导出 context 本身，便于 Storybook 等通过 Provider 注入假登录态
+export const AuthContext = createContext<AuthContextType>({
   user: null,
   isAdmin: false,
   isLoggedIn: false,

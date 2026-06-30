@@ -15,8 +15,10 @@ product name.
 V1 scope: per-campaign + per-issue summaries. Only ``active`` orders are counted
 (imported orders are created ``active``; manual orders become ``active`` on
 confirm) — drafts, pending_confirmation and void are excluded, so un-confirmed
-rows never inflate the numbers. Platform refunds (``commercial_status``) are NOT
-netted out yet; ``total_paid`` is the gross sum over active orders.
+rows never inflate the numbers. Orders whose ``commercial_status`` is ``refunded``
+or ``cancelled`` are also excluded from revenue/circulation (manual orders have a
+NULL commercial_status and stay counted). ``partial_refund`` is still counted at
+gross — precise net-of-refund accounting needs the refund module (refunded_amount).
 """
 
 import calendar as _calendar
@@ -24,12 +26,28 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.bs_issue import BsIssue
-from app.models.order import Order, OrderStatus
+from app.models.order import Order, OrderCommercialStatus, OrderStatus
 from app.models.order_item import FulfillmentType, OrderItem, Publication
+
+
+# 退款/取消单不计入营收与发行量口径。手工单 commercial_status 为 NULL → 照常计入。
+# 部分退款暂按毛额计（依赖退款模块的 refunded_amount 才能净额冲减，见 backlog）。
+_EXCLUDED_COMMERCIAL_STATUSES = (
+    OrderCommercialStatus.refunded,
+    OrderCommercialStatus.cancelled,
+)
+
+
+def _revenue_eligible():
+    """SQL 过滤：排除已退款/已取消的订单（NULL 商业状态——手工单——保留）。"""
+    return or_(
+        Order.commercial_status.is_(None),
+        Order.commercial_status.notin_(_EXCLUDED_COMMERCIAL_STATUSES),
+    )
 from app.schemas.analytics import (
     BsCirculationOut,
     BsCirculationRow,
@@ -37,6 +55,7 @@ from app.schemas.analytics import (
     CampaignSummaryRow,
     IssueSummaryOut,
     IssueSummaryRow,
+    OutstandingSummary,
 )
 
 
@@ -65,10 +84,12 @@ def summarize_campaigns(
             Order.campaign,
             func.count(Order.id),
             func.sum(Order.paid_amount),
+            func.sum(Order.refunded_amount),
             func.sum(listed_expr),
         )
         .filter(Order.campaign.isnot(None))
         .filter(Order.status == OrderStatus.active)
+        .filter(_revenue_eligible())
     )
     if date_from is not None:
         q = q.filter(Order.order_date >= date_from)
@@ -79,15 +100,18 @@ def summarize_campaigns(
     )
 
     rows = []
-    for campaign, order_count, paid, listed in q.all():
-        paid_m, listed_m = _money(paid), _money(listed)
+    for campaign, order_count, paid, refunded, listed in q.all():
+        gross_paid, refunded_m, listed_m = _money(paid), _money(refunded), _money(listed)
+        net_paid = _money(gross_paid - refunded_m)
         rows.append(
             CampaignSummaryRow(
                 campaign=campaign,
                 order_count=order_count,
-                total_paid=paid_m,
+                total_paid=net_paid,                        # 实收净额（退款已冲减）
+                total_refunded=refunded_m,
                 total_listed=listed_m,
-                total_discount=_money(listed_m - paid_m),
+                # 折扣 = 折前原价 − 毛实付（纯定价折扣，不含退款）
+                total_discount=_money(listed_m - gross_paid),
             )
         )
     return CampaignSummaryOut(
@@ -95,6 +119,7 @@ def summarize_campaigns(
         total_campaigns=len(rows),
         grand_total_orders=sum(r.order_count for r in rows),
         grand_total_paid=_money(sum((r.total_paid for r in rows), Decimal("0"))),
+        grand_total_refunded=_money(sum((r.total_refunded for r in rows), Decimal("0"))),
         grand_total_listed=_money(sum((r.total_listed for r in rows), Decimal("0"))),
         grand_total_discount=_money(sum((r.total_discount for r in rows), Decimal("0"))),
         date_from=date_from,
@@ -128,6 +153,7 @@ def summarize_issues(
         .filter(OrderItem.fulfillment_type == FulfillmentType.single_issue)
         .filter(OrderItem.issue_label.isnot(None))
         .filter(Order.status == OrderStatus.active)
+        .filter(_revenue_eligible())
     )
     if publication is not None:
         q = q.filter(OrderItem.publication == publication)
@@ -171,6 +197,39 @@ def _issue_covers(issue: BsIssue, cov_start: date, cov_end: date) -> bool:
     return first <= cov_end and last >= cov_start
 
 
+def summarize_outstanding(db: Session) -> OutstandingSummary:
+    """欠款汇总（应收/实付/欠款合计 + 未付清单数）。
+
+    只计 ``active`` 且非退款/取消单。欠款按**逐单** ``max(0, 应收 − 实付)`` 求和
+    （超付的单不抵销欠款的单），不是 Σ应收 − Σ实付。
+    """
+    outstanding_expr = case(
+        (
+            Order.total_amount > Order.paid_amount,
+            Order.total_amount - Order.paid_amount,
+        ),
+        else_=0,
+    )
+    unpaid_expr = case((Order.paid_amount < Order.total_amount, 1), else_=0)
+    total_recv, total_paid, total_out, unpaid = (
+        db.query(
+            func.sum(Order.total_amount),
+            func.sum(Order.paid_amount),
+            func.sum(outstanding_expr),
+            func.sum(unpaid_expr),
+        )
+        .filter(Order.status == OrderStatus.active)
+        .filter(_revenue_eligible())
+        .one()
+    )
+    return OutstandingSummary(
+        total_receivable=_money(total_recv),
+        total_paid=_money(total_paid),
+        total_outstanding=_money(total_out),
+        unpaid_orders=int(unpaid or 0),
+    )
+
+
 def summarize_bs_circulation(db: Session, year: Optional[int] = None) -> BsCirculationOut:
     """商学院按期发行量 = 单期销量 + 覆盖该期的订阅份数（含合刊去重）。
 
@@ -204,6 +263,7 @@ def summarize_bs_circulation(db: Session, year: Optional[int] = None) -> BsCircu
         .filter(OrderItem.fulfillment_type == FulfillmentType.single_issue)
         .filter(OrderItem.issue_label.isnot(None))
         .filter(Order.status == OrderStatus.active)
+        .filter(_revenue_eligible())
         .group_by(OrderItem.issue_label)
     )
     if year is not None:
@@ -223,6 +283,7 @@ def summarize_bs_circulation(db: Session, year: Optional[int] = None) -> BsCircu
         .filter(OrderItem.publication == Publication.business_school)
         .filter(OrderItem.fulfillment_type == FulfillmentType.subscription)
         .filter(Order.status == OrderStatus.active)
+        .filter(_revenue_eligible())
         .filter(OrderItem.coverage_start_date.isnot(None))
         .filter(OrderItem.coverage_end_date.isnot(None))
         .all()
@@ -239,6 +300,7 @@ def summarize_bs_circulation(db: Session, year: Optional[int] = None) -> BsCircu
         .filter(OrderItem.publication == Publication.business_school)
         .filter(OrderItem.fulfillment_type == FulfillmentType.subscription)
         .filter(Order.status == OrderStatus.active)
+        .filter(_revenue_eligible())
         .filter(
             (OrderItem.coverage_start_date.is_(None))
             | (OrderItem.coverage_end_date.is_(None))

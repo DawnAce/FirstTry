@@ -25,17 +25,28 @@ can render pagination metadata without an extra round-trip.
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import OrderEntryMethod, OrderStatus, User
 from app.models.order_event import OrderEvent
 from app.schemas.order import (
+    BatchSyncSummary,
+    BulkConfirmIn,
+    BulkOpResult,
+    BulkVoidIn,
     FulfillmentProgress,
+    IssueGapReport,
+    IssueReconciliation,
+    IssueShipAllIn,
+    OrderAllIssuesSyncSummary,
+    OrderCancelIn,
     OrderCreate,
     OrderEventOut,
     OrderShippingSyncApplyIn,
@@ -45,15 +56,26 @@ from app.schemas.order import (
     OrderOut,
     OrderUpdate,
     OrderVoidIn,
+    PaymentIn,
     PricingPreviewIn,
     PricingPreviewOut,
+    RefundIn,
+    ShipBatchResult,
 )
 from app.services import order_service
+from app.services.order_shipping_batch_service import (
+    apply_all_for_issue,
+    apply_all_issues_for_order,
+    gap_report,
+    reconcile_issue,
+    ship_all_for_issue,
+)
 from app.services.order_shipping_sync_service import (
     apply_order_shipping_sync,
     preview_order_shipping_sync,
 )
 from app.services.order_pricing_service import build_pricing_preview
+from app.services.excel_service import export_orders_excel
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -67,7 +89,13 @@ def list_orders(
     source_platform: Optional[str] = None,
     coverage_start: Optional[date] = None,
     coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -75,9 +103,10 @@ def list_orders(
 ):
     """Return ``{"rows": [...], "total": N}``.
 
-    ``total`` reflects the DB-side filter result *before* the in-memory
-    ``has_drift`` post-filter, so paging metadata stays stable across
-    pages of the same query.
+    With ``has_drift`` unset, ``total`` is the DB-side filter count and paging
+    is done in SQL. With ``has_drift`` set, drift is computed in Python over the
+    full filtered set, so ``total`` reflects the post-drift count and every page
+    stays full (see ``order_service.list_orders``).
     """
     rows, total = order_service.list_orders(
         db,
@@ -88,11 +117,90 @@ def list_orders(
         source_platform=source_platform,
         coverage_start=coverage_start,
         coverage_end=coverage_end,
+        order_date_start=order_date_start,
+        order_date_end=order_date_end,
+        unpaid=unpaid,
         has_drift=has_drift,
+        search=search,
+        sort=sort,
+        order=order,
         skip=skip,
         limit=limit,
     )
     return {"rows": rows, "total": total}
+
+
+@router.get("/export")
+def export_orders(
+    status: Optional[OrderStatus] = None,
+    entry_method: Optional[OrderEntryMethod] = None,
+    payer_name_like: Optional[str] = None,
+    campaign: Optional[str] = None,
+    source_platform: Optional[str] = None,
+    coverage_start: Optional[date] = None,
+    coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
+    has_drift: Optional[bool] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """Export the filtered order list (no pagination) as an .xlsx. Same filters
+    as ``GET /api/orders``; capped at 50000 rows."""
+    rows, _ = order_service.list_orders(
+        db,
+        status=status,
+        entry_method=entry_method,
+        payer_name_like=payer_name_like,
+        campaign=campaign,
+        source_platform=source_platform,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        order_date_start=order_date_start,
+        order_date_end=order_date_end,
+        unpaid=unpaid,
+        has_drift=has_drift,
+        search=search,
+        sort=sort,
+        order=order,
+        skip=0,
+        limit=50000,
+    )
+    output = export_orders_excel(rows)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=orders.xlsx"},
+    )
+
+
+@router.post("/bulk-confirm", response_model=BulkOpResult)
+def bulk_confirm(
+    payload: BulkConfirmIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Batch confirm orders (draft → active). Per-order failure collected, not
+    aborting the batch."""
+    return order_service.bulk_confirm_orders(
+        db, payload.order_ids, operator_id=user.id
+    )
+
+
+@router.post("/bulk-void", response_model=BulkOpResult)
+def bulk_void(
+    payload: BulkVoidIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Batch void orders with one shared reason. Per-order failure collected."""
+    return order_service.bulk_void_orders(
+        db, payload.order_ids, reason=payload.reason, operator_id=user.id
+    )
 
 
 @router.post("/pricing-preview", response_model=PricingPreviewOut)
@@ -143,6 +251,74 @@ def apply_shipping_sync(
         order_id,
         data.issue_number,
         operator_id=user.id,
+    )
+
+
+@router.get(
+    "/shipping-sync/issues/{issue_number}/gap-report",
+    response_model=IssueGapReport,
+)
+def issue_shipping_gap_report(
+    issue_number: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """某期「谁该排却没排」报表（只读，不写库）。"""
+    return gap_report(db, issue_number)
+
+
+@router.post(
+    "/shipping-sync/issues/{issue_number}/apply-all",
+    response_model=BatchSyncSummary,
+)
+def apply_all_orders_for_issue(
+    issue_number: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """某期一键排发所有活跃订单。冲突单只报告、不覆盖、不中断整批。"""
+    return apply_all_for_issue(db, issue_number, operator_id=user.id)
+
+
+@router.post(
+    "/{order_id}/shipping-sync/apply-all-issues",
+    response_model=OrderAllIssuesSyncSummary,
+)
+def apply_all_issues_for_one_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """单订单覆盖期内所有期一次排齐（仅 `issues` 表已存在的期）。"""
+    return apply_all_issues_for_order(db, order_id, operator_id=user.id)
+
+
+@router.get(
+    "/shipping-sync/issues/{issue_number}/reconciliation",
+    response_model=IssueReconciliation,
+)
+def issue_shipping_reconciliation(
+    issue_number: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """某期「应发 vs 实发」对账（只读）：应发/已发/缺口 + 未发清单。"""
+    return reconcile_issue(db, issue_number)
+
+
+@router.post(
+    "/shipping-sync/issues/{issue_number}/ship-all",
+    response_model=ShipBatchResult,
+)
+def ship_all_orders_for_issue(
+    issue_number: int,
+    payload: IssueShipAllIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """按期一键标已发：把本期已生成且未发的行标为已发（实发=计划份数）。"""
+    return ship_all_for_issue(
+        db, issue_number, shipped_at=payload.shipped_at, operator_id=user.id
     )
 
 
@@ -203,11 +379,71 @@ def void_order(
     order_id: int,
     payload: OrderVoidIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     """Mark the order void. ``payload.reason`` is required + non-empty."""
     order = order_service.void_order(
         db, order_id, reason=payload.reason, operator_id=user.id
+    )
+    fresh = order_service.get_order_detail(db, order.id)
+    return _build_order_out(db, fresh)
+
+
+@router.post("/{order_id}/refund", response_model=OrderOut)
+def refund_order(
+    order_id: int,
+    payload: RefundIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Record a refund (full or partial). Optional ``order_item_id`` /
+    ``stop_from_issue`` scope the stop-delivery; no scope = money-only."""
+    order = order_service.refund_order(
+        db,
+        order_id,
+        amount=payload.amount,
+        reason=payload.reason,
+        order_item_id=payload.order_item_id,
+        stop_from_issue=payload.stop_from_issue,
+        refunded_at=payload.refunded_at,
+        operator_id=user.id,
+    )
+    fresh = order_service.get_order_detail(db, order.id)
+    return _build_order_out(db, fresh)
+
+
+@router.post("/{order_id}/cancel", response_model=OrderOut)
+def cancel_order(
+    order_id: int,
+    payload: OrderCancelIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Cancel the order: mark cancelled, record a full refund of the outstanding
+    paid amount, and stop all delivery."""
+    order = order_service.cancel_order(
+        db, order_id, reason=payload.reason, operator_id=user.id
+    )
+    fresh = order_service.get_order_detail(db, order.id)
+    return _build_order_out(db, fresh)
+
+
+@router.post("/{order_id}/payments", response_model=OrderOut)
+def record_order_payment(
+    order_id: int,
+    payload: PaymentIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """记一笔收款（到账）：建收款流水 + 累加实付金额。"""
+    order = order_service.record_payment(
+        db,
+        order_id,
+        amount=payload.amount,
+        method=payload.method,
+        collected_at=payload.collected_at,
+        notes=payload.notes,
+        operator_id=user.id,
     )
     fresh = order_service.get_order_detail(db, order.id)
     return _build_order_out(db, fresh)
@@ -277,6 +513,8 @@ def _build_order_out(db: Session, order) -> OrderOut:
     from app.schemas.order import (
         FulfillmentAllocationOut,
         OrderItemOut,
+        PaymentOut,
+        RefundOut,
     )
 
     item_outs = []
@@ -328,8 +566,21 @@ def _build_order_out(db: Session, order) -> OrderOut:
         invoice_tax_no=order.invoice_tax_no,
         invoice_recipient_email=order.invoice_recipient_email,
         status=order.status,
+        commercial_status=order.commercial_status,
+        refunded_amount=order.refunded_amount,
+        outstanding_amount=_outstanding(order),
         notes=order.notes,
         created_at=order.created_at,
         updated_at=order.updated_at,
         items=item_outs,
+        refunds=[RefundOut.model_validate(r) for r in order.refunds],
+        payments=[PaymentOut.model_validate(p) for p in order.payments],
     )
+
+
+def _outstanding(order) -> Decimal:
+    """欠款 = max(0, 应收 − 实付)。"""
+    total = Decimal(str(order.total_amount or 0))
+    paid = Decimal(str(order.paid_amount or 0))
+    diff = total - paid
+    return diff if diff > 0 else Decimal("0")

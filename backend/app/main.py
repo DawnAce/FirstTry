@@ -28,6 +28,11 @@ from app.api.orders import router as orders_router
 from app.api.products import router as products_router
 from app.api.order_import import router as order_import_router
 from app.api.analytics import router as analytics_router
+from app.api.customers import router as customers_router
+from app.api.partners import router as partners_router
+from app.api.contracts import router as contracts_router
+from app.api.invoices import router as invoices_router
+from app.api.settlements import router as settlements_router
 from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule, ReportEntry
 from app.services.issue_service import build_issue_out
@@ -65,6 +70,11 @@ app.include_router(orders_router, dependencies=[Depends(get_current_user)])
 app.include_router(products_router, dependencies=[Depends(get_current_user)])
 app.include_router(order_import_router, dependencies=[Depends(get_current_user)])
 app.include_router(analytics_router, dependencies=[Depends(get_current_user)])
+app.include_router(customers_router, dependencies=[Depends(get_current_user)])
+app.include_router(partners_router, dependencies=[Depends(get_current_user)])
+app.include_router(contracts_router, dependencies=[Depends(get_current_user)])
+app.include_router(invoices_router, dependencies=[Depends(get_current_user)])
+app.include_router(settlements_router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/api/health")

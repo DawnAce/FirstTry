@@ -31,8 +31,17 @@ from sqlalchemy.pool import StaticPool
 from app.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
-from app.models.order import Order, OrderEntryMethod, OrderStatus
+from app.models.order import (
+    Order,
+    OrderCommercialStatus,
+    OrderEntryMethod,
+    OrderStatus,
+)
 from app.models.user import User, UserRole
+from app.services.order_analytics_service import (
+    summarize_campaigns,
+    summarize_outstanding,
+)
 
 
 def _order(campaign, paid, listed=None, *, status=OrderStatus.active, order_date=date(2026, 6, 1)):
@@ -147,3 +156,103 @@ def test_campaign_summary_empty(client):
     assert data["total_campaigns"] == 0
     assert data["grand_total_orders"] == 0
     assert _money(data["grand_total_paid"]) == Decimal("0.00")
+
+
+def test_refunded_and_cancelled_excluded_partial_refund_counted():
+    """退款/取消单不计入营收；部分退款仍按毛额计；手工单(NULL)照常计入。"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+
+    counted_plain = _order("2026-618", 200, 240)            # active, NULL 商业状态 → 计
+    refunded = _order("2026-618", 200, 240)                 # 退款 → 不计
+    refunded.commercial_status = OrderCommercialStatus.refunded
+    cancelled = _order("2026-618", 200, 240)                # 取消 → 不计
+    cancelled.commercial_status = OrderCommercialStatus.cancelled
+    partial = _order("2026-618", 200, 240)                  # 部分退款 → 仍按毛额计
+    partial.commercial_status = OrderCommercialStatus.partial_refund
+    db.add_all([counted_plain, refunded, cancelled, partial])
+    db.commit()
+
+    out = summarize_campaigns(db)
+    by = {r.campaign: r for r in out.rows}
+    # 仅 counted_plain + partial 计入 → 2 单、实收 400
+    assert by["2026-618"].order_count == 2
+    assert _money(by["2026-618"].total_paid) == Decimal("400.00")
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+
+
+def test_partial_refund_amount_is_netted_from_campaign_revenue():
+    """部分退款单：实收按 (实付 − refunded_amount) 净额计，并暴露 total_refunded。"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+
+    full = _order("2026-618", 240, 240)                 # 无退款 → 实收 240
+    partial = _order("2026-618", 240, 240)              # 部分退款 60 → 实收 180
+    partial.commercial_status = OrderCommercialStatus.partial_refund
+    partial.refunded_amount = Decimal("60")
+    db.add_all([full, partial])
+    db.commit()
+
+    out = summarize_campaigns(db)
+    row = {r.campaign: r for r in out.rows}["2026-618"]
+    assert row.order_count == 2
+    assert _money(row.total_paid) == Decimal("420.00")       # 240 + 180 净额
+    assert _money(row.total_refunded) == Decimal("60.00")
+    # 折扣仍按折前原价 − 毛实付：原价 480 − 毛实付 480 = 0（不被退款污染）
+    assert _money(row.total_discount) == Decimal("0.00")
+    assert _money(out.grand_total_paid) == Decimal("420.00")
+    assert _money(out.grand_total_refunded) == Decimal("60.00")
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+
+
+def _ord(total, paid, *, status=OrderStatus.active, commercial=None):
+    o = Order(
+        order_date=date(2026, 6, 1),
+        entry_method=OrderEntryMethod.excel_import,
+        payer_name="X",
+        status=status,
+        total_amount=Decimal(str(total)),
+        paid_amount=Decimal(str(paid)),
+        commercial_status=commercial,
+    )
+    return o
+
+
+def test_outstanding_summary_clamps_per_order():
+    """欠款逐单 max(0,应收−实付) 求和：超付单不抵销欠款单；void/退款单排除。"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(autocommit=False, autoflush=False, bind=engine)()
+
+    a = _ord(200, 50)                                    # 欠 150、未付清
+    b = _ord(100, 100)                                   # 付清
+    c = _ord(80, 120)                                    # 超付 → 欠款 clamp 0，不抵销 A
+    d = _ord(300, 0, status=OrderStatus.void)            # 作废 → 排除
+    e = _ord(500, 0, commercial=OrderCommercialStatus.refunded)  # 退款 → 排除
+    db.add_all([a, b, c, d, e])
+    db.commit()
+
+    out = summarize_outstanding(db)
+    assert out.total_outstanding == Decimal("150.00")   # 仅 A；C 超付不抵销
+    assert out.unpaid_orders == 1                        # 仅 A
+    # 应收/实付仅 active 且非退款：A+B+C
+    assert out.total_receivable == Decimal("380.00")
+    assert out.total_paid == Decimal("270.00")
+    db.close()
+    Base.metadata.drop_all(bind=engine)

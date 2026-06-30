@@ -3,7 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, DatePicker, Select, Space, Table, Tag, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
 import type { Dayjs } from 'dayjs';
-import { getCampaignSummary, getIssueSummary, getBsCirculation } from '../api/analytics';
+import {
+  getCampaignSummary,
+  getIssueSummary,
+  getBsCirculation,
+  getOutstandingSummary,
+} from '../api/analytics';
 import type { CampaignSummaryRow, IssueSummaryRow, BsCirculationRow } from '../api/analytics';
 import { publicationLabel } from './orderUtils';
 
@@ -24,6 +29,10 @@ export default function Analytics() {
   const issueQuery = useQuery({
     queryKey: ['analytics', 'issues', params],
     queryFn: () => getIssueSummary(params).then((r) => r.data),
+  });
+  const outstandingQuery = useQuery({
+    queryKey: ['analytics', 'outstanding'],
+    queryFn: () => getOutstandingSummary().then((r) => r.data),
   });
 
   // 0 = 全部年份
@@ -83,6 +92,36 @@ export default function Analytics() {
         <Text>—</Text>
         <DatePicker value={to} onChange={setTo} placeholder="止（可空）" allowClear />
       </Space>
+
+      <Card size="small" title="欠款汇总（应收 / 实付 / 未付清）" style={{ marginBottom: 16 }}>
+        {outstandingQuery.data ? (
+          <Space size="large" wrap>
+            <Text>
+              应收合计：<Text strong>¥{outstandingQuery.data.total_receivable}</Text>
+            </Text>
+            <Text>
+              实付合计：<Text strong>¥{outstandingQuery.data.total_paid}</Text>
+            </Text>
+            <Text>
+              欠款合计：
+              <Text
+                strong
+                type={Number(outstandingQuery.data.total_outstanding) > 0 ? 'danger' : 'success'}
+              >
+                ¥{outstandingQuery.data.total_outstanding}
+              </Text>
+            </Text>
+            <Text>
+              未付清订单：<Text strong>{outstandingQuery.data.unpaid_orders}</Text> 单
+            </Text>
+          </Space>
+        ) : (
+          <Text type="secondary">加载中…</Text>
+        )}
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+          只计生效且非退款/取消单；欠款按逐单 max(0, 应收 − 实付) 求和。电商单下单全款、欠款为 0；欠款主要在对公/手工单。
+        </Text>
+      </Card>
 
       <Card
         size="small"

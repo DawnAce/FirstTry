@@ -192,6 +192,231 @@ def test_create_order_rejects_empty_items(client):
     assert r.status_code == 422
 
 
+def test_refund_and_cancel_endpoints_round_trip(client):
+    payload = _make_create_payload()
+    payload["paid_amount"] = "180"
+    r = client.post("/api/orders", json=payload)
+    assert r.status_code == 201, r.text
+    oid = r.json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+
+    # partial refund (money-only) → partial_refund + refunds[1]
+    rr = client.post(
+        f"/api/orders/{oid}/refund", json={"amount": "60", "reason": "退差价"}
+    )
+    assert rr.status_code == 200, rr.text
+    body = rr.json()
+    assert body["commercial_status"] == "partial_refund"
+    assert float(body["refunded_amount"]) == 60.0
+    assert len(body["refunds"]) == 1
+    assert float(body["refunds"][0]["amount"]) == 60.0
+
+    # over-refund (60 + 200 > 180) → 422
+    bad = client.post(f"/api/orders/{oid}/refund", json={"amount": "200"})
+    assert bad.status_code == 422
+
+    # cancel → full refund of the outstanding 120, status cancelled, two refunds
+    cc = client.post(f"/api/orders/{oid}/cancel", json={"reason": "客户取消"})
+    assert cc.status_code == 200, cc.text
+    cbody = cc.json()
+    assert cbody["commercial_status"] == "cancelled"
+    assert float(cbody["refunded_amount"]) == 180.0
+    assert len(cbody["refunds"]) == 2
+
+
+def test_batch_shipping_sync_endpoints_round_trip(client):
+    # 创建并确认一张订阅单（coverage 2026-03-01~12-31，覆盖刊期 2625）
+    r = client.post("/api/orders", json=_make_create_payload())
+    assert r.status_code == 201, r.text
+    oid = r.json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+
+    # 漏期报表：2 个收件人待排（路由不被 /{order_id} 抢占）
+    gap = client.get("/api/orders/shipping-sync/issues/2625/gap-report")
+    assert gap.status_code == 200, gap.text
+    gbody = gap.json()
+    assert gbody["issue_number"] == 2625
+    assert gbody["synced_count"] == 0
+    assert len(gbody["missing"]) == 2
+
+    # 本单同步全部期 → 排进 2625（2 行）
+    alli = client.post(f"/api/orders/{oid}/shipping-sync/apply-all-issues")
+    assert alli.status_code == 200, alli.text
+    assert alli.json()["issues_synced"] == 1
+    assert alli.json()["rows_created"] == 2
+
+    # 报表现在已同步
+    gap2 = client.get("/api/orders/shipping-sync/issues/2625/gap-report").json()
+    assert gap2["synced_count"] == 2
+    assert len(gap2["missing"]) == 0
+
+    # 某期批量：已排 → unchanged，不再建行
+    batch = client.post("/api/orders/shipping-sync/issues/2625/apply-all")
+    assert batch.status_code == 200, batch.text
+    bbody = batch.json()
+    assert bbody["orders_total"] == 1
+    assert bbody["orders_unchanged"] == 1
+    assert bbody["rows_created"] == 0
+
+
+def test_shipped_writeback_and_reconciliation_endpoints(client):
+    r = client.post("/api/orders", json=_make_create_payload())
+    oid = r.json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+    client.post(f"/api/orders/{oid}/shipping-sync/apply-all-issues")  # 排 2 行
+
+    # 对账：应发 2 / 已发 0 / 缺口 2
+    recon = client.get("/api/orders/shipping-sync/issues/2625/reconciliation").json()
+    assert recon["planned_quantity"] == 2
+    assert recon["shipped_quantity"] == 0
+    assert recon["shortfall_quantity"] == 2
+    assert len(recon["unshipped"]) == 2
+
+    # 一键标已发
+    ship = client.post(
+        "/api/orders/shipping-sync/issues/2625/ship-all",
+        json={"shipped_at": "2026-06-30"},
+    )
+    assert ship.status_code == 200, ship.text
+    assert ship.json()["shipped_rows"] == 2
+
+    # 对账：缺口 0
+    recon2 = client.get("/api/orders/shipping-sync/issues/2625/reconciliation").json()
+    assert recon2["shipped_quantity"] == 2
+    assert recon2["shortfall_quantity"] == 0
+
+    # 订单进度卡 shipped_count
+    prog = client.get(f"/api/orders/{oid}").json()["items"][0]["progress"]
+    assert prog["synced_count"] == 2
+    assert prog["shipped_count"] == 2
+
+    # 单行 unship / 部分实发 ship
+    did = client.get("/api/shipping-details", params={"issue_number": 2625}).json()[0]["id"]
+    un = client.post(f"/api/shipping-details/{did}/unship")
+    assert un.status_code == 200
+    assert un.json()["shipped_at"] is None
+    sh = client.post(f"/api/shipping-details/{did}/ship", json={"shipped_quantity": 0})
+    assert sh.status_code == 200
+    assert sh.json()["shipped_quantity"] == 0
+
+
+def test_payment_collection_outstanding_and_unpaid_filter(client):
+    payload = _make_create_payload()  # total 180, paid 0
+    r = client.post("/api/orders", json=payload)
+    oid = r.json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+
+    d = client.get(f"/api/orders/{oid}").json()
+    assert float(d["total_amount"]) == 180.0
+    assert float(d["paid_amount"]) == 0.0
+    assert float(d["outstanding_amount"]) == 180.0
+    assert d["payments"] == []
+
+    # 未付清筛选包含它
+    rows = client.get("/api/orders", params={"unpaid": "true"}).json()["rows"]
+    assert any(row["id"] == oid for row in rows)
+
+    # 记一笔收款 100 → 欠款 80
+    p1 = client.post(f"/api/orders/{oid}/payments", json={"amount": "100", "method": "对公转账"})
+    assert p1.status_code == 200, p1.text
+    b1 = p1.json()
+    assert float(b1["paid_amount"]) == 100.0
+    assert float(b1["outstanding_amount"]) == 80.0
+    assert len(b1["payments"]) == 1
+    assert float(b1["payments"][0]["amount"]) == 100.0
+    assert b1["payments"][0]["method"] == "对公转账"
+
+    # 再收 80 → 付清
+    b2 = client.post(f"/api/orders/{oid}/payments", json={"amount": "80"}).json()
+    assert float(b2["paid_amount"]) == 180.0
+    assert float(b2["outstanding_amount"]) == 0.0
+    assert len(b2["payments"]) == 2
+
+    # 付清后未付清筛选不再包含它
+    rows2 = client.get("/api/orders", params={"unpaid": "true"}).json()["rows"]
+    assert all(row["id"] != oid for row in rows2)
+
+    # 欠款汇总
+    summ = client.get("/api/analytics/outstanding").json()
+    assert float(summ["total_outstanding"]) == 0.0
+    assert summ["unpaid_orders"] == 0
+
+
+def test_list_search_and_sort(client):
+    p1 = _make_create_payload()
+    p1["external_order_no"] = "EXT-AAA"
+    p1["total_amount"] = "100"
+    p2 = _make_create_payload()
+    p2["external_order_no"] = "EXT-BBB"
+    p2["total_amount"] = "300"
+    id1 = client.post("/api/orders", json=p1).json()["id"]
+    client.post("/api/orders", json=p2)
+
+    # 按来源单号搜索
+    rows = client.get("/api/orders", params={"search": "AAA"}).json()["rows"]
+    assert [r["id"] for r in rows] == [id1]
+
+    # 按金额排序
+    asc = client.get("/api/orders", params={"sort": "total_amount", "order": "asc"}).json()["rows"]
+    amounts = [float(r["total_amount"]) for r in asc]
+    assert amounts == sorted(amounts) and amounts[0] == 100.0
+    desc = client.get("/api/orders", params={"sort": "total_amount", "order": "desc"}).json()["rows"]
+    assert float(desc[0]["total_amount"]) == 300.0
+
+
+def test_bulk_confirm_and_void(client):
+    id1 = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+    id2 = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+
+    res = client.post("/api/orders/bulk-confirm", json={"order_ids": [id1, id2]}).json()
+    assert sorted(res["succeeded"]) == sorted([id1, id2])
+    assert res["failed"] == []
+
+    # 再次确认 → 都已激活 → 全部 failed（不中断）
+    res2 = client.post("/api/orders/bulk-confirm", json={"order_ids": [id1, id2]}).json()
+    assert res2["succeeded"] == []
+    assert len(res2["failed"]) == 2
+
+    vres = client.post(
+        "/api/orders/bulk-void", json={"order_ids": [id1, id2], "reason": "批量作废"}
+    ).json()
+    assert sorted(vres["succeeded"]) == sorted([id1, id2])
+    assert client.get(f"/api/orders/{id1}").json()["status"] == "void"
+
+
+def test_export_orders_xlsx(client):
+    client.post("/api/orders", json=_make_create_payload())
+    resp = client.get("/api/orders/export")
+    assert resp.status_code == 200, resp.text
+    assert "spreadsheet" in resp.headers["content-type"]
+    assert len(resp.content) > 0
+
+
+def test_sensitive_endpoints_require_admin(client):
+    # 默认 fixture 是 admin：先建一单
+    oid = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+
+    # 切到 operator
+    operator = User(id=2, username="op", password_hash="x", role=UserRole.operator)
+    app.dependency_overrides[get_current_user] = lambda: operator
+
+    # 敏感操作 → operator 403
+    assert client.post(f"/api/orders/{oid}/void", json={"reason": "xx"}).status_code == 403
+    assert client.post(f"/api/orders/{oid}/refund", json={"amount": "1"}).status_code == 403
+    assert client.post(f"/api/orders/{oid}/cancel", json={"reason": "xx"}).status_code == 403
+    assert client.post("/api/orders/bulk-confirm", json={"order_ids": [oid]}).status_code == 403
+    assert (
+        client.post("/api/orders/bulk-void", json={"order_ids": [oid], "reason": "xx"}).status_code
+        == 403
+    )
+    assert client.get("/api/orders/export").status_code == 403
+
+    # 运营日常 → 放行（非 403）
+    assert client.get("/api/orders").status_code == 200
+    assert client.post("/api/orders", json=_make_create_payload()).status_code == 201
+    assert client.post(f"/api/orders/{oid}/payments", json={"amount": "1"}).status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # POST /api/orders/{id}/confirm
 # ---------------------------------------------------------------------------

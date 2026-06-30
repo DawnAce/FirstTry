@@ -57,6 +57,10 @@ class ShippingDetail(Base):
     confirmation = Column(String(50))
     company = Column(String(100), nullable=True, index=True)
     shipped_at = Column(DateTime, nullable=True)
+    # 实发份数（标已发时默认 = 计划 quantity，可改成部分发）；运单号（可空，有则填）。
+    # 「已发」标记 = shipped_at 非空。应发(Σquantity) − 已发(Σshipped_quantity) = 缺口。
+    shipped_quantity = Column(Integer, nullable=True)
+    tracking_no = Column(String(64), nullable=True)
     # V1.1: order management linkage. All five are nullable so existing
     # rows (legacy manual entries) keep working unchanged. source_type
     # and sync_status get server_default so the DDL upgrade is clean.

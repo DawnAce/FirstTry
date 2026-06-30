@@ -14,7 +14,11 @@ import OrderEditor from './pages/OrderEditor';
 import OrderDetail from './pages/OrderDetail';
 import ProductCatalog from './pages/ProductCatalog';
 import OrderImport from './pages/OrderImport';
+import IssueDispatch from './pages/IssueDispatch';
 import Analytics from './pages/Analytics';
+import CustomerList from './pages/CustomerList';
+import ContractManagement from './pages/ContractManagement';
+import FinanceManagement from './pages/FinanceManagement';
 import Login from './pages/Login';
 import type { ReactNode } from 'react';
 
@@ -49,10 +53,14 @@ function App() {
             <Route path="/orders" element={<OrderList />} />
             <Route path="/orders/new" element={<OrderEditor />} />
             <Route path="/orders/import" element={<OrderImport />} />
+            <Route path="/orders/dispatch" element={<IssueDispatch />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/orders/:id/edit" element={<OrderEditor />} />
             <Route path="/products" element={<ProductCatalog />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/customers" element={<CustomerList />} />
+            <Route path="/contracts" element={<ContractManagement />} />
+            <Route path="/finance" element={<FinanceManagement />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

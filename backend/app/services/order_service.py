@@ -46,10 +46,16 @@ from app.models import (
     OrderEventType,
     OrderItem,
     OrderStatus,
+    Payment,
+    Refund,
     ShippingDetail,
 )
 from app.models.fulfillment_target import ShippingChannel
 from app.models.order_item import OrderItemStatus, SubscriptionTerm
+from app.models.shipping_detail import (
+    ShippingDetailSourceType,
+    ShippingDetailSyncStatus,
+)
 from app.schemas.order import (
     FulfillmentProgress,
     OrderCreate,
@@ -537,6 +543,7 @@ def create_imported_order(
             coverage_start=item.coverage_start_date,
             coverage_end=item.coverage_end_date,
             fulfillment_type=item.fulfillment_type,
+            publication=item.publication,
         )
 
     log_event(
@@ -585,6 +592,7 @@ def confirm_order(
             coverage_start=item.coverage_start_date,
             coverage_end=item.coverage_end_date,
             fulfillment_type=item.fulfillment_type,
+            publication=item.publication,
         )
 
     order.status = OrderStatus.active
@@ -651,13 +659,52 @@ def update_order(
     return order
 
 
+def _orphan_order_generated_details(
+    db: Session,
+    order_id: int,
+    *,
+    order_item_id: Optional[int] = None,
+    from_issue: Optional[int] = None,
+) -> int:
+    """Mark this order's ``order_generated`` shipping_details as ``orphaned``.
+
+    Stops the rows being exported / shipped. Returns the number of rows touched
+    (already-orphaned rows are skipped). Manual rows (``order_id`` NULL or
+    ``source_type=manual``) are never touched — they aren't owned by this order.
+
+    Optional scope (used by partial refunds):
+    * ``order_item_id`` — only that item's rows (退某条明细).
+    * ``from_issue``    — only issues ``>= from_issue`` (订阅从某期起停发).
+    No scope → all of the order's generated rows (void / full refund / cancel).
+    """
+    q = db.query(ShippingDetail).filter(
+        ShippingDetail.order_id == order_id,
+        ShippingDetail.source_type == ShippingDetailSourceType.order_generated,
+        ShippingDetail.sync_status != ShippingDetailSyncStatus.orphaned,
+    )
+    if order_item_id is not None:
+        q = q.filter(ShippingDetail.order_item_id == order_item_id)
+    if from_issue is not None:
+        q = q.filter(ShippingDetail.issue_number >= from_issue)
+    rows = q.all()
+    for row in rows:
+        row.sync_status = ShippingDetailSyncStatus.orphaned
+    return len(rows)
+
+
 def void_order(
     db: Session,
     order_id: int,
     reason: str,
     operator_id: Optional[int] = None,
 ) -> Order:
-    """Mark order ``void`` and log the reason."""
+    """Mark order ``void``, orphan its generated shipping details, log it.
+
+    Voiding an order that already produced ``order_generated`` 发货明细 must
+    retract those rows, otherwise the courier export would still ship a
+    cancelled order. The rows are flipped to ``orphaned`` (not deleted) so the
+    audit trail and any manual edits survive; the ZTO export filters them out.
+    """
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
         raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
@@ -665,16 +712,266 @@ def void_order(
         raise HTTPException(status_code=409, detail="订单已作废")
 
     order.status = OrderStatus.void
+    orphaned_count = _orphan_order_generated_details(db, order_id)
     log_event(
         db,
         order_id=order.id,
         event_type=OrderEventType.voided,
-        payload={"reason": reason},
+        payload={"reason": reason, "orphaned_shipping_details": orphaned_count},
         operator_id=operator_id,
     )
     db.commit()
     db.refresh(order)
     return order
+
+
+def _as_money(value) -> Decimal:
+    """Coerce a possibly-None/int/float DB amount to a 2-dp Decimal."""
+    return Decimal(str(value if value is not None else 0))
+
+
+def refund_order(
+    db: Session,
+    order_id: int,
+    *,
+    amount: Decimal,
+    reason: Optional[str] = None,
+    order_item_id: Optional[int] = None,
+    stop_from_issue: Optional[int] = None,
+    refunded_at: Optional[date] = None,
+    operator_id: Optional[int] = None,
+) -> Order:
+    """Record one refund line (full or partial) against an order.
+
+    Updates ``refunded_amount`` + ``commercial_status`` and stops the scoped
+    delivery (orphans the matching ``order_generated`` shipping rows). Refund is
+    a commercial event — it never touches the internal ``OrderStatus``.
+
+    Scope (covers all three partial-refund shapes):
+    * no scope                  → money-only, delivery unchanged
+    * ``order_item_id``         → orphan that item's future generated rows
+    * ``stop_from_issue``       → orphan that scope from the given issue onward
+    A refund whose cumulative total reaches ``paid_amount`` becomes a full refund
+    (``commercial_status=refunded``) and stops ALL delivery.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
+    if order.status == OrderStatus.void:
+        raise HTTPException(status_code=409, detail="已作废的订单无法退款")
+
+    amount = _as_money(amount)
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="退款金额必须大于 0")
+    if order_item_id is not None and not any(
+        it.id == order_item_id for it in order.items
+    ):
+        raise HTTPException(
+            status_code=422, detail=f"明细 {order_item_id} 不属于该订单"
+        )
+
+    paid = _as_money(order.paid_amount)
+    already = _as_money(order.refunded_amount)
+    if already + amount > paid:
+        raise HTTPException(
+            status_code=422,
+            detail=f"退款额超过可退余额（实付 {paid}、已退 {already}）",
+        )
+
+    db.add(
+        Refund(
+            order_id=order.id,
+            order_item_id=order_item_id,
+            amount=amount,
+            reason=reason,
+            stop_from_issue=stop_from_issue,
+            refunded_at=refunded_at or date.today(),
+            operator_id=operator_id,
+        )
+    )
+    order.refunded_amount = already + amount
+    is_full = order.refunded_amount >= paid
+    order.commercial_status = (
+        OrderCommercialStatus.refunded
+        if is_full
+        else OrderCommercialStatus.partial_refund
+    )
+
+    if is_full:
+        orphaned = _orphan_order_generated_details(db, order_id)
+    elif order_item_id is not None or stop_from_issue is not None:
+        orphaned = _orphan_order_generated_details(
+            db, order_id, order_item_id=order_item_id, from_issue=stop_from_issue
+        )
+    else:
+        orphaned = 0  # 纯退钱、履约不变
+
+    log_event(
+        db,
+        order_id=order.id,
+        event_type=OrderEventType.refunded,
+        payload={
+            "amount": str(amount),
+            "order_item_id": order_item_id,
+            "stop_from_issue": stop_from_issue,
+            "is_full": is_full,
+            "refunded_amount_total": str(order.refunded_amount),
+            "orphaned_shipping_details": orphaned,
+            "reason": reason,
+        },
+        operator_id=operator_id,
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def cancel_order(
+    db: Session,
+    order_id: int,
+    *,
+    reason: str,
+    refunded_at: Optional[date] = None,
+    operator_id: Optional[int] = None,
+) -> Order:
+    """Cancel an order: mark ``commercial_status=cancelled``, record a full refund
+    of the outstanding paid amount (实付 − 已退), and stop ALL delivery.
+
+    Like refund, cancel is a commercial event — the internal ``OrderStatus`` stays
+    as-is (use ``void`` for "this order shouldn't exist").
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
+    if order.status == OrderStatus.void:
+        raise HTTPException(status_code=409, detail="已作废的订单无法取消")
+    if order.commercial_status == OrderCommercialStatus.cancelled:
+        raise HTTPException(status_code=409, detail="订单已取消")
+
+    paid = _as_money(order.paid_amount)
+    already = _as_money(order.refunded_amount)
+    outstanding = paid - already
+    refund_amount = outstanding if outstanding > 0 else Decimal("0")
+    if refund_amount > 0:
+        db.add(
+            Refund(
+                order_id=order.id,
+                order_item_id=None,
+                amount=refund_amount,
+                reason=f"订单取消：{reason}",
+                stop_from_issue=None,
+                refunded_at=refunded_at or date.today(),
+                operator_id=operator_id,
+            )
+        )
+        order.refunded_amount = already + refund_amount
+
+    order.commercial_status = OrderCommercialStatus.cancelled
+    orphaned = _orphan_order_generated_details(db, order_id)
+    log_event(
+        db,
+        order_id=order.id,
+        event_type=OrderEventType.cancelled,
+        payload={
+            "reason": reason,
+            "refund_amount": str(refund_amount),
+            "orphaned_shipping_details": orphaned,
+        },
+        operator_id=operator_id,
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def record_payment(
+    db: Session,
+    order_id: int,
+    *,
+    amount: Decimal,
+    method: Optional[str] = None,
+    collected_at: Optional[date] = None,
+    notes: Optional[str] = None,
+    operator_id: Optional[int] = None,
+) -> Order:
+    """记一笔收款（到账）：建收款流水行 + 累加 ``paid_amount`` + 记审计事件。
+
+    收款是商业事件，不动内部 ``OrderStatus``。允许超付应收（预付/定金/应收后调），
+    不硬拦；欠款按 max(0, 应收 − 实付) 展示。
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
+    if order.status == OrderStatus.void:
+        raise HTTPException(status_code=409, detail="已作废的订单无法收款")
+
+    amount = _as_money(amount)
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="收款金额必须大于 0")
+
+    db.add(
+        Payment(
+            order_id=order.id,
+            amount=amount,
+            method=method,
+            collected_at=collected_at or date.today(),
+            notes=notes,
+            operator_id=operator_id,
+        )
+    )
+    order.paid_amount = _as_money(order.paid_amount) + amount
+    log_event(
+        db,
+        order_id=order.id,
+        event_type=OrderEventType.payment_recorded,
+        payload={
+            "amount": str(amount),
+            "method": method,
+            "paid_amount_total": str(order.paid_amount),
+            "notes": notes,
+        },
+        operator_id=operator_id,
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def bulk_confirm_orders(
+    db: Session,
+    order_ids: List[int],
+    operator_id: Optional[int] = None,
+) -> dict:
+    """Confirm many orders. Each is committed independently; a per-order failure
+    (404 / 409 — e.g. already active) is collected, not aborting the batch."""
+    succeeded: List[int] = []
+    failed: List[dict] = []
+    for oid in order_ids:
+        try:
+            confirm_order(db, oid, operator_id=operator_id)
+            succeeded.append(oid)
+        except HTTPException as exc:
+            failed.append({"order_id": oid, "detail": str(exc.detail)})
+    return {"succeeded": succeeded, "failed": failed}
+
+
+def bulk_void_orders(
+    db: Session,
+    order_ids: List[int],
+    reason: str,
+    operator_id: Optional[int] = None,
+) -> dict:
+    """Void many orders (with one shared reason). Per-order failure collected,
+    batch continues; each void commits independently (orphans its shipping rows)."""
+    succeeded: List[int] = []
+    failed: List[dict] = []
+    for oid in order_ids:
+        try:
+            void_order(db, oid, reason=reason, operator_id=operator_id)
+            succeeded.append(oid)
+        except HTTPException as exc:
+            failed.append({"order_id": oid, "detail": str(exc.detail)})
+    return {"succeeded": succeeded, "failed": failed}
 
 
 def update_order_items(
@@ -792,6 +1089,8 @@ def get_order_detail(db: Session, order_id: int) -> Order:
             .selectinload(OrderItem.allocations)
             .selectinload(FulfillmentAllocation.targets),
             selectinload(Order.items).selectinload(OrderItem.targets),
+            selectinload(Order.refunds),
+            selectinload(Order.payments),
         )
         .filter(Order.id == order_id)
         .first()
@@ -818,24 +1117,89 @@ def compute_fulfillment_progress(
         coverage_start=order_item.coverage_start_date,
         coverage_end=order_item.coverage_end_date,
         fulfillment_type=order_item.fulfillment_type,
+        publication=order_item.publication,
     )
     drift = None
     if expected_at_creation is not None and current_expected is not None:
         drift = current_expected - expected_at_creation
-    synced_count = (
-        db.query(ShippingDetail)
-        .filter(
-            ShippingDetail.order_id == order_item.order_id,
-            ShippingDetail.order_item_id == order_item.id,
-        )
-        .count()
+    linked = db.query(ShippingDetail).filter(
+        ShippingDetail.order_id == order_item.order_id,
+        ShippingDetail.order_item_id == order_item.id,
     )
+    synced_count = linked.count()
+    shipped_count = linked.filter(ShippingDetail.shipped_at.isnot(None)).count()
     return FulfillmentProgress(
         expected_at_creation=expected_at_creation,
         current_expected=current_expected,
         drift=drift,
         synced_count=synced_count,
+        shipped_count=shipped_count,
         skipped_count=0,
+    )
+
+
+def _build_list_row(db: Session, order: Order) -> OrderListRow:
+    """Build one ``OrderListRow`` for ``order``, computing the derived
+    coverage span, per-order drift, and ``expected_total`` against the live
+    schedule. Drift compares each item's ``expected_issues_at_creation`` with
+    the freshly-computed expectation."""
+    items = list(order.items)
+    total_quantity = sum((i.total_quantity or 0) for i in items)
+
+    paid = _as_money(order.paid_amount)
+    total = _as_money(order.total_amount)
+    outstanding = total - paid
+    if outstanding < 0:
+        outstanding = Decimal("0")
+
+    starts = [i.coverage_start_date for i in items if i.coverage_start_date]
+    ends = [i.coverage_end_date for i in items if i.coverage_end_date]
+    coverage_start_d = min(starts) if starts else None
+    coverage_end_d = max(ends) if ends else None
+
+    order_drift = False
+    expected_total: Optional[int] = 0
+    any_expected = False
+    for item in items:
+        current = compute_expected_issues(
+            db,
+            coverage_start=item.coverage_start_date,
+            coverage_end=item.coverage_end_date,
+            fulfillment_type=item.fulfillment_type,
+            publication=item.publication,
+        )
+        if current is not None:
+            expected_total += current
+            any_expected = True
+        if (
+            item.expected_issues_at_creation is not None
+            and current is not None
+            and current != item.expected_issues_at_creation
+        ):
+            order_drift = True
+
+    return OrderListRow(
+        id=order.id,
+        order_code=order.order_code,
+        external_order_no=order.external_order_no,
+        order_date=order.order_date,
+        payer_name=order.payer_name,
+        entry_method=order.entry_method,
+        source_platform=order.source_platform,
+        campaign=order.campaign,
+        total_quantity=total_quantity,
+        total_amount=order.total_amount,
+        paid_amount=paid,
+        outstanding_amount=outstanding,
+        coverage_start_date=coverage_start_d,
+        coverage_end_date=coverage_end_d,
+        status=order.status,
+        commercial_status=order.commercial_status,
+        # column default (0) only applies on flush; coerce for unflushed/None rows
+        refunded_amount=_as_money(order.refunded_amount),
+        has_drift=order_drift,
+        synced_count=0,
+        expected_total=expected_total if any_expected else None,
     )
 
 
@@ -848,7 +1212,13 @@ def list_orders(
     source_platform: Optional[str] = None,
     coverage_start: Optional[date] = None,
     coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: str = "desc",
     skip: int = 0,
     limit: int = 50,
 ) -> Tuple[List[OrderListRow], int]:
@@ -862,12 +1232,21 @@ def list_orders(
     * ``coverage_start`` / ``coverage_end`` — orders whose item coverage
       overlaps the provided range. NULL coverage on an item counts as
       open-ended on that side.
-    * ``has_drift``        — post-filter computed per-order by comparing
-      ``expected_issues_at_creation`` with the current schedule snapshot.
+    * ``order_date_start`` / ``order_date_end`` — 下单日期闭区间（含端点），
+      DB 层过滤（不再前端逐页客户端过滤，避免跨页不准）。
+    * ``has_drift``        — per-order drift computed against the live
+      schedule snapshot.
 
-    Returns ``(rows, total)``. ``total`` reflects the DB-level filter
-    count *before* the in-memory drift filter so paging metadata stays
-    consistent with what the server actually returned.
+    Returns ``(rows, total)``.
+
+    Pagination semantics depend on ``has_drift``:
+
+    * ``has_drift is None`` — paginate at the SQL level; ``total`` is the
+      DB-level filter count.
+    * ``has_drift`` set — drift is a Python-computed predicate that can't be
+      pushed into SQL, so the full filtered set is materialised, drift-filtered,
+      and paginated in memory. ``total`` then reflects the **post-drift** count
+      so every page is full and the count matches what's returned.
     """
     q = db.query(Order)
     if status is not None:
@@ -880,6 +1259,22 @@ def list_orders(
         q = q.filter(Order.campaign == campaign)
     if source_platform:
         q = q.filter(Order.source_platform == source_platform)
+    if order_date_start is not None:
+        q = q.filter(Order.order_date >= order_date_start)
+    if order_date_end is not None:
+        q = q.filter(Order.order_date <= order_date_end)
+    if unpaid is True:
+        q = q.filter(Order.paid_amount < Order.total_amount)
+    elif unpaid is False:
+        q = q.filter(Order.paid_amount >= Order.total_amount)
+    if search:
+        like = f"%{search.strip()}%"
+        q = q.filter(
+            or_(
+                Order.order_code.ilike(like),
+                Order.external_order_no.ilike(like),
+            )
+        )
     if coverage_start is not None or coverage_end is not None:
         item_q = db.query(OrderItem.order_id).distinct()
         if coverage_start is not None:
@@ -898,69 +1293,27 @@ def list_orders(
             )
         q = q.filter(Order.id.in_(item_q))
 
-    total = q.count()
-    orders = (
-        q.options(selectinload(Order.items))
-        .order_by(Order.id.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    # 排序：仅限 DB 列（偏差/份数是 Python 端聚合算的，不进 SQL 排序）。默认 id 倒序。
+    sort_col = {
+        "order_date": Order.order_date,
+        "total_amount": Order.total_amount,
+        "outstanding": Order.total_amount - Order.paid_amount,
+    }.get(sort)
+    if sort_col is not None:
+        primary = sort_col.asc() if order == "asc" else sort_col.desc()
+        base = q.options(selectinload(Order.items)).order_by(primary, Order.id.desc())
+    else:
+        base = q.options(selectinload(Order.items)).order_by(Order.id.desc())
 
-    rows: List[OrderListRow] = []
-    for order in orders:
-        items = list(order.items)
-        total_quantity = sum((i.total_quantity or 0) for i in items)
+    if has_drift is None:
+        # 不按偏差筛 → 直接在 SQL 层分页（每行的偏差仅用于展示，按本页逐单算）。
+        total = q.count()
+        rows = [_build_list_row(db, order) for order in base.offset(skip).limit(limit).all()]
+        return rows, total
 
-        starts = [i.coverage_start_date for i in items if i.coverage_start_date]
-        ends = [i.coverage_end_date for i in items if i.coverage_end_date]
-        coverage_start_d = min(starts) if starts else None
-        coverage_end_d = max(ends) if ends else None
-
-        order_drift = False
-        expected_total: Optional[int] = 0
-        any_expected = False
-        for item in items:
-            current = compute_expected_issues(
-                db,
-                coverage_start=item.coverage_start_date,
-                coverage_end=item.coverage_end_date,
-                fulfillment_type=item.fulfillment_type,
-            )
-            if current is not None:
-                expected_total += current
-                any_expected = True
-            if (
-                item.expected_issues_at_creation is not None
-                and current is not None
-                and current != item.expected_issues_at_creation
-            ):
-                order_drift = True
-
-        if has_drift is True and not order_drift:
-            continue
-        if has_drift is False and order_drift:
-            continue
-
-        rows.append(
-            OrderListRow(
-                id=order.id,
-                order_code=order.order_code,
-                external_order_no=order.external_order_no,
-                order_date=order.order_date,
-                payer_name=order.payer_name,
-                entry_method=order.entry_method,
-                source_platform=order.source_platform,
-                campaign=order.campaign,
-                total_quantity=total_quantity,
-                total_amount=order.total_amount,
-                coverage_start_date=coverage_start_d,
-                coverage_end_date=coverage_end_d,
-                status=order.status,
-                has_drift=order_drift,
-                synced_count=0,
-                expected_total=expected_total if any_expected else None,
-            )
-        )
-
-    return rows, total
+    # 按偏差筛：偏差是 Python 端按实时刊期表算的，无法下推到 SQL。取整批过滤后的订单、
+    # 逐单算偏差、按 has_drift 过滤，再在内存里分页——这样每页都满 limit 条、且 total
+    # 反映过滤后的真实条数（修正旧版"先 SQL 分页再丢行"导致的页面残缺 + total 不符）。
+    all_rows = [_build_list_row(db, order) for order in base.all()]
+    matched = [row for row in all_rows if row.has_drift == has_drift]
+    return matched[skip : skip + limit], len(matched)

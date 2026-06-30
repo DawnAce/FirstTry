@@ -29,6 +29,8 @@ export interface ShippingDetail {
   confirmation: string | null;
   company: string | null;
   shipped_at: string | null;
+  shipped_quantity: number | null;
+  tracking_no: string | null;
   order_id: number | null;
   order_item_id: number | null;
   fulfillment_target_id: number | null;
@@ -146,3 +148,20 @@ export const copyShippingDetailsFromPrevious = (
   api.post<CopyShippingDetailsResult>('/shipping-details/copy-from-previous', null, {
     params: { issue_number: issueNumber, previous_issue_number: previousIssueNumber },
   });
+
+export interface ShipDetailPayload {
+  shipped_at?: string | null;
+  shipped_quantity?: number | null;
+  tracking_no?: string | null;
+}
+
+export const shipShippingDetail = (
+  id: number,
+  data: ShipDetailPayload = {},
+): Promise<AxiosResponse<ShippingDetail>> =>
+  api.post<ShippingDetail>(`/shipping-details/${id}/ship`, data);
+
+export const unshipShippingDetail = (
+  id: number,
+): Promise<AxiosResponse<ShippingDetail>> =>
+  api.post<ShippingDetail>(`/shipping-details/${id}/unship`);

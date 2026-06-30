@@ -14,15 +14,18 @@ from pydantic import BaseModel
 class CampaignSummaryRow(BaseModel):
     """One marketing campaign's sales roll-up.
 
-    ``total_listed`` is the pre-discount 原价 total (``COALESCE(original_amount,
-    paid_amount)`` summed — orders with no captured list price count as
-    no-discount). ``total_discount = total_listed - total_paid`` is the campaign's
-    discount depth in ¥.
+    ``total_paid`` is the **net** cash received = ``SUM(paid_amount - refunded_amount)``
+    (退款已冲减；全额退款 / 取消单已被整单排除). ``total_refunded`` exposes the
+    refunded total for transparency. ``total_listed`` is the pre-discount 原价 total
+    (``COALESCE(original_amount, paid_amount)`` summed — orders with no captured list
+    price count as no-discount). ``total_discount = total_listed - 毛实付`` is the
+    pure pricing discount (折扣按折前-实付算，不含退款).
     """
 
     campaign: str
     order_count: int
     total_paid: Decimal
+    total_refunded: Decimal
     total_listed: Decimal
     total_discount: Decimal
 
@@ -31,15 +34,17 @@ class CampaignSummaryOut(BaseModel):
     """Per-campaign sales summary + grand totals.
 
     ``rows`` is ordered by ``order_count`` desc. Only ``active`` (confirmed /
-    imported) orders with a campaign tag are counted; drafts, pending, void and
-    untagged orders are excluded by the service. Platform refunds are NOT netted
-    out — ``total_paid`` is the gross sum over active orders.
+    imported) orders with a campaign tag are counted; drafts, pending, void,
+    refunded/cancelled and untagged orders are excluded by the service.
+    ``grand_total_paid`` is **net** of refunds (partial refunds netted via
+    ``refunded_amount``; full refunds / cancels excluded entirely).
     """
 
     rows: List[CampaignSummaryRow]
     total_campaigns: int
     grand_total_orders: int
     grand_total_paid: Decimal
+    grand_total_refunded: Decimal
     grand_total_listed: Decimal
     grand_total_discount: Decimal
     date_from: Optional[date] = None
@@ -86,6 +91,15 @@ class BsCirculationRow(BaseModel):
     subscription_qty: int
     total_qty: int
     in_calendar: bool = True
+
+
+class OutstandingSummary(BaseModel):
+    """欠款汇总：只计 active 且非退款/取消单。欠款 = Σ max(0, 应收 − 实付)。"""
+
+    total_receivable: Decimal   # Σ 应收(total_amount)
+    total_paid: Decimal         # Σ 实付(paid_amount)
+    total_outstanding: Decimal  # Σ max(0, 应收 − 实付)
+    unpaid_orders: int          # 未付清订单数(实付 < 应收)
 
 
 class BsCirculationOut(BaseModel):

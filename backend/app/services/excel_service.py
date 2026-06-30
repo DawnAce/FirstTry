@@ -4,8 +4,10 @@ from datetime import date, timedelta
 from typing import Optional
 
 from openpyxl import load_workbook, Workbook
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from app.models import Issue, ReportEntry, ShippingDetail
+from app.models import Issue, Order, OrderStatus, ReportEntry, ShippingDetail
+from app.models.shipping_detail import ShippingDetailSyncStatus
 from app.services.issue_service import format_chinese_issue_number, get_year_issue_index
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
@@ -311,9 +313,16 @@ def export_shipping_excel(issue_id: int, db: Session) -> io.BytesIO:
     ws = wb.active
     ws.title = "ZTO-MF"
 
+    # 排除已作废订单产生的发货行：order_generated 行在订单作废时被置 orphaned，
+    # 且兜底排除任何 link 到 void 订单的行（覆盖本次修复前历史遗留的孤儿行）。
     details = (
         db.query(ShippingDetail)
+        .outerjoin(Order, ShippingDetail.order_id == Order.id)
         .filter(ShippingDetail.issue_number == issue.issue_number)
+        .filter(ShippingDetail.sync_status != ShippingDetailSyncStatus.orphaned)
+        .filter(
+            or_(ShippingDetail.order_id.is_(None), Order.status != OrderStatus.void)
+        )
         .order_by(ShippingDetail.id)
         .all()
     )
@@ -333,6 +342,49 @@ def export_shipping_excel(issue_id: int, db: Session) -> io.BytesIO:
                     value = ""
             ws.cell(row=row_index, column=col, value=value)
 
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+_ORDER_STATUS_LABELS = {
+    "draft": "草稿",
+    "pending_confirmation": "待确认",
+    "active": "生效",
+    "void": "已作废",
+}
+
+_ORDER_EXPORT_COLUMNS = [
+    ("订单编码", lambda r: r.order_code or ""),
+    ("来源单号", lambda r: r.external_order_no or ""),
+    ("下单日期", lambda r: r.order_date.isoformat() if r.order_date else ""),
+    ("付款主体", lambda r: r.payer_name or ""),
+    ("平台", lambda r: r.source_platform or ""),
+    ("活动", lambda r: r.campaign or ""),
+    ("份数", lambda r: r.total_quantity),
+    ("金额", lambda r: float(r.total_amount) if r.total_amount is not None else 0),
+    ("实付", lambda r: float(r.paid_amount) if r.paid_amount is not None else 0),
+    ("欠款", lambda r: float(r.outstanding_amount) if r.outstanding_amount is not None else 0),
+    ("覆盖起", lambda r: r.coverage_start_date.isoformat() if r.coverage_start_date else ""),
+    ("覆盖止", lambda r: r.coverage_end_date.isoformat() if r.coverage_end_date else ""),
+    ("状态", lambda r: _ORDER_STATUS_LABELS.get(
+        r.status.value if hasattr(r.status, "value") else str(r.status),
+        str(r.status),
+    )),
+]
+
+
+def export_orders_excel(rows) -> io.BytesIO:
+    """Build an .xlsx from a list of ``OrderListRow`` (already filtered/sorted)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "订单"
+    for col, (header, _) in enumerate(_ORDER_EXPORT_COLUMNS, start=1):
+        ws.cell(row=1, column=col, value=header)
+    for row_index, row in enumerate(rows, start=2):
+        for col, (_, getter) in enumerate(_ORDER_EXPORT_COLUMNS, start=1):
+            ws.cell(row=row_index, column=col, value=getter(row))
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)

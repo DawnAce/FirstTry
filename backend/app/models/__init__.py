@@ -43,8 +43,14 @@ from app.models.fulfillment_target import (
     TargetStatus,
 )
 from app.models.order_event import OrderEvent, OrderEventType
+from app.models.refund import Refund
+from app.models.payment import Payment
 from app.models.product import CoverageRule, Product
 from app.models.bs_issue import BsIssue
+from app.models.partner import Partner, PartnerType
+from app.models.contract import Contract, ContractStatus
+from app.models.invoice import Invoice, InvoiceType
+from app.models.channel_settlement import ChannelSettlement, SettlementStatus
 
 __all__ = [
     "PublicationSchedule",
@@ -69,8 +75,16 @@ __all__ = [
     "FulfillmentAllocation",
     "FulfillmentTarget", "ShippingChannel", "TargetStatus",
     "OrderEvent", "OrderEventType",
+    "Refund",
+    "Payment",
     # Product catalog (商品库)
     "Product", "CoverageRule",
     # 商学院月刊刊期日历
     "BsIssue",
+    # 合同管理（合作渠道 + 渠道合同）
+    "Partner", "PartnerType",
+    "Contract", "ContractStatus",
+    # 财务管理（订单发票 + 渠道结算）
+    "Invoice", "InvoiceType",
+    "ChannelSettlement", "SettlementStatus",
 ]

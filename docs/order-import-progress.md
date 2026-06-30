@@ -1,7 +1,7 @@
 # 电商订单导入 — 项目进度备忘
 
-> 最后更新：2026-06-26。围绕「把 CBJ 小程序 / 淘宝 等电商订单导入订单管理系统 + 下游统计」这条线。
-> **状态：CBJ + 淘宝 端到端完成、已合并 main、已部署生产；商品库已规范化（三段式命名 + 结构化 code，生产 13 个稳定品）；新增「商学院按期发行量（单期 + 订阅）」并部署。后端 337 / 前端 82 测试全绿。**
+> 最后更新：2026-06-27。围绕「把 CBJ 小程序 / 淘宝 等电商订单导入订单管理系统 + 下游统计」这条线。
+> **状态：CBJ + 淘宝 端到端完成、已合并 main、已部署生产；商品库已规范化（三段式命名 + 结构化 code，生产 13 个稳定品）；新增「商学院按期发行量（单期 + 订阅）」并部署。2026-06-27 修了订单管理 5 个正确性 bug（见「正确性修复」节）+ 建了「退款闭环」（见同名节）+「按期批量排发」（见同名节）+「已发货回写 + 对账」（见同名节）+「收款 / 欠款追踪」（见同名节）+「列表增强：搜索/排序/批量/导出」（见同名节）+「端点权限 F」（见同名节）。后端 391 测试全绿、前端 `tsc -b && vite build` 通过。**
 
 ## 目标
 把电商平台（首个：CBJ 小程序）的订单尽量自动、完整地导入：商品自动识别、状态/金额/收件人落库，支持近期单（要安排投递）和历史单（只补记录）两种模式。
@@ -105,6 +105,88 @@
 - **促销别名（PR #30）**：补真实促销名 —— 双十一/全年订阅优惠 → `CBJ-1Y-PROMO`；半年订阅优惠（实付 ¥100/120、备注"放邮箱"=邮局）→ `CBJ-6M-POST-WK`；商学院双十一 → `BS-1Y-PROMO`。
 - **运费/忽略/套餐（PR #31）**：运费识别扩到「快递费用」+ 忽略名单（见「已确定的业务规则」）；组合订阅优惠 → 套餐别名 `BUNDLE-CBJ-BS-1Y`（=双刊 8 折 ¥576）。
 - **结果**：740 单 → **725 导入 / 6 跳过 / 2 重复 / 7 待确认**（待确认全是纯运费单，人工并单）。识别率从「全部失败」（嗅探 bug 时）收敛到接近全收。
+
+## 正确性修复（2026-06-27，订单管理 5 个 bug，单 commit）
+> 来自一次订单管理全面审计（详见对话）。这 5 个是「已经在悄悄出错」的正确性/会误发问题，优先于补功能。后端 358 测试全绿、前端构建通过。
+
+1. **退款/取消单仍发货 + 仍计营收** → 修：发货同步 `order_shipping_sync_service._build_candidates` 顶部按 `commercial_status ∈ {refunded, cancelled}` 整单跳过（停发）；统计 `order_analytics_service` 加 `_revenue_eligible()` 过滤，挂到 campaigns / issues / bs-circulation **全部 5 个查询**。手工单 `commercial_status=NULL` 照常计入；`partial_refund` 暂按毛额（净额冲减待退款模块）。
+2. **作废订单不清发货明细、仍被中通导出** → 修：`order_service.void_order` 调 `_orphan_order_generated_details` 把该单 `order_generated` 行置 `sync_status=orphaned`（事件 payload 记 `orphaned_shipping_details` 计数）；`excel_service.export_shipping_excel` 改 `outerjoin Order` 排除 orphaned 行 + 任何 link 到 void 订单的行（兜底历史遗留）。
+3. **`has_drift` 筛选破坏分页 + total 不符** → 修：`list_orders` 拆两路——无偏差筛走 SQL 分页（`total`=DB count）；有偏差筛取全集 → Python 过滤 → 内存分页（`total`=过滤后条数，每页满）。抽出 `_build_list_row` helper。
+4. **下单日期筛选只在当前页客户端过滤** → 修：`list_orders` + `api/orders.py` 加 `order_date_start/end` 服务端参数；前端 `orders.ts` / `OrderList.tsx` 改服务端筛，删掉 `rowMatchesOrderDateRange` / `filteredRows` 客户端过滤。
+5. **商学院月刊期数被当周刊高估 ~4.7×、污染 drift** → 修：`compute_expected_issues` 加 `publication` 参数，`business_school` 按 `bs_issues` 刊历数命中期数（全年=11 而非 ~52）；4 个调用点全传 `item.publication`。`publication=None` 仍走周报路径（兼容）。
+
+**新增/改动测试**：新建 `test_order_list_filters.py`（真 SQLite 跑 #3/#4 分页 + 日期筛正确性）；`test_expected_issues_calculator.py` 加商学院期数 6 例；`test_order_shipping_sync_service.py` 加退款/取消跳过 + 作废孤儿/导出排除；`test_campaign_analytics.py` 加退款/取消排除、部分退款仍计；`test_order_service.py` 修正两个旧 has_drift 断言（它们断言的正是被修掉的错误 total）。
+
+**遗留边界**（刻意留给退款模块）：`partial_refund` 仍发货、仍按毛额计；bug #1 只挡「导入即退款」的单（它们从没同步过），「先同步后退款」要等退款域操作落地时一并 orphan 已生成行。
+
+## 退款闭环（2026-06-27，拆 2 个 commit）
+> 审计里排第一的高价值缺口。把「退款这件事发生后，状态/停发/营收/审计每层都跟着反应」做成闭环。后端 369 测试全绿、前端构建通过。
+
+**统一模型**：一张 `refunds` 子表，两个范围旋钮覆盖三种部分退款场景——`order_item_id` 空 + `stop_from_issue` 空 = 纯退钱（履约不动）；`order_item_id` 有值 = 退某条明细（那条停发）；`stop_from_issue` 有值 = 订阅从该期起停发。全额退/取消 = 范围都空 + 整单停发。
+
+- **数据层**：`refunds` 表（迁移 `f7a2c4e6b8d0`，当前 head）+ `orders.refunded_amount` 列 + `OrderEventType` 加 `refunded`/`cancelled`（MySQL 枚举 ALTER，与 `test_order_event_enum_migration_consistency` 对齐）。
+- **服务层**：`order_service.refund_order(amount, reason?, order_item_id?, stop_from_issue?)` —— 累加 `refunded_amount`、推 `commercial_status`（累计≥实付→`refunded`，否则 `partial_refund`）、按范围 orphan 已生成发货行（**闭合「先同步后退款」**）、超退余额报 422。`cancel_order(reason)` —— 标 `cancelled` + 把未退实付记一笔全额退款（**用户拍板「cancel 顺手全额退」**）+ 整单停发。`_orphan_order_generated_details` 通用化（带 `order_item_id` / `from_issue` 范围）。两者**只改 `commercial_status`，不动 `OrderStatus`**（退款是正常业务，不是录错作废）。
+- **接口**：`POST /api/orders/{id}/refund`、`/cancel`，返回带 `commercial_status` / `refunded_amount` / `refunds` 台账的完整订单。
+- **统计**：`summarize_campaigns` 实收改 **净额（实付−退款）** + 暴露 `total_refunded`；折扣仍按折前−毛实付。⚠️ **按份数的口径**（按期统计 / 商学院发行量）退款净额**留作后续**（要动覆盖期展开）。
+- **前端**：订单详情页加「退款」「取消订单」按钮 + 弹窗（金额/原因/可选明细/可选起停期）+「退款台账」表 + 头部商业状态标签 + 已退金额展示（`OrderDetail.tsx` / `orderUtils.ts` / `api/orders.ts`）。
+- **测试 +11**（358→369）：全退/部分退/三场景停发/超退防呆/退款拒作废单/cancel 全额退/cancel 接部分退/cancel 幂等/营收净额/API 往返。
+
+## 按期批量排发（2026-06-27）
+> 审计 backlog 第二项（履约闭环）。每期出刊后把几百张订阅单的这一期排进中通发货——原来逐单逐期点、极易漏期。**零迁移、纯复用现有单订单×单期同步包一层。**
+
+- **3 个操作**(`order_shipping_batch_service.py`)：
+  - `gap_report(issue_number)` —— 某期「谁该排却没排」**只读报表**：候选单逐单分类为 待排/需更新/冲突/已同步/跳过(带原因)。
+  - `apply_all_for_issue(issue_number)` —— 某期**一键排发所有活跃订单**；冲突单(人工改过)只报告、不覆盖、**不中断整批**；每单独立提交；幂等。
+  - `apply_all_issues_for_order(order_id)` —— **单订单覆盖期内所有期一次排齐**（仅 `issues` 表已存在的期；推出但无刊期行的计入 `issues_no_calendar`）。补录老订阅单后用。
+- **订单集合** = `active` + **非历史归档**(按现有业务规则排除) + 有 active 纸刊明细覆盖该期。已退款/取消单被整单 skip 自然挡掉。
+- **接口**：`GET /orders/shipping-sync/issues/{n}/gap-report`、`POST …/apply-all`、`POST /orders/{id}/shipping-sync/apply-all-issues`。
+- **前端**：新增「订单管理 → 按期排发」页(`IssueDispatch.tsx`，路由 `/orders/dispatch`)：选期 → 漏期报表(待排/冲突/跳过分区表 + 统计卡) → 一键排发本期 → 结果汇总；订单详情「关联快递明细」Tab 加「同步全部期」按钮。
+- **自动化**：用户拍板**先只做手动一键 + 漏期报表，不做调度器**（手动按钮+报表已摁住漏期风险；定时为后续可选）。
+- **测试 +12**(369→381)：批量(全排/幂等/历史排除/冲突不中断/休刊/跳过原因聚合)、漏期报表(分类/缺覆盖期/休刊)、本单全部期(∩Issue表/no_calendar)、API 往返(路由不被 /{order_id} 抢占)。
+
+## 已发货回写 + 应发vs实发对账（2026-06-28）
+> 审计 backlog 第三项（履约闭环收尾）。A 让订单「排进」中通发货明细,但**排了 ≠ 发了**——中通发完不回流,系统不知道实际发出去没有。B 补"已发"维度 + 应发/已发/缺口对账。整条链:**应订 → 已排(A) → 已发(B) → 缺口对账**。
+
+- **Schema(迁移 `a9c3e5f70b21`)**:`shipping_details` 加 `shipped_quantity`(实发份数,可空) + `tracking_no`(运单号,可空)。「已发」标记 = `shipped_at` 非空(复用现有列,不加状态枚举)。⚠️ **部署需 `alembic upgrade head`**。
+- **标已发(人工为主,无中通回执导入)**:
+  - `POST /orders/shipping-sync/issues/{n}/ship-all` —— 按期一键标已发(中通发完整期),只标本期已生成且未发的行,实发=计划份数。
+  - `POST /shipping-details/{id}/ship` `…/unship` —— 逐行标(可调实发/补运单)/撤销。shipped_at 非 SYNC_FIELD,标已发不会把 order_generated 行置 manually_modified。
+- **对账** `reconcile_issue`(`GET /orders/shipping-sync/issues/{n}/reconciliation`):某期 **应发(Σ计划份数)/已发(Σ实发)/缺口** + **未发清单**(已排但未标已发的行,带订单/收件人)。
+- **进度** `compute_fulfillment_progress` 加 `shipped_count`(已发行数),订单详情进度卡显示 已发 + 未发缺口。
+- **前端**:「按期排发」页加「本期对账」(应发/已发/缺口卡 + 一键标已发 + 未发清单逐行标);订单详情进度卡加 已发/缺口。
+- **决策**(用户拍板):已发**人工标记为主**(不做中通回执导入)、v1**只对账报缺口**(不做自动补寄)。
+- **测试 +4**(381→385):标已发(一键/部分实发/撤销/幂等)、对账(应发/已发/缺口/未发清单)、进度 shipped_count、API 往返。
+
+## 收款 / 欠款追踪（2026-06-29，财务对账 C1）
+> 审计 backlog「财务对账」的核心半:应收→实付→欠款(退款净额那半已在退款闭环做)。`paid_amount` 原来几乎没业务读它,欠款追不动、对公分期没台账。
+
+- **口径**:应收=`total_amount`、实付=`paid_amount`、已退=`refunded_amount`;**欠款 = max(0, 应收−实付)**;净收 = 实付−已退。电商单导入 `total=paid` → 欠款 0;**欠款主要在对公/手工单**。
+- **Schema(迁移 `c1d3f5a7b9e2`)**:`payment_collections` 子表(一笔到账一行:金额/方式/到账日/经办人/备注),与退款台账 `refunds` 对称;`OrderEventType` 加 `payment_recorded`。`paid_amount` 仍是冗余合计。⚠️ **部署需 `alembic upgrade head`**。
+- **收款**:`record_payment` + `POST /orders/{id}/payments` —— 建流水行 + 累加实付 + 记事件。商业事件、不动 `OrderStatus`;允许超付(不硬拦)。
+- **欠款追踪**:`list_orders` 加 `unpaid` 筛选(`paid </>= total`);`OrderListRow`/`OrderOut` 加 `outstanding_amount`;`GET /api/analytics/outstanding` 欠款汇总(应收/实付/欠款逐单 clamp 求和/未付清单数)。
+- **前端**:订单列表「未付清」筛选 + 欠款列;订单详情金额区(应收/实付/已退/欠款,已付清提示)+ 收款台账 + 「记一笔收款」弹窗;Analytics 页欠款汇总卡。(OrderEditor 本就有「已付金额」字段,无需补。)
+- **决策**(用户拍板):建收款流水子表、这轮只做欠款追踪核心。**月度营收走势/同比、统计 CSV/Excel 导出 留后续**。
+- **测试 +2**(385→387):收款累加/台账/欠款/未付清筛选/欠款汇总逐单 clamp(超付不抵销、void/退款排除)、API 往返。
+
+## 列表增强：搜索 / 排序 / 批量 / 导出（2026-06-29，审计 E）
+> 运营每天用列表干活的基础能力。零迁移。
+
+- **按单号搜索**:`list_orders?search=` 按 `order_code` / `external_order_no` ilike;前端搜索框。
+- **服务端排序**:`sort`(`order_date`/`total_amount`/`outstanding`,仅 DB 列;偏差/份数是 Python 聚合算的不进 SQL)+ `order`(asc/desc);前端列头点排序 → 服务端(`Table onChange`,重置到第 1 页)。
+- **批量确认/作废**:`bulk_confirm_orders`/`bulk_void_orders`(逐单独立提交、单个失败收进 `failed`、不中断整批)+ `POST /orders/bulk-confirm` `/bulk-void`;前端多选 `rowSelection`(跨页保留)+ 工具栏(批量确认生效 / 批量作废带理由弹窗)。
+- **行内确认生效**:列表草稿行直接「确认生效」(复用现有 `confirmOrder`,原来埋在编辑器里)。
+- **订单导出**:`GET /orders/export` 按相同筛选/排序导全量 .xlsx(`excel_service.export_orders_excel`,上限 5 万行);前端「导出」按钮(blob 下载,文件名带日期)。
+- **测试 +3**(387→390):搜索/排序、批量确认(成功+全失败不中断)/作废、导出 smoke、API 往返。
+
+## 端点权限（2026-06-29，审计 F）
+> 安全加固。原来订单所有路由仅"登录即可",任何登录用户都能退款/作废/批量导入/导出。
+
+- **简单版模型**(用户拍板):只在敏感路由加 `require_admin`(非管理员 403),不做 `created_by` 归属细分。
+- **仅管理员**:`POST /orders/{id}/refund` `/cancel` `/void`、`POST /orders/bulk-confirm` `/bulk-void`、`GET /orders/export`、`POST /api/order-import/commit`。`require_admin` 返回 user,沿用作 operator_id。
+- **运营(登录即可)**:看列表/详情/统计、建单/改单/确认/收款/发货同步/标已发/导入预览。
+- 测试 +1:operator 命中敏感端点 403、日常操作放行。后端 390→391。
+- **前端按角色隐藏管理员按钮**(`useAuth().isAdmin`):订单列表(行内作废 / 批量确认作废工具栏 + 多选框 / 导出)、订单详情(退款 / 取消订单 / 作废)、电商导入(确认导入按钮→非管理员显示「需管理员权限」)。运营看不到这些按钮,不会再点出 403。前端 build 通过。
+- 遗留(F 之外,可后续):`exports.py` 的印数/发货导出路由仍仅靠路由级登录、未加 require_admin(印数域,不在订单端点范围)。
 
 ## 待办 / 后续
 - **真导一批（CBJ / 淘宝）**：代码 + 商品库（13 品）+ 刊历都**已部署生产**；干跑预览验证过（CBJ 94/6、淘宝 36/6/1）。待业务真导：传 Excel → 预览 → 确认导入 → 订阅单在详情页补收件人 / 订期再同步中通。淘宝遗留：多商品单单价按标题均摊（需人工核拆）；商家备注里起止期未自动解析（批次起投月 + 逐单核）；季度用 custom 建模。
