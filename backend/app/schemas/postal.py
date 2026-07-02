@@ -82,3 +82,50 @@ class ComplaintOut(BaseModel):
 class ComplaintListOut(BaseModel):
     rows: List[ComplaintOut]
     total: int
+
+
+class AddressChangeOut(BaseModel):
+    id: int
+    order_id: Optional[int] = None
+    external_order_no: Optional[str] = None
+    change_date: Optional[date] = None
+    old_name: Optional[str] = None
+    old_phone: Optional[str] = None
+    old_address: Optional[str] = None
+    old_copies: Optional[int] = None
+    new_name: Optional[str] = None
+    new_phone: Optional[str] = None
+    new_address: Optional[str] = None
+    new_copies: Optional[int] = None
+    original_start_month: Optional[str] = None
+    effective_start_month: Optional[str] = None
+    handling: Optional[str] = None
+    routed_label: Optional[str] = None
+    applied_to_order: bool
+    applied_by: Optional[int] = None
+    applied_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class AddressChangeListOut(BaseModel):
+    rows: List[AddressChangeOut]
+    total: int
+
+
+class FollowUpOut(BaseModel):
+    id: int
+    order_id: Optional[int] = None
+    external_order_no: Optional[str] = None
+    follow_up_date: Optional[date] = None
+    batch_label: Optional[str] = None
+    result: Optional[str] = None
+    snap_name: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class FollowUpListOut(BaseModel):
+    rows: List[FollowUpOut]
+    total: int

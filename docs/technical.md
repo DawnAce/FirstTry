@@ -524,6 +524,11 @@ FirstTry/
 
 **投诉工单（P2）**：`postal_complaints`（迁移 `e2f4a6b8c0d1`）挂邮局订单 —— 投诉 `编号`(去前导零) + `年度` → `orders.external_order_no`（`order_id` 可空 `SET NULL`，匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；`status` 按有无回访派生 open/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。导入/列表：`app/services/postal_complaint_{parser,import_service,service}.py` + `/api/postal/complaints`（list 筛选 年度/状态/投递单位/处理次数/搜索）+ `/complaints/import/preview|commit`。前端 PostDelivery 分「投递批次 / 投诉工单」两 tab。
 
+**改地址工单 + 回访（P3）**：迁移 `f3a5c7b9d1e2` 建 `postal_address_changes` + `postal_follow_ups`（均挂订单，`order_id` 可空 SET NULL）。
+- **改地址**：编号(去零) + `year(修改日期)`（该表无年度列）→ `orders.external_order_no`；处理情况归一 `routed_label`（XX局）；`apply_address_change` 把新姓名/电话/地址写回订单当前 `FulfillmentTarget` 并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——之后批次即用新地址。
+- **回访**：把读者明细「按天开列」的回访列（`YYYYMMDD回访`）拍平成一行一条，列头解析日期。
+- 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/订单映射）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`（list + 回流）+ `/api/postal/address-changes[/{id}/apply]`、`/follow-ups`。前端 PostDelivery 共 4 tab（批次/投诉/改地址/回访）。
+
 ## 4. API 接口一览
 
 所有 API 路径以 `/api` 为前缀。

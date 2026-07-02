@@ -15,17 +15,23 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import Partner, PostalComplaintStatus, PostalDeliveryRow, User
 from app.schemas.postal import (
+    AddressChangeListOut,
+    AddressChangeOut,
     BatchDetailOut,
     BatchOut,
     BatchRowOut,
     ComplaintListOut,
     ComplaintOut,
+    FollowUpListOut,
     GenerateBatchIn,
     PostalCommitIn,
 )
+from app.services import postal_address_change_import_service as addr_import_svc
 from app.services import postal_batch_service as batch_svc
+from app.services import postal_change_service as change_svc
 from app.services import postal_complaint_import_service as complaint_import_svc
 from app.services import postal_complaint_service as complaint_svc
+from app.services import postal_follow_up_import_service as follow_import_svc
 from app.services import postal_import_service as import_svc
 
 router = APIRouter(prefix="/api/postal", tags=["postal"])
@@ -193,3 +199,77 @@ def complaint_import_commit(
     user: User = Depends(require_admin),
 ):
     return complaint_import_svc.commit_import(db, body.session_id, operator_id=getattr(user, "id", None))
+
+
+# --- 改地址工单 (P3) ---------------------------------------------------------
+
+@router.get("/address-changes", response_model=AddressChangeListOut)
+def list_address_changes(
+    year: Optional[int] = None,
+    applied: Optional[bool] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    rows, total = change_svc.list_address_changes(
+        db, year=year, applied=applied, search=search, page=page, page_size=page_size,
+    )
+    return AddressChangeListOut(rows=[AddressChangeOut.model_validate(r) for r in rows], total=total)
+
+
+@router.post("/address-changes/{change_id}/apply", response_model=AddressChangeOut)
+def apply_address_change(change_id: int, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    return change_svc.apply_address_change(db, change_id, operator_id=getattr(user, "id", None))
+
+
+@router.post("/address-changes/import/preview")
+async def address_change_import_preview(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    out, _ = addr_import_svc.preview_import(db, content)
+    return out
+
+
+@router.post("/address-changes/import/commit")
+def address_change_import_commit(body: PostalCommitIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    return addr_import_svc.commit_import(db, body.session_id, operator_id=getattr(user, "id", None))
+
+
+# --- 回访 (P3) ---------------------------------------------------------------
+
+@router.get("/follow-ups", response_model=FollowUpListOut)
+def list_follow_ups(
+    year: Optional[int] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    rows, total = change_svc.list_follow_ups(db, year=year, search=search, page=page, page_size=page_size)
+    return FollowUpListOut(rows=rows, total=total)
+
+
+@router.post("/follow-ups/import/preview")
+async def follow_up_import_preview(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    out, _ = follow_import_svc.preview_import(db, content)
+    return out
+
+
+@router.post("/follow-ups/import/commit")
+def follow_up_import_commit(body: PostalCommitIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    return follow_import_svc.commit_import(db, body.session_id, operator_id=getattr(user, "id", None))

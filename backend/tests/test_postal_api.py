@@ -221,3 +221,58 @@ def test_complaint_import_and_list(client):
 def test_complaint_invalid_status_is_422(client):
     """非法 status 值 → 422（不 500）。"""
     assert client.get("/api/postal/complaints?status=spam").status_code == 422
+
+
+_ADDR_HEADERS = ["修改日期", "姓名", "新姓名", "新电话", "新地址", "处理情况",
+                 "原读者起月日 (邮局2024读者明细)", "编号", "备注"]
+_ADDR_ROWS = [
+    {"修改日期": "2024-01-03", "姓名": "韩博武", "新地址": "陕西省西安市碑林区X", "处理情况": "转北京局微信", "编号": "000402"},
+    {"修改日期": "2024-01-05", "姓名": "赵旭", "新姓名": "肖老师", "新电话": "18616817895",
+     "新地址": "上海市浦东新区Y", "处理情况": "转广东局微信", "编号": "000637"},
+]
+
+
+def _addr_wb() -> bytes:
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "邮局年改地址"; ws.append(_ADDR_HEADERS)
+    for r in _ADDR_ROWS:
+        ws.append([r.get(h, "") for h in _ADDR_HEADERS])
+    b = io.BytesIO(); wb.save(b); return b.getvalue()
+
+
+def test_address_change_import_list_apply(client):
+    r = client.post("/api/postal/address-changes/import/preview",
+                    files={"file": ("a.xlsx", _addr_wb(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["counts"]["import"] == 2
+    assert client.post("/api/postal/address-changes/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
+
+    lst = client.get("/api/postal/address-changes").json()
+    assert lst["total"] == 2
+    # 未挂订单的改地址回流 → 400
+    cid = lst["rows"][0]["id"]
+    assert client.post(f"/api/postal/address-changes/{cid}/apply").status_code == 400
+
+
+_FU_HEADERS = ["编号", "姓名", "起月日", "止月日", "投递单位", "年度", "20240227回访", "2025回访"]
+_FU_ROWS = [
+    {"编号": "719", "姓名": "张三", "起月日": "0101", "止月日": "1231", "投递单位": "北京集订分送",
+     "年度": "2024年", "20240227回访": "——", "2025回访": "拒接"},
+]
+
+
+def _fu_wb() -> bytes:
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "邮局读者明细"; ws.append(_FU_HEADERS)
+    for r in _FU_ROWS:
+        ws.append([r.get(h, "") for h in _FU_HEADERS])
+    b = io.BytesIO(); wb.save(b); return b.getvalue()
+
+
+def test_follow_up_import_and_list(client):
+    r = client.post("/api/postal/follow-ups/import/preview",
+                    files={"file": ("r.xlsx", _fu_wb(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["counts"]["import"] == 2  # 张三的两条回访
+    assert client.post("/api/postal/follow-ups/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
+    assert client.get("/api/postal/follow-ups").json()["total"] == 2

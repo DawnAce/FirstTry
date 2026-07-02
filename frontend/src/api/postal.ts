@@ -173,3 +173,95 @@ export function previewComplaintImport(file: File): Promise<AxiosResponse<Compla
 export function commitComplaintImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
   return api.post('/postal/complaints/import/commit', { session_id: sessionId });
 }
+
+// --- 改地址工单 (P3) -------------------------------------------------------
+
+export interface PostalAddressChange {
+  id: number;
+  order_id: number | null;
+  external_order_no: string | null;
+  change_date: string | null;
+  old_name: string | null;
+  old_phone: string | null;
+  old_address: string | null;
+  old_copies: number | null;
+  new_name: string | null;
+  new_phone: string | null;
+  new_address: string | null;
+  new_copies: number | null;
+  original_start_month: string | null;
+  effective_start_month: string | null;
+  handling: string | null;
+  routed_label: string | null;
+  applied_to_order: boolean;
+  applied_at: string | null;
+  notes: string | null;
+}
+
+export interface AddressChangeListOut { rows: PostalAddressChange[]; total: number }
+
+export interface AddrImportRow {
+  external_order_no: string;
+  old_name: string;
+  change_date: string | null;
+  new_address: string;
+  decision: 'import' | 'duplicate';
+  linked: boolean;
+  routed_label: string | null;
+}
+
+export interface SimpleImportPreview<T> {
+  session_id: string;
+  counts: Record<string, number>;
+  can_commit: boolean;
+  rows: T[];
+}
+
+export function listAddressChanges(f: { year?: number; applied?: boolean; search?: string; page?: number; page_size?: number }): Promise<AxiosResponse<AddressChangeListOut>> {
+  return api.get('/postal/address-changes', { params: f });
+}
+export function previewAddressChangeImport(file: File): Promise<AxiosResponse<SimpleImportPreview<AddrImportRow>>> {
+  const fd = new FormData(); fd.append('file', file);
+  return api.post('/postal/address-changes/import/preview', fd);
+}
+export function commitAddressChangeImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
+  return api.post('/postal/address-changes/import/commit', { session_id: sessionId });
+}
+export function applyAddressChange(id: number): Promise<AxiosResponse<PostalAddressChange>> {
+  return api.post(`/postal/address-changes/${id}/apply`);
+}
+
+// --- 回访 (P3) -------------------------------------------------------------
+
+export interface PostalFollowUp {
+  id: number;
+  order_id: number | null;
+  external_order_no: string | null;
+  follow_up_date: string | null;
+  batch_label: string | null;
+  result: string | null;
+  snap_name: string | null;
+}
+
+export interface FollowUpListOut { rows: PostalFollowUp[]; total: number }
+
+export interface FollowImportRow {
+  external_order_no: string;
+  name: string;
+  batch_label: string;
+  follow_up_date: string | null;
+  result: string;
+  decision: 'import' | 'duplicate';
+  linked: boolean;
+}
+
+export function listFollowUps(f: { year?: number; search?: string; page?: number; page_size?: number }): Promise<AxiosResponse<FollowUpListOut>> {
+  return api.get('/postal/follow-ups', { params: f });
+}
+export function previewFollowUpImport(file: File): Promise<AxiosResponse<SimpleImportPreview<FollowImportRow>>> {
+  const fd = new FormData(); fd.append('file', file);
+  return api.post('/postal/follow-ups/import/preview', fd);
+}
+export function commitFollowUpImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
+  return api.post('/postal/follow-ups/import/commit', { session_id: sessionId });
+}

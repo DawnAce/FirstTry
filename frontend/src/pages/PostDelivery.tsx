@@ -24,28 +24,40 @@ import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
 import {
+  applyAddressChange,
+  commitAddressChangeImport,
   commitComplaintImport,
+  commitFollowUpImport,
   commitPostalImport,
   downloadPostalBatch,
   generatePostalBatch,
   getPostalBatch,
+  listAddressChanges,
   listComplaints,
+  listFollowUps,
   listPostalBatches,
   markPostalBatchSent,
+  previewAddressChangeImport,
   previewComplaintImport,
+  previewFollowUpImport,
   previewPostalImport,
 } from '../api/postal';
 import type {
+  AddrImportRow,
   ComplaintImportPreview,
   ComplaintImportRow,
+  FollowImportRow,
+  PostalAddressChange,
   PostalBatch,
   PostalBatchRow,
   PostalBatchStatus,
   PostalComplaint,
   PostalComplaintStatus,
+  PostalFollowUp,
   PostalImportDecision,
   PostalImportPreview,
   PostalImportRow,
+  SimpleImportPreview,
 } from '../api/postal';
 
 const { Title, Text } = Typography;
@@ -396,6 +408,179 @@ function ComplaintsTab() {
   );
 }
 
+/** 通用导入弹窗（改地址 / 回访共用：counts import/duplicate/linked + 可配置列） */
+function SimpleImportModal<T extends object>(props: {
+  open: boolean; onClose: () => void; title: string; hint: string; unit: string;
+  previewFn: (f: File) => Promise<{ data: SimpleImportPreview<T> }>;
+  commitFn: (sid: string) => Promise<{ data: { created: number; skipped_duplicates: number } }>;
+  invalidateKey: string; columns: TableColumnsType<T>; rowKey: (r: T, i?: number) => string;
+}) {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<SimpleImportPreview<T> | null>(null);
+  const reset = () => { setFile(null); setPreview(null); };
+  const previewMut = useMutation({ mutationFn: () => props.previewFn(file as File), onSuccess: (res) => setPreview(res.data), onError: (e) => message.error(errText(e)) });
+  const commitMut = useMutation({
+    mutationFn: () => props.commitFn(preview!.session_id),
+    onSuccess: (res) => {
+      message.success(`成功导入 ${res.data.created}（跳过重复 ${res.data.skipped_duplicates}）`);
+      qc.invalidateQueries({ queryKey: [props.invalidateKey] });
+      reset(); props.onClose();
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+  const counts = preview?.counts ?? {};
+  return (
+    <Modal title={props.title} open={props.open} onCancel={() => { reset(); props.onClose(); }} width={920} footer={null} destroyOnClose>
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <Upload.Dragger maxCount={1} accept=".xlsx" beforeUpload={(f) => { setFile(f); setPreview(null); return false; }} onRemove={() => reset()} fileList={file ? [{ uid: '1', name: file.name } as UploadFile] : []}>
+          <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+          <p className="ant-upload-text">{props.hint}</p>
+        </Upload.Dragger>
+        <Button type="primary" icon={<UploadOutlined />} onClick={() => previewMut.mutate()} loading={previewMut.isPending} disabled={!file}>预览导入</Button>
+        {preview && (
+          <>
+            <Space wrap>
+              <Tag color="green">导入 {counts.import ?? 0}</Tag>
+              <Tag color="blue">重复 {counts.duplicate ?? 0}</Tag>
+              <Tag color="cyan">挂到订单 {counts.linked ?? 0}</Tag>
+              <Text type="secondary">共 {counts.total ?? 0} 行</Text>
+              <span style={{ marginLeft: 'auto' }} />
+              {isAdmin
+                ? <Button type="primary" onClick={() => commitMut.mutate()} loading={commitMut.isPending} disabled={!preview.can_commit}>确认导入 {counts.import ?? 0} {props.unit}</Button>
+                : <Text type="secondary">确认导入需管理员权限</Text>}
+            </Space>
+            <Table<T> rowKey={props.rowKey} columns={props.columns} dataSource={preview.rows} size="small" pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 行` }} scroll={{ x: 800, y: 360 }} />
+          </>
+        )}
+      </Space>
+    </Modal>
+  );
+}
+
+/** Tab 3：改地址工单 */
+function AddressChangesTab() {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const [year, setYear] = useState<number | undefined>();
+  const [applied, setApplied] = useState<boolean | undefined>();
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [importOpen, setImportOpen] = useState(false);
+  const PAGE_SIZE = 50;
+
+  const q = useQuery({
+    queryKey: ['postalAddrChanges', { year, applied, search, page }],
+    queryFn: () => listAddressChanges({ year, applied, search: search.trim() || undefined, page, page_size: PAGE_SIZE }).then((r) => r.data),
+  });
+  const applyMut = useMutation({
+    mutationFn: (id: number) => applyAddressChange(id),
+    onSuccess: () => { message.success('已回流到订单收报人'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); },
+    onError: (e) => message.error(errText(e)),
+  });
+
+  const cols: TableColumnsType<PostalAddressChange> = [
+    { title: '修改日期', dataIndex: 'change_date', width: 110, render: (v: string | null) => v || '—' },
+    { title: '收报人', key: 'name', width: 130, render: (_: unknown, r) => <Space size={4}>{r.old_name || '—'}{r.new_name && <><span style={{ color: '#999' }}>→</span>{r.new_name}</>}</Space> },
+    { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string | null, r) => <Space size={4}>{v || '—'}{r.order_id && <Tag color="green" style={{ marginInlineEnd: 0 }}>挂单</Tag>}</Space> },
+    { title: '新地址', dataIndex: 'new_address', ellipsis: true, render: (v: string | null) => v || '—' },
+    { title: '新电话', dataIndex: 'new_phone', width: 120, render: (v: string | null) => v || '—' },
+    { title: '处理', key: 'handling', width: 160, render: (_: unknown, r) => (
+      <Space direction="vertical" size={0}>
+        {r.routed_label && <Tag>{r.routed_label}</Tag>}
+        {r.handling && <Text type="secondary" style={{ fontSize: 12 }} ellipsis>{r.handling}</Text>}
+      </Space>
+    ) },
+    { title: '回流', key: 'apply', width: 110, fixed: 'right', render: (_: unknown, r) => (
+      r.applied_to_order
+        ? <Tag color="green">已回流</Tag>
+        : (isAdmin && r.order_id
+          ? <Popconfirm title="把新姓名/电话/地址写回订单收报人？" onConfirm={() => applyMut.mutate(r.id)}><Button size="small" loading={applyMut.isPending}>回流</Button></Popconfirm>
+          : <Text type="secondary">{r.order_id ? '—' : '未挂单'}</Text>)
+    ) },
+  ];
+
+  return (
+    <>
+      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
+        <Space wrap>
+          <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={[2024, 2025, 2026].map((y) => ({ label: `${y}年`, value: y }))} />
+          <Select allowClear placeholder="回流状态" style={{ width: 130 }} value={applied} onChange={(v) => { setApplied(v); setPage(1); }} options={[{ label: '已回流', value: true }, { label: '未回流', value: false }]} />
+          <Input.Search allowClear placeholder="搜索 姓名 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
+        </Space>
+        <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入改地址</Button>
+      </Flex>
+      <Table<PostalAddressChange> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small" scroll={{ x: 1100 }}
+        pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }} />
+      <SimpleImportModal<AddrImportRow>
+        open={importOpen} onClose={() => setImportOpen(false)} title="导入邮局改地址" unit="条" invalidateKey="postalAddrChanges"
+        hint="点击或拖拽含《邮局年改地址》的 .xlsx"
+        previewFn={previewAddressChangeImport} commitFn={commitAddressChangeImport}
+        rowKey={(r, i) => `${r.external_order_no}-${r.change_date}-${i}`}
+        columns={[
+          { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
+          { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string, r) => <Space size={4}>{v}{r.linked && <Tag color="green">挂单</Tag>}</Space> },
+          { title: '收报人', dataIndex: 'old_name', width: 100 },
+          { title: '修改日期', dataIndex: 'change_date', width: 110 },
+          { title: '新地址', dataIndex: 'new_address', ellipsis: true },
+          { title: '处理', dataIndex: 'routed_label', width: 100, render: (v: string | null) => v ? <Tag>{v}</Tag> : '—' },
+        ]}
+      />
+    </>
+  );
+}
+
+/** Tab 4：回访 */
+function FollowUpsTab() {
+  const [year, setYear] = useState<number | undefined>();
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [importOpen, setImportOpen] = useState(false);
+  const PAGE_SIZE = 50;
+
+  const q = useQuery({
+    queryKey: ['postalFollowUps', { year, search, page }],
+    queryFn: () => listFollowUps({ year, search: search.trim() || undefined, page, page_size: PAGE_SIZE }).then((r) => r.data),
+  });
+
+  const cols: TableColumnsType<PostalFollowUp> = [
+    { title: '回访日期', dataIndex: 'follow_up_date', width: 120, render: (v: string | null) => v || '—' },
+    { title: '批次', dataIndex: 'batch_label', width: 140, render: (v: string | null) => v || '—' },
+    { title: '收报人', dataIndex: 'snap_name', width: 110 },
+    { title: '编号', dataIndex: 'external_order_no', width: 130, render: (v: string | null, r) => <Space size={4}>{v || '—'}{r.order_id && <Tag color="green" style={{ marginInlineEnd: 0 }}>挂单</Tag>}</Space> },
+    { title: '结果', dataIndex: 'result', ellipsis: true, render: (v: string | null) => v || '—' },
+  ];
+
+  return (
+    <>
+      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
+        <Space wrap>
+          <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={[2024, 2025, 2026].map((y) => ({ label: `${y}年`, value: y }))} />
+          <Input.Search allowClear placeholder="搜索 姓名 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
+        </Space>
+        <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入回访</Button>
+      </Flex>
+      <Table<PostalFollowUp> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small" scroll={{ x: 800 }}
+        pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }} />
+      <SimpleImportModal<FollowImportRow>
+        open={importOpen} onClose={() => setImportOpen(false)} title="导入回访（读者明细的回访列）" unit="条" invalidateKey="postalFollowUps"
+        hint="点击或拖拽含《邮局读者明细》(带回访列)的 .xlsx"
+        previewFn={previewFollowUpImport} commitFn={commitFollowUpImport}
+        rowKey={(r, i) => `${r.external_order_no}-${r.batch_label}-${i}`}
+        columns={[
+          { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
+          { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string, r) => <Space size={4}>{v}{r.linked && <Tag color="green">挂单</Tag>}</Space> },
+          { title: '收报人', dataIndex: 'name', width: 100 },
+          { title: '批次', dataIndex: 'batch_label', width: 130 },
+          { title: '回访日期', dataIndex: 'follow_up_date', width: 110, render: (v: string | null) => v || '—' },
+          { title: '结果', dataIndex: 'result', ellipsis: true },
+        ]}
+      />
+    </>
+  );
+}
+
 export default function PostDelivery() {
   return (
     <div>
@@ -405,6 +590,8 @@ export default function PostDelivery() {
         items={[
           { key: 'batches', label: '投递批次', children: <BatchesTab /> },
           { key: 'complaints', label: '投诉工单', children: <ComplaintsTab /> },
+          { key: 'address', label: '改地址', children: <AddressChangesTab /> },
+          { key: 'follow', label: '回访', children: <FollowUpsTab /> },
         ]}
       />
     </div>
