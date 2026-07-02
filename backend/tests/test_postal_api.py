@@ -1,0 +1,171 @@
+"""邮局投递 API · HTTP 连通测试（Task 5）。
+
+In-memory SQLite + TestClient，覆盖 get_db / get_current_user / require_admin，
+与 test_products_api 同风格。
+"""
+
+import io
+from types import SimpleNamespace
+
+import openpyxl
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.auth import get_current_user, require_admin
+from app.database import Base, get_db
+from app.main import app
+from app.models import Partner, PartnerType
+
+_HEADERS = [
+    "编号", "地区", "姓名", "联系电话", "省", "市", "区", "详细地址", "邮编", "年度",
+    "产品名称", "起月日", "止月日", "份数", "金额", "渠道", "汇款名称", "汇款日期",
+    "投递单位", "赠阅/关联", "备注",
+]
+
+_ROWS = [
+    {"编号": "4784", "姓名": "高占军", "联系电话": "13764491959", "省": "上海市",
+     "市": "上海市", "区": "宝山区", "详细地址": "华灵路1900弄355号501室", "邮编": "201900",
+     "年度": "2026年", "产品名称": "中国经营报", "起月日": "0101", "止月日": "0131",
+     "份数": "1", "金额": "20", "渠道": "CBJ+小程序", "投递单位": "北京集订分送"},
+    {"编号": "4837", "姓名": "孙琪", "联系电话": "18353360185", "省": "山东省",
+     "市": "淄博市", "区": "临淄区", "详细地址": "齐兴路88号临淄农村商业银行",
+     "年度": "2026年", "产品名称": "中国经营报", "起月日": "0101", "止月日": "0531",
+     "份数": "50", "金额": "5000", "渠道": "对公转账", "投递单位": "山东集订分送"},
+    {"编号": "4801", "姓名": "郑天敏", "联系电话": "18323045917", "省": "重庆市",
+     "市": "重庆市", "区": "九龙坡区", "详细地址": "石坪桥街道骏逸新视界19栋25-6", "邮编": "400050",
+     "年度": "2026年", "产品名称": "中国经营报", "起月日": "0101", "止月日": "0131",
+     "份数": "1", "金额": "20", "渠道": "CBJ+小程序", "投递单位": ""},
+]
+
+
+def _workbook_bytes() -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "邮局读者明细"
+    ws.append(_HEADERS)
+    for r in _ROWS:
+        ws.append([r.get(h, "") for h in _HEADERS])
+    bio = io.BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+
+@pytest.fixture
+def client():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    seed = TestingSessionLocal()
+    for n in ("北京集订分送", "山东集订分送"):
+        seed.add(Partner(name=n, partner_type=PartnerType.distribution))
+    seed.commit()
+    seed.close()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    fake = SimpleNamespace(id=1, role="admin")
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: fake
+    app.dependency_overrides[require_admin] = lambda: fake
+
+    c = TestClient(app)
+    try:
+        yield c
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_full_flow(client):
+    data = _workbook_bytes()
+
+    # 1) 预览
+    resp = client.post(
+        "/api/postal/import/preview",
+        files={"file": ("postal.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["counts"]["import"] == 3
+    assert body["can_commit"] is True
+    sid = body["session_id"]
+
+    # 2) 提交
+    resp = client.post("/api/postal/import/commit", json={"session_id": sid})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created"] == 3
+
+    # 3) 生成 2026-01 批次
+    resp = client.post("/api/postal/batches/generate", json={"year": 2026, "month": 1})
+    assert resp.status_code == 200, resp.text
+    batch = resp.json()
+    assert batch["row_count"] == 3
+    assert batch["status"] == "generated"
+    bid = batch["id"]
+
+    # 4) 批次列表
+    resp = client.get("/api/postal/batches")
+    assert resp.status_code == 200
+    assert any(b["id"] == bid for b in resp.json())
+
+    # 5) 批次明细（投递单位名解析）
+    resp = client.get(f"/api/postal/batches/{bid}")
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert len(detail["rows"]) == 3
+    units = {r["distribution_unit_name"] for r in detail["rows"]}
+    assert "北京集订分送" in units and None in units  # 有的标注、有的留空
+
+    # 6) 标记已发
+    resp = client.post(f"/api/postal/batches/{bid}/mark-sent")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "sent"
+
+    # 7) 已发后重新生成被拒
+    resp = client.post("/api/postal/batches/generate", json={"year": 2026, "month": 1})
+    assert resp.status_code == 409
+
+    # 8) 导出 Excel
+    resp = client.get(f"/api/postal/batches/{bid}/export")
+    assert resp.status_code == 200
+    assert "spreadsheetml" in resp.headers["content-type"]
+    assert len(resp.content) > 0
+
+
+def test_reject_non_postal_upload(client):
+    wb = openpyxl.Workbook()
+    wb.active.append(["不相关", "表头"])
+    bio = io.BytesIO()
+    wb.save(bio)
+    resp = client.post(
+        "/api/postal/import/preview",
+        files={"file": ("x.xlsx", bio.getvalue(), "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+
+
+def test_cannot_delete_in_use_distribution_unit(client):
+    """回归：投递单位被邮局订单目标引用时，删除该 Partner 应 409（不触发 FK 500）。"""
+    data = _workbook_bytes()
+    r = client.post(
+        "/api/postal/import/preview",
+        files={"file": ("postal.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    client.post("/api/postal/import/commit", json={"session_id": r.json()["session_id"]})
+
+    partners = client.get("/api/partners").json()
+    pid = next(p["id"] for p in partners if p["name"] == "北京集订分送")
+    resp = client.delete(f"/api/partners/{pid}")
+    assert resp.status_code == 409

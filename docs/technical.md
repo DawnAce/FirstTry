@@ -508,6 +508,20 @@ FirstTry/
 
 > 部署见 README §8。
 
+### 3.17 邮局投递（每月起投批次）
+
+**订单驱动**：邮局每行 = 一张订单 —— `Order`（渠道→`source_platform`、付款方=姓名）+ `OrderItem`（`delivery_method=post_office`、覆盖期取自「年度＋起/止月」、份数/金额）+ `FulfillmentTarget`（收报人、`shipping_channel=post_office`、新增 `distribution_unit_id`→`partners`）。邮局订单因此天然出现在订单列表 / 客户管理聚合里，发票 / 收款也复用财务模块；但 `post_office` 目标被 `order_shipping_sync_service` 的中通 gate 跳过，**不生成中通发货明细**。
+
+**两张新表**（迁移 `d0e1f2a3b4c5`）：
+- `postal_delivery_batches`：某「起投月」`(year, month)` 的一版批次，`status ∈ {draft, generated, sent}`、`generated_at` / `sent_at` / `row_count`，`UNIQUE(year, month)`。
+- `postal_delivery_rows`：批次内**冻结**的投递明细行——`snap_*`（姓名/电话/省市区/地址/邮编）、`copies`、覆盖期、`source_channel`、`distribution_unit_id`、`salesperson`，并溯源 `order_item_id` / `fulfillment_target_id`。冻结即定格：`sent` 批次不可重生成，改订单不影响已发版本。
+
+**起投月归批**：`postal_batch_service.generate_batch(year, month)` 收集 `delivery_method=post_office` 且 `coverage_start_date` 落在该月、在效（订单/明细/当前分配/目标均 active）的目标，冻结成行。用日期区间 `[当月1号, 次月1号)` 判定（避免 `extract` 在 SQLite/MySQL 的差异）。
+
+**导入**：`postal_order_import_parser`（按表头名解析「邮局读者明细」sheet）+ `postal_import_service`（映射→`OrderCreate`、投递单位匹配 `Partner(distribution)` 有则挂无则空、编号加年份前缀去重、复用 `create_imported_order` 原子建单）。迁移预置 7 个各地集订分送为 `Partner(partner_type=distribution)`。
+
+**服务 / API**：`app/services/postal_{order_import_parser,import_service,batch_service}.py`；`app/api/postal.py`（`/api/postal/import/preview|commit`、`/api/postal/batches[...]/generate|mark-sent|export`）。
+
 ## 4. API 接口一览
 
 所有 API 路径以 `/api` 为前缀。

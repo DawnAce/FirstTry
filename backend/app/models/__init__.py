@@ -51,6 +51,11 @@ from app.models.partner import Partner, PartnerType
 from app.models.contract import Contract, ContractStatus
 from app.models.invoice import Invoice, InvoiceType
 from app.models.channel_settlement import ChannelSettlement, SettlementStatus
+from app.models.postal_delivery import (
+    PostalBatchStatus,
+    PostalDeliveryBatch,
+    PostalDeliveryRow,
+)
 
 __all__ = [
     "PublicationSchedule",
@@ -87,4 +92,6 @@ __all__ = [
     # 财务管理（订单发票 + 渠道结算）
     "Invoice", "InvoiceType",
     "ChannelSettlement", "SettlementStatus",
+    # 邮局投递（每月起投批次 + 冻结明细）
+    "PostalDeliveryBatch", "PostalDeliveryRow", "PostalBatchStatus",
 ]

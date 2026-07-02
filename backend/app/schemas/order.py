@@ -59,6 +59,8 @@ class FulfillmentTargetIn(BaseModel):
     recipient_postal_code: Optional[str] = Field(default=None, max_length=20)
     quantity: int = Field(default=1, ge=1)
     shipping_channel: ShippingChannel = ShippingChannel.zto_outsource
+    # 投递单位（邮局各地集订分送 → partners.id）；仅 post_office 目标使用，无则留空。
+    distribution_unit_id: Optional[int] = None
     effective_from_issue: Optional[int] = Field(default=None, ge=1)
     effective_until_issue: Optional[int] = Field(default=None, ge=1)
     notes: Optional[str] = None
@@ -330,6 +332,7 @@ class FulfillmentTargetOut(BaseModel):
     recipient_postal_code: Optional[str]
     quantity: int
     shipping_channel: ShippingChannel
+    distribution_unit_id: Optional[int] = None
     effective_from_issue: Optional[int]
     effective_until_issue: Optional[int]
     status: TargetStatus

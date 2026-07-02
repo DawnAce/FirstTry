@@ -64,6 +64,14 @@ class FulfillmentTarget(Base):
         nullable=False,
         default=ShippingChannel.zto_outsource,
     )
+    # 投递单位（邮局各地集订分送 → partners.distribution）。仅 post_office 目标使用；
+    # 原表未填则留空、不自动推断。中通目标恒为 NULL。
+    distribution_unit_id = Column(
+        Integer,
+        ForeignKey("partners.id"),
+        nullable=True,
+        index=True,
+    )
     effective_from_issue = Column(Integer, nullable=True)
     effective_until_issue = Column(Integer, nullable=True)
     status = Column(
