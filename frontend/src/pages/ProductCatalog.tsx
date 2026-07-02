@@ -216,7 +216,7 @@ export default function ProductCatalog() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>商品库</Title>
+        <Title level={3} style={{ margin: 0 }}>商品管理</Title>
         <Space>
           <Input.Search placeholder="搜索编码 / 名称" allowClear style={{ width: 220 }} onSearch={setSearch} />
           <Button icon={<ReloadOutlined />} onClick={() => productsQuery.refetch()} loading={productsQuery.isFetching}>刷新</Button>

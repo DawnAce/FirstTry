@@ -106,16 +106,21 @@ const DATA = {
     { n:"往期数据导入", r:"/history-import", e:["POST /api/history-import/preview | commit"], c:cap(["下载报数/中通发货导入模板","Excel 批量导入历史期数 + 发货明细","导入前预览校验（查重/格式）","手动补充临时加印明细","导入后自动同步中通明细+算差值"]) },
   ]},
   { n:"物流管理", color:"#0d9488", c:[
-    { n:"收件人管理", r:"/recipients", e:["GET/POST/PUT /api/recipients","PATCH …/status"], d:"地址省市自动解析", c:cap(["新增/编辑收件人（姓名/电话/地址/省市）","按类型（对公/读者/样报）与频率（周/半月/月）","搜索筛选","停发/恢复状态切换"]) },
-    { n:"收件人订阅管理", e:["GET/POST /api/recipients/{id}/subscriptions"], c:cap(["新订/续订登记（类型+起止）","订阅时长/数量","历史订阅查看","订阅期内自动开启发送"]) },
-    { n:"ZTO 发货明细管理", e:["GET/POST/PUT/DELETE /api/shipping-details","POST …/batch-update | batch-delete"], d:"来源：手动添加 / 订单生成 / 历史导入", c:cap(["按期号查看 ZTO 发货明细","多维筛选（渠道/子渠道/公司/频率/运输/状态）+ 姓名搜索","新增单条/批量明细","编辑地址/电话/份数/截止日期/备注","批量改状态 / 改截止日期 / 批量删除"]) },
-    { n:"发货标记与运单回写", e:["POST /api/shipping-details/{id}/ship | unship"], c:cap(["标记已发（记发货时间）","填运单号 + 实发份数（可异于计划）","撤销已发标记","按期批量标记已发"]) },
-    { n:"发货明细导出", e:["GET /api/issues/{id}/export/shipping"], c:cap(["导出指定期号 ZTO 明细到 Excel","文件名自动带期号+出版日期"]) },
-    { n:"发货明细版本历史", e:["GET /api/operation-logs"], c:cap(["单条明细完整操作日志","字段级变更（字段/原值/新值）","记录操作人与时间"]) },
-    { n:"地址规范化", e:["POST /api/shipping-details/normalize-addresses"], c:cap(["批量解析省市（cpca 中国地址解析）"]) },
-    { n:"发货明细期号复制", e:["POST /api/shipping-details/copy-from-previous"], c:cap(["从上一期复制（排除订单生成行）","自动锁定防重复复制"]) },
-    { n:"报数与发货对账", e:["GET /api/issues/{id}/report"], c:cap(["报数合计 vs 发货合计一致性检查","确认时快照（当时报数/发货/差值）","确认后明细漂移提醒"]) },
-    { n:"清空本期发货明细（管理员）", e:["DELETE /api/shipping-details/by-issue/{n}"], c:cap(["删某期全部 ZTO 明细，保留报数","高危操作带二次确认 + 日志"]) },
+    { n:"ZTO-MF", r:"/recipients", color:"#0d9488", c:[
+      { n:"ZTO 发货明细管理", e:["GET/POST/PUT/DELETE /api/shipping-details","POST …/batch-update | batch-delete"], d:"来源：手动添加 / 订单生成 / 历史导入", c:cap(["按期号查看 ZTO 发货明细","多维筛选（渠道/子渠道/公司/频率/运输/状态）+ 姓名搜索","新增单条/批量明细","编辑地址/电话/份数/截止日期/备注","批量改状态 / 改截止日期 / 批量删除"]) },
+      { n:"发货标记与运单回写", e:["POST /api/shipping-details/{id}/ship | unship"], c:cap(["标记已发（记发货时间）","填运单号 + 实发份数（可异于计划）","撤销已发标记","按期批量标记已发"]) },
+      { n:"发货明细导出", e:["GET /api/issues/{id}/export/shipping"], c:cap(["导出指定期号 ZTO 明细到 Excel","文件名自动带期号+出版日期"]) },
+      { n:"发货明细版本历史", e:["GET /api/operation-logs"], c:cap(["单条明细完整操作日志","字段级变更（字段/原值/新值）","记录操作人与时间"]) },
+      { n:"地址规范化", e:["POST /api/shipping-details/normalize-addresses"], c:cap(["批量解析省市（cpca 中国地址解析）"]) },
+      { n:"发货明细期号复制", e:["POST /api/shipping-details/copy-from-previous"], c:cap(["从上一期复制（排除订单生成行）","自动锁定防重复复制"]) },
+      { n:"报数与发货对账", e:["GET /api/issues/{id}/report"], c:cap(["报数合计 vs 发货合计一致性检查","确认时快照（当时报数/发货/差值）","确认后明细漂移提醒"]) },
+      { n:"清空本期发货明细（管理员）", e:["DELETE /api/shipping-details/by-issue/{n}"], c:cap(["删某期全部 ZTO 明细，保留报数","高危操作带二次确认 + 日志"]) },
+    ]},
+    { n:"收件人", r:"/recipients?tab=recipients", color:"#14b8a6", c:[
+      { n:"收件人管理", e:["GET/POST/PUT /api/recipients","PATCH …/status"], d:"地址省市自动解析", c:cap(["新增/编辑收件人（姓名/电话/地址/省市）","按类型（对公/读者/样报）与频率（周/半月/月）","搜索筛选","停发/恢复状态切换"]) },
+      { n:"收件人订阅管理", e:["GET/POST /api/recipients/{id}/subscriptions"], c:cap(["新订/续订登记（类型+起止）","订阅时长/数量","历史订阅查看","订阅期内自动开启发送"]) },
+    ]},
+    { n:"邮局投递", r:"/post-delivery", color:"#5eead4", d:"占位 · 功能待接入", c:cap(["管理邮局（post_office）渠道投递清单","与 ZTO-MF（中通）并列","规划：复用发货明细按渠道=邮局过滤 + 录入/导入/导出"]) },
   ]},
   { n:"刊期表管理", color:"#d97706", c:[
     { n:"年度刊期表查看", r:"/schedule", e:["GET /api/schedule","GET /api/schedule/years"], c:cap(["按年份切换年度出版安排","按月份分组展示","按出版日期/期号/状态多维筛选","计划版数 vs 实际版数高亮","统计发行期数/休刊次数/期号范围"]) },
@@ -140,7 +145,6 @@ const DATA = {
     { n:"导入 · 排发 · 统计", color:"#3b82f6", c:[
       { n:"电商导入 + 平台自动识别", r:"/orders/import", e:["POST /api/order-import/preview | commit"], c:cap(["CBJ 小程序 / 淘宝 Excel 自动识别","单次 N 张订单分决策（导入/跳过/重复/待确认）","单张多刊物多类型组合识别","收件人登记（淘宝脱敏需手工补登）","平台订单状态自动映射，违规态过滤"]) },
       { n:"批次/活动标签 + 赠品", e:["POST /api/order-import/commit"], c:cap(["活动标签 campaign（如 2026-618）写入每单","赠品：延长订期 + 指定赠刊及文案","近期模式（安排投递）vs 历史模式（只补记录）","邮局/中通分别设起投月 + 截止日判断"]) },
-      { n:"商品库映射与快速新增", r:"/products", e:["GET/POST/PUT/DELETE /api/products"], c:cap(["编码/名称/别名维护（别名做导入匹配源）","刊物/履约/投递/期限/覆盖期算法编目","套餐：多刊合售按成分配价","预览待确认商品一键入库后自动重识别","启用/停用/删除（删除安全，不影响历史快照）"]) },
       { n:"收件人脱敏补登 + 订单调整", r:"/orders/:id", e:["PUT /api/orders/{id}"], c:cap(["淘宝单脱敏地址留空，操作员后补","订单行起止/期号/投递方式调整","补充历史单或满足特殊需求"]) },
       { n:"按期批量排发 + 漏期报表", r:"/orders/dispatch", e:["GET …/issues/{n}/gap-report","POST …/issues/{n}/apply-all"], c:cap(["某期漏期报表（应排未排/缺收件人/缺覆盖期/已退款）","一键排发本期（只活跃单、冲突单只报告不覆盖）","订单集合=覆盖该期纸刊明细","单订单覆盖期内全期一次排齐"]) },
       { n:"应发 vs 实发对账", e:["GET …/issues/{n}/reconciliation","POST …/issues/{n}/ship-all"], c:cap(["对账面板：应发 vs 已发 + 缺口（红警示）","未发清单：逐行或一键标记已发","计划份数映射实发份数","期号候选/已同步/需更新/冲突/跳过统计"]) },
@@ -148,6 +152,9 @@ const DATA = {
       { n:"商学院发行量月报", e:["GET /api/analytics/bs-circulation"], c:cap(["按期发行量=单期销量+覆盖订阅（合刊只计一次）","订阅按刊历展开成命中期数","年份过滤（2024/2025/2026/全部）","缺覆盖期订阅单独提示"]) },
       { n:"导入预览决策与模式", e:["POST /api/order-import/preview"], c:cap(["预览表（导入✅/跳过⏭/重复♻/待确认⚠）","识别明细（刊物/履约/投递/期号/单价/覆盖日期）","待确认商品汇总，逐个入库后整批重识别","仅管理员可确认导入，操作员可预览调整","近期 / 历史归档两种导入模式 + 起投参数"]) },
     ]},
+  ]},
+  { n:"商品管理", color:"#0891b2", c:[
+    { n:"商品库映射与快速新增", r:"/products", e:["GET/POST/PUT/DELETE /api/products"], c:cap(["编码/名称/别名维护（别名做导入匹配源）","刊物/履约/投递/期限/覆盖期算法编目","套餐：多刊合售按成分配价","预览待确认商品一键入库后自动重识别","启用/停用/删除（删除安全，不影响历史快照）"]) },
   ]},
   { n:"客户管理", color:"#16a34a", b:"新", c:[
     { n:"客户管理（= 收报人聚合）", r:"/customers", e:["GET /api/customers","GET /api/customers/detail"], d:"客户=收报人，按 姓名+电话 聚合", c:cap(["按收报人姓名+电话聚合订单履约目标","展示在订份数/涉及刊物/订单数/最近下单","按姓名/电话/地址模糊搜索","抽屉看该收报人全部在订明细","多地址标记 + 地址数统计"]) },

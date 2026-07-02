@@ -78,7 +78,7 @@ FirstTry/
 │   │   ├── api/                # API 客户端
 │   │   │   └── auth.ts         # 认证 API
 │   │   ├── components/         # 通用组件
-│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知铃铛、帮助、用户头像）+ 可折叠侧边栏（Logo、印数报数/印数管理/刊期表管理等菜单）
+│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知铃铛、帮助、用户头像）+ 可折叠侧边栏（Logo、印数管理/物流管理/刊期表管理/订单管理/商品管理/客户管理/合同管理/财务管理 等一级菜单；物流管理与订单管理为展开式子菜单）
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
 │   │   ├── pages/              # 页面组件
@@ -88,7 +88,9 @@ FirstTry/
 │   │   │   ├── Login.tsx       # 登录页面
 │   │   │   ├── ScheduleView.tsx              # 期刊表页面（/schedule）
 │   │   │   ├── ScheduleImport.tsx            # 导入期刊表页面（/schedule/import）
-│   │   │   ├── Recipients.tsx
+│   │   │   ├── Recipients.tsx     # 物流管理子菜单（/recipients「ZTO-MF」、/recipients?tab=recipients「收件人」两标签）
+│   │   │   ├── PostDelivery.tsx    # 邮局投递占位页（/post-delivery，侧边栏「物流管理 > 邮局投递」，功能待接入）
+│   │   │   ├── ProductCatalog.tsx  # 商品管理页（/products，侧边栏一级菜单「商品管理」）
 │   │   │   ├── ReportEditor.tsx
 │   │   │   ├── ShippingPreview.tsx
 │   │   │   └── Templates.tsx    # 报数模板页（/templates，侧边栏「印数管理 > 报数模板」）
@@ -493,7 +495,7 @@ FirstTry/
 - **「最新一期」自动判期号**：导入时 `coverage_rule=latest_issue` 的单期行，按"付款时间 + `publication_schedule` + 周五约 22 点翻期"算出 `issue_number`（中国经营报周一出刊；某期在其出刊周一前的周五 22:00 起售，订单期号 = 付款时间落入的起售窗口对应的期）。`app/services/latest_issue_resolver.py`（`FLIP_WEEKDAY/FLIP_HOUR/BORDERLINE_HOURS` 可配）。翻期点 ±4h 内的临界单加 warning 标黄待核（仍自动判、正常导入）；覆盖期仍留空（单期不走 term_from_month）。
 - `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。
 
-**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
+**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品管理，独立一级侧边栏菜单）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
 
 迁移（均已应用到生产）：
 - `b4d6f8a1c3e5`：补 `ordereventtype` 枚举遗漏的 `item_added/removed/modified`（修复 V1.2 在严格模式 MySQL 上的潜在崩溃）
@@ -505,6 +507,29 @@ FirstTry/
 - `c4f1a9e2b6d3`：`orders` 新增 `original_amount`（原价 / 折前标价，`Numeric(10,2)` 可空）
 
 > 部署见 README §8。
+
+### 3.17 邮局投递（每月起投批次）
+
+**订单驱动**：邮局每行 = 一张订单 —— `Order`（渠道→`source_platform`、付款方=姓名）+ `OrderItem`（`delivery_method=post_office`、覆盖期取自「年度＋起/止月」、份数/金额）+ `FulfillmentTarget`（收报人、`shipping_channel=post_office`、新增 `distribution_unit_id`→`partners`）。邮局订单因此天然出现在订单列表 / 客户管理聚合里，发票 / 收款也复用财务模块；但 `post_office` 目标被 `order_shipping_sync_service` 的中通 gate 跳过，**不生成中通发货明细**。
+
+**两张新表**（迁移 `d0e1f2a3b4c5`）：
+- `postal_delivery_batches`：某「起投月」`(year, month)` 的一版批次，`status ∈ {draft, generated, sent}`、`generated_at` / `sent_at` / `row_count`，`UNIQUE(year, month)`。
+- `postal_delivery_rows`：批次内**冻结**的投递明细行——`snap_*`（姓名/电话/省市区/地址/邮编）、`copies`、覆盖期、`source_channel`、`distribution_unit_id`、`salesperson`，并溯源 `order_item_id` / `fulfillment_target_id`。冻结即定格：`sent` 批次不可重生成，改订单不影响已发版本。
+
+**起投月归批**：`postal_batch_service.generate_batch(year, month)` 收集 `delivery_method=post_office` 且 `coverage_start_date` 落在该月、在效（订单/明细/当前分配/目标均 active）的目标，冻结成行。用日期区间 `[当月1号, 次月1号)` 判定（避免 `extract` 在 SQLite/MySQL 的差异）。
+
+**导入**：`postal_order_import_parser`（按表头名解析「邮局读者明细」sheet）+ `postal_import_service`（映射→`OrderCreate`、投递单位匹配 `Partner(distribution)` 有则挂无则空、编号加年份前缀去重、复用 `create_imported_order` 原子建单）。迁移预置 7 个各地集订分送为 `Partner(partner_type=distribution)`。
+
+**服务 / API**：`app/services/postal_{order_import_parser,import_service,batch_service}.py`；`app/api/postal.py`（`/api/postal/import/preview|commit`、`/api/postal/batches[...]/generate|mark-sent|export`）。
+
+**投诉工单（P2）**：`postal_complaints`（迁移 `e2f4a6b8c0d1`）挂邮局订单 —— 投诉 `编号`(去前导零) + `年度` → `orders.external_order_no`（`order_id` 可空 `SET NULL`，匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；`status` 按有无回访派生 open/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。导入/列表：`app/services/postal_complaint_{parser,import_service,service}.py` + `/api/postal/complaints`（list 筛选 年度/状态/投递单位/处理次数/搜索）+ `/complaints/import/preview|commit`。前端 PostDelivery 分「投递批次 / 投诉工单」两 tab。
+
+**改地址工单 + 回访（P3）**：迁移 `f3a5c7b9d1e2` 建 `postal_address_changes` + `postal_follow_ups`（均挂订单，`order_id` 可空 SET NULL）。
+- **改地址**：编号(去零) + `year(修改日期)`（该表无年度列）→ `orders.external_order_no`；处理情况归一 `routed_label`（XX局）；`apply_address_change` 把新姓名/电话/地址写回订单当前 `FulfillmentTarget` 并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——之后批次即用新地址。
+- **回访**：把读者明细「按天开列」的回访列（`YYYYMMDD回访`）拍平成一行一条，列头解析日期。
+- 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/订单映射）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`（list + 回流）+ `/api/postal/address-changes[/{id}/apply]`、`/follow-ups`。前端 PostDelivery 共 4 tab（批次/投诉/改地址/回访）。
+
+**收款/发票（P4）**：迁移 `a4c6e8b0d2f4` 建 `postal_finance`（自成台账，**不改共享财务 Invoice/Payment/finance_service**）。导入《提现发票合集》：`发票信息` 正则拆 `发票抬头`/`购方税号`；链接 = `原始订单号(external_order_no)→orders` 优先、`姓名` 兜底（唯一命中才挂，`link_by` 记来源）；`net_amount` = 到款金额或 金额−手续费；去重键 (订单号或姓名, 到款日期, 金额-规范2位)。`postal_finance_{parser,import_service,service}.py` + `/api/postal/finance`（筛选 平台/普专票/是否挂单/搜索）+ `/finance/import/*`。前端 PostDelivery 共 **5 tab**（+收款发票）。**并进财务发票工作台留待原始订单号补齐后**（那时再扩 Invoice.tax_category / Payment.fee_amount + 建真发票）。
 
 ## 4. API 接口一览
 
