@@ -169,3 +169,55 @@ def test_cannot_delete_in_use_distribution_unit(client):
     pid = next(p["id"] for p in partners if p["name"] == "北京集订分送")
     resp = client.delete(f"/api/partners/{pid}")
     assert resp.status_code == 409
+
+
+_COMPLAINT_HEADERS = ["接诉日期", "姓名", "联系电话", "省", "市", "区", "详细地址", "邮编",
+                      "年度", "投诉情况", "处理情况", "回访", "处理次数", "编号", "投递渠道单位"]
+_COMPLAINT_ROWS = [
+    {"接诉日期": "2024-01-03", "姓名": "马宁", "省": "江苏省", "市": "徐州市", "区": "泉山区",
+     "年度": "2024年", "投诉情况": "2024年1月1日第一期没有收到", "处理情况": "转徐州11185",
+     "回访": "已收到", "处理次数": "1", "编号": "000680", "投递渠道单位": "北京集订分送"},
+    {"接诉日期": "2024-02-01", "姓名": "李四", "省": "北京市", "市": "北京市", "区": "朝阳区",
+     "年度": "2024年", "投诉情况": "2月没收到", "处理情况": "北京局", "处理次数": "2", "编号": "888888"},
+]
+
+
+def _complaint_wb() -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "邮局年投诉"
+    ws.append(_COMPLAINT_HEADERS)
+    for r in _COMPLAINT_ROWS:
+        ws.append([r.get(h, "") for h in _COMPLAINT_HEADERS])
+    bio = io.BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+
+def test_complaint_import_and_list(client):
+    data = _complaint_wb()
+    r = client.post(
+        "/api/postal/complaints/import/preview",
+        files={"file": ("c.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["counts"]["import"] == 2
+    assert client.post("/api/postal/complaints/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
+
+    # 列表 + 年度筛选
+    lst = client.get("/api/postal/complaints?year=2024").json()
+    assert lst["total"] == 2
+    # 状态筛选（马宁有回访 → resolved）
+    resolved = client.get("/api/postal/complaints?status=resolved").json()
+    assert resolved["total"] == 1
+    assert resolved["rows"][0]["snap_name"] == "马宁"
+    assert resolved["rows"][0]["routed_label"] == "徐州11185"
+    assert resolved["rows"][0]["routed_unit_name"] == "北京集订分送"
+    # 处理次数≥2 筛选
+    assert client.get("/api/postal/complaints?min_handling_count=2").json()["total"] == 1
+
+
+def test_complaint_invalid_status_is_422(client):
+    """非法 status 值 → 422（不 500）。"""
+    assert client.get("/api/postal/complaints?status=spam").status_code == 422

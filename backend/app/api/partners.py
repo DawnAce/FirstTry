@@ -16,6 +16,7 @@ from app.models import (
     Contract,
     FulfillmentTarget,
     Partner,
+    PostalComplaint,
     PostalDeliveryRow,
     User,
 )
@@ -109,7 +110,12 @@ def delete_partner(
         .filter(PostalDeliveryRow.distribution_unit_id == partner_id)
         .count()
     )
-    if contract_count or settlement_count or target_count or postal_row_count:
+    complaint_count = (
+        db.query(PostalComplaint)
+        .filter(PostalComplaint.routed_unit_id == partner_id)
+        .count()
+    )
+    if contract_count or settlement_count or target_count or postal_row_count or complaint_count:
         parts = []
         if contract_count:
             parts.append(f"{contract_count} 份合同")
@@ -119,6 +125,8 @@ def delete_partner(
             parts.append(f"{target_count} 个投递目标")
         if postal_row_count:
             parts.append(f"{postal_row_count} 条邮局投递明细")
+        if complaint_count:
+            parts.append(f"{complaint_count} 条邮局投诉")
         raise HTTPException(
             status_code=409,
             detail=f"该渠道下还有 {' / '.join(parts)}，不能删除（可改为「停用」）",

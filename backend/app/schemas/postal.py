@@ -6,6 +6,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from app.models.postal_delivery import PostalBatchStatus
+from app.models.postal_complaint import PostalComplaintStatus
 
 
 class BatchOut(BaseModel):
@@ -52,3 +53,32 @@ class GenerateBatchIn(BaseModel):
 
 class PostalCommitIn(BaseModel):
     session_id: str
+
+
+class ComplaintOut(BaseModel):
+    id: int
+    order_id: Optional[int] = None
+    external_order_no: Optional[str] = None
+    complaint_date: Optional[date] = None
+    year: Optional[int] = None
+    missing_issues: Optional[str] = None
+    handling: Optional[str] = None
+    routed_label: Optional[str] = None
+    routed_unit_id: Optional[int] = None
+    routed_unit_name: Optional[str] = None
+    follow_up: Optional[str] = None
+    handling_count: Optional[int] = None
+    status: PostalComplaintStatus
+    first_handler: Optional[str] = None
+    snap_name: Optional[str] = None
+    snap_phone: Optional[str] = None
+    snap_address: Optional[str] = None
+    snap_postal_code: Optional[str] = None
+    notes: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ComplaintListOut(BaseModel):
+    rows: List[ComplaintOut]
+    total: int

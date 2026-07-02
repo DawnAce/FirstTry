@@ -522,6 +522,8 @@ FirstTry/
 
 **服务 / API**：`app/services/postal_{order_import_parser,import_service,batch_service}.py`；`app/api/postal.py`（`/api/postal/import/preview|commit`、`/api/postal/batches[...]/generate|mark-sent|export`）。
 
+**投诉工单（P2）**：`postal_complaints`（迁移 `e2f4a6b8c0d1`）挂邮局订单 —— 投诉 `编号`(去前导零) + `年度` → `orders.external_order_no`（`order_id` 可空 `SET NULL`，匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；`status` 按有无回访派生 open/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。导入/列表：`app/services/postal_complaint_{parser,import_service,service}.py` + `/api/postal/complaints`（list 筛选 年度/状态/投递单位/处理次数/搜索）+ `/complaints/import/preview|commit`。前端 PostDelivery 分「投递批次 / 投诉工单」两 tab。
+
 ## 4. API 接口一览
 
 所有 API 路径以 `/api` 为前缀。

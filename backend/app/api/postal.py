@@ -5,7 +5,7 @@
 """
 
 import io
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -13,15 +13,19 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import Partner, PostalDeliveryRow, User
+from app.models import Partner, PostalComplaintStatus, PostalDeliveryRow, User
 from app.schemas.postal import (
     BatchDetailOut,
     BatchOut,
     BatchRowOut,
+    ComplaintListOut,
+    ComplaintOut,
     GenerateBatchIn,
     PostalCommitIn,
 )
 from app.services import postal_batch_service as batch_svc
+from app.services import postal_complaint_import_service as complaint_import_svc
+from app.services import postal_complaint_service as complaint_svc
 from app.services import postal_import_service as import_svc
 
 router = APIRouter(prefix="/api/postal", tags=["postal"])
@@ -135,3 +139,57 @@ def export_batch(batch_id: int, db: Session = Depends(get_db), _user: User = Dep
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# --- 投诉工单 (P2) -----------------------------------------------------------
+
+@router.get("/complaints", response_model=ComplaintListOut)
+def list_complaints(
+    year: Optional[int] = None,
+    status: Optional[PostalComplaintStatus] = None,
+    distribution_unit_id: Optional[int] = None,
+    min_handling_count: Optional[int] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    rows, total = complaint_svc.list_complaints(
+        db, year=year, status=status.value if status else None,
+        distribution_unit_id=distribution_unit_id,
+        min_handling_count=min_handling_count, search=search, page=page, page_size=page_size,
+    )
+    ids = {r.routed_unit_id for r in rows if r.routed_unit_id}
+    names = (
+        {pid: n for pid, n in db.query(Partner.id, Partner.name).filter(Partner.id.in_(ids)).all()}
+        if ids else {}
+    )
+    out = []
+    for r in rows:
+        o = ComplaintOut.model_validate(r)
+        o.routed_unit_name = names.get(r.routed_unit_id)
+        out.append(o)
+    return ComplaintListOut(rows=out, total=total)
+
+
+@router.post("/complaints/import/preview")
+async def complaint_import_preview(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    out, _ = complaint_import_svc.preview_import(db, content)
+    return out
+
+
+@router.post("/complaints/import/commit")
+def complaint_import_commit(
+    body: PostalCommitIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    return complaint_import_svc.commit_import(db, body.session_id, operator_id=getattr(user, "id", None))

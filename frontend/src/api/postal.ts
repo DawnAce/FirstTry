@@ -100,3 +100,76 @@ export async function downloadPostalBatch(id: number, filename: string): Promise
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+// --- 投诉工单 (P2) ---------------------------------------------------------
+
+export type PostalComplaintStatus = 'open' | 'resolved';
+
+export interface PostalComplaint {
+  id: number;
+  order_id: number | null;
+  external_order_no: string | null;
+  complaint_date: string | null;
+  year: number | null;
+  missing_issues: string | null;
+  handling: string | null;
+  routed_label: string | null;
+  routed_unit_id: number | null;
+  routed_unit_name: string | null;
+  follow_up: string | null;
+  handling_count: number | null;
+  status: PostalComplaintStatus;
+  first_handler: string | null;
+  snap_name: string | null;
+  snap_phone: string | null;
+  snap_address: string | null;
+  snap_postal_code: string | null;
+  notes: string | null;
+}
+
+export interface ComplaintListOut {
+  rows: PostalComplaint[];
+  total: number;
+}
+
+export interface ComplaintFilters {
+  year?: number;
+  status?: string;
+  min_handling_count?: number;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface ComplaintImportRow {
+  external_order_no: string;
+  name: string;
+  complaint_date: string | null;
+  missing_issues: string;
+  decision: 'import' | 'duplicate';
+  linked: boolean;
+  routed_label: string | null;
+  distribution_unit: string;
+  status: string;
+}
+
+export interface ComplaintImportPreview {
+  session_id: string;
+  counts: Record<string, number>;
+  can_commit: boolean;
+  rows: ComplaintImportRow[];
+}
+
+export function listComplaints(f: ComplaintFilters): Promise<AxiosResponse<ComplaintListOut>> {
+  return api.get('/postal/complaints', { params: f });
+}
+
+export function previewComplaintImport(file: File): Promise<AxiosResponse<ComplaintImportPreview>> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api.post('/postal/complaints/import/preview', fd);
+}
+
+export function commitComplaintImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
+  return api.post('/postal/complaints/import/commit', { session_id: sessionId });
+}

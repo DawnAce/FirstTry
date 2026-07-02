@@ -56,6 +56,7 @@ from app.models.postal_delivery import (
     PostalDeliveryBatch,
     PostalDeliveryRow,
 )
+from app.models.postal_complaint import PostalComplaint, PostalComplaintStatus
 
 __all__ = [
     "PublicationSchedule",
@@ -94,4 +95,5 @@ __all__ = [
     "ChannelSettlement", "SettlementStatus",
     # 邮局投递（每月起投批次 + 冻结明细）
     "PostalDeliveryBatch", "PostalDeliveryRow", "PostalBatchStatus",
+    "PostalComplaint", "PostalComplaintStatus",
 ]
