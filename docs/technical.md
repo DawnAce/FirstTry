@@ -529,6 +529,8 @@ FirstTry/
 - **回访**：把读者明细「按天开列」的回访列（`YYYYMMDD回访`）拍平成一行一条，列头解析日期。
 - 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/订单映射）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`（list + 回流）+ `/api/postal/address-changes[/{id}/apply]`、`/follow-ups`。前端 PostDelivery 共 4 tab（批次/投诉/改地址/回访）。
 
+**收款/发票（P4）**：迁移 `a4c6e8b0d2f4` 建 `postal_finance`（自成台账，**不改共享财务 Invoice/Payment/finance_service**）。导入《提现发票合集》：`发票信息` 正则拆 `发票抬头`/`购方税号`；链接 = `原始订单号(external_order_no)→orders` 优先、`姓名` 兜底（唯一命中才挂，`link_by` 记来源）；`net_amount` = 到款金额或 金额−手续费；去重键 (订单号或姓名, 到款日期, 金额-规范2位)。`postal_finance_{parser,import_service,service}.py` + `/api/postal/finance`（筛选 平台/普专票/是否挂单/搜索）+ `/finance/import/*`。前端 PostDelivery 共 **5 tab**（+收款发票）。**并进财务发票工作台留待原始订单号补齐后**（那时再扩 Invoice.tax_category / Payment.fee_amount + 建真发票）。
+
 ## 4. API 接口一览
 
 所有 API 路径以 `/api` 为前缀。

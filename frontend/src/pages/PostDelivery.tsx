@@ -27,6 +27,7 @@ import {
   applyAddressChange,
   commitAddressChangeImport,
   commitComplaintImport,
+  commitFinanceImport,
   commitFollowUpImport,
   commitPostalImport,
   downloadPostalBatch,
@@ -34,11 +35,13 @@ import {
   getPostalBatch,
   listAddressChanges,
   listComplaints,
+  listFinance,
   listFollowUps,
   listPostalBatches,
   markPostalBatchSent,
   previewAddressChangeImport,
   previewComplaintImport,
+  previewFinanceImport,
   previewFollowUpImport,
   previewPostalImport,
 } from '../api/postal';
@@ -46,6 +49,7 @@ import type {
   AddrImportRow,
   ComplaintImportPreview,
   ComplaintImportRow,
+  FinanceImportRow,
   FollowImportRow,
   PostalAddressChange,
   PostalBatch,
@@ -53,6 +57,7 @@ import type {
   PostalBatchStatus,
   PostalComplaint,
   PostalComplaintStatus,
+  PostalFinance,
   PostalFollowUp,
   PostalImportDecision,
   PostalImportPreview,
@@ -581,6 +586,74 @@ function FollowUpsTab() {
   );
 }
 
+/** Tab 5：收款发票 */
+function FinanceTab() {
+  const [platform, setPlatform] = useState<string | undefined>();
+  const [taxCat, setTaxCat] = useState<string | undefined>();
+  const [linked, setLinked] = useState<boolean | undefined>();
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [importOpen, setImportOpen] = useState(false);
+  const PAGE_SIZE = 50;
+
+  const q = useQuery({
+    queryKey: ['postalFinance', { platform, taxCat, linked, search, page }],
+    queryFn: () => listFinance({ platform, tax_category: taxCat, linked, search: search.trim() || undefined, page, page_size: PAGE_SIZE }).then((r) => r.data),
+  });
+
+  const linkTag = (r: PostalFinance) => {
+    if (!r.order_id) return <Text type="secondary">未挂</Text>;
+    return <Tag color="green">{r.link_by === 'order_no' ? '订单号' : '姓名'}挂单</Tag>;
+  };
+
+  const cols: TableColumnsType<PostalFinance> = [
+    { title: '姓名', dataIndex: 'payer_name', width: 90 },
+    { title: '商品', dataIndex: 'product', width: 130, ellipsis: true, render: (v: string | null) => v || '—' },
+    { title: '金额', dataIndex: 'amount', width: 80, align: 'right', render: (v: string | null) => v ? `¥${v}` : '—' },
+    { title: '手续费', dataIndex: 'fee_amount', width: 80, align: 'right', render: (v: string | null) => v ? `¥${v}` : '—' },
+    { title: '到款', dataIndex: 'net_amount', width: 90, align: 'right', render: (v: string | null) => v ? `¥${v}` : '—' },
+    { title: '到款日期', dataIndex: 'collected_at', width: 110, render: (v: string | null) => v || '—' },
+    { title: '开票抬头', dataIndex: 'buyer_title', ellipsis: true, render: (v: string | null) => v || <Text type="secondary">不开票/—</Text> },
+    { title: '票种', dataIndex: 'tax_category', width: 70, render: (v: string | null) => v ? <Tag color={v === '专票' ? 'gold' : 'default'}>{v}</Tag> : '—' },
+    { title: '平台', dataIndex: 'platform', width: 120, render: (v: string | null) => v || '—' },
+    { title: '挂单', key: 'link', width: 100, fixed: 'right', render: (_: unknown, r) => linkTag(r) },
+  ];
+
+  return (
+    <>
+      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
+        <Space wrap>
+          <Select allowClear placeholder="平台" style={{ width: 140 }} value={platform} onChange={(v) => { setPlatform(v); setPage(1); }}
+            options={['CBJ+小程序', '商学院APP', '淘宝发行部'].map((p) => ({ label: p, value: p }))} />
+          <Select allowClear placeholder="票种" style={{ width: 100 }} value={taxCat} onChange={(v) => { setTaxCat(v); setPage(1); }}
+            options={[{ label: '普票', value: '普票' }, { label: '专票', value: '专票' }]} />
+          <Select allowClear placeholder="挂单" style={{ width: 120 }} value={linked} onChange={(v) => { setLinked(v); setPage(1); }}
+            options={[{ label: '已挂单', value: true }, { label: '未挂单', value: false }]} />
+          <Input.Search allowClear placeholder="搜索 姓名 / 抬头 / 订单号" style={{ width: 240 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
+        </Space>
+        <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入收款发票</Button>
+      </Flex>
+      <Table<PostalFinance> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small" scroll={{ x: 1200 }}
+        pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }} />
+      <SimpleImportModal<FinanceImportRow>
+        open={importOpen} onClose={() => setImportOpen(false)} title="导入提现发票合集" unit="条" invalidateKey="postalFinance"
+        hint="点击或拖拽含《提现发票合集》的 .xlsx（有原始订单号则精确挂单，否则按姓名兜底）"
+        previewFn={previewFinanceImport} commitFn={commitFinanceImport}
+        rowKey={(r, i) => `${r.payer_name}-${r.amount}-${i}`}
+        columns={[
+          { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
+          { title: '姓名', dataIndex: 'payer_name', width: 100 },
+          { title: '商品', dataIndex: 'product', width: 120, ellipsis: true },
+          { title: '金额', dataIndex: 'amount', width: 90, align: 'right', render: (v: string | null) => v ? `¥${v}` : '—' },
+          { title: '票种', dataIndex: 'tax_category', width: 70 },
+          { title: '平台', dataIndex: 'platform', width: 120 },
+          { title: '挂单', key: 'link', width: 100, render: (_: unknown, r) => r.linked ? <Tag color="green">{r.link_by === 'order_no' ? '订单号' : '姓名'}</Tag> : <Text type="secondary">未挂</Text> },
+        ]}
+      />
+    </>
+  );
+}
+
 export default function PostDelivery() {
   return (
     <div>
@@ -592,6 +665,7 @@ export default function PostDelivery() {
           { key: 'complaints', label: '投诉工单', children: <ComplaintsTab /> },
           { key: 'address', label: '改地址', children: <AddressChangesTab /> },
           { key: 'follow', label: '回访', children: <FollowUpsTab /> },
+          { key: 'finance', label: '收款发票', children: <FinanceTab /> },
         ]}
       />
     </div>

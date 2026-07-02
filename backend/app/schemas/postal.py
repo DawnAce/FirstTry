@@ -1,6 +1,7 @@
 """邮局投递 · Pydantic schemas（批次 / 明细行 / 生成 / 提交）。"""
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
@@ -128,4 +129,32 @@ class FollowUpOut(BaseModel):
 
 class FollowUpListOut(BaseModel):
     rows: List[FollowUpOut]
+    total: int
+
+
+class FinanceOut(BaseModel):
+    id: int
+    order_id: Optional[int] = None
+    external_order_no: Optional[str] = None
+    link_by: Optional[str] = None
+    payer_name: Optional[str] = None
+    product: Optional[str] = None
+    copies: Optional[int] = None
+    amount: Optional[Decimal] = None
+    fee_amount: Optional[Decimal] = None
+    net_amount: Optional[Decimal] = None
+    collected_at: Optional[date] = None
+    invoiced_amount: Optional[Decimal] = None
+    buyer_title: Optional[str] = None
+    tax_no: Optional[str] = None
+    invoice_recipient: Optional[str] = None
+    tax_category: Optional[str] = None
+    platform: Optional[str] = None
+    notes: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class FinanceListOut(BaseModel):
+    rows: List[FinanceOut]
     total: int

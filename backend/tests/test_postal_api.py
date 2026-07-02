@@ -276,3 +276,35 @@ def test_follow_up_import_and_list(client):
     assert body["counts"]["import"] == 2  # 张三的两条回访
     assert client.post("/api/postal/follow-ups/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
     assert client.get("/api/postal/follow-ups").json()["total"] == 2
+
+
+_FIN_HEADERS = ["姓名", "商品名称", "份数", "金额", "手续费", "到款金额", "到款日期",
+                "开票金额", "发票信息", "发票类型", "订单平台"]
+_FIN_ROWS = [
+    {"姓名": "张翠", "商品名称": "《中国经营报》", "份数": "1", "金额": "240", "手续费": "1.3",
+     "到款金额": "238.7", "到款日期": "2024-01-30", "开票金额": "240",
+     "发票信息": "发票抬头：某公司\n购方税号：91ABC", "发票类型": "普票", "订单平台": "CBJ+小程序"},
+    {"姓名": "吴婷", "商品名称": "《商学院》", "份数": "1", "金额": "20", "手续费": "0.11",
+     "到款金额": "", "到款日期": "2024-01-16", "开票金额": "20",
+     "发票信息": "不开票", "发票类型": "专票", "订单平台": "商学院APP"},
+]
+
+
+def _fin_wb() -> bytes:
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "提现发票合集"; ws.append(_FIN_HEADERS)
+    for r in _FIN_ROWS:
+        ws.append([r.get(h, "") for h in _FIN_HEADERS])
+    b = io.BytesIO(); wb.save(b); return b.getvalue()
+
+
+def test_finance_import_and_list(client):
+    r = client.post("/api/postal/finance/import/preview",
+                    files={"file": ("f.xlsx", _fin_wb(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["counts"]["import"] == 2
+    assert client.post("/api/postal/finance/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
+    assert client.get("/api/postal/finance").json()["total"] == 2
+    # 平台 + 普专票筛选
+    assert client.get("/api/postal/finance?platform=商学院APP").json()["total"] == 1
+    assert client.get("/api/postal/finance?tax_category=专票").json()["rows"][0]["payer_name"] == "吴婷"

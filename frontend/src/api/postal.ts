@@ -265,3 +265,50 @@ export function previewFollowUpImport(file: File): Promise<AxiosResponse<SimpleI
 export function commitFollowUpImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
   return api.post('/postal/follow-ups/import/commit', { session_id: sessionId });
 }
+
+// --- 收款 / 发票 (P4) ------------------------------------------------------
+
+export interface PostalFinance {
+  id: number;
+  order_id: number | null;
+  external_order_no: string | null;
+  link_by: string | null;
+  payer_name: string | null;
+  product: string | null;
+  copies: number | null;
+  amount: string | null;
+  fee_amount: string | null;
+  net_amount: string | null;
+  collected_at: string | null;
+  invoiced_amount: string | null;
+  buyer_title: string | null;
+  tax_no: string | null;
+  invoice_recipient: string | null;
+  tax_category: string | null;
+  platform: string | null;
+  notes: string | null;
+}
+
+export interface FinanceListOut { rows: PostalFinance[]; total: number }
+
+export interface FinanceImportRow {
+  payer_name: string;
+  product: string;
+  amount: string | null;
+  tax_category: string;
+  platform: string;
+  decision: 'import' | 'duplicate';
+  linked: boolean;
+  link_by: string;
+}
+
+export function listFinance(f: { platform?: string; tax_category?: string; linked?: boolean; search?: string; page?: number; page_size?: number }): Promise<AxiosResponse<FinanceListOut>> {
+  return api.get('/postal/finance', { params: f });
+}
+export function previewFinanceImport(file: File): Promise<AxiosResponse<SimpleImportPreview<FinanceImportRow>>> {
+  const fd = new FormData(); fd.append('file', file);
+  return api.post('/postal/finance/import/preview', fd);
+}
+export function commitFinanceImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
+  return api.post('/postal/finance/import/commit', { session_id: sessionId });
+}

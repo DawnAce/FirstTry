@@ -58,6 +58,7 @@ from app.models.postal_delivery import (
 )
 from app.models.postal_complaint import PostalComplaint, PostalComplaintStatus
 from app.models.postal_change import PostalAddressChange, PostalFollowUp
+from app.models.postal_finance import PostalFinance
 
 __all__ = [
     "PublicationSchedule",
@@ -98,4 +99,5 @@ __all__ = [
     "PostalDeliveryBatch", "PostalDeliveryRow", "PostalBatchStatus",
     "PostalComplaint", "PostalComplaintStatus",
     "PostalAddressChange", "PostalFollowUp",
+    "PostalFinance",
 ]
