@@ -4,6 +4,16 @@
 > 决策已定：**功能全做（P1→P4）** · **邮局行 = 订单（delivery=post_office）** · **发票/收款复用「财务模块」** · **续订/流失/读者360 先搁置**
 > 本文是 spec（做什么 / 为什么 / 数据模型 / 分期）；每一期实现时再各自出 task-by-task 的执行 plan。
 
+> ---
+> ## ⭐ v3 根因重构（2026-07-03，已实现并合并进 main · PR #39）
+> **本文下方 v2「邮局行 = 订单」的结论已被推翻。** 用户澄清定架构：**邮局投递是一种投递方式（等同中通 ZTO-MF），数据源自平台订单，但邮局明细本身是投递记录、不是订单**——只 CBJ/淘宝/中经报有赞 有订单详情，其余平台只有投递数据；中通/邮局明细都可能有订单里没有的数据。核实现有 `shipping_details` 本就是「投递记录，可挂订单/可独立」，邮局照它。
+> - **不再造 `post_office` 订单**：新表 `PostalDelivery`（迁移 `b5d7f9a1c3e6`，照 shipping_details）；《读者明细》→ 投递记录；`(year, delivery_no)` 去重；产品认不出留原文；读者明细无平台订单号 → `order_id` 恒 NULL；**邮局记录不进订单列表/客户管理**。
+> - 月度起投明细批次从 `PostalDelivery` 归批（`postal_delivery_rows` 加 `postal_delivery_id` 溯源）。
+> - 投诉/改地址/回访经 `postal_common.delivery_map` 按 编号+年度 **关联投递记录**（挂真实订单才继承 order_id）；改地址「回流」→**「应用新地址」**写回投递记录（挂订单则连带更新订单）、未匹配 400；跨年靠改地址表头括注声明的读者年度挂对。
+> - 新增 `/api/postal/deliveries` + 前端 **📇 投递名册** tab；共 6 tab。**大白话叫法**：批次→月度起投明细、挂订单→已关联读者/未匹配、回流→应用新地址。订单号精确挂单 + 并入财务发票工作台 = **后续**（先做电商订单导入）。
+> - 下面 v2 各节的「Order/OrderItem/FulfillmentTarget」「post_office 订单」「PostalDeliveryRow FK order_item/target」等，请以此 v3 为准：实体换成 `PostalDelivery` 投递记录。技术细节见 `docs/technical.md §3.17 / §4.16`，效果图 `docs/preview/postal-delivery-refactor-preview.html`。
+> ---
+
 ---
 
 ## 1. 背景与关键领域事实

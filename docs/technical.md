@@ -109,7 +109,7 @@ FirstTry/
 
 ## 3. 数据库模型
 
-系统使用 14 张数据表：
+系统数据表按模块分组如下（核心印数/物流 §3.1–3.14 + 订单管理 §3.15 + 商品库 §3.16 + 邮局投递 §3.17，另含合同/财务等）：
 
 ### 3.1 publication_schedule（刊期表）
 存储每年的出版计划。
@@ -1610,6 +1610,32 @@ draft ──confirm──> active ──void──> void
 欠款汇总：`total_receivable`（Σ应收）/ `total_paid`（Σ实付）/ `total_outstanding`（**逐单** Σ max(0,应收−实付)，超付单不抵销）/ `unpaid_orders`（未付清单数）。只计 active 且非退款/取消单。
 
 **收款 / 欠款追踪（C，收款流水）**：订单已有 `total_amount`(应收) + `paid_amount`(实付)；欠款 = max(0,应收−实付)，净收 = 实付−已退。新增 `payment_collections` 子表（迁移 `c1d3f5a7b9e2`，一笔到账一行，与退款台账 `refunds` 对称），`record_payment` 累加 `paid_amount` + 记 `payment_recorded` 事件。电商单导入 `total=paid` → 欠款 0；欠款主要在对公/手工单。前端：订单列表「未付清」筛选 + 欠款列、订单详情金额区(应收/实付/已退/欠款) + 收款台账 + 记一笔收款、Analytics 页欠款汇总卡。月度营收走势/导出留后续。
+
+### 4.16 邮局投递
+
+邮局投递接口位于 `backend/app/api/postal.py`，统一前缀 `/api/postal`，需 JWT 鉴权。**读**（列表/详情/导出）登录即可；**写**（各 `import/commit`、`batches/generate`、`mark-sent`、`address-changes/{id}/apply`）需 `require_admin`。业务模型见 §3.17（邮局＝投递方式、投递记录层）。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/postal/deliveries` | **投递名册**：全部投递记录，筛选 `year`/`channel`/`distribution_unit_id`/`month`(起投月)/`search`(姓名·编号) + 分页 |
+| `POST` | `/api/postal/import/preview` | 上传《邮局读者明细》.xlsx 预览 → 投递记录（不造订单）；计数 import/duplicate/unresolved |
+| `POST` | `/api/postal/import/commit` | 提交导入（建 `PostalDelivery`；`(year, delivery_no)` 去重幂等） |
+| `GET` | `/api/postal/batches` | 月度起投明细列表（各版 `year-month` + 状态 + 行数） |
+| `POST` | `/api/postal/batches/generate` | body `{year, month}` 生成当月起投明细（从投递记录归批冻结；已发拒重生成 409） |
+| `GET` | `/api/postal/batches/{id}` | 某版明细详情（冻结行 + 投递单位名解析） |
+| `POST` | `/api/postal/batches/{id}/mark-sent` | 标记已发 → 该版冻结不可再生成 |
+| `GET` | `/api/postal/batches/{id}/export` | 导出 `邮局投递明细_YYYY-MM.xlsx`（StreamingResponse） |
+| `GET` | `/api/postal/complaints` | 投诉列表，筛选 `year`/`status`/`distribution_unit_id`/`min_handling_count`/`search` |
+| `POST` | `/api/postal/complaints/import/preview` · `/commit` | 导入《邮局年投诉》（按 编号+年度 关联投递记录） |
+| `GET` | `/api/postal/address-changes` | 改地址列表，筛选 `year`/`applied`/`search` |
+| `POST` | `/api/postal/address-changes/{id}/apply` | **应用新地址**：写回投递记录（挂真实订单则连带更新订单目标）；已应用 409、未关联投递记录 400 |
+| `POST` | `/api/postal/address-changes/import/preview` · `/commit` | 导入《邮局年改地址》（跨年靠表头括注声明的读者年度挂对） |
+| `GET` | `/api/postal/follow-ups` | 回访列表（读者明细「按天开列」拍平成一行一条），筛选 `year`/`search` |
+| `POST` | `/api/postal/follow-ups/import/preview` · `/commit` | 导入回访列 |
+| `GET` | `/api/postal/finance` | 收款发票列表，筛选 `platform`/`tax_category`/`linked`/`search` |
+| `POST` | `/api/postal/finance/import/preview` · `/commit` | 导入《提现发票合集》（订单号优先、姓名兜底挂真实订单；自成台账） |
+
+**关键点**：`import/commit` 返回 `{created, delivery_ids?, skipped_duplicates}`（投递记录导入用 `delivery_ids`，工单/发票用 `created`）。工单列表出参含 `postal_delivery_id`（前端据此显示「已关联读者 / 未匹配」）；改地址出参含 `applied_to_order`/`applied_by`/`applied_at`。删除被邮局投递引用的投递单位 `Partner` 会被 §partners 守卫拦（409，见 §3.17）。
 
 
 发货明细的生成遵循以下优先级规则：
