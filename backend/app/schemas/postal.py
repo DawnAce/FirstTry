@@ -56,8 +56,41 @@ class PostalCommitIn(BaseModel):
     session_id: str
 
 
+class DeliveryOut(BaseModel):
+    id: int
+    year: int
+    delivery_no: str
+    order_id: Optional[int] = None
+    external_order_no: Optional[str] = None
+    recipient_name: str
+    recipient_phone: Optional[str] = None
+    recipient_province: Optional[str] = None
+    recipient_city: Optional[str] = None
+    recipient_district: Optional[str] = None
+    recipient_address: str
+    recipient_postal_code: Optional[str] = None
+    product: Optional[str] = None
+    copies: int
+    amount: Optional[Decimal] = None
+    coverage_start_date: Optional[date] = None
+    coverage_end_date: Optional[date] = None
+    source_channel: Optional[str] = None
+    distribution_unit_id: Optional[int] = None
+    distribution_unit_name: Optional[str] = None
+    salesperson: Optional[str] = None
+    remittance_name: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class DeliveryListOut(BaseModel):
+    rows: List[DeliveryOut]
+    total: int
+
+
 class ComplaintOut(BaseModel):
     id: int
+    postal_delivery_id: Optional[int] = None
     order_id: Optional[int] = None
     external_order_no: Optional[str] = None
     complaint_date: Optional[date] = None
@@ -87,6 +120,7 @@ class ComplaintListOut(BaseModel):
 
 class AddressChangeOut(BaseModel):
     id: int
+    postal_delivery_id: Optional[int] = None
     order_id: Optional[int] = None
     external_order_no: Optional[str] = None
     change_date: Optional[date] = None
@@ -117,6 +151,7 @@ class AddressChangeListOut(BaseModel):
 
 class FollowUpOut(BaseModel):
     id: int
+    postal_delivery_id: Optional[int] = None
     order_id: Optional[int] = None
     external_order_no: Optional[str] = None
     follow_up_date: Optional[date] = None

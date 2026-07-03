@@ -66,3 +66,22 @@ def order_map(db: Session) -> dict:
         .filter(Order.external_order_no.isnot(None))
         .all()
     }
+
+
+def delivery_map(db: Session) -> dict:
+    """{f"{year}-{delivery_no}": (postal_delivery_id, order_id)}，按 年度+编号 关联投递记录。
+
+    工单（投诉/改地址/回访）用它把 编号(去零)+年度 关联到一条投递记录；关联的投递记录若自身
+    挂了真实订单则 order_id 一并继承（多数为 None）。
+    """
+    from app.models import PostalDelivery
+
+    return {
+        f"{yr}-{no}": (pid, oid)
+        for pid, yr, no, oid in db.query(
+            PostalDelivery.id,
+            PostalDelivery.year,
+            PostalDelivery.delivery_no,
+            PostalDelivery.order_id,
+        ).all()
+    }

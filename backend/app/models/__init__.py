@@ -53,8 +53,10 @@ from app.models.invoice import Invoice, InvoiceType
 from app.models.channel_settlement import ChannelSettlement, SettlementStatus
 from app.models.postal_delivery import (
     PostalBatchStatus,
+    PostalDelivery,
     PostalDeliveryBatch,
     PostalDeliveryRow,
+    PostalDeliverySourceType,
 )
 from app.models.postal_complaint import PostalComplaint, PostalComplaintStatus
 from app.models.postal_change import PostalAddressChange, PostalFollowUp
@@ -95,7 +97,8 @@ __all__ = [
     # 财务管理（订单发票 + 渠道结算）
     "Invoice", "InvoiceType",
     "ChannelSettlement", "SettlementStatus",
-    # 邮局投递（每月起投批次 + 冻结明细）
+    # 邮局投递（投递记录层 + 每月起投明细 + 冻结）
+    "PostalDelivery", "PostalDeliverySourceType",
     "PostalDeliveryBatch", "PostalDeliveryRow", "PostalBatchStatus",
     "PostalComplaint", "PostalComplaintStatus",
     "PostalAddressChange", "PostalFollowUp",

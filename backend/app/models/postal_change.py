@@ -1,8 +1,9 @@
 """邮局投递 · 改地址工单 + 回访记录（P3）。
 
-两者都挂邮局订单（按 编号 + 年度 匹配 orders.external_order_no，order_id 可空）。
+两者都按 编号 + 年度 关联投递记录 ``postal_delivery``（``postal_delivery_id`` 可空；关联的
+投递记录若自身挂了真实订单则 ``order_id`` 一并继承）。
 - ``PostalAddressChange`` = 一次改地址：记新旧身份 + 处理情况(转 XX 局微信) + 原/实际起月，
-  可「回流」把新地址写回订单当前收报人（applied_to_order + 留痕）。
+  可「应用新地址」把 new_* 写回投递记录（applied_to_order + 留痕）；无关联订单也能应用。
 - ``PostalFollowUp`` = 一条回访，取代读者明细里「按天开列」的回访列（一格一条）。
 """
 
@@ -25,6 +26,13 @@ class PostalAddressChange(Base):
     __tablename__ = "postal_address_changes"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    # 关联读者：按 编号 + 年度 匹配投递记录 postal_delivery。
+    postal_delivery_id = Column(
+        Integer,
+        ForeignKey("postal_delivery.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     order_id = Column(
         Integer,
         ForeignKey("orders.id", ondelete="SET NULL"),
@@ -47,7 +55,7 @@ class PostalAddressChange(Base):
     effective_start_month = Column(String(16), nullable=True)  # 实际起月日
     handling = Column(String(128), nullable=True)        # 处理情况（转 XX 局微信）
     routed_label = Column(String(64), nullable=True)     # 归一：XX局
-    # 回流：把 new_* 写回订单当前收报人。
+    # 应用新地址：把 new_* 写回投递记录（挂了真实订单则一并更新订单收报人）。
     applied_to_order = Column(Boolean, default=False, nullable=False)
     applied_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     applied_at = Column(DateTime, nullable=True)
@@ -59,6 +67,13 @@ class PostalFollowUp(Base):
     __tablename__ = "postal_follow_ups"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    # 关联读者：按 编号 + 年度 匹配投递记录 postal_delivery。
+    postal_delivery_id = Column(
+        Integer,
+        ForeignKey("postal_delivery.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     order_id = Column(
         Integer,
         ForeignKey("orders.id", ondelete="SET NULL"),

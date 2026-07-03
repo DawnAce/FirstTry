@@ -12,9 +12,11 @@ from app.models import (
     FulfillmentTarget,
     OrderItem,
     PostalAddressChange,
+    PostalDelivery,
     PostalFollowUp,
     TargetStatus,
 )
+from app.services.address_service import normalize_address
 
 
 def list_address_changes(
@@ -93,7 +95,11 @@ def _current_target(db: Session, order_id: int) -> Optional[FulfillmentTarget]:
 
 
 def apply_address_change(db: Session, change_id: int, operator_id: Optional[int] = None) -> PostalAddressChange:
-    """回流：把改地址的新姓名/电话/地址写回订单当前收报人，之后的批次即用新地址。"""
+    """应用新地址：把新姓名/电话/地址写回**投递记录**，之后的月度明细即用新地址。
+
+    投递记录若挂了真实订单，一并更新订单当前收报人。无关联订单也能应用（写投递记录即可）；
+    但必须先关联到一条投递记录（未匹配则无处可写、报错提示先导入读者名册）。
+    """
     ac = (
         db.query(PostalAddressChange)
         .filter(PostalAddressChange.id == change_id)
@@ -103,19 +109,49 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
     if ac is None:
         raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
     if ac.applied_to_order:
-        raise HTTPException(status_code=409, detail="该改地址已回流，请勿重复")
-    if not ac.order_id:
-        raise HTTPException(status_code=400, detail="未挂到订单，无法回流（先补齐编号/导入读者）")
-    target = _current_target(db, ac.order_id)
-    if target is None:
-        raise HTTPException(status_code=400, detail="订单没有可更新的当前收报人目标")
+        raise HTTPException(status_code=409, detail="该改地址已应用，请勿重复")
+    if not ac.postal_delivery_id:
+        raise HTTPException(
+            status_code=400,
+            detail="未关联到投递记录，无法应用（请先导入该编号所在的读者名册）",
+        )
+    rec = (
+        db.query(PostalDelivery)
+        .filter(PostalDelivery.id == ac.postal_delivery_id)
+        .with_for_update()
+        .first()
+    )
+    if rec is None:
+        raise HTTPException(status_code=400, detail="关联的投递记录不存在")
 
+    # 写回投递记录（下一版月度明细即用新地址）。
     if ac.new_name:
-        target.recipient_name = ac.new_name
+        rec.recipient_name = ac.new_name
     if ac.new_phone:
-        target.recipient_phone = ac.new_phone
+        rec.recipient_phone = ac.new_phone
     if ac.new_address:
-        target.recipient_address = ac.new_address
+        rec.recipient_address = ac.new_address
+        try:
+            parsed = normalize_address(ac.new_address)
+            rec.recipient_province = parsed.get("province") or None
+            rec.recipient_city = parsed.get("city") or None
+            rec.recipient_district = parsed.get("district") or None
+        except Exception:  # cpca 偶发解析异常不阻断应用
+            pass
+    if ac.new_copies is not None:
+        rec.copies = ac.new_copies
+
+    # 投递记录挂了真实订单 → 一并更新订单当前收报人。
+    if rec.order_id:
+        target = _current_target(db, rec.order_id)
+        if target is not None:
+            if ac.new_name:
+                target.recipient_name = ac.new_name
+            if ac.new_phone:
+                target.recipient_phone = ac.new_phone
+            if ac.new_address:
+                target.recipient_address = ac.new_address
+
     ac.applied_to_order = True
     ac.applied_by = operator_id
     ac.applied_at = datetime.now()

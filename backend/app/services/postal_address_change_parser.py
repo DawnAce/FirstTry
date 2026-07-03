@@ -54,6 +54,8 @@ class ParsedAddressChange:
     handling: str = ""
     external_no_raw: str = ""
     notes: str = ""
+    # 整份表共用：从表头括注「…(邮局2024读者明细)」提取的读者年度（跨年改地址靠它挂对年份）。
+    source_year_raw: str = ""
 
 
 def _cell(v) -> str:
@@ -75,13 +77,19 @@ def _find_sheet(wb):
         if not first:
             continue
         hmap = {}
+        source_year = ""
         for i, v in enumerate(first):
-            n = _norm_header(_cell(v))
+            raw = _cell(v)
+            if not source_year:
+                m = re.search(r"20\d{2}", raw)  # 从括注「(邮局2024读者明细)」提取读者年度
+                if m:
+                    source_year = m.group()
+            n = _norm_header(raw)
             if n and n not in hmap:
                 hmap[n] = i
         if _SIGNATURE.issubset(hmap.keys()):
-            return ws, hmap
-    return None, None
+            return ws, hmap, source_year
+    return None, None, ""
 
 
 def is_postal_address_change_export(file_bytes: bytes) -> bool:
@@ -89,14 +97,14 @@ def is_postal_address_change_export(file_bytes: bytes) -> bool:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
     except Exception:
         return False
-    ws, _ = _find_sheet(wb)
+    ws, _, _ = _find_sheet(wb)
     wb.close()
     return ws is not None
 
 
 def parse_postal_address_changes(file_bytes: bytes) -> List[ParsedAddressChange]:
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
-    ws, hmap = _find_sheet(wb)
+    ws, hmap, source_year = _find_sheet(wb)
     if ws is None:
         wb.close()
         raise ValueError("无法识别的邮局改地址表：未找到含「修改日期/新地址/编号」表头的工作表")
@@ -115,6 +123,7 @@ def parse_postal_address_changes(file_bytes: bytes) -> List[ParsedAddressChange]
         ac = ParsedAddressChange(row_no=i)
         for field in _FIELDS.values():
             setattr(ac, field, get(field))
+        ac.source_year_raw = source_year
         if not ac.external_no_raw and not ac.new_address:
             continue
         out.append(ac)

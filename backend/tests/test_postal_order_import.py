@@ -1,11 +1,13 @@
-"""邮局投递导入 · 单元测试（Task 2 起：投递单位透传；Task 3 起：读者明细导入）。
+"""邮局投递导入 · 单元测试（重构后：读者明细 → 投递记录 PostalDelivery，不造订单）。
 
 In-memory SQLite + Base.metadata.create_all，直接调 service 层，与 test_products_api 同风格。
 """
 
+import io
 from datetime import date
 from decimal import Decimal
 
+import openpyxl
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,14 +18,23 @@ from app.models import (
     BillingType,
     FulfillmentTarget,
     FulfillmentType,
+    Order,
     Partner,
     PartnerType,
+    PostalDelivery,
+    PostalDeliverySourceType,
     Publication,
     PublicationFormat,
     ShippingChannel,
 )
 from app.schemas.order import FulfillmentTargetIn, OrderCreate, OrderItemIn
 from app.services.order_service import create_imported_order
+from app.services.postal_delivery_import_service import (
+    build_postal_preview,
+    commit_import,
+    preview_import,
+)
+from app.services.postal_order_import_parser import parse_postal_readers
 
 
 @pytest.fixture
@@ -42,8 +53,11 @@ def db():
         s.close()
 
 
+# ---------------------------------------------------------------------------
+# 订单链路仍保留把 distribution_unit_id 写进 FulfillmentTarget 的能力（供真实订单用）。
+# ---------------------------------------------------------------------------
+
 def test_target_carries_distribution_unit(db):
-    """post_office 目标带上 distribution_unit_id → 落库正确（Task 2 核心）。"""
     unit = Partner(name="北京集订分送", partner_type=PartnerType.distribution)
     db.add(unit)
     db.flush()
@@ -85,58 +99,9 @@ def test_target_carries_distribution_unit(db):
     assert tgt.shipping_channel == ShippingChannel.post_office
 
 
-def test_target_without_distribution_unit_is_null(db):
-    """不填投递单位 → 留空（不推断），既有中通路径不受影响。"""
-    oc = OrderCreate(
-        external_order_no="2026-4801",
-        order_date=date(2026, 1, 1),
-        payer_name="郑天敏",
-        total_amount=Decimal("20"),
-        paid_amount=Decimal("20"),
-        items=[
-            OrderItemIn(
-                publication=Publication.cbj,
-                publication_format=PublicationFormat.paper,
-                fulfillment_type=FulfillmentType.subscription,
-                billing_type=BillingType.paid,
-                total_quantity=1,
-                unit_price=Decimal("20"),
-                subtotal=Decimal("20"),
-                coverage_start_date=date(2026, 1, 1),
-                coverage_end_date=date(2026, 1, 31),
-                targets=[
-                    FulfillmentTargetIn(
-                        recipient_name="郑天敏",
-                        recipient_address="重庆市九龙坡区石坪桥街道骏逸新视界19栋25-6",
-                        quantity=1,
-                        shipping_channel=ShippingChannel.post_office,
-                    )
-                ],
-            )
-        ],
-    )
-    create_imported_order(db, oc, order_code="PY26-0002")
-    db.commit()
-
-    tgt = db.query(FulfillmentTarget).one()
-    assert tgt.distribution_unit_id is None
-
-
 # ---------------------------------------------------------------------------
-# Task 3: 邮局读者明细导入（解析 → post_office 订单）
+# 读者明细导入 → 投递记录（PostalDelivery），不造订单。
 # ---------------------------------------------------------------------------
-
-import io
-
-import openpyxl
-
-from app.models import DeliveryMethod, Order, OrderItem
-from app.services.postal_import_service import (
-    build_postal_preview,
-    commit_import,
-    preview_import,
-)
-from app.services.postal_order_import_parser import parse_postal_readers
 
 _HEADERS = [
     "编号", "地区", "姓名", "联系电话", "省", "市", "区", "详细地址", "邮编", "年度",
@@ -194,42 +159,45 @@ def test_parse_and_preview_maps_rows(db):
     assert preview.counts == {"total": 3, "import": 3, "duplicate": 0, "unresolved": 0}
 
     r0 = preview.rows[0]
-    assert r0.external_order_no == "2026-4784"
-    it = r0.order_create.items[0]
-    assert it.delivery_method == DeliveryMethod.post_office
-    assert it.coverage_start_date == date(2026, 1, 1)
-    assert it.coverage_end_date == date(2026, 1, 31)
-    assert it.targets[0].shipping_channel == ShippingChannel.post_office
-    assert it.targets[0].distribution_unit_id == ids["北京集订分送"]
+    assert r0.delivery_no == "4784"
+    assert r0.year == 2026
+    d0 = r0.data
+    assert d0["coverage_start_date"] == "2026-01-01"
+    assert d0["coverage_end_date"] == "2026-01-31"
+    assert d0["copies"] == 1
+    assert d0["distribution_unit_id"] == ids["北京集订分送"]
+    assert d0["source_channel"] == "CBJ+小程序"
+    # 读者明细无平台订单号 → 不挂订单。
+    assert d0["order_id"] is None
+    assert d0["external_order_no"] is None
 
-    # 对公 50 份：total_quantity=50, unit_price=100, subtotal=5000
+    # 对公 50 份
     r1 = preview.rows[1]
-    it1 = r1.order_create.items[0]
-    assert it1.total_quantity == 50
-    assert it1.subtotal == Decimal("5000")
-    assert it1.unit_price == Decimal("100.00")
-    assert it1.targets[0].distribution_unit_id == ids["山东集订分送"]
+    assert r1.data["copies"] == 50
+    assert r1.data["amount"] == "5000"
+    assert r1.data["distribution_unit_id"] == ids["山东集订分送"]
 
     # 投递单位空 → 留空（不推断）
-    r2 = preview.rows[2]
-    assert r2.order_create.items[0].targets[0].distribution_unit_id is None
+    assert preview.rows[2].data["distribution_unit_id"] is None
 
 
-def test_commit_creates_post_office_orders(db):
+def test_commit_creates_delivery_records_not_orders(db):
     _seed_units(db, "北京集订分送", "山东集订分送")
     out, sid = preview_import(db, _make_workbook(_ROWS))
     assert out["counts"]["import"] == 3
     result = commit_import(db, sid)
     assert result["created"] == 3
 
-    order = db.query(Order).filter(Order.external_order_no == "2026-4784").one()
-    assert order.source_platform == "CBJ+小程序"
-    item = db.query(OrderItem).filter(OrderItem.order_id == order.id).one()
-    assert item.delivery_method == DeliveryMethod.post_office
-    assert item.coverage_start_date == date(2026, 1, 1)
-    tgt = item.targets[0]
-    assert tgt.shipping_channel == ShippingChannel.post_office
-    assert tgt.distribution_unit_id is not None
+    # 不造任何订单。
+    assert db.query(Order).count() == 0
+
+    rec = db.query(PostalDelivery).filter_by(year=2026, delivery_no="4784").one()
+    assert rec.recipient_name == "高占军"
+    assert rec.source_channel == "CBJ+小程序"
+    assert rec.coverage_start_date == date(2026, 1, 1)
+    assert rec.distribution_unit_id is not None
+    assert rec.order_id is None
+    assert rec.source_type == PostalDeliverySourceType.historical_import
 
 
 def test_reimport_is_idempotent(db):
@@ -238,20 +206,24 @@ def test_reimport_is_idempotent(db):
     _, sid = preview_import(db, wb)
     commit_import(db, sid)
 
-    # 同一份表再次预览 → 全部判重
+    # 同一份表再次预览 → 全部判重（按 年度+编号）。
     out2, _ = preview_import(db, wb)
     assert out2["counts"] == {"total": 3, "import": 0, "duplicate": 3, "unresolved": 0}
 
 
-def test_unresolved_product_and_year(db):
+def test_unrecognized_product_is_kept_year_missing_unresolved(db):
+    """产品认不出 → 留原文照常导入（邮局纯投递）；年度缺失 → 待确认。"""
+    _seed_units(db, "北京集订分送")
     bad = [
-        {**_ROWS[0], "编号": "9001", "产品名称": "某不明刊物"},
-        {**_ROWS[0], "编号": "9002", "年度": "年份缺失"},
+        {**_ROWS[0], "编号": "9001", "产品名称": "某不明刊物"},  # 产品认不出 → 照常导入
+        {**_ROWS[0], "编号": "9002", "年度": "年份缺失"},         # 年度缺失 → unresolved
     ]
     parsed = parse_postal_readers(_make_workbook(bad))
     preview = build_postal_preview(db, parsed)
-    assert preview.counts["unresolved"] == 2
-    assert preview.counts["import"] == 0
+    assert preview.counts["unresolved"] == 1
+    assert preview.counts["import"] == 1
+    imp = preview.by_decision("import")[0]
+    assert imp.data["product"] == "某不明刊物"
 
 
 def test_bad_copies_and_inverted_dates_are_unresolved(db):
@@ -268,15 +240,38 @@ def test_bad_copies_and_inverted_dates_are_unresolved(db):
     assert preview.counts["import"] == 1
 
 
-def test_postal_order_shows_in_customer_view(db):
-    """回归：邮局订单（post_office）出现在客户管理聚合里（"订单展示"成立）。"""
+def test_postal_delivery_not_in_customer_view(db):
+    """反向断言：投递记录不造订单 → 不进客户管理聚合（邮局是投递数据、不是订单）。"""
     from app.services import customer_service
 
     _seed_units(db, "北京集订分送")
     _, sid = preview_import(db, _make_workbook([_ROWS[0]]))
     commit_import(db, sid)
 
+    assert db.query(Order).count() == 0
     result = customer_service.list_customers(db)
-    assert "高占军" in {r.recipient_name for r in result.rows}
+    assert "高占军" not in {r.recipient_name for r in result.rows}
 
 
+def test_list_deliveries_filters(db):
+    """投递名册列表：年度 / 起投月 / 渠道 / 搜索 筛选。"""
+    from app.services.postal_delivery_service import list_deliveries
+
+    _seed_units(db, "北京集订分送", "山东集订分送")
+    _, sid = preview_import(db, _make_workbook(_ROWS))
+    commit_import(db, sid)
+
+    _, total = list_deliveries(db, year=2026)
+    assert total == 3
+
+    rows, total = list_deliveries(db, search="高占军")
+    assert total == 1 and rows[0].delivery_no == "4784"
+
+    _, total = list_deliveries(db, year=2026, month=1)
+    assert total == 3  # 三条都 1 月起投
+
+    rows, total = list_deliveries(db, channel="对公")
+    assert total == 1 and rows[0].recipient_name == "孙琪"
+
+    _, total = list_deliveries(db, distribution_unit_id=None, year=2025)
+    assert total == 0  # 无 2025 年度记录

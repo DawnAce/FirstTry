@@ -1,4 +1,4 @@
-"""邮局投诉导入 · 单元测试（P2.2）。"""
+"""邮局投诉导入 · 单元测试（重构后：按 年度+编号 关联投递记录）。"""
 
 import io
 from datetime import date
@@ -11,12 +11,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.models import (
-    Order,
-    OrderEntryMethod,
-    OrderStatus,
     Partner,
     PartnerType,
     PostalComplaint,
+    PostalDelivery,
 )
 from app.services.postal_complaint_import_service import (
     build_complaint_preview,
@@ -63,33 +61,37 @@ def _wb(rows):
 
 
 def _seed(db):
-    o = Order(order_date=date(2024, 1, 1), entry_method=OrderEntryMethod.excel_import,
-              external_order_no="2024-680", payer_name="马宁", status=OrderStatus.active)
-    db.add(o)
+    """投递记录 2024-680（无订单）+ 投递单位。"""
+    d = PostalDelivery(year=2024, delivery_no="680", recipient_name="马宁",
+                       recipient_address="江苏徐州老地址", copies=1,
+                       coverage_start_date=date(2024, 1, 1))
+    db.add(d)
     db.add(Partner(name="北京集订分送", partner_type=PartnerType.distribution))
     db.commit()
-    return o
+    return d
 
 
 def test_parse_link_route_status(db):
-    o = _seed(db)
+    d = _seed(db)
     parsed = parse_postal_complaints(_wb(_ROWS))
     assert len(parsed) == 2
 
     pv = build_complaint_preview(db, parsed)
     assert pv.counts["import"] == 2
-    assert pv.counts["linked"] == 1  # 只有 000680 命中订单
+    assert pv.counts["linked"] == 1  # 只有 000680 命中投递记录（已关联读者）
 
     r0 = pv.rows[0]
-    assert r0.data["order_id"] == o.id           # 000680 去零 → 2024-680 挂订单
-    assert r0.data["routed_label"] == "徐州11185"  # 处理情况归一
-    assert r0.data["routed_unit_id"] is not None  # 投递渠道单位挂 Partner
-    assert r0.status == "resolved"                # 有回访
+    assert r0.data["postal_delivery_id"] == d.id   # 000680 去零 → 2024-680 关联读者
+    assert r0.data["order_id"] is None             # 投递记录未挂真实订单
+    assert r0.data["routed_label"] == "徐州11185"    # 处理情况归一
+    assert r0.data["routed_unit_id"] is not None    # 投递渠道单位挂 Partner
+    assert r0.status == "resolved"                  # 有回访
 
     r1 = pv.rows[1]
-    assert r1.data["order_id"] is None            # 999999 无订单
+    assert r1.data["postal_delivery_id"] is None    # 999999 无投递记录（未匹配）
+    assert r1.data["order_id"] is None
     assert r1.data["routed_label"] == "北京局"
-    assert r1.status == "open"                    # 无回访
+    assert r1.status == "open"                       # 无回访
 
 
 def test_commit_and_reimport_idempotent(db):
@@ -99,7 +101,7 @@ def test_commit_and_reimport_idempotent(db):
     assert commit_import(db, sid)["created"] == 2
 
     c = db.query(PostalComplaint).filter(PostalComplaint.external_order_no == "2024-680").one()
-    assert c.order_id is not None
+    assert c.postal_delivery_id is not None
     assert c.status.value == "resolved"
     assert c.handling_count == 1
 

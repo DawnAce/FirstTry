@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>邮局投递（重构后 · 投递记录层 · 最终版）· 设计效果图</title>
+<style>
+  :root{
+    --blue:#1677ff; --blue-bg:#e6f4ff; --green:#52c41a; --green-bg:#f6ffed;
+    --orange:#fa8c16; --orange-bg:#fff7e6; --red:#ff4d4f; --red-bg:#fff1f0;
+    --purple:#722ed1; --purple-bg:#f9f0ff; --cyan:#13c2c2; --cyan-bg:#e6fffb;
+    --border:#e8e8e8; --text:#1f1f1f; --sub:#8c8c8c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text);background:#f5f5f5;line-height:1.6}
+  .wrap{max-width:1280px;margin:0 auto;padding:24px}
+  .banner{background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 16px;margin-bottom:20px;font-size:13px;color:#874d00}
+  h1{font-size:22px;margin:0 0 4px}
+  .muted{color:var(--sub);font-size:13px;margin:0 0 18px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:22px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .card .desc{color:var(--sub);font-size:13px;margin:0 0 16px}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap}
+  .btn{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:default}
+  .btn.ghost{background:#fff;color:var(--text);border:1px solid var(--border)}
+  .btn.dis{background:#f5f5f5;color:#bbb;border:1px solid var(--border)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#fafafa;color:#555;font-weight:600;white-space:nowrap}
+  .tag{display:inline-block;border-radius:4px;padding:1px 8px;font-size:12px;line-height:18px;border:1px solid transparent;white-space:nowrap}
+  .t-blue{background:var(--blue-bg);color:var(--blue);border-color:#91caff}
+  .t-green{background:var(--green-bg);color:var(--green);border-color:#b7eb8f}
+  .t-orange{background:var(--orange-bg);color:var(--orange);border-color:#ffd591}
+  .t-purple{background:var(--purple-bg);color:var(--purple);border-color:#d3adf7}
+  .t-cyan{background:var(--cyan-bg);color:var(--cyan);border-color:#87e8de}
+  .t-red{background:var(--red-bg);color:var(--red);border-color:#ffccc7}
+  .t-gray{background:#fafafa;color:#888;border-color:#d9d9d9}
+  .code{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#555;background:#f5f5f5;padding:1px 6px;border-radius:4px}
+  .sub{color:var(--sub);font-size:12px}
+  .num{font-variant-numeric:tabular-nums}
+  .split{display:grid;grid-template-columns:236px 1fr;gap:16px;align-items:start}
+  .blist{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .blist .hd{background:#fafafa;padding:7px 12px;font-size:12px;color:#555;font-weight:600;border-bottom:1px solid var(--border)}
+  .bitem{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px}
+  .bitem:last-child{border-bottom:none}
+  .bitem.active{background:var(--blue-bg);box-shadow:inset 3px 0 0 var(--blue)}
+  .bitem .m{font-weight:600;font-variant-numeric:tabular-nums}
+  .bitem .r{text-align:right}
+  .statcard{background:#f0f7ff;border:1px solid #91caff;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;gap:26px;flex-wrap:wrap;align-items:center}
+  .statcard .kv{font-size:12px;color:var(--sub)}
+  .statcard .kv b{display:block;font-size:17px;color:var(--text);font-variant-numeric:tabular-nums}
+  .legend{font-size:12px;color:var(--sub);margin-top:10px}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .sel{border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;background:#fff;color:#555}
+  .sel b{color:var(--text)}
+  .layer{display:flex;flex-direction:column;gap:8px;align-items:center;font-size:13px;margin:6px 0 2px}
+  .layrow{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .lbox{border:1px solid var(--border);border-radius:8px;padding:8px 14px;background:#fff;text-align:center;min-width:150px}
+  .lbox .lt{font-size:11px;color:var(--sub)}
+  .lbox b{font-size:13px}
+  .lbox.sale{border-color:#91caff;background:var(--blue-bg)}
+  .lbox.deliv{border-color:#87e8de;background:var(--cyan-bg)}
+  .lbox.fin{border-color:#ffd591;background:var(--orange-bg)}
+  .larrow{color:var(--sub);font-size:12px}
+  .plus{color:var(--sub);font-weight:700;padding:0 4px}
+  .tabin{position:absolute;left:-9999px}
+  .tabnav{display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:18px;flex-wrap:wrap}
+  .tabnav label{padding:8px 16px;font-size:14px;color:#666;cursor:default;border-bottom:2px solid transparent;margin-bottom:-2px;border-radius:6px 6px 0 0}
+  .tabnav label .n{display:inline-block;min-width:18px;font-size:11px;color:#fff;background:#bbb;border-radius:9px;padding:0 6px;margin-left:6px;line-height:16px;text-align:center}
+  .tabpage{display:none}
+  #t1:checked~.tabnav label[for=t1],#t2:checked~.tabnav label[for=t2],#t3:checked~.tabnav label[for=t3],
+  #t4:checked~.tabnav label[for=t4],#t5:checked~.tabnav label[for=t5],#t6:checked~.tabnav label[for=t6]{
+    color:var(--blue);border-bottom-color:var(--blue);font-weight:600;background:var(--blue-bg)}
+  #t1:checked~.tabnav label[for=t1] .n,#t2:checked~.tabnav label[for=t2] .n,#t3:checked~.tabnav label[for=t3] .n,
+  #t4:checked~.tabnav label[for=t4] .n,#t5:checked~.tabnav label[for=t5] .n,#t6:checked~.tabnav label[for=t6] .n{background:var(--blue)}
+  #t1:checked~.pages #p1,#t2:checked~.pages #p2,#t3:checked~.pages #p3,
+  #t4:checked~.pages #p4,#t5:checked~.pages #p5,#t6:checked~.pages #p6{display:block}
+  .diff{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .diff .col{border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+  .diff .col.old{background:#fff1f0;border-color:#ffccc7}
+  .diff .col.new{background:var(--green-bg);border-color:#b7eb8f}
+  .diff .col h4{margin:0 0 8px;font-size:13px}
+  .diff .col ul{margin:0;padding-left:18px;font-size:12.5px;color:#444}
+  .diff .col li{margin-bottom:5px}
+  .keep{font-size:12px;color:var(--sub);background:#fafafa;border:1px dashed #d9d9d9;border-radius:8px;padding:8px 12px;margin-top:12px}
+  @media(max-width:820px){.split{grid-template-columns:1fr}.diff{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="banner">⚠️ <b>最终版</b>设计效果图（mockup）· 用真实样例数据填充，反映「<b>投递记录层</b>」新模型（邮局＝投递方式、不造订单）。已按大白话锁定叫法：<b>月度起投明细 · 已关联读者 · 应用新地址</b>。<b>不是真实系统、未连库</b>；真页面将 100% 照此做。点上方标签切 6 个页签。</div>
+
+  <h1>物流管理 · 邮局投递 <span class="tag t-cyan" style="vertical-align:middle">重构后 · 投递记录层</span></h1>
+  <p class="muted">邮局投递 = 一种<b>投递方式</b>，与<b>中通（ZTO-MF）</b>同级。数据来源于平台订单，但<b>邮局明细本身是投递记录、不是订单</b>；你不负责的平台就是纯投递数据。</p>
+
+  <div class="card">
+    <h2>📐 数据分层（重构后）</h2>
+    <p class="desc">中通、邮局都是「投递层」，是<b>投递方式</b>；平台订单是「销售层」。就是你说的：“不管中通还是邮局，明细里都可能有订单里没有的数据”，因为你不负责全平台。</p>
+    <div class="layer">
+      <div class="layrow">
+        <div class="lbox sale"><div class="lt">销售层 · 平台订单（有详情的平台）</div><b>CBJ小程序 · 淘宝 · 中经报有赞</b></div>
+      </div>
+      <div class="larrow">▲ 将来有平台订单号才挂（先不做 · 挂不上＝独立）</div>
+      <div class="layrow">
+        <div class="lbox deliv"><div class="lt">投递层 · 物流方式</div><b>中通 ZTO-MF</b><div class="sub">shipping_details</div></div>
+        <span class="plus">＝ 同级 ＝</span>
+        <div class="lbox deliv"><div class="lt">投递层 · 物流方式</div><b>邮局投递</b><div class="sub">postal_delivery（新）</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🔀 这次重构改了什么</h2>
+    <div class="diff">
+      <div class="col old">
+        <h4>❌ 旧（订单驱动）</h4>
+        <ul>
+          <li>邮局每行 = 一张 <b>post_office 订单</b></li>
+          <li>邮局记录<b>混进「订单列表 / 客户管理」</b>——和电商真实订单<b>重复、双算</b></li>
+          <li>没有地方单独看邮局<b>完整名册</b></li>
+          <li>工单叫“挂订单”、改址叫“回流”（不好懂）</li>
+        </ul>
+      </div>
+      <div class="col new">
+        <h4>✅ 新（投递记录层）</h4>
+        <ul>
+          <li>邮局每行 = 一条 <b>投递记录</b>（与中通同级）</li>
+          <li>邮局记录<b>不进「订单列表 / 客户管理」</b>——营收/客户不再被污染</li>
+          <li>新增 <b>「投递名册」页签</b>——完整名册的家（可搜可筛）</li>
+          <li>工单叫 <b>已关联读者 / 未匹配</b>；改址叫 <b>应用新地址</b></li>
+        </ul>
+      </div>
+    </div>
+    <div class="keep">✅ <b>基本不变（沿用现有观感）</b>：月度明细主从布局、各列、导入「预览→提交」流程、投递单位“有则标注无则留空”、明细冻结存档、收款发票整页。变的是<b>底层实体（记录 vs 订单）</b>和<b>大白话叫法</b>，不是推倒重做。</div>
+  </div>
+
+  <input class="tabin" type="radio" name="t" id="t1" checked>
+  <input class="tabin" type="radio" name="t" id="t2">
+  <input class="tabin" type="radio" name="t" id="t3">
+  <input class="tabin" type="radio" name="t" id="t4">
+  <input class="tabin" type="radio" name="t" id="t5">
+  <input class="tabin" type="radio" name="t" id="t6">
+
+  <div class="tabnav">
+    <label for="t1">📇 投递名册 <span class="n">新</span></label>
+    <label for="t2">📦 月度起投明细</label>
+    <label for="t3">📮 投诉工单 <span class="n">299</span></label>
+    <label for="t4">✏️ 改地址 <span class="n">157</span></label>
+    <label for="t5">📞 回访 <span class="n">90</span></label>
+    <label for="t6">🧾 收款发票 <span class="n">49</span></label>
+  </div>
+
+  <div class="pages">
+
+    <!-- ===== TAB 1：投递名册 ===== -->
+    <div class="tabpage" id="p1">
+      <div class="card">
+        <h2>📇 投递名册 · 全部投递记录 <span class="tag t-cyan">新增页</span></h2>
+        <p class="desc">邮局记录不再进「订单列表」，这里就是它们完整名册的家——你手里那张完整 Excel 的全量在此可搜可筛。每条 = 一条投递记录（≠订单）。所有月度明细的并集 = 本名册。</p>
+        <div class="toolbar">
+          <div class="sub">2026 年度 · 共 <b>4316</b> 条投递记录</div>
+          <div>
+            <button class="btn ghost">⭱ 导入邮局明细</button>
+            <button class="btn ghost">⭳ 导出名册</button>
+          </div>
+        </div>
+        <div class="filters">
+          <span class="sel">年度：<b>2026</b> ▾</span>
+          <span class="sel">渠道：<b>全部</b> ▾</span>
+          <span class="sel">投递单位：<b>全部</b> ▾</span>
+          <span class="sel">起投月：<b>全部</b> ▾</span>
+          <span class="sel">🔍 搜索 姓名 / 编号</span>
+        </div>
+        <table>
+          <thead><tr>
+            <th>编号</th><th>收报人</th><th>电话</th><th>省/市/区 · 详细地址</th><th>邮编</th>
+            <th>份数</th><th>起止月</th><th>投递单位</th><th>渠道</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="code">2026-4784</td><td>高占军</td><td class="num">13764491959</td><td>上海 宝山区<div class="sub">华灵路1900弄355号501室</div></td><td class="num">201900</td><td class="num">1</td><td class="sub num">01/01–01/31</td><td><span class="tag t-blue">北京集订分送</span></td><td class="sub">CBJ+小程序</td></tr>
+            <tr><td class="code">2026-4787</td><td>邓绍文</td><td class="num">13392281928</td><td>广东 惠州 惠城区<div class="sub">江北雅居乐白鹭湖峰会38栋01号</div></td><td class="num">516000</td><td class="num">1</td><td class="sub num">01/01–01/31</td><td><span class="tag t-cyan">广东集订分送</span></td><td class="sub">CBJ+小程序</td></tr>
+            <tr><td class="code">2026-4815</td><td>张宝全</td><td class="num">13718170599</td><td>北京 朝阳区<div class="sub">金蝉南路2号院北京华侨城2号院1-1-701</div></td><td class="num">100020</td><td class="num">1</td><td class="sub num">01/01–<b>03/31</b></td><td><span class="tag t-blue">北京集订分送</span></td><td class="sub">中经报有赞</td></tr>
+            <tr style="background:#fffdf7"><td class="code">2026-4837</td><td>孙琪 <span class="tag t-orange">对公</span></td><td class="num">18353360185</td><td>山东 淄博 临淄区<div class="sub">齐兴路88号 临淄农村商业银行</div></td><td class="sub">—</td><td class="num"><b>50</b></td><td class="sub num">01/01–05/31</td><td><span class="tag t-purple">山东集订分送</span></td><td class="sub">对公转账</td></tr>
+            <tr style="background:#fcfcfc"><td class="code">2026-4801</td><td>郑天敏</td><td class="num">18323045917</td><td>重庆 九龙坡区<div class="sub">石坪桥街道骏逸新视界19栋25-6</div></td><td class="num">400050</td><td class="num">1</td><td class="sub num">01/01–01/31</td><td><span class="sub" title="原表未填，留空不推断">—　<span style="color:#bbb">(未填)</span></span></td><td class="sub">CBJ+小程序</td></tr>
+            <tr><td colspan="9" class="sub" style="text-align:center;background:#fafafa">… 其余 4311 条 · 分页 ·（这就是你完整 Excel 的全量，随时可搜/导出；点行可看该读者的投诉/改址/回访历史）</td></tr>
+          </tbody>
+        </table>
+        <div class="legend">投递单位<b>有原文就标注、没有就留空</b>（如 2026-4801），系统<b>不自动推断</b>。｜「对公」大单（份数 50）份数照实。｜ 这些记录<b>不再进订单列表/客户管理</b>——它们是投递数据，不是订单。</div>
+      </div>
+    </div>
+
+    <!-- ===== TAB 2：月度起投明细 ===== -->
+    <div class="tabpage" id="p2">
+      <div class="card">
+        <h2>📦 月度起投明细 <span class="sub" style="font-weight:400">（每月给邮局的那一版）</span></h2>
+        <p class="desc">左边按「起投月」列每一版明细，右边看选中那版的投递清单。举例：2026-01 = 今年 1 月新起投的读者。已发的那版<b>冻结存档</b>，之后改记录也不动它。给过的读者不再出现在后面的版里。</p>
+        <div class="toolbar">
+          <div class="sub">2026 年度 · 共 7 版 · 已发 5 · 待发 2</div>
+          <div>
+            <button class="btn ghost">⭱ 导入邮局明细</button>
+            <button class="btn">＋ 生成当月明细（2026-07）</button>
+          </div>
+        </div>
+        <div class="split">
+          <div class="blist">
+            <div class="hd">月度起投明细（按起投月）</div>
+            <div class="bitem active"><span><span class="m">2026-01</span><br><span class="sub">已发 · 🔒冻结</span></span><span class="r"><span class="num">1277</span> 行<br><span class="sub">2025-12-28 发</span></span></div>
+            <div class="bitem"><span><span class="m">2026-02</span><br><span class="sub">已发 · 🔒冻结</span></span><span class="r"><span class="num">93</span> 行<br><span class="sub">2026-01-26 发</span></span></div>
+            <div class="bitem"><span><span class="m">2026-03</span><br><span class="sub">已发 · 🔒冻结</span></span><span class="r"><span class="num">22</span> 行<br><span class="sub">2026-02-25 发</span></span></div>
+            <div class="bitem"><span><span class="m">2026-04</span><br><span class="sub">已发 · 🔒冻结</span></span><span class="r"><span class="num">17</span> 行<br><span class="sub">2026-03-26 发</span></span></div>
+            <div class="bitem"><span><span class="m">2026-05</span><br><span class="sub">已发 · 🔒冻结</span></span><span class="r"><span class="num">26</span> 行<br><span class="sub">2026-04-27 发</span></span></div>
+            <div class="bitem"><span><span class="m">2026-06</span><br><span><span class="tag t-cyan">已生成</span></span></span><span class="r"><span class="num">18</span> 行<br><span class="sub">待导出</span></span></div>
+            <div class="bitem"><span><span class="m">2026-07</span><br><span><span class="tag t-gray">草稿</span></span></span><span class="r"><span class="num">64</span> 行<br><span class="sub">待生成</span></span></div>
+          </div>
+          <div>
+            <div class="statcard">
+              <div class="kv">起投月<b>2026-01</b></div>
+              <div class="kv">收报人<b class="num">1277</b></div>
+              <div class="kv">总份数<b class="num">1362</b></div>
+              <div class="kv">投递单位<b class="num">6</b></div>
+              <div class="kv">状态<b><span class="tag t-green">已发 🔒</span></b></div>
+              <div style="margin-left:auto">
+                <button class="btn dis">✓ 已发（冻结）</button>
+                <button class="btn ghost">⭳ 导出 Excel</button>
+              </div>
+            </div>
+            <table>
+              <thead><tr>
+                <th>编号</th><th>收报人</th><th>电话</th><th>省/市/区 · 详细地址</th><th>邮编</th>
+                <th>份数</th><th>起止月</th><th>投递单位</th><th>渠道</th>
+              </tr></thead>
+              <tbody>
+                <tr><td class="code">2026-4784</td><td>高占军</td><td class="num">13764491959</td><td>上海 宝山区<div class="sub">华灵路1900弄355号501室</div></td><td class="num">201900</td><td class="num">1</td><td class="sub num">01/01–01/31</td><td><span class="tag t-blue">北京集订分送</span></td><td class="sub">CBJ+小程序</td></tr>
+                <tr><td class="code">2026-4787</td><td>邓绍文</td><td class="num">13392281928</td><td>广东 惠州 惠城区<div class="sub">江北雅居乐白鹭湖峰会38栋01号</div></td><td class="num">516000</td><td class="num">1</td><td class="sub num">01/01–01/31</td><td><span class="tag t-cyan">广东集订分送</span></td><td class="sub">CBJ+小程序</td></tr>
+                <tr><td class="code">2026-4792</td><td>王鑫韬</td><td class="num">18765149281</td><td>山东 潍坊 奎文区<div class="sub">永春路东方名郡15号楼2单元801</div></td><td class="num">261031</td><td class="num">1</td><td class="sub num">01/01–01/31</td><td><span class="tag t-purple">山东集订分送</span></td><td class="sub">CBJ+小程序</td></tr>
+                <tr style="background:#fffdf7"><td class="code">2026-4837</td><td>孙琪 <span class="tag t-orange">对公</span></td><td class="num">18353360185</td><td>山东 淄博 临淄区<div class="sub">齐兴路88号 临淄农村商业银行</div></td><td class="sub">—</td><td class="num"><b>50</b></td><td class="sub num">01/01–05/31</td><td><span class="tag t-purple">山东集订分送</span></td><td class="sub">对公转账</td></tr>
+                <tr style="background:#fcfcfc"><td class="code">2026-4801</td><td>郑天敏</td><td class="num">18323045917</td><td>重庆 九龙坡区<div class="sub">石坪桥街道骏逸新视界19栋25-6</div></td><td class="num">400050</td><td class="num">1</td><td class="sub num">01/01–01/31</td><td><span class="sub">—　<span style="color:#bbb">(未填)</span></span></td><td class="sub">CBJ+小程序</td></tr>
+                <tr><td colspan="9" class="sub" style="text-align:center;background:#fafafa">… 其余 1272 行 · 分页</td></tr>
+              </tbody>
+            </table>
+            <div class="legend">🔒 <b>已发那版冻结</b>：交邮局后定格，之后改投递记录地址/份数都不影响这一版（留痕在记录侧）。｜ 月中错过截止的新订单，顺延进下一版（起止月的“实际起月”会体现）。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TAB 3：投诉工单 ===== -->
+    <div class="tabpage" id="p3">
+      <div class="card">
+        <h2>📮 投诉工单</h2>
+        <p class="desc">缺某期投诉 → 转各地邮局（11185 / XX局，自动归一）→ 回访。每条按 <b>编号+年度</b> 自动找它对应的那位读者（<b>已关联读者</b>；找不到就“未匹配”，仍照常记录）。</p>
+        <div class="toolbar">
+          <div class="sub">共 299 条 · 已关联读者 285 · 待处理 41 · 已回访 258</div>
+          <button class="btn ghost">⭱ 导入投诉</button>
+        </div>
+        <div class="filters">
+          <span class="sel">年度：<b>2026</b> ▾</span>
+          <span class="sel">状态：<b>全部</b> ▾</span>
+          <span class="sel">处理次数：<b>全部</b> ▾</span>
+          <span class="sel">🔍 搜索 收报人 / 编号</span>
+        </div>
+        <table>
+          <thead><tr>
+            <th>编号</th><th>年度</th><th>收报人</th><th>投诉日期</th><th>缺期</th><th>处理情况（归一）</th><th>处理次数</th><th>状态</th><th>读者</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="code">680</td><td class="num">2024</td><td>李国强</td><td class="sub num">2024-03-11</td><td>第9期</td><td><span class="tag t-blue">转 11185</span> <span class="sub">河北11185</span></td><td class="num">2</td><td><span class="tag t-green">已回访</span></td><td><span class="tag t-cyan">已关联读者</span></td></tr>
+            <tr><td class="code">1245</td><td class="num">2026</td><td>王涛</td><td class="sub num">2026-02-18</td><td>第6期</td><td><span class="tag t-purple">转 高阳县局</span></td><td class="num">1</td><td><span class="tag t-orange">待处理</span></td><td><span class="tag t-cyan">已关联读者</span></td></tr>
+            <tr style="background:#fcfcfc"><td class="code">3097</td><td class="num">2026</td><td>某读者</td><td class="sub num">2026-04-02</td><td>第14期</td><td><span class="tag t-blue">转 11185</span></td><td class="num">1</td><td><span class="tag t-orange">待处理</span></td><td><span class="tag t-gray" title="编号在名册里没找到">未匹配</span></td></tr>
+            <tr><td colspan="9" class="sub" style="text-align:center;background:#fafafa">… 其余 296 条 · 分页</td></tr>
+          </tbody>
+        </table>
+        <div class="legend"><span class="tag t-cyan">已关联读者</span> = 编号+年度在投递名册里找到了对应读者（可点进去看地址/投递单位）。<span class="tag t-gray">未匹配</span> = 名册里没这条编号（可能是更早年份、或还没导入的名册）。系统<b>自动</b>判，不用手动。</div>
+      </div>
+    </div>
+
+    <!-- ===== TAB 4：改地址 ===== -->
+    <div class="tabpage" id="p4">
+      <div class="card">
+        <h2>✏️ 改地址工单</h2>
+        <p class="desc">读者搬家，记下新地址。点<b>「应用新地址」</b> → 系统把新地址写进那位读者的投递记录 → <b>下一版月度明细自动用新地址</b>。不点就只是记录、明细还是老地址。</p>
+        <div class="toolbar">
+          <div class="sub">共 157 条 · 已关联读者 155 · 已应用 132 · 待应用 25</div>
+          <button class="btn ghost">⭱ 导入改地址</button>
+        </div>
+        <div class="filters">
+          <span class="sel">年度：<b>2026</b> ▾</span>
+          <span class="sel">应用状态：<b>全部</b> ▾</span>
+          <span class="sel">🔍 搜索 姓名 / 编号</span>
+        </div>
+        <table>
+          <thead><tr>
+            <th>编号</th><th>修改日期</th><th>原地址 / 收报人</th><th>→ 新地址 / 收报人</th><th>处理情况</th><th>应用</th><th>读者</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td class="code">4784</td><td class="sub num">2026-01-15</td>
+              <td>高占军<div class="sub">上海宝山 华灵路1900弄355号501室</div></td>
+              <td>高占军<div class="sub">上海浦东 世纪大道100号环球金融中心</div></td>
+              <td><span class="tag t-blue">转 上海局</span></td>
+              <td><span class="tag t-green">✓ 已应用</span></td>
+              <td><span class="tag t-cyan">已关联读者</span></td>
+            </tr>
+            <tr>
+              <td class="code">5012</td><td class="sub num">2026-03-04</td>
+              <td>陈静<div class="sub">杭州西湖 文一路100号</div></td>
+              <td>陈静<div class="sub">杭州余杭 未来科技城海创园</div></td>
+              <td><span class="tag t-purple">转 杭州局</span></td>
+              <td><button class="btn ghost" style="padding:2px 10px">↦ 应用新地址</button></td>
+              <td><span class="tag t-cyan">已关联读者</span></td>
+            </tr>
+            <tr style="background:#fcfcfc">
+              <td class="code">6390</td><td class="sub num">2026-04-20</td>
+              <td>赵伟<div class="sub">成都武侯 天府大道</div></td>
+              <td>赵伟<div class="sub">成都高新 天府三街</div></td>
+              <td><span class="tag t-blue">转 成都局</span></td>
+              <td><button class="btn ghost" style="padding:2px 10px">↦ 应用新地址</button></td>
+              <td><span class="tag t-gray">未匹配</span></td>
+            </tr>
+            <tr><td colspan="7" class="sub" style="text-align:center;background:#fafafa">… 其余 154 条 · 分页</td></tr>
+          </tbody>
+        </table>
+        <div class="legend">↦ <b>应用新地址</b>：把新姓名/电话/地址写进读者的投递记录，之后生成的月度明细就用新地址；已应用显示「✓ 已应用」，不可重复。<b>没关联到读者（未匹配）也能应用</b>——会新建/更新对应读者记录（按你确认的）。</div>
+      </div>
+    </div>
+
+    <!-- ===== TAB 5：回访 ===== -->
+    <div class="tabpage" id="p5">
+      <div class="card">
+        <h2>📞 回访</h2>
+        <p class="desc">把读者明细里「按天开列」的回访列（如 <span class="code">20240227回访</span>）<b>拍平</b>成一行一条。每条按 编号+年度 关联读者。</p>
+        <div class="toolbar">
+          <div class="sub">共 90 条 · 已关联读者 90 · 来自 4 个按天列</div>
+          <button class="btn ghost">⭱ 导入回访</button>
+        </div>
+        <div class="filters">
+          <span class="sel">年度：<b>2026</b> ▾</span>
+          <span class="sel">🔍 搜索 姓名 / 编号</span>
+        </div>
+        <table>
+          <thead><tr>
+            <th>编号</th><th>回访日期</th><th>批次</th><th>收报人</th><th>结果</th><th>读者</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="code">680</td><td class="sub num">2024-02-27</td><td>2024-02</td><td>李国强</td><td>已收到、无异常</td><td><span class="tag t-cyan">已关联读者</span></td></tr>
+            <tr><td class="code">1245</td><td class="sub num">2026-02-25</td><td>2026-02</td><td>王涛</td><td>补投到位</td><td><span class="tag t-cyan">已关联读者</span></td></tr>
+            <tr style="background:#fcfcfc"><td class="code">4784</td><td class="sub num">2026-01-30</td><td>2026-01</td><td>高占军</td><td>地址已更新，下期起改投</td><td><span class="tag t-cyan">已关联读者</span></td></tr>
+            <tr><td colspan="6" class="sub" style="text-align:center;background:#fafafa">… 其余 87 条 · 分页</td></tr>
+          </tbody>
+        </table>
+        <div class="legend">原来一天加一列的做法，导入时拍平成「日期 / 批次 / 结果」一行一条，便于筛选统计。</div>
+      </div>
+    </div>
+
+    <!-- ===== TAB 6：收款发票 ===== -->
+    <div class="tabpage" id="p6">
+      <div class="card">
+        <h2>🧾 收款发票（提现合集）<span class="tag t-green">此页不变</span></h2>
+        <p class="desc">独立台账，记金额 / 手续费 / 到款 / 开票 / 抬头 / 税号 / 票种 / 平台。挂订单<b>先按姓名兜底</b>（唯一命中才挂）——保持现在的样子。<b>用订单号精确挂单 + 并入财务发票工作台 = 后续</b>（要先把电商订单导入系统，你已确认先不做）。</p>
+        <div class="toolbar">
+          <div class="sub">共 49 条 · 姓名挂单 5 · 未挂 44</div>
+          <button class="btn ghost">⭱ 导入收款发票</button>
+        </div>
+        <div class="filters">
+          <span class="sel">平台：<b>全部</b> ▾</span>
+          <span class="sel">票种：<b>全部</b> ▾</span>
+          <span class="sel">挂单：<b>全部</b> ▾</span>
+          <span class="sel">🔍 搜索 姓名 / 抬头 / 订单号</span>
+        </div>
+        <table>
+          <thead><tr>
+            <th>姓名</th><th>产品</th><th>份</th><th>金额</th><th>手续费</th><th>到款</th><th>开票</th><th>抬头 / 税号</th><th>票种</th><th>平台</th><th>挂单</th>
+          </tr></thead>
+          <tbody>
+            <tr><td>甄浚玮</td><td class="sub">中国经营报</td><td class="num">1</td><td class="num">240</td><td class="num sub">1.30</td><td class="num">238.70</td><td class="num">240</td><td>深圳市战歌科技开发有限公司<div class="sub code">914403007883145221</div></td><td><span class="tag t-blue">普票</span></td><td class="sub">CBJ小程序</td><td><span class="tag t-orange">姓名挂单</span></td></tr>
+            <tr><td>杨宝钧</td><td class="sub">中国经营报</td><td class="num">1</td><td class="num">240</td><td class="num sub">1.30</td><td class="num">238.70</td><td class="num">240</td><td>十堰兴茂汽车零部件有限公司<div class="sub code">94120300MA4938PC82</div></td><td><span class="tag t-blue">普票</span></td><td class="sub">CBJ小程序</td><td><span class="tag t-gray">未挂</span></td></tr>
+            <tr style="background:#f9f0ff"><td>王涛</td><td class="sub">中国经营报 <span class="tag t-purple">组合开票</span></td><td class="num">1</td><td class="num">240</td><td class="num sub">1.30</td><td class="num">238.70</td><td class="num">576</td><td>高阳县家之宝纺织品销售有限公司<div class="sub code">91130628673229096Y</div></td><td><span class="tag t-blue">普票</span></td><td class="sub">CBJ小程序</td><td><span class="tag t-gray">未挂</span></td></tr>
+            <tr><td>沈昕瑶</td><td class="sub">商学院</td><td class="num">2</td><td class="num">80</td><td class="num sub">0.48</td><td class="num">79.52</td><td class="num">80</td><td>北京科闻领睿咨询服务有限公司<div class="sub code">91110105746105933Y</div></td><td><span class="tag t-blue">普票</span></td><td class="sub">淘宝发行部</td><td><span class="tag t-gray">未挂</span></td></tr>
+            <tr style="background:#fcfcfc"><td>俞看南</td><td class="sub">商学院 · 3个季度</td><td class="num">3</td><td class="num">315</td><td class="num sub">1.89</td><td class="num">313.11</td><td class="num">315</td><td>浙江易通传媒投资有限公司<div class="sub code">9133000079555783XM</div></td><td><span class="tag t-blue">普票</span></td><td class="sub">淘宝发行部</td><td><span class="tag t-gray">未挂</span></td></tr>
+            <tr><td colspan="11" class="sub" style="text-align:center;background:#fafafa">… 其余 44 条 · 分页</td></tr>
+          </tbody>
+        </table>
+        <div class="legend">💡 <b>后续</b>：你新给的《2026提现汇总》多了「订单号」列——等 CBJ/淘宝<b>电商订单导入系统</b>后，就能用订单号<b>精确挂单</b>并一键并入「财务→发票工作台」。这步<b>先不做</b>（需要前提支持）。</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="card">
+    <h2>✅ 已锁定</h2>
+    <table>
+      <thead><tr><th>点</th><th>定的</th></tr></thead>
+      <tbody>
+        <tr><td>底层模型</td><td>邮局＝<b>投递方式</b>；每行＝<b>投递记录</b>（不造订单、不进订单列表/客户管理）</td></tr>
+        <tr><td>新增页</td><td><b>📇 投递名册</b>——完整名册的家（可搜可筛可导出）</td></tr>
+        <tr><td>叫法</td><td>批次→<b>月度起投明细</b>；挂投递记录→<b>已关联读者/未匹配</b>；回流→<b>应用新地址</b></td></tr>
+        <tr><td>订单号精确挂单 + 财务工作台</td><td><b>后续</b>（先做电商订单导入这个前提）</td></tr>
+        <tr><td>UI</td><td>真页面 <b>100% 照此效果图</b> 做</td></tr>
+      </tbody>
+    </table>
+    <p class="legend">这版就是最终样。我这边开始动代码：建 <span class="code">postal_delivery</span> 表 → 导入落投递记录 → 月度明细/工单/API 跟着切 → 每步跑测试 → 前端 100% 复刻此图 → 更新 PR #39。你若还想调页面，随时说。</p>
+  </div>
+
+</div>
+</body>
+</html>

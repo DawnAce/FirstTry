@@ -14,7 +14,7 @@ from typing import List, Optional, Tuple
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import Order, Partner, PartnerType, PostalComplaint, PostalComplaintStatus
+from app.models import Partner, PartnerType, PostalComplaint, PostalComplaintStatus, PostalDelivery
 from app.order_import_cache import pop_order_import_session, save_order_import_session
 
 
@@ -100,11 +100,15 @@ def _dedup_key(external: Optional[str], cdate: Optional[str], missing: Optional[
 
 
 def build_complaint_preview(db: Session, rows) -> ComplaintImportPreview:
-    order_map = {
-        e: oid
-        for e, oid in db.query(Order.external_order_no, Order.id)
-        .filter(Order.external_order_no.isnot(None))
-        .all()
+    # 按 年度+编号 关联投递记录：{f"{year}-{no}": (postal_delivery_id, order_id)}。
+    delivery_map = {
+        f"{y}-{n}": (pid, oid)
+        for pid, y, n, oid in db.query(
+            PostalDelivery.id,
+            PostalDelivery.year,
+            PostalDelivery.delivery_no,
+            PostalDelivery.order_id,
+        ).all()
     }
     dist_map = {
         name: pid
@@ -137,11 +141,14 @@ def build_complaint_preview(db: Session, rows) -> ComplaintImportPreview:
             continue
         seen.add(key)
 
-        order_id = order_map.get(external) if external else None
+        rec = delivery_map.get(external) if external else None
+        postal_delivery_id = rec[0] if rec else None
+        order_id = rec[1] if rec else None
         routed = _routed_label(pc.handling)
         dist_id = dist_map.get(pc.distribution_unit_name) if pc.distribution_unit_name else None
         status = "resolved" if (pc.follow_up or "").strip() else "open"
         data = {
+            "postal_delivery_id": postal_delivery_id,
             "order_id": order_id,
             "external_order_no": external,
             "complaint_date": cdate_iso,
@@ -166,7 +173,7 @@ def build_complaint_preview(db: Session, rows) -> ComplaintImportPreview:
             complaint_date=cdate_iso,
             missing_issues=pc.missing_issues,
             decision="import",
-            linked=order_id is not None,
+            linked=postal_delivery_id is not None,
             routed_label=routed,
             distribution_unit=pc.distribution_unit_name,
             status=status,

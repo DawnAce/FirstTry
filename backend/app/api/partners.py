@@ -17,6 +17,7 @@ from app.models import (
     FulfillmentTarget,
     Partner,
     PostalComplaint,
+    PostalDelivery,
     PostalDeliveryRow,
     User,
 )
@@ -105,6 +106,11 @@ def delete_partner(
         .filter(FulfillmentTarget.distribution_unit_id == partner_id)
         .count()
     )
+    delivery_count = (
+        db.query(PostalDelivery)
+        .filter(PostalDelivery.distribution_unit_id == partner_id)
+        .count()
+    )
     postal_row_count = (
         db.query(PostalDeliveryRow)
         .filter(PostalDeliveryRow.distribution_unit_id == partner_id)
@@ -115,7 +121,7 @@ def delete_partner(
         .filter(PostalComplaint.routed_unit_id == partner_id)
         .count()
     )
-    if contract_count or settlement_count or target_count or postal_row_count or complaint_count:
+    if contract_count or settlement_count or target_count or delivery_count or postal_row_count or complaint_count:
         parts = []
         if contract_count:
             parts.append(f"{contract_count} 份合同")
@@ -123,6 +129,8 @@ def delete_partner(
             parts.append(f"{settlement_count} 条结算记录")
         if target_count:
             parts.append(f"{target_count} 个投递目标")
+        if delivery_count:
+            parts.append(f"{delivery_count} 条投递记录")
         if postal_row_count:
             parts.append(f"{postal_row_count} 条邮局投递明细")
         if complaint_count:

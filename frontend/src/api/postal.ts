@@ -36,10 +36,54 @@ export interface PostalBatchDetail {
   rows: PostalBatchRow[];
 }
 
+// --- 投递名册（全部投递记录） ---------------------------------------------
+
+export interface PostalDelivery {
+  id: number;
+  year: number;
+  delivery_no: string;
+  order_id: number | null;
+  external_order_no: string | null;
+  recipient_name: string;
+  recipient_phone: string | null;
+  recipient_province: string | null;
+  recipient_city: string | null;
+  recipient_district: string | null;
+  recipient_address: string;
+  recipient_postal_code: string | null;
+  product: string | null;
+  copies: number;
+  amount: string | null;
+  coverage_start_date: string | null;
+  coverage_end_date: string | null;
+  source_channel: string | null;
+  distribution_unit_id: number | null;
+  distribution_unit_name: string | null;
+  salesperson: string | null;
+  remittance_name: string | null;
+}
+
+export interface DeliveryListOut { rows: PostalDelivery[]; total: number }
+
+export interface DeliveryFilters {
+  year?: number;
+  channel?: string;
+  distribution_unit_id?: number;
+  month?: number;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export function listDeliveries(f: DeliveryFilters): Promise<AxiosResponse<DeliveryListOut>> {
+  return api.get('/postal/deliveries', { params: f });
+}
+
 export type PostalImportDecision = 'import' | 'duplicate' | 'unresolved';
 
 export interface PostalImportRow {
-  external_order_no: string;
+  delivery_no: string;
+  year: number | null;
   name: string;
   amount: string;
   decision: PostalImportDecision;
@@ -58,7 +102,8 @@ export interface PostalImportPreview {
 
 export interface PostalCommitOut {
   created: number;
-  order_ids: number[];
+  delivery_ids?: number[];
+  order_ids?: number[];
   skipped_duplicates: number;
 }
 
@@ -107,6 +152,7 @@ export type PostalComplaintStatus = 'open' | 'resolved';
 
 export interface PostalComplaint {
   id: number;
+  postal_delivery_id: number | null;
   order_id: number | null;
   external_order_no: string | null;
   complaint_date: string | null;
@@ -178,6 +224,7 @@ export function commitComplaintImport(sessionId: string): Promise<AxiosResponse<
 
 export interface PostalAddressChange {
   id: number;
+  postal_delivery_id: number | null;
   order_id: number | null;
   external_order_no: string | null;
   change_date: string | null;
@@ -235,6 +282,7 @@ export function applyAddressChange(id: number): Promise<AxiosResponse<PostalAddr
 
 export interface PostalFollowUp {
   id: number;
+  postal_delivery_id: number | null;
   order_id: number | null;
   external_order_no: string | null;
   follow_up_date: string | null;

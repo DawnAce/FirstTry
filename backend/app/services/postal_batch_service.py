@@ -1,11 +1,12 @@
-"""邮局投递 · 每月「起投月」批次生成（归批 + 冻结）。
+"""邮局投递 · 每月「起投月」明细批次生成（归批 + 冻结）。
 
-``generate_batch(year, month)`` 收集当月起投的 post_office 履约目标——即
-``delivery_method=post_office`` 且 ``month(coverage_start_date)==(year,month)`` 的在效明细，
-把每个收报人目标**冻结**成一条 ``PostalDeliveryRow`` 快照。已发(sent)批次冻结、拒绝重生成；
-draft/generated 可重生成（清旧行重建，幂等）。
+``generate_batch(year, month)`` 收集当月起投的**投递记录**——即 ``coverage_start_date`` 落在
+``[当月1号, 次月1号)`` 的 ``PostalDelivery``，把每条**冻结**成一条 ``PostalDeliveryRow`` 快照
+（溯源 postal_delivery_id）。已发(sent)批次冻结、拒绝重生成；draft/generated 可重生成
+（清旧行重建，幂等）。
 
-不触碰中通按刊期的发货明细：post_office 目标本就被 ``order_shipping_sync`` 跳过。
+重构后：数据来源是投递记录（不再 JOIN 订单目标）。邮局是投递方式、与中通同级——本就不进
+中通按刊期的发货明细。
 """
 
 from datetime import date, datetime
@@ -15,74 +16,62 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models import (
-    DeliveryMethod,
-    FulfillmentAllocation,
-    FulfillmentTarget,
-    Order,
-    OrderItem,
-    OrderItemStatus,
-    OrderStatus,
     PostalBatchStatus,
+    PostalDelivery,
     PostalDeliveryBatch,
     PostalDeliveryRow,
-    ShippingChannel,
-    TargetStatus,
 )
 from app.services.address_service import normalize_address
 
 
-def _candidate_targets(db: Session, year: int, month: int):
-    """当月起投的在效 post_office 目标 + 其明细 + 订单。
+def _candidate_deliveries(db: Session, year: int, month: int):
+    """当月起投的投递记录：``coverage_start_date`` ∈ [当月1号, 次月1号)。
 
-    「当月起投」用日期区间 [当月1号, 次月1号) 判定——可移植（避免 extract 在
-    SQLite/MySQL 上的类型差异）、走 coverage 索引。
+    用日期区间判定「起投月」——可移植（避免 extract 在 SQLite/MySQL 上的类型差异）、走
+    coverage_start_date 索引。年度由该区间天然编码，不再单独按 year 列过滤。
     """
     month_start = date(year, month, 1)
     month_end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
     return (
-        db.query(FulfillmentTarget, OrderItem, Order)
-        .join(OrderItem, FulfillmentTarget.order_item_id == OrderItem.id)
-        .join(Order, OrderItem.order_id == Order.id)
-        .join(
-            FulfillmentAllocation,
-            FulfillmentTarget.allocation_id == FulfillmentAllocation.id,
-        )
-        .filter(Order.status == OrderStatus.active)
-        .filter(OrderItem.status == OrderItemStatus.active)
-        .filter(OrderItem.delivery_method == DeliveryMethod.post_office)
-        .filter(FulfillmentTarget.status == TargetStatus.active)
-        .filter(FulfillmentTarget.shipping_channel == ShippingChannel.post_office)
-        .filter(FulfillmentAllocation.effective_until_issue.is_(None))
-        .filter(OrderItem.coverage_start_date >= month_start)
-        .filter(OrderItem.coverage_start_date < month_end)
-        .order_by(FulfillmentTarget.id)
+        db.query(PostalDelivery)
+        .filter(PostalDelivery.coverage_start_date.isnot(None))
+        .filter(PostalDelivery.coverage_start_date >= month_start)
+        .filter(PostalDelivery.coverage_start_date < month_end)
+        .order_by(PostalDelivery.id)
     )
 
 
-def _freeze_row(batch_id: int, target: FulfillmentTarget, item: OrderItem, order: Order) -> PostalDeliveryRow:
-    parsed = {}
-    try:
-        parsed = normalize_address(target.recipient_address or "")
-    except Exception:  # cpca 偶发解析异常不应阻断出批
-        parsed = {}
+def _freeze_row(batch_id: int, d: PostalDelivery) -> PostalDeliveryRow:
+    # 省/市/区优先用投递记录已拆好的；都空则 normalize_address 兜底（不阻断出批）。
+    province, city, district = d.recipient_province, d.recipient_city, d.recipient_district
+    if not (province or city or district):
+        try:
+            parsed = normalize_address(d.recipient_address or "")
+            province = parsed.get("province") or None
+            city = parsed.get("city") or None
+            district = parsed.get("district") or None
+        except Exception:  # cpca 偶发解析异常不应阻断出批
+            pass
     return PostalDeliveryRow(
         batch_id=batch_id,
-        order_item_id=item.id,
-        fulfillment_target_id=target.id,
-        snap_name=target.recipient_name,
-        snap_phone=target.recipient_phone,
-        snap_province=parsed.get("province") or None,
-        snap_city=parsed.get("city") or None,
-        snap_district=parsed.get("district") or None,
-        snap_address=target.recipient_address,
-        snap_postal_code=target.recipient_postal_code,
-        copies=target.quantity,
-        coverage_start_date=item.coverage_start_date,
-        coverage_end_date=item.coverage_end_date,
-        source_channel=order.source_platform,
-        distribution_unit_id=target.distribution_unit_id,
-        salesperson=None,  # P1：赠阅/关联原样存于 order.notes，结构化归宿留待 P2/P3
-        notes=None,
+        postal_delivery_id=d.id,
+        # 投递记录挂了真实订单时带上溯源（多数为空）。
+        order_item_id=d.order_item_id,
+        fulfillment_target_id=d.fulfillment_target_id,
+        snap_name=d.recipient_name,
+        snap_phone=d.recipient_phone,
+        snap_province=province,
+        snap_city=city,
+        snap_district=district,
+        snap_address=d.recipient_address,
+        snap_postal_code=d.recipient_postal_code,
+        copies=d.copies,
+        coverage_start_date=d.coverage_start_date,
+        coverage_end_date=d.coverage_end_date,
+        source_channel=d.source_channel,
+        distribution_unit_id=d.distribution_unit_id,
+        salesperson=d.salesperson,
+        notes=d.notes,
     )
 
 
@@ -119,8 +108,8 @@ def generate_batch(
     ).delete(synchronize_session=False)
 
     count = 0
-    for target, item, order in _candidate_targets(db, year, month):
-        db.add(_freeze_row(batch.id, target, item, order))
+    for d in _candidate_deliveries(db, year, month):
+        db.add(_freeze_row(batch.id, d))
         count += 1
 
     batch.row_count = count

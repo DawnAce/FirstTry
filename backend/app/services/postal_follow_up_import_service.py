@@ -61,7 +61,7 @@ def _key(external, name, label):
 
 
 def build_follow_up_preview(db: Session, rows) -> FollowImportPreview:
-    omap = pc.order_map(db)
+    dmap = pc.delivery_map(db)
     existing = {
         _key(e, n, b)
         for e, n, b in db.query(
@@ -83,8 +83,11 @@ def build_follow_up_preview(db: Session, rows) -> FollowImportPreview:
         if external:
             seen.add(key)
         fdate = _date_from_label(fu.batch_label)
-        order_id = omap.get(external) if external else None
+        rec = dmap.get(external) if external else None
+        postal_delivery_id = rec[0] if rec else None
+        order_id = rec[1] if rec else None
         data = {
+            "postal_delivery_id": postal_delivery_id,
             "order_id": order_id,
             "external_order_no": external,
             "follow_up_date": fdate.isoformat() if fdate else None,
@@ -94,7 +97,7 @@ def build_follow_up_preview(db: Session, rows) -> FollowImportPreview:
         }
         out.append(FollowPreviewRow(external or "(无编号)", fu.name, fu.batch_label,
                                     data["follow_up_date"], fu.result, "import",
-                                    linked=order_id is not None, data=data))
+                                    linked=postal_delivery_id is not None, data=data))
     return FollowImportPreview(out)
 
 

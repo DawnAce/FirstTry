@@ -50,7 +50,7 @@ def _key(external, cdate, new_addr):
 
 
 def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
-    omap = pc.order_map(db)
+    dmap = pc.delivery_map(db)
     existing = {
         _key(e, c.isoformat() if c else None, a)
         for e, c, a in db.query(
@@ -64,7 +64,9 @@ def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
     for ac in rows:
         cdate = pc.parse_date(ac.change_date_raw)
         cdate_iso = cdate.isoformat() if cdate else None
-        year = cdate.year if cdate else None
+        # 年度优先取表头括注声明的读者年度（如「…(邮局2024读者明细)」）；缺失才用修改日期年份。
+        # 这样跨年改地址（次年初提交上年读者的改址）仍能挂对年份，而不是错挂/漏挂。
+        year = pc.parse_year(ac.source_year_raw) or (cdate.year if cdate else None)
         no = pc.norm_no(ac.external_no_raw)
         external = f"{year}-{no}" if (year and no) else None
 
@@ -75,9 +77,12 @@ def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
         if external:
             seen.add(key)
 
-        order_id = omap.get(external) if external else None
+        rec = dmap.get(external) if external else None
+        postal_delivery_id = rec[0] if rec else None
+        order_id = rec[1] if rec else None
         routed = pc.routed_label(ac.handling)
         data = {
+            "postal_delivery_id": postal_delivery_id,
             "order_id": order_id,
             "external_order_no": external,
             "change_date": cdate_iso,
@@ -96,7 +101,7 @@ def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
             "notes": ac.notes or None,
         }
         out.append(AddrPreviewRow(external or "(无编号)", ac.old_name, cdate_iso, ac.new_address,
-                                  "import", linked=order_id is not None, routed_label=routed, data=data))
+                                  "import", linked=postal_delivery_id is not None, routed_label=routed, data=data))
     return AddrImportPreview(out)
 
 

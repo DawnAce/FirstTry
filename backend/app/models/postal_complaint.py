@@ -32,7 +32,14 @@ class PostalComplaint(Base):
     __tablename__ = "postal_complaints"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    # 挂订单：按 (年度, 去零编号) 匹配 orders.external_order_no。
+    # 关联读者：按 (年度, 去零编号) 匹配投递记录 postal_delivery。
+    postal_delivery_id = Column(
+        Integer,
+        ForeignKey("postal_delivery.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # 挂真实订单：仅当关联的投递记录自身挂了订单才继承（多数为空）。
     order_id = Column(
         Integer,
         ForeignKey("orders.id", ondelete="SET NULL"),

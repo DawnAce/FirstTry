@@ -22,6 +22,8 @@ from app.schemas.postal import (
     BatchRowOut,
     ComplaintListOut,
     ComplaintOut,
+    DeliveryListOut,
+    DeliveryOut,
     FinanceListOut,
     FinanceOut,
     FollowUpListOut,
@@ -33,10 +35,11 @@ from app.services import postal_batch_service as batch_svc
 from app.services import postal_change_service as change_svc
 from app.services import postal_complaint_import_service as complaint_import_svc
 from app.services import postal_complaint_service as complaint_svc
+from app.services import postal_delivery_import_service as import_svc
+from app.services import postal_delivery_service as delivery_svc
 from app.services import postal_finance_import_service as finance_import_svc
 from app.services import postal_finance_service as finance_svc
 from app.services import postal_follow_up_import_service as follow_import_svc
-from app.services import postal_import_service as import_svc
 
 router = APIRouter(prefix="/api/postal", tags=["postal"])
 
@@ -81,6 +84,37 @@ def import_commit(
     user: User = Depends(require_admin),
 ):
     return import_svc.commit_import(db, body.session_id, operator_id=getattr(user, "id", None))
+
+
+# --- 投递名册（全部投递记录） -------------------------------------------------
+
+@router.get("/deliveries", response_model=DeliveryListOut)
+def list_deliveries(
+    year: Optional[int] = None,
+    channel: Optional[str] = None,
+    distribution_unit_id: Optional[int] = None,
+    month: Optional[int] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    rows, total = delivery_svc.list_deliveries(
+        db, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
+        month=month, search=search, page=page, page_size=page_size,
+    )
+    ids = {r.distribution_unit_id for r in rows if r.distribution_unit_id}
+    names = (
+        {pid: n for pid, n in db.query(Partner.id, Partner.name).filter(Partner.id.in_(ids)).all()}
+        if ids else {}
+    )
+    out = []
+    for r in rows:
+        o = DeliveryOut.model_validate(r)
+        o.distribution_unit_name = names.get(r.distribution_unit_id)
+        out.append(o)
+    return DeliveryListOut(rows=out, total=total)
 
 
 # --- 批次 -------------------------------------------------------------------
