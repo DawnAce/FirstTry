@@ -78,7 +78,7 @@ FirstTry/
 │   │   ├── api/                # API 客户端
 │   │   │   └── auth.ts         # 认证 API
 │   │   ├── components/         # 通用组件
-│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知铃铛、帮助、用户头像）+ 可折叠侧边栏（Logo、印数报数/印数管理/刊期表管理等菜单）
+│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知铃铛、帮助、用户头像）+ 可折叠侧边栏（Logo、印数管理/物流管理/刊期表管理/订单管理/商品管理/客户管理/合同管理/财务管理 等一级菜单；物流管理与订单管理为展开式子菜单）
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
 │   │   ├── pages/              # 页面组件
@@ -88,7 +88,9 @@ FirstTry/
 │   │   │   ├── Login.tsx       # 登录页面
 │   │   │   ├── ScheduleView.tsx              # 期刊表页面（/schedule）
 │   │   │   ├── ScheduleImport.tsx            # 导入期刊表页面（/schedule/import）
-│   │   │   ├── Recipients.tsx
+│   │   │   ├── Recipients.tsx     # 物流管理子菜单（/recipients「ZTO-MF」、/recipients?tab=recipients「收件人」两标签）
+│   │   │   ├── PostDelivery.tsx    # 邮局投递页（/post-delivery，「物流管理 > 邮局投递」）— 6 tab：投递名册/月度起投明细/投诉工单/改地址/回访/收款发票
+│   │   │   ├── ProductCatalog.tsx  # 商品管理页（/products，侧边栏一级菜单「商品管理」）
 │   │   │   ├── ReportEditor.tsx
 │   │   │   ├── ShippingPreview.tsx
 │   │   │   └── Templates.tsx    # 报数模板页（/templates，侧边栏「印数管理 > 报数模板」）
@@ -493,7 +495,7 @@ FirstTry/
 - **「最新一期」自动判期号**：导入时 `coverage_rule=latest_issue` 的单期行，按"付款时间 + `publication_schedule` + 周五约 22 点翻期"算出 `issue_number`（中国经营报周一出刊；某期在其出刊周一前的周五 22:00 起售，订单期号 = 付款时间落入的起售窗口对应的期）。`app/services/latest_issue_resolver.py`（`FLIP_WEEKDAY/FLIP_HOUR/BORDERLINE_HOURS` 可配）。翻期点 ±4h 内的临界单加 warning 标黄待核（仍自动判、正常导入）；覆盖期仍留空（单期不走 term_from_month）。
 - `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。
 
-**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品库管理）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
+**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品管理，独立一级侧边栏菜单）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
 
 迁移（均已应用到生产）：
 - `b4d6f8a1c3e5`：补 `ordereventtype` 枚举遗漏的 `item_added/removed/modified`（修复 V1.2 在严格模式 MySQL 上的潜在崩溃）
@@ -505,6 +507,33 @@ FirstTry/
 - `c4f1a9e2b6d3`：`orders` 新增 `original_amount`（原价 / 折前标价，`Numeric(10,2)` 可空）
 
 > 部署见 README §8。
+
+### 3.17 邮局投递（投递记录层 + 每月起投明细）
+
+**邮局投递 = 一种投递方式，与中通 ZTO-MF 同级**（照 `shipping_details` 的成熟模型：投递记录，可挂订单/可独立）。数据来源于平台订单，但**邮局明细本身是投递记录、不是订单**——用户只对 CBJ/淘宝/中经报有赞 等平台有订单详情，其余平台只有投递数据；中通与邮局的明细里都可能出现「订单里没有的数据」。
+
+> **重构说明（2026-07）**：早先版本把邮局每行做成 `post_office` 订单（`create_imported_order`），会污染订单列表/客户管理、并与电商真实订单双算。现改为独立的 `PostalDelivery` 投递记录层——不再造订单；邮局记录不进订单列表/客户管理；有平台订单号且平台对得上才挂真实订单（读者明细本身无平台订单号 → 多数 `order_id=NULL`，独立）。
+
+**投递记录 `postal_delivery`（迁移 `b5d7f9a1c3e6`，照 `shipping_details`）**：`(year, delivery_no)` 唯一（`delivery_no`=编号去前导零）；`order_id`/`order_item_id`/`fulfillment_target_id` 全可空（SET NULL，将来挂真实订单用）；`external_order_no`（平台订单号，将来补）；`source_type`（`historical_import`/`order_generated`/`manual`）；收报人（姓名/电话/省市区/详细地址/邮编）；`product`（认不出留原文，不强求刊物枚举）；`copies`/`amount`/`coverage_start_date`/`coverage_end_date`；`source_channel`（渠道/平台）；`distribution_unit_id`→`partners`（投递单位，落在本表，原表未填则留空、不推断）；`salesperson`/`remittance_name`/`remittance_date`/`notes`。
+
+**月度起投明细批次**（迁移 `d0e1f2a3b4c5`）：
+- `postal_delivery_batches`：某「起投月」`(year, month)` 的一版，`status ∈ {draft, generated, sent}`、`UNIQUE(year, month)`。
+- `postal_delivery_rows`：该版里**冻结**的一条投递明细快照，新增 `postal_delivery_id` 溯源投递记录（另保留 `order_item_id`/`fulfillment_target_id` 供挂订单时溯源）；冻结即定格，`sent` 批次不可重生成。
+
+**起投月归批**：`postal_batch_service.generate_batch(year, month)` 收集 `coverage_start_date` 落在 `[当月1号, 次月1号)` 的**投递记录**（不再 JOIN 订单目标），冻结成行；省/市/区优先读投递记录、都空则 `normalize_address` 兜底（用日期区间避免 `extract` 的 SQLite/MySQL 差异）。
+
+**导入**：`postal_order_import_parser`（按表头解析「邮局读者明细」，零改动）+ `postal_delivery_import_service`（映射→`PostalDelivery`，不造订单；`(year, delivery_no)` 去重；投递单位有则挂 `Partner(distribution)` 无则空；产品留原文）。**投递名册**：`postal_delivery_service.list_deliveries`（年度/渠道/投递单位/起投月/搜索筛选）——邮局记录不进订单列表，这里是完整名册的家。
+
+**服务 / API**：`app/services/postal_{order_import_parser,delivery_import_service,delivery_service,batch_service}.py`；`app/api/postal.py`（`/api/postal/deliveries`、`/import/preview|commit`、`/batches[...]/generate|mark-sent|export`）。`partners` 删除守卫检查 `PostalDelivery.distribution_unit_id`（在用则 409）。
+
+**投诉工单（P2）**：`postal_complaints`（迁移 `e2f4a6b8c0d1` + `b5d7f9a1c3e6` 加 `postal_delivery_id`）**关联读者** —— 投诉 `编号`(去前导零) + `年度` 经 `postal_common.delivery_map` → `postal_delivery`（`postal_delivery_id` 可空 SET NULL；关联的投递记录挂了真实订单才继承 `order_id`；匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；`status` 按有无回访派生 open/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。导入/列表：`app/services/postal_complaint_{parser,import_service,service}.py` + `/api/postal/complaints`（list 筛选 年度/状态/投递单位/处理次数/搜索）+ `/complaints/import/preview|commit`。前端 PostDelivery「投诉工单」tab 显示「已关联读者 / 未匹配」。
+
+**改地址工单 + 回访（P3）**：迁移 `f3a5c7b9d1e2`（+ `b5d7f9a1c3e6` 加 `postal_delivery_id`）建 `postal_address_changes` + `postal_follow_ups`（均按 编号+年度 关联投递记录）。
+- **改地址**：编号(去零) + `year(修改日期)` → `postal_delivery`；处理情况归一 `routed_label`（XX局）；**「应用新地址」** `apply_address_change` 把新姓名/电话/地址写回**投递记录**并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——之后的月度明细即用新地址；投递记录若挂了真实订单则一并更新订单当前 `FulfillmentTarget`；未关联投递记录（`postal_delivery_id` 空）→ 400。
+- **回访**：把读者明细「按天开列」的回访列（`YYYYMMDD回访`）拍平成一行一条，列头解析日期；同样关联投递记录。
+- 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/`order_map`/`delivery_map`）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`（list + 应用新地址）+ `/api/postal/address-changes[/{id}/apply]`、`/follow-ups`。前端「改地址」tab 的动作为「应用新地址」，各 tab 显示「已关联读者 / 未匹配」。
+
+**收款/发票（P4）**：迁移 `a4c6e8b0d2f4` 建 `postal_finance`（自成台账，**不改共享财务 Invoice/Payment/finance_service**）。导入《提现发票合集》：`发票信息` 正则拆 `发票抬头`/`购方税号`；链接 = `原始订单号(external_order_no)→orders` 优先、`姓名` 兜底（唯一命中才挂，`link_by` 记来源）；`net_amount` = 到款金额或 金额−手续费；去重键 (订单号或姓名, 到款日期, 金额-规范2位)。`postal_finance_{parser,import_service,service}.py` + `/api/postal/finance`（筛选 平台/普专票/是否挂单/搜索）+ `/finance/import/*`。前端 PostDelivery 共 **6 tab**（投递名册/月度起投明细/投诉工单/改地址/回访/收款发票）。**并进财务发票工作台留待原始订单号补齐后**（那时再扩 Invoice.tax_category / Payment.fee_amount + 建真发票）。
 
 ## 4. API 接口一览
 

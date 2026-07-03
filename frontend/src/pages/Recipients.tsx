@@ -992,11 +992,12 @@ export default function Recipients() {
         margin: '0 0 24px 0',
         letterSpacing: '-0.02em',
       }}>
-        物流管理
+        物流管理 · {activeTab === 'recipients' ? '收件人' : 'ZTO-MF'}
       </h2>
 
       <Tabs
         activeKey={activeTab}
+        tabBarStyle={{ display: 'none' }}
         onChange={(key) => {
           const nextParams = new URLSearchParams(searchParams);
           if (key === 'recipients') {

@@ -4,6 +4,7 @@ import AppLayout from './components/AppLayout';
 import Dashboard from './pages/DashboardPage';
 import ReportEditor from './pages/ReportEditor';
 import Recipients from './pages/Recipients';
+import PostDelivery from './pages/PostDelivery';
 import History from './pages/History';
 import Templates from './pages/Templates';
 import HistoryImport from './pages/HistoryImport';
@@ -44,6 +45,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/report/:issueId" element={<ReportEditor />} />
             <Route path="/recipients" element={<Recipients />} />
+            <Route path="/post-delivery" element={<PostDelivery />} />
             <Route path="/shipping/:issueId" element={<LegacyShippingRedirect />} />
             <Route path="/history" element={<History />} />
             <Route path="/templates" element={<Templates />} />

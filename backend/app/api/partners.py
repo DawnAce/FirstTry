@@ -11,7 +11,16 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import ChannelSettlement, Contract, Partner, User
+from app.models import (
+    ChannelSettlement,
+    Contract,
+    FulfillmentTarget,
+    Partner,
+    PostalComplaint,
+    PostalDelivery,
+    PostalDeliveryRow,
+    User,
+)
 from app.schemas.contract import PartnerCreate, PartnerOut, PartnerUpdate
 
 router = APIRouter(prefix="/api/partners", tags=["partners"])
@@ -83,20 +92,49 @@ def delete_partner(
     partner = db.query(Partner).filter(Partner.id == partner_id).first()
     if partner is None:
         raise HTTPException(status_code=404, detail=f"合作渠道 {partner_id} 不存在")
-    # partners 是上游锚点：合同(contracts) 与 渠道结算(channel_settlements) 都硬引用它，
-    # 任一存在都拒删，避免生产 MySQL 触发外键 500 / SQLite 留孤儿。
+    # partners 是上游锚点：合同(contracts) 与 渠道结算(channel_settlements) 硬引用它；
+    # 作为邮局投递单位还会被 履约目标(fulfillment_targets) 与 已冻结的投递明细(postal_delivery_rows)
+    # 引用。任一存在都拒删，避免生产 MySQL 触发外键 500 / SQLite 留孤儿。
     contract_count = db.query(Contract).filter(Contract.partner_id == partner_id).count()
     settlement_count = (
         db.query(ChannelSettlement)
         .filter(ChannelSettlement.partner_id == partner_id)
         .count()
     )
-    if contract_count or settlement_count:
+    target_count = (
+        db.query(FulfillmentTarget)
+        .filter(FulfillmentTarget.distribution_unit_id == partner_id)
+        .count()
+    )
+    delivery_count = (
+        db.query(PostalDelivery)
+        .filter(PostalDelivery.distribution_unit_id == partner_id)
+        .count()
+    )
+    postal_row_count = (
+        db.query(PostalDeliveryRow)
+        .filter(PostalDeliveryRow.distribution_unit_id == partner_id)
+        .count()
+    )
+    complaint_count = (
+        db.query(PostalComplaint)
+        .filter(PostalComplaint.routed_unit_id == partner_id)
+        .count()
+    )
+    if contract_count or settlement_count or target_count or delivery_count or postal_row_count or complaint_count:
         parts = []
         if contract_count:
             parts.append(f"{contract_count} 份合同")
         if settlement_count:
             parts.append(f"{settlement_count} 条结算记录")
+        if target_count:
+            parts.append(f"{target_count} 个投递目标")
+        if delivery_count:
+            parts.append(f"{delivery_count} 条投递记录")
+        if postal_row_count:
+            parts.append(f"{postal_row_count} 条邮局投递明细")
+        if complaint_count:
+            parts.append(f"{complaint_count} 条邮局投诉")
         raise HTTPException(
             status_code=409,
             detail=f"该渠道下还有 {' / '.join(parts)}，不能删除（可改为「停用」）",
