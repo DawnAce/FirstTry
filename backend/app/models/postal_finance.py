@@ -47,3 +47,6 @@ class PostalFinance(Base):
     platform = Column(String(64), nullable=True)  # 订单平台
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
