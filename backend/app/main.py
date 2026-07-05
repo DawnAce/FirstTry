@@ -34,6 +34,7 @@ from app.api.contracts import router as contracts_router
 from app.api.invoices import router as invoices_router
 from app.api.settlements import router as settlements_router
 from app.api.postal import router as postal_router
+from app.api.search import router as search_router
 from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule, ReportEntry
 from app.services.issue_service import build_issue_out
@@ -77,6 +78,7 @@ app.include_router(contracts_router, dependencies=[Depends(get_current_user)])
 app.include_router(invoices_router, dependencies=[Depends(get_current_user)])
 app.include_router(settlements_router, dependencies=[Depends(get_current_user)])
 app.include_router(postal_router, dependencies=[Depends(get_current_user)])
+app.include_router(search_router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/api/health")

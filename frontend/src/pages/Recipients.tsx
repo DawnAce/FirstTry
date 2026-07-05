@@ -792,6 +792,18 @@ export default function Recipients() {
   const activeTab = searchParams.get('tab') === 'recipients' ? 'recipients' : 'shipping';
   const issueIdParam = Number(searchParams.get('issueId'));
   const initialIssueId = Number.isFinite(issueIdParam) ? issueIdParam : undefined;
+
+  // 顶栏全局搜索跳转到 /recipients?tab=recipients&search=xxx 时，一次性预填收件人姓名搜索：
+  // 用掉后即从 URL 去掉 search，避免切 tab 反复覆盖用户后续输入。
+  useEffect(() => {
+    if (activeTab !== 'recipients') return;
+    const s = searchParams.get('search');
+    if (!s) return;
+    setFilters((f) => ({ ...f, search: s }));
+    const next = new URLSearchParams(searchParams);
+    next.delete('search');
+    setSearchParams(next, { replace: true });
+  }, [activeTab, searchParams, setSearchParams]);
   
   // Create/Edit modal
   const [modalVisible, setModalVisible] = useState(false);
@@ -1055,7 +1067,8 @@ export default function Recipients() {
           placeholder="搜索姓名"
           style={{ width: 200 }}
           allowClear
-          onChange={(e) => setFilters({ ...filters, name: e.target.value })}
+          value={filters.search ?? ''}
+          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
         />
         
         <div style={{ flex: 1 }} />

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -47,6 +48,13 @@ export default function ProductCatalog() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+
+  // 顶栏全局搜索跳转到 /products?q=xxx 时，预填搜索框。
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q !== null) setSearch(q);
+  }, [searchParams]);
 
   const productsQuery = useQuery({
     queryKey: productQueryKeys.list({ q: search || undefined }),
@@ -218,7 +226,7 @@ export default function ProductCatalog() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>商品管理</Title>
         <Space>
-          <Input.Search placeholder="搜索编码 / 名称" allowClear style={{ width: 220 }} onSearch={setSearch} />
+          <Input.Search placeholder="搜索编码 / 名称" allowClear style={{ width: 220 }} value={search} onChange={(e) => setSearch(e.target.value)} onSearch={setSearch} />
           <Button icon={<ReloadOutlined />} onClick={() => productsQuery.refetch()} loading={productsQuery.isFetching}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增商品</Button>
         </Space>
