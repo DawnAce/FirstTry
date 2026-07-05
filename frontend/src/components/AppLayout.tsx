@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Layout, Menu, Input, Badge, Avatar, Dropdown, Tooltip } from 'antd';
+import { Layout, Menu, Badge, Avatar, Dropdown, Tooltip } from 'antd';
 import {
   HomeOutlined,
   BarChartOutlined,
@@ -18,10 +18,10 @@ import {
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import GlobalSearch from './GlobalSearch';
 import type { MenuProps } from 'antd';
 
 const { Sider, Content, Header } = Layout;
-const { Search } = Input;
 
 const menuItems: MenuProps['items'] = [
   {
@@ -215,12 +215,7 @@ export default function AppLayout() {
             >
               {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             </button>
-            <Search
-              placeholder="搜索期数、报刊、状态"
-              className="app-header-search"
-              allowClear
-              onSearch={() => {}}
-            />
+            <GlobalSearch />
           </div>
 
           <div className="app-header-right">
