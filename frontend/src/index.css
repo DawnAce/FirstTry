@@ -907,6 +907,81 @@ body {
   background: rgba(255, 77, 79, 0.08) !important;
 }
 
+/* ===== History (历史印数期数) ===== */
+.history-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.history-toolbar-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.history-toolbar-count b {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.history-seg-count {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #a0a0a6;
+}
+
+.ant-segmented-item-selected .history-seg-count {
+  color: var(--color-accent);
+}
+
+.history-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--radius-tag);
+  padding: 2px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.history-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.history-status--draft {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.history-status--confirmed {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.history-status--exported {
+  background: #e6f4ff;
+  color: #0071e3;
+}
+
+.history-print-empty {
+  color: var(--color-text-secondary);
+}
+
 @media (max-width: 1200px) {
   .shipping-detail-filter-row--footer {
     justify-content: flex-start;
