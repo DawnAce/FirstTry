@@ -3,7 +3,7 @@
 《邮局年投诉》一行 = 一张投诉工单，挂在对应的邮局订单上：投诉的 ``编号``（"000680"）去零 +
 ``年度`` → ``f"{year}-{no}"`` 匹配 ``orders.external_order_no``；匹配到则 ``order_id``，匹配不上
 仍保留 ``external_order_no`` 字符串以便回填。处理情况(转 XX 局 / 各地 11185)原文保留，另抽一个
-``routed_label`` 归一键。状态按是否有回访派生。
+``routed_label`` 归一键。状态三态流转（待处理/处理中/已解决），逐次处理记入 ``PostalComplaintHandlingRecord``。
 """
 
 import enum
@@ -18,14 +18,16 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database import Base
 
 
 class PostalComplaintStatus(str, enum.Enum):
-    open = "open"          # 未回访 / 处理中
-    resolved = "resolved"  # 已回访 / 已闭环
+    open = "open"                # 待处理（未开始处理）
+    in_progress = "in_progress"  # 处理中（已介入、未闭环）
+    resolved = "resolved"        # 已解决（已回访 / 已闭环）
 
 
 class PostalComplaint(Base):
@@ -58,7 +60,7 @@ class PostalComplaint(Base):
         nullable=True,
     )
     follow_up = Column(Text, nullable=True)               # 回访
-    handling_count = Column(Integer, nullable=True)       # 处理次数
+    handling_count = Column(Integer, nullable=True)       # 处理次数（导入基线 + 系统内登记的处理累计）
     status = Column(
         SAEnum(PostalComplaintStatus),
         default=PostalComplaintStatus.open,
@@ -73,3 +75,43 @@ class PostalComplaint(Base):
     snap_postal_code = Column(String(20), nullable=True)
     notes = Column(Text, nullable=True)                   # 备注
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    # 处理时间线（每次「加处理」一条）；删投诉级联删处理记录。
+    handlings = relationship(
+        "PostalComplaintHandlingRecord",
+        back_populates="complaint",
+        cascade="all, delete-orphan",
+        order_by="PostalComplaintHandlingRecord.handled_at.desc(), PostalComplaintHandlingRecord.id.desc()",
+    )
+
+
+class PostalComplaintHandlingRecord(Base):
+    """投诉工单的一次处理记录（三态处理流程的时间线单元）。
+
+    每次「加处理」追加一行：处理时间 / 处理人 / 处理过程 / 回访结果，并记录本次处理后置成的状态
+    （``result_status`` 驱动投诉的 ``status``）。投诉的 ``handling_count`` 在每次登记时 +1。
+    """
+
+    __tablename__ = "postal_complaint_handling_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    complaint_id = Column(
+        Integer,
+        ForeignKey("postal_complaints.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    handled_at = Column(DateTime, server_default=func.now(), nullable=False)  # 处理时间
+    handled_by = Column(Integer, ForeignKey("users.id"), nullable=True)       # 处理人
+    action = Column(Text, nullable=False)              # 处理过程 / 动作
+    follow_result = Column(Text, nullable=True)        # 回访结果
+    result_status = Column(String(16), nullable=True)  # 本次处理后置成的状态（open/in_progress/resolved）
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    complaint = relationship("PostalComplaint", back_populates="handlings")

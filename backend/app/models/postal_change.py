@@ -61,6 +61,9 @@ class PostalAddressChange(Base):
     applied_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class PostalFollowUp(Base):
@@ -86,3 +89,6 @@ class PostalFollowUp(Base):
     result = Column(Text, nullable=True)             # 单元格值
     snap_name = Column(String(128), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )

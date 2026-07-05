@@ -85,3 +85,26 @@ def delivery_map(db: Session) -> dict:
             PostalDelivery.order_id,
         ).all()
     }
+
+
+def link_delivery(db: Session, year, delivery_no_raw) -> tuple:
+    """按 年度 + 编号(去零) 关联一条投递记录（手工新增工单时复用导入的关联逻辑）。
+
+    返回 ``(external_order_no, postal_delivery_id, order_id)``：``external`` = ``f"{year}-{no}"``；
+    命中投递记录则带出其 id，且该记录自身挂了真实订单时 order_id 一并继承（多数 None）。
+    年度或编号缺失 → 全 None。
+    """
+    no = norm_no(delivery_no_raw)
+    if not (year and no):
+        return None, None, None
+    from app.models import PostalDelivery
+
+    external = f"{year}-{no}"
+    row = (
+        db.query(PostalDelivery.id, PostalDelivery.order_id)
+        .filter(PostalDelivery.year == year, PostalDelivery.delivery_no == no)
+        .first()
+    )
+    if row:
+        return external, row[0], row[1]
+    return external, None, None

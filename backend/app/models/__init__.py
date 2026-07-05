@@ -58,7 +58,11 @@ from app.models.postal_delivery import (
     PostalDeliveryRow,
     PostalDeliverySourceType,
 )
-from app.models.postal_complaint import PostalComplaint, PostalComplaintStatus
+from app.models.postal_complaint import (
+    PostalComplaint,
+    PostalComplaintHandlingRecord,
+    PostalComplaintStatus,
+)
 from app.models.postal_change import PostalAddressChange, PostalFollowUp
 from app.models.postal_finance import PostalFinance
 
@@ -100,7 +104,7 @@ __all__ = [
     # 邮局投递（投递记录层 + 每月起投明细 + 冻结）
     "PostalDelivery", "PostalDeliverySourceType",
     "PostalDeliveryBatch", "PostalDeliveryRow", "PostalBatchStatus",
-    "PostalComplaint", "PostalComplaintStatus",
+    "PostalComplaint", "PostalComplaintStatus", "PostalComplaintHandlingRecord",
     "PostalAddressChange", "PostalFollowUp",
     "PostalFinance",
 ]

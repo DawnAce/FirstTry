@@ -1,12 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
   Card,
   DatePicker,
+  Descriptions,
+  Divider,
+  Drawer,
   Empty,
   Flex,
+  Form,
   Input,
+  InputNumber,
   List,
   Modal,
   Popconfirm,
@@ -15,24 +20,47 @@ import {
   Table,
   Tabs,
   Tag,
+  Timeline,
   Typography,
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined, DownloadOutlined, UploadOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  EditOutlined,
+  HistoryOutlined,
+  InboxOutlined,
+  PlusOutlined,
+  ThunderboltOutlined,
+  UploadOutlined,
+} from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
-import type { Dayjs } from 'dayjs';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
 import { listPartners } from '../api/contracts';
 import {
+  addComplaintHandling,
   applyAddressChange,
   commitAddressChangeImport,
   commitComplaintImport,
   commitFinanceImport,
   commitFollowUpImport,
   commitPostalImport,
+  createAddressChange,
+  createComplaint,
+  createDelivery,
+  createFinance,
+  createFollowUp,
+  deleteAddressChange,
+  deleteComplaint,
+  deleteComplaintHandling,
+  deleteDelivery,
+  deleteFinance,
+  deleteFollowUp,
   downloadPostalBatch,
   generatePostalBatch,
+  getComplaintDetail,
   getPostalBatch,
   listAddressChanges,
   listComplaints,
@@ -46,18 +74,29 @@ import {
   previewFinanceImport,
   previewFollowUpImport,
   previewPostalImport,
+  updateAddressChange,
+  updateComplaint,
+  updateDelivery,
+  updateFinance,
+  updateFollowUp,
 } from '../api/postal';
 import type {
   AddrImportRow,
+  AddressChangePayload,
   ComplaintImportPreview,
   ComplaintImportRow,
+  ComplaintPayload,
+  DeliveryPayload,
   FinanceImportRow,
+  FinancePayload,
   FollowImportRow,
+  FollowUpPayload,
   PostalAddressChange,
   PostalBatch,
   PostalBatchRow,
   PostalBatchStatus,
   PostalComplaint,
+  PostalComplaintHandling,
   PostalComplaintStatus,
   PostalDelivery,
   PostalFinance,
@@ -84,8 +123,15 @@ const DECISION_META: Record<PostalImportDecision, { label: string; color: string
 
 const COMPLAINT_STATUS_META: Record<PostalComplaintStatus, { label: string; color: string }> = {
   open: { label: '待处理', color: 'orange' },
-  resolved: { label: '已回访', color: 'green' },
+  in_progress: { label: '处理中', color: 'blue' },
+  resolved: { label: '已解决', color: 'green' },
 };
+
+const COMPLAINT_STATUS_OPTS = [
+  { label: '待处理', value: 'open' },
+  { label: '处理中', value: 'in_progress' },
+  { label: '已解决', value: 'resolved' },
+];
 
 const POSTAL_CHANNELS = ['CBJ+小程序', '中经报有赞', '淘宝发行部', '对公转账'];
 const YEAR_OPTS = [2024, 2025, 2026].map((y) => ({ label: `${y}年`, value: y }));
@@ -94,6 +140,9 @@ const MONTH_OPTS = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1} 月`
 function errText(err: unknown): string {
   return (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '操作失败';
 }
+
+const toDay = (s?: string | null): Dayjs | null => (s ? dayjs(s) : null);
+const fromDay = (d?: Dayjs | null): string | null => (d ? d.format('YYYY-MM-DD') : null);
 
 /** 工单「读者」列：编号+年度是否关联到投递记录。 */
 function readerTag(postalDeliveryId: number | null) {
@@ -248,7 +297,16 @@ function DeliveriesTab() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [importOpen, setImportOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PostalDelivery | null>(null);
   const PAGE_SIZE = 50;
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteDelivery(id),
+    onSuccess: () => { message.success('已删除投递记录'); qc.invalidateQueries({ queryKey: ['postalDeliveries'] }); },
+    onError: (e) => message.error(errText(e)),
+  });
 
   const unitsQ = useQuery({ queryKey: ['partners'], queryFn: () => listPartners().then((r) => r.data) });
   const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
@@ -276,24 +334,38 @@ function DeliveriesTab() {
     { title: '起止月', key: 'coverage', width: 170, render: (_: unknown, r) => <Text type="secondary" style={{ fontSize: 12 }}>{r.coverage_start_date}~{r.coverage_end_date}</Text> },
     { title: '投递单位', dataIndex: 'distribution_unit_name', width: 130, render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : <Text type="secondary">—(未填)</Text>) },
     { title: '渠道', dataIndex: 'source_channel', width: 120, render: (v: string | null) => v || '—' },
+    ...(isAdmin ? [{
+      title: '操作', key: 'act', width: 96, fixed: 'right' as const, render: (_: unknown, r: PostalDelivery) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />
+          <Popconfirm title="删除该投递记录？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    } as TableColumnsType<PostalDelivery>[number]] : []),
   ];
 
   return (
     <>
       <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
         <Text type="secondary">邮局记录不进「订单列表 / 客户管理」，这里是它们完整名册的家（可搜可筛可导出）。每条 = 一条投递记录（≠订单）。</Text>
-        <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入邮局明细</Button>
+        <Space>
+          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增投递记录</Button>}
+          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入邮局明细</Button>
+        </Space>
       </Flex>
       <Flex wrap gap={8} style={{ marginBottom: 12 }}>
-        <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
-        <Select allowClear placeholder="起投月" style={{ width: 110 }} value={month} onChange={(v) => { setMonth(v); setPage(1); }} options={MONTH_OPTS} />
+        <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); if (v == null) setMonth(undefined); setPage(1); }} options={YEAR_OPTS} />
+        <Select allowClear placeholder="起投月" style={{ width: 110 }} value={month} disabled={year == null} onChange={(v) => { setMonth(v); setPage(1); }} options={MONTH_OPTS} />
         <Select allowClear placeholder="渠道" style={{ width: 150 }} value={channel} onChange={(v) => { setChannel(v); setPage(1); }} options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
         <Select allowClear showSearch optionFilterProp="label" placeholder="投递单位" style={{ width: 160 }} value={unitId} onChange={(v) => { setUnitId(v); setPage(1); }} options={unitOpts} />
         <Input.Search allowClear placeholder="搜索 姓名 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
       </Flex>
-      <Table<PostalDelivery> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small" scroll={{ x: 1150 }}
+      <Table<PostalDelivery> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small" scroll={{ x: 1250 }}
         pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条投递记录`, showSizeChanger: false }} />
       <ReaderImportModal open={importOpen} onClose={() => setImportOpen(false)} />
+      <DeliveryFormModal open={formOpen} editing={editing} unitOpts={unitOpts} onClose={() => { setFormOpen(false); setEditing(null); }} />
     </>
   );
 }
@@ -432,7 +504,20 @@ function ComplaintsTab() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [importOpen, setImportOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PostalComplaint | null>(null);
+  const [handlingId, setHandlingId] = useState<number | null>(null);
   const PAGE_SIZE = 50;
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+
+  const unitsQ = useQuery({ queryKey: ['partners'], queryFn: () => listPartners().then((r) => r.data) });
+  const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteComplaint(id),
+    onSuccess: () => { message.success('已删除投诉'); qc.invalidateQueries({ queryKey: ['postalComplaints'] }); },
+    onError: (e) => message.error(errText(e)),
+  });
 
   const q = useQuery({
     queryKey: ['postalComplaints', { year, status, minHandling, search, page }],
@@ -456,6 +541,19 @@ function ComplaintsTab() {
     { title: '投递单位', dataIndex: 'routed_unit_name', width: 120, render: (v: string | null) => v ? <Tag color="blue">{v}</Tag> : '—' },
     { title: '状态', dataIndex: 'status', width: 90, render: (s: PostalComplaintStatus) => <Tag color={COMPLAINT_STATUS_META[s].color}>{COMPLAINT_STATUS_META[s].label}</Tag> },
     { title: '读者', key: 'reader', width: 100, fixed: 'right', render: (_: unknown, r) => readerTag(r.postal_delivery_id) },
+    {
+      title: '操作', key: 'act', width: isAdmin ? 150 : 80, fixed: 'right' as const, render: (_: unknown, r: PostalComplaint) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => setHandlingId(r.id)}>处理</Button>
+          {isAdmin && <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />}
+          {isAdmin && (
+            <Popconfirm title="删除该投诉？处理记录一并删除。" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          )}
+        </Space>
+      ),
+    },
   ];
 
   return (
@@ -464,12 +562,15 @@ function ComplaintsTab() {
         <Space wrap>
           <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
           <Select allowClear placeholder="状态" style={{ width: 120 }} value={status} onChange={(v) => { setStatus(v); setPage(1); }}
-            options={[{ label: '待处理', value: 'open' }, { label: '已回访', value: 'resolved' }]} />
+            options={COMPLAINT_STATUS_OPTS} />
           <Select allowClear placeholder="处理次数" style={{ width: 130 }} value={minHandling} onChange={(v) => { setMinHandling(v); setPage(1); }}
             options={[{ label: '≥2 次', value: 2 }, { label: '≥3 次', value: 3 }]} />
           <Input.Search allowClear placeholder="搜索 收报人 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         </Space>
-        <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入投诉</Button>
+        <Space>
+          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增投诉</Button>}
+          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入投诉</Button>
+        </Space>
       </Flex>
 
       <Table<PostalComplaint>
@@ -483,6 +584,8 @@ function ComplaintsTab() {
       />
 
       <ComplaintImportModal open={importOpen} onClose={() => setImportOpen(false)} />
+      <ComplaintFormModal open={formOpen} editing={editing} unitOpts={unitOpts} onClose={() => { setFormOpen(false); setEditing(null); }} />
+      <ComplaintHandlingDrawer complaintId={handlingId} onClose={() => setHandlingId(null)} />
     </>
   );
 }
@@ -538,6 +641,391 @@ function SimpleImportModal<T extends object>(props: {
   );
 }
 
+type UnitOpt = { label: string; value: number };
+
+/** 投递记录 · 新增 / 编辑 */
+function DeliveryFormModal({ open, editing, unitOpts, onClose }: {
+  open: boolean; editing: PostalDelivery | null; unitOpts: UnitOpt[]; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [form] = Form.useForm();
+  useEffect(() => {
+    if (!open) return;
+    if (editing) {
+      form.setFieldsValue({
+        ...editing,
+        amount: editing.amount != null ? Number(editing.amount) : undefined,
+        coverage_start_date: toDay(editing.coverage_start_date),
+        coverage_end_date: toDay(editing.coverage_end_date),
+      });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({ copies: 1 });
+    }
+  }, [open, editing, form]);
+
+  const saveMut = useMutation({
+    mutationFn: (v: any) => {
+      const body: DeliveryPayload = {
+        ...v,
+        amount: v.amount ?? null,
+        coverage_start_date: fromDay(v.coverage_start_date),
+        coverage_end_date: fromDay(v.coverage_end_date),
+      };
+      return editing ? updateDelivery(editing.id, body) : createDelivery(body);
+    },
+    onSuccess: () => {
+      message.success(editing ? '投递记录已更新' : '投递记录已新增');
+      qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
+      onClose();
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+
+  return (
+    <Modal title={editing ? '编辑投递记录' : '新增投递记录'} open={open} onCancel={onClose}
+      onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={760} destroyOnClose>
+      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+        <Flex gap={12} wrap>
+          <Form.Item name="year" label="年度" rules={[{ required: true, message: '必填' }]} style={{ width: 120 }}>
+            <InputNumber style={{ width: '100%' }} min={2000} max={2100} />
+          </Form.Item>
+          <Form.Item name="delivery_no" label="编号" rules={[{ required: true, message: '必填' }]} style={{ width: 140 }}><Input /></Form.Item>
+          <Form.Item name="recipient_name" label="收报人" rules={[{ required: true, message: '必填' }]} style={{ width: 140 }}><Input /></Form.Item>
+          <Form.Item name="recipient_phone" label="电话" style={{ width: 160 }}><Input /></Form.Item>
+        </Flex>
+        <Flex gap={12} wrap>
+          <Form.Item name="recipient_province" label="省" style={{ width: 110 }}><Input /></Form.Item>
+          <Form.Item name="recipient_city" label="市" style={{ width: 110 }}><Input /></Form.Item>
+          <Form.Item name="recipient_district" label="区" style={{ width: 110 }}><Input /></Form.Item>
+          <Form.Item name="recipient_postal_code" label="邮编" style={{ width: 110 }}><Input /></Form.Item>
+        </Flex>
+        <Form.Item name="recipient_address" label="详细地址" rules={[{ required: true, message: '必填' }]}><Input /></Form.Item>
+        <Flex gap={12} wrap>
+          <Form.Item name="product" label="产品" style={{ width: 160 }}><Input /></Form.Item>
+          <Form.Item name="copies" label="份数" style={{ width: 100 }}><InputNumber style={{ width: '100%' }} min={1} /></Form.Item>
+          <Form.Item name="amount" label="金额" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={0} precision={2} /></Form.Item>
+          <Form.Item name="coverage_start_date" label="起投日期" style={{ width: 150 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="coverage_end_date" label="止投日期" style={{ width: 150 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+        </Flex>
+        <Flex gap={12} wrap>
+          <Form.Item name="source_channel" label="渠道" style={{ width: 170 }}>
+            <Select allowClear options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
+          </Form.Item>
+          <Form.Item name="distribution_unit_id" label="投递单位" style={{ width: 190 }}>
+            <Select allowClear showSearch optionFilterProp="label" options={unitOpts} />
+          </Form.Item>
+          <Form.Item name="salesperson" label="业务员" style={{ width: 120 }}><Input /></Form.Item>
+          <Form.Item name="remittance_name" label="汇款名" style={{ width: 150 }}><Input /></Form.Item>
+        </Flex>
+        <Form.Item name="external_order_no" label="平台订单号（可选）"><Input /></Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+/** 投诉 · 新增 / 编辑（基础字段；处理流程见处理抽屉） */
+function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
+  open: boolean; editing: PostalComplaint | null; unitOpts: UnitOpt[]; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [form] = Form.useForm();
+  useEffect(() => {
+    if (!open) return;
+    if (editing) form.setFieldsValue({ ...editing, complaint_date: toDay(editing.complaint_date) });
+    else { form.resetFields(); form.setFieldsValue({ status: 'open' }); }
+  }, [open, editing, form]);
+
+  const saveMut = useMutation({
+    mutationFn: (v: any) => {
+      const body: ComplaintPayload = { ...v, complaint_date: fromDay(v.complaint_date) };
+      return editing ? updateComplaint(editing.id, body) : createComplaint(body);
+    },
+    onSuccess: () => {
+      message.success(editing ? '投诉已更新' : '投诉已新增');
+      qc.invalidateQueries({ queryKey: ['postalComplaints'] });
+      onClose();
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+
+  return (
+    <Modal title={editing ? '编辑投诉' : '新增投诉'} open={open} onCancel={onClose}
+      onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={640} destroyOnClose>
+      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+        <Flex gap={12} wrap>
+          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
+          <Form.Item name="delivery_no" label="编号（关联读者）" style={{ width: 180 }}><Input placeholder="去零编号，如 680" /></Form.Item>
+          <Form.Item name="complaint_date" label="接诉日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+        </Flex>
+        <Form.Item name="missing_issues" label="投诉情况"><Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} /></Form.Item>
+        <Flex gap={12} wrap>
+          <Form.Item name="handling" label="处理情况（自动归一渠道单位）" style={{ flex: 1, minWidth: 240 }}><Input placeholder="如 转北京11185" /></Form.Item>
+          <Form.Item name="routed_unit_id" label="投递单位" style={{ width: 180 }}><Select allowClear showSearch optionFilterProp="label" options={unitOpts} /></Form.Item>
+        </Flex>
+        <Flex gap={12} wrap>
+          <Form.Item name="snap_name" label="收报人（快照，留空自动带出）" style={{ width: 220 }}><Input /></Form.Item>
+          <Form.Item name="snap_phone" label="电话" style={{ width: 150 }}><Input /></Form.Item>
+          <Form.Item name="first_handler" label="第一接诉人" style={{ width: 130 }}><Input /></Form.Item>
+          <Form.Item name="status" label="状态" style={{ width: 130 }}><Select options={COMPLAINT_STATUS_OPTS} /></Form.Item>
+        </Flex>
+        <Form.Item name="snap_address" label="地址（快照）"><Input /></Form.Item>
+        <Form.Item name="notes" label="备注"><Input /></Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+/** 投诉处理抽屉：三态时间线 + 登记处理 */
+function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number | null; onClose: () => void }) {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const [form] = Form.useForm();
+  const open = complaintId != null;
+
+  const detailQ = useQuery({
+    queryKey: ['postalComplaintDetail', complaintId],
+    queryFn: () => getComplaintDetail(complaintId as number).then((r) => r.data),
+    enabled: open,
+  });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['postalComplaints'] });
+    qc.invalidateQueries({ queryKey: ['postalComplaintDetail', complaintId] });
+  };
+  const addMut = useMutation({
+    mutationFn: (v: any) => addComplaintHandling(complaintId as number, {
+      action: v.action, follow_result: v.follow_result || null, result_status: v.result_status,
+    }),
+    onSuccess: () => { message.success('已登记一次处理'); form.resetFields(); form.setFieldsValue({ result_status: 'in_progress' }); invalidate(); },
+    onError: (e) => message.error(errText(e)),
+  });
+  const delMut = useMutation({
+    mutationFn: (hid: number) => deleteComplaintHandling(complaintId as number, hid),
+    onSuccess: () => { message.success('已删除该处理'); invalidate(); },
+    onError: (e) => message.error(errText(e)),
+  });
+
+  const detail = detailQ.data;
+  const c = detail?.complaint;
+
+  return (
+    <Drawer title="投诉处理" width={560} open={open} onClose={onClose} destroyOnClose>
+      {!c ? <Empty description={detailQ.isLoading ? '加载中…' : '无数据'} /> : (
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Descriptions size="small" column={1} bordered items={[
+            { key: 's', label: '状态', children: <Tag color={COMPLAINT_STATUS_META[c.status].color}>{COMPLAINT_STATUS_META[c.status].label}</Tag> },
+            { key: 'n', label: '收报人', children: c.snap_name || '—' },
+            { key: 'no', label: '编号', children: c.external_order_no || '—' },
+            { key: 'm', label: '投诉情况', children: c.missing_issues || '—' },
+            { key: 'cnt', label: '处理次数', children: c.handling_count ?? 0 },
+          ]} />
+
+          {isAdmin && (
+            <Card size="small" title="登记一次处理">
+              <Form form={form} layout="vertical" initialValues={{ result_status: 'in_progress' }} onFinish={(v) => addMut.mutate(v)}>
+                <Form.Item name="action" label="处理过程" rules={[{ required: true, message: '必填' }]}>
+                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="本次做了什么" />
+                </Form.Item>
+                <Flex gap={12} wrap>
+                  <Form.Item name="result_status" label="处理后状态" style={{ width: 160 }}><Select options={COMPLAINT_STATUS_OPTS} /></Form.Item>
+                  <Form.Item name="follow_result" label="回访结果（可选）" style={{ flex: 1, minWidth: 200 }}><Input /></Form.Item>
+                </Flex>
+                <Button type="primary" htmlType="submit" loading={addMut.isPending}>提交处理</Button>
+              </Form>
+            </Card>
+          )}
+
+          <div>
+            <Divider plain style={{ marginTop: 0 }}>处理时间线</Divider>
+            {(detail?.handlings.length ?? 0) === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无处理记录" />
+            ) : (
+              <Timeline items={detail!.handlings.map((h: PostalComplaintHandling) => ({
+                color: h.result_status === 'resolved' ? 'green' : (h.result_status === 'in_progress' ? 'blue' : 'gray'),
+                children: (
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <Space size={8} wrap>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{h.handled_at?.replace('T', ' ').slice(0, 16)}</Text>
+                      {h.handled_by_name && <Tag>{h.handled_by_name}</Tag>}
+                      {h.result_status && <Tag color={COMPLAINT_STATUS_META[h.result_status as PostalComplaintStatus].color}>{COMPLAINT_STATUS_META[h.result_status as PostalComplaintStatus].label}</Tag>}
+                      {isAdmin && <Popconfirm title="删除该处理记录？次数与状态会回退。" onConfirm={() => delMut.mutate(h.id)}><Button type="link" size="small" danger>删除</Button></Popconfirm>}
+                    </Space>
+                    <Text>{h.action}</Text>
+                    {h.follow_result && <Text type="secondary" style={{ fontSize: 12 }}>回访：{h.follow_result}</Text>}
+                  </Space>
+                ),
+              }))} />
+            )}
+          </div>
+        </Space>
+      )}
+    </Drawer>
+  );
+}
+
+/** 改地址 · 新增 / 编辑 */
+function AddressChangeFormModal({ open, editing, onClose }: {
+  open: boolean; editing: PostalAddressChange | null; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [form] = Form.useForm();
+  useEffect(() => {
+    if (!open) return;
+    if (editing) form.setFieldsValue({ ...editing, change_date: toDay(editing.change_date) });
+    else form.resetFields();
+  }, [open, editing, form]);
+
+  const saveMut = useMutation({
+    mutationFn: (v: any) => {
+      const body: AddressChangePayload = { ...v, change_date: fromDay(v.change_date) };
+      return editing ? updateAddressChange(editing.id, body) : createAddressChange(body);
+    },
+    onSuccess: () => { message.success(editing ? '改地址已更新' : '改地址已新增'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); onClose(); },
+    onError: (e) => message.error(errText(e)),
+  });
+
+  return (
+    <Modal title={editing ? '编辑改地址' : '新增改地址'} open={open} onCancel={onClose}
+      onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={640} destroyOnClose>
+      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+        <Flex gap={12} wrap>
+          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
+          <Form.Item name="delivery_no" label="编号（关联读者）" style={{ width: 180 }}><Input placeholder="去零编号" /></Form.Item>
+          <Form.Item name="change_date" label="修改日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+        </Flex>
+        <Flex gap={12} wrap>
+          <Form.Item name="old_name" label="原姓名" style={{ width: 150 }}><Input /></Form.Item>
+          <Form.Item name="new_name" label="新姓名" style={{ width: 150 }}><Input /></Form.Item>
+          <Form.Item name="new_phone" label="新电话" style={{ width: 160 }}><Input /></Form.Item>
+          <Form.Item name="new_copies" label="新份数" style={{ width: 110 }}><InputNumber style={{ width: '100%' }} min={0} /></Form.Item>
+        </Flex>
+        <Form.Item name="new_address" label="新地址"><Input /></Form.Item>
+        <Flex gap={12} wrap>
+          <Form.Item name="original_start_month" label="原起月日" style={{ width: 150 }}><Input /></Form.Item>
+          <Form.Item name="effective_start_month" label="实际起月日" style={{ width: 150 }}><Input /></Form.Item>
+          <Form.Item name="handling" label="处理情况" style={{ flex: 1, minWidth: 200 }}><Input placeholder="如 转北京局微信" /></Form.Item>
+        </Flex>
+        <Form.Item name="notes" label="备注"><Input /></Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+/** 回访 · 新增 / 编辑 */
+function FollowUpFormModal({ open, editing, onClose }: {
+  open: boolean; editing: PostalFollowUp | null; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [form] = Form.useForm();
+  useEffect(() => {
+    if (!open) return;
+    if (editing) form.setFieldsValue({ ...editing, follow_up_date: toDay(editing.follow_up_date) });
+    else form.resetFields();
+  }, [open, editing, form]);
+
+  const saveMut = useMutation({
+    mutationFn: (v: any) => {
+      const body: FollowUpPayload = { ...v, follow_up_date: fromDay(v.follow_up_date) };
+      return editing ? updateFollowUp(editing.id, body) : createFollowUp(body);
+    },
+    onSuccess: () => { message.success(editing ? '回访已更新' : '回访已新增'); qc.invalidateQueries({ queryKey: ['postalFollowUps'] }); onClose(); },
+    onError: (e) => message.error(errText(e)),
+  });
+
+  return (
+    <Modal title={editing ? '编辑回访' : '新增回访'} open={open} onCancel={onClose}
+      onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={560} destroyOnClose>
+      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+        <Flex gap={12} wrap>
+          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
+          <Form.Item name="delivery_no" label="编号（关联读者）" style={{ width: 180 }}><Input placeholder="去零编号" /></Form.Item>
+          <Form.Item name="follow_up_date" label="回访日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+        </Flex>
+        <Flex gap={12} wrap>
+          <Form.Item name="snap_name" label="收报人" style={{ width: 160 }}><Input /></Form.Item>
+          <Form.Item name="batch_label" label="批次列头" style={{ width: 180 }}><Input placeholder="如 20240227回访" /></Form.Item>
+        </Flex>
+        <Form.Item name="result" label="回访结果"><Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} /></Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+/** 收款/发票 · 新增 / 编辑 */
+function FinanceFormModal({ open, editing, onClose }: {
+  open: boolean; editing: PostalFinance | null; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [form] = Form.useForm();
+  useEffect(() => {
+    if (!open) return;
+    if (editing) {
+      form.setFieldsValue({
+        ...editing,
+        amount: editing.amount != null ? Number(editing.amount) : undefined,
+        fee_amount: editing.fee_amount != null ? Number(editing.fee_amount) : undefined,
+        net_amount: editing.net_amount != null ? Number(editing.net_amount) : undefined,
+        invoiced_amount: editing.invoiced_amount != null ? Number(editing.invoiced_amount) : undefined,
+        collected_at: toDay(editing.collected_at),
+      });
+    } else form.resetFields();
+  }, [open, editing, form]);
+
+  const saveMut = useMutation({
+    mutationFn: (v: any) => {
+      const body: FinancePayload = {
+        ...v,
+        amount: v.amount ?? null, fee_amount: v.fee_amount ?? null,
+        net_amount: v.net_amount ?? null, invoiced_amount: v.invoiced_amount ?? null,
+        collected_at: fromDay(v.collected_at),
+      };
+      return editing ? updateFinance(editing.id, body) : createFinance(body);
+    },
+    onSuccess: () => { message.success(editing ? '收款记录已更新' : '收款记录已新增'); qc.invalidateQueries({ queryKey: ['postalFinance'] }); onClose(); },
+    onError: (e) => message.error(errText(e)),
+  });
+
+  return (
+    <Modal title={editing ? '编辑收款/发票' : '新增收款/发票'} open={open} onCancel={onClose}
+      onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={720} destroyOnClose>
+      <Form form={form} layout="vertical"
+        onValuesChange={(changed) => {
+          if ('amount' in changed || 'fee_amount' in changed) {
+            const amt = form.getFieldValue('amount');
+            const fee = form.getFieldValue('fee_amount');
+            if (amt != null && fee != null) form.setFieldsValue({ net_amount: Number((amt - fee).toFixed(2)) });
+          }
+        }}
+        onFinish={(v) => saveMut.mutate(v)}>
+        <Flex gap={12} wrap>
+          <Form.Item name="payer_name" label="付款人姓名" style={{ width: 160 }}><Input /></Form.Item>
+          <Form.Item name="external_order_no" label="原始订单号" style={{ width: 200 }}><Input placeholder="有则精确挂单" /></Form.Item>
+          <Form.Item name="product" label="商品" style={{ width: 180 }}><Input /></Form.Item>
+          <Form.Item name="copies" label="份数" style={{ width: 100 }}><InputNumber style={{ width: '100%' }} min={0} /></Form.Item>
+        </Flex>
+        <Flex gap={12} wrap>
+          <Form.Item name="amount" label="金额" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={0} precision={2} /></Form.Item>
+          <Form.Item name="fee_amount" label="手续费" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={0} precision={2} /></Form.Item>
+          <Form.Item name="net_amount" label="到款（空则=金额-手续费）" style={{ width: 210 }}><InputNumber style={{ width: '100%' }} min={0} precision={2} /></Form.Item>
+          <Form.Item name="collected_at" label="到款日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+        </Flex>
+        <Flex gap={12} wrap>
+          <Form.Item name="invoiced_amount" label="开票金额" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={0} precision={2} /></Form.Item>
+          <Form.Item name="tax_category" label="票种" style={{ width: 120 }}><Select allowClear options={[{ label: '普票', value: '普票' }, { label: '专票', value: '专票' }]} /></Form.Item>
+          <Form.Item name="platform" label="平台" style={{ width: 170 }}><Input /></Form.Item>
+        </Flex>
+        <Form.Item name="buyer_title" label="发票抬头"><Input /></Form.Item>
+        <Flex gap={12} wrap>
+          <Form.Item name="tax_no" label="购方税号" style={{ width: 220 }}><Input /></Form.Item>
+          <Form.Item name="invoice_recipient" label="发票接收（手机/邮箱）" style={{ flex: 1, minWidth: 200 }}><Input /></Form.Item>
+        </Flex>
+        <Form.Item name="notes" label="备注"><Input /></Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
 /** Tab：改地址工单 */
 function AddressChangesTab() {
   const { isAdmin } = useAuth();
@@ -547,6 +1035,8 @@ function AddressChangesTab() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [importOpen, setImportOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PostalAddressChange | null>(null);
   const PAGE_SIZE = 50;
 
   const q = useQuery({
@@ -556,6 +1046,11 @@ function AddressChangesTab() {
   const applyMut = useMutation({
     mutationFn: (id: number) => applyAddressChange(id),
     onSuccess: () => { message.success('已应用新地址到投递记录'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); qc.invalidateQueries({ queryKey: ['postalDeliveries'] }); },
+    onError: (e) => message.error(errText(e)),
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteAddressChange(id),
+    onSuccess: () => { message.success('已删除改地址'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); },
     onError: (e) => message.error(errText(e)),
   });
 
@@ -579,6 +1074,16 @@ function AddressChangesTab() {
           ? <Popconfirm title="把新姓名/电话/地址写回投递记录？下一版明细即用新地址。" onConfirm={() => applyMut.mutate(r.id)}><Button size="small" loading={applyMut.isPending}>应用新地址</Button></Popconfirm>
           : <Text type="secondary">{r.postal_delivery_id ? '—' : '未匹配'}</Text>)
     ) },
+    ...(isAdmin ? [{
+      title: '操作', key: 'act', width: 96, fixed: 'right' as const, render: (_: unknown, r: PostalAddressChange) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />
+          <Popconfirm title="删除该改地址工单？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    } as TableColumnsType<PostalAddressChange>[number]] : []),
   ];
 
   return (
@@ -589,7 +1094,10 @@ function AddressChangesTab() {
           <Select allowClear placeholder="应用状态" style={{ width: 130 }} value={applied} onChange={(v) => { setApplied(v); setPage(1); }} options={[{ label: '已应用', value: true }, { label: '未应用', value: false }]} />
           <Input.Search allowClear placeholder="搜索 姓名 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         </Space>
-        <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入改地址</Button>
+        <Space>
+          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增改地址</Button>}
+          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入改地址</Button>
+        </Space>
       </Flex>
       <Table<PostalAddressChange> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small" scroll={{ x: 1150 }}
         pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }} />
@@ -607,6 +1115,7 @@ function AddressChangesTab() {
           { title: '处理', dataIndex: 'routed_label', width: 100, render: (v: string | null) => v ? <Tag>{v}</Tag> : '—' },
         ]}
       />
+      <AddressChangeFormModal open={formOpen} editing={editing} onClose={() => { setFormOpen(false); setEditing(null); }} />
     </>
   );
 }
@@ -617,7 +1126,16 @@ function FollowUpsTab() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [importOpen, setImportOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PostalFollowUp | null>(null);
   const PAGE_SIZE = 50;
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteFollowUp(id),
+    onSuccess: () => { message.success('已删除回访'); qc.invalidateQueries({ queryKey: ['postalFollowUps'] }); },
+    onError: (e) => message.error(errText(e)),
+  });
 
   const q = useQuery({
     queryKey: ['postalFollowUps', { year, search, page }],
@@ -631,6 +1149,16 @@ function FollowUpsTab() {
     { title: '编号', dataIndex: 'external_order_no', width: 110, render: (v: string | null) => v || '—' },
     { title: '结果', dataIndex: 'result', ellipsis: true, render: (v: string | null) => v || '—' },
     { title: '读者', key: 'reader', width: 100, fixed: 'right', render: (_: unknown, r) => readerTag(r.postal_delivery_id) },
+    ...(isAdmin ? [{
+      title: '操作', key: 'act', width: 96, fixed: 'right' as const, render: (_: unknown, r: PostalFollowUp) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />
+          <Popconfirm title="删除该回访？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    } as TableColumnsType<PostalFollowUp>[number]] : []),
   ];
 
   return (
@@ -640,7 +1168,10 @@ function FollowUpsTab() {
           <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
           <Input.Search allowClear placeholder="搜索 姓名 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         </Space>
-        <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入回访</Button>
+        <Space>
+          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增回访</Button>}
+          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入回访</Button>
+        </Space>
       </Flex>
       <Table<PostalFollowUp> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small" scroll={{ x: 850 }}
         pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }} />
@@ -658,6 +1189,7 @@ function FollowUpsTab() {
           { title: '结果', dataIndex: 'result', ellipsis: true },
         ]}
       />
+      <FollowUpFormModal open={formOpen} editing={editing} onClose={() => { setFormOpen(false); setEditing(null); }} />
     </>
   );
 }
@@ -670,7 +1202,16 @@ function FinanceTab() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [importOpen, setImportOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PostalFinance | null>(null);
   const PAGE_SIZE = 50;
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteFinance(id),
+    onSuccess: () => { message.success('已删除收款记录'); qc.invalidateQueries({ queryKey: ['postalFinance'] }); },
+    onError: (e) => message.error(errText(e)),
+  });
 
   const q = useQuery({
     queryKey: ['postalFinance', { platform, taxCat, linked, search, page }],
@@ -693,6 +1234,16 @@ function FinanceTab() {
     { title: '票种', dataIndex: 'tax_category', width: 70, render: (v: string | null) => v ? <Tag color={v === '专票' ? 'gold' : 'default'}>{v}</Tag> : '—' },
     { title: '平台', dataIndex: 'platform', width: 120, render: (v: string | null) => v || '—' },
     { title: '挂单', key: 'link', width: 100, fixed: 'right', render: (_: unknown, r) => linkTag(r) },
+    ...(isAdmin ? [{
+      title: '操作', key: 'act', width: 96, fixed: 'right' as const, render: (_: unknown, r: PostalFinance) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />
+          <Popconfirm title="删除该收款记录？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    } as TableColumnsType<PostalFinance>[number]] : []),
   ];
 
   return (
@@ -707,7 +1258,10 @@ function FinanceTab() {
             options={[{ label: '已挂单', value: true }, { label: '未挂单', value: false }]} />
           <Input.Search allowClear placeholder="搜索 姓名 / 抬头 / 订单号" style={{ width: 240 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         </Space>
-        <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入收款发票</Button>
+        <Space>
+          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增收款发票</Button>}
+          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入收款发票</Button>
+        </Space>
       </Flex>
       <Table<PostalFinance> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small" scroll={{ x: 1200 }}
         pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }} />
@@ -726,6 +1280,7 @@ function FinanceTab() {
           { title: '挂单', key: 'link', width: 100, render: (_: unknown, r) => r.linked ? <Tag color="green">{r.link_by === 'order_no' ? '订单号' : '姓名'}</Tag> : <Text type="secondary">未挂</Text> },
         ]}
       />
+      <FinanceFormModal open={formOpen} editing={editing} onClose={() => { setFormOpen(false); setEditing(null); }} />
     </>
   );
 }

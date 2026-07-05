@@ -17,6 +17,7 @@ from app.models import (
     TargetStatus,
 )
 from app.services.address_service import normalize_address
+from app.services import postal_common as pc
 
 
 def list_address_changes(
@@ -158,3 +159,100 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
     db.commit()
     db.refresh(ac)
     return ac
+
+
+# --- 手工 CRUD：改地址 -----------------------------------------------
+
+def create_address_change(db: Session, payload: dict, operator_id: Optional[int] = None) -> PostalAddressChange:
+    """手工新增改地址工单（未应用）。复用编号+年度关联投递记录、routed_label 归一。"""
+    d = dict(payload)
+    year = d.pop("year", None)
+    delivery_no = d.pop("delivery_no", None)
+    external, pd_id, order_id = pc.link_delivery(db, year, delivery_no)
+    handling = d.get("handling")
+    rec = PostalAddressChange(
+        postal_delivery_id=pd_id,
+        order_id=order_id,
+        external_order_no=external,
+        routed_label=pc.routed_label(handling) if handling else None,
+        applied_to_order=False,
+        **d,
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+def update_address_change(db: Session, change_id: int, patch: dict) -> PostalAddressChange:
+    rec = db.query(PostalAddressChange).filter(PostalAddressChange.id == change_id).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+    patch = dict(patch)
+    relink = "delivery_no" in patch
+    year = patch.pop("year", None)          # year 不是本表列，仅用于关联
+    delivery_no = patch.pop("delivery_no", None)
+    if relink:
+        external, pd_id, order_id = pc.link_delivery(db, year, delivery_no)
+        rec.external_order_no = external
+        rec.postal_delivery_id = pd_id
+        rec.order_id = order_id
+    if "handling" in patch:
+        rec.routed_label = pc.routed_label(patch["handling"]) if patch["handling"] else None
+    for k, v in patch.items():
+        setattr(rec, k, v)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+def delete_address_change(db: Session, change_id: int) -> None:
+    rec = db.query(PostalAddressChange).filter(PostalAddressChange.id == change_id).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+    db.delete(rec)
+    db.commit()
+
+
+# --- 手工 CRUD：回访 -------------------------------------------------
+
+def create_follow_up(db: Session, payload: dict, operator_id: Optional[int] = None) -> PostalFollowUp:
+    d = dict(payload)
+    year = d.pop("year", None)
+    delivery_no = d.pop("delivery_no", None)
+    external, pd_id, order_id = pc.link_delivery(db, year, delivery_no)
+    rec = PostalFollowUp(
+        postal_delivery_id=pd_id, order_id=order_id, external_order_no=external, **d
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+def update_follow_up(db: Session, follow_id: int, patch: dict) -> PostalFollowUp:
+    rec = db.query(PostalFollowUp).filter(PostalFollowUp.id == follow_id).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"回访记录 {follow_id} 不存在")
+    patch = dict(patch)
+    relink = "delivery_no" in patch
+    year = patch.pop("year", None)
+    delivery_no = patch.pop("delivery_no", None)
+    if relink:
+        external, pd_id, order_id = pc.link_delivery(db, year, delivery_no)
+        rec.external_order_no = external
+        rec.postal_delivery_id = pd_id
+        rec.order_id = order_id
+    for k, v in patch.items():
+        setattr(rec, k, v)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+def delete_follow_up(db: Session, follow_id: int) -> None:
+    rec = db.query(PostalFollowUp).filter(PostalFollowUp.id == follow_id).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"回访记录 {follow_id} 不存在")
+    db.delete(rec)
+    db.commit()
