@@ -1,7 +1,7 @@
 # 订单管理 — 全景概览
 
 > 一页看懂整个订单管理模块:建单 → 建模 → 生命周期 → 商品库 → 履约发货 → 财务 → 统计 → 列表运营。
-> 思维导图用 Mermaid,GitHub / 支持 Mermaid 的 Markdown 预览里会渲染成脑图。最后更新:2026-06-29。
+> 思维导图用 Mermaid,GitHub / 支持 Mermaid 的 Markdown 预览里会渲染成脑图。最后更新:2026-07-05。
 
 ## 思维导图
 
@@ -83,6 +83,7 @@ mindmap
 | **财务** | 应收/实付/欠款追踪 + 收款流水 + 退款净收 + 欠款汇总(C1) | `payment_collections`、record_payment、outstanding、`/analytics/outstanding` |
 | **统计分析** | 按活动(折扣+净额)/按期销量/商学院按期发行量/欠款汇总 | `order_analytics_service`、`/api/analytics/*` |
 | **列表运营** | 单号搜索/服务端排序/多筛选/多选批量确认作废/导出 Excel/行内确认(E) | `list_orders`、bulk_confirm/void、`/orders/export`、`OrderList.tsx` |
+| **全局搜索** | 顶栏跨订单/收报人/商品/期数检索 + 下拉快速跳转(PR #42) | `GET /api/search?q=`、顶栏 AutoComplete |
 
 ## 接口索引(`/api/orders` 等)
 
@@ -105,6 +106,9 @@ mindmap
 **导入 / 统计**
 - `POST /api/order-import/preview`、`/commit` 电商导入两段式
 - `GET /api/analytics/campaigns`、`/issues`、`/bs-circulation`、`/outstanding`
+
+**全局搜索**
+- `GET /api/search?q=` 跨订单(单号/外部单号/付款人/电话)/收报人(姓名/电话)/商品(编码/名称)/期数(期号)检索,供顶栏下拉快速跳转
 
 ## 数据表 / 迁移(订单域)
 
@@ -138,4 +142,6 @@ mindmap
 5. **C1 收款 / 欠款追踪**(`payment_collections` + 未付清 + 欠款汇总)。
 6. **E 列表增强**:搜索/排序/批量确认作废/导出/行内确认。
 
-**待办**:D 邮局履约自动产出、F 订单端点 require_admin 授权、C2 经营报表(月度营收走势/同比 + 统计导出);小项:自动补寄、中通回执导入、按份数的退款净额、发货定时调度。
+**已补齐**:D 邮局投递(已改「投递记录层」独立上线 `/post-delivery`,PR #39/#41)、F 订单端点 require_admin 授权(敏感路由已加)、顶栏全局搜索(`GET /api/search?q=`,PR #42)。
+
+**待办**:C2 经营报表(月度营收走势/同比 + 统计导出);小项:自动补寄、中通回执导入、按份数的退款净额、发货定时调度。

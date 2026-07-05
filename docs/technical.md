@@ -460,7 +460,7 @@ FirstTry/
 |----|------|
 | `code`（唯一）/ `display_name` / `aliases`（JSON） | 匹配键：精确编码/名称 → 别名 → 归一化包含（容活动后缀如「618促销活动」） |
 | `publication`（可空，套餐为 NULL）/ `publication_format` / `fulfillment_type` / `subscription_term` / `delivery_method` / `billing_type` | 与 `order_items` 快照字段一一对应，解析时直接拷贝 |
-| `coverage_rule`（`term_from_month` / `latest_issue` / `explicit` / `custom`）/ `coverage_start_date` / `coverage_end_date` | 覆盖期算法；起投时间由导入批次提供，不写死在商品上 |
+| `coverage_rule`（`term_from_month` / `latest_issue` / `explicit` / `custom`）/ `coverage_start_date` / `coverage_end_date` | 覆盖期算法；起投时间由导入批次提供，不写死在商品上。**注**：后端枚举保留 `explicit`（固定日期），但因其无日期输入、导入端从不读取、选中会 422，**PR#43 已从商品表单「覆盖期算法」下拉移除该选项**（仅 UI 不可选，枚举与逻辑不动） |
 | `list_price` | 仅参考/差异提示——实际记录订单行的**实付价** |
 | `is_bundle` / `components`（JSON） | 套餐拆分：固定价腿 + 一个 `remainder` 腿（中国经营报固定 240、商学院拿余额）；每腿可带 `delivery_method` 逐刊设投递（缺省回落套餐顶层 `delivery_method`）|
 | `active` / `notes` / 时间戳 | |
@@ -534,6 +534,8 @@ FirstTry/
 - 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/`order_map`/`delivery_map`）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`（list + 应用新地址）+ `/api/postal/address-changes[/{id}/apply]`、`/follow-ups`。前端「改地址」tab 的动作为「应用新地址」，各 tab 显示「已关联读者 / 未匹配」。
 
 **收款/发票（P4）**：迁移 `a4c6e8b0d2f4` 建 `postal_finance`（自成台账，**不改共享财务 Invoice/Payment/finance_service**）。导入《提现发票合集》：`发票信息` 正则拆 `发票抬头`/`购方税号`；链接 = `原始订单号(external_order_no)→orders` 优先、`姓名` 兜底（唯一命中才挂，`link_by` 记来源）；`net_amount` = 到款金额或 金额−手续费；去重键 (订单号或姓名, 到款日期, 金额-规范2位)。`postal_finance_{parser,import_service,service}.py` + `/api/postal/finance`（筛选 平台/普专票/是否挂单/搜索）+ `/finance/import/*`。前端 PostDelivery 共 **6 tab**（投递名册/月度起投明细/投诉工单/改地址/回访/收款发票）。**并进财务发票工作台留待原始订单号补齐后**（那时再扩 Invoice.tax_category / Payment.fee_amount + 建真发票）。
+
+**手工 CRUD + 投诉三态处理（P5 / PR#41）**：5 张源台账（投递名册/投诉工单/改地址/回访/收款发票）各加页面内新增/编辑/删除（此前只能 Excel 导入），共 21 个 REST 写端点（`require_admin`）。投递名册删除有守卫：被未发出(draft/generated)的月度明细引用则 409（已发批次定格快照放行）。**投诉三态**：`open/resolved` → `open(待处理)/in_progress(处理中)/resolved(已解决)`；每次处理经 `POST /complaints/{id}/handlings` 记入子表 `postal_complaint_handling_records`（时间/处理人/处理过程/回访结果/本次后状态），`handling_count +1`、`status` 由最新处理驱动（删记录则回退）。迁移 `c7e9a1b3d5f2`：4 表补 `updated_at` + 投诉枚举两态→三态 `ALTER` + 建子表。端点清单见 §4.16。
 
 ## 4. API 接口一览
 
@@ -1613,7 +1615,7 @@ draft ──confirm──> active ──void──> void
 
 ### 4.16 邮局投递
 
-邮局投递接口位于 `backend/app/api/postal.py`，统一前缀 `/api/postal`，需 JWT 鉴权。**读**（列表/详情/导出）登录即可；**写**（各 `import/commit`、`batches/generate`、`mark-sent`、`address-changes/{id}/apply`）需 `require_admin`。业务模型见 §3.17（邮局＝投递方式、投递记录层）。
+邮局投递接口位于 `backend/app/api/postal.py`，统一前缀 `/api/postal`，需 JWT 鉴权。**读**（列表/详情/导出）登录即可；**写**（各 `import/commit`、5 张台账的手工 `POST`/`PUT`/`DELETE`、`batches/generate`、`mark-sent`、`address-changes/{id}/apply`、投诉 `handlings` 处理登记/删除）均需 `require_admin`。业务模型见 §3.17（邮局＝投递方式、投递记录层）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -1635,7 +1637,35 @@ draft ──confirm──> active ──void──> void
 | `GET` | `/api/postal/finance` | 收款发票列表，筛选 `platform`/`tax_category`/`linked`/`search` |
 | `POST` | `/api/postal/finance/import/preview` · `/commit` | 导入《提现发票合集》（订单号优先、姓名兜底挂真实订单；自成台账） |
 
+**手工 CRUD（PR#41，5 张源台账各加页面内新增/编辑/删除，此前只能 Excel 导入；写操作均 `require_admin`）**：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST`/`PUT`/`DELETE` | `/api/postal/deliveries[/{id}]` | 投递名册：手工建/改/删投递记录（`source_type=manual`）；`(year, delivery_no)` 重复 409；**删除守卫**：被未发出(draft/generated)的月度明细引用则 409（已发批次已定格快照、放行） |
+| `POST`/`PUT`/`DELETE` | `/api/postal/complaints[/{id}]` | 投诉工单 CRUD（详见下方三态处理流程） |
+| `POST` | `/api/postal/complaints/{id}/handlings` | 登记一次处理（body `{action, follow_result?, result_status?}`）；未指定 `result_status` → 置「处理中」；`handling_count +1`；投诉 `status` 由本次处理驱动；返回投诉详情（含处理时间线） |
+| `DELETE` | `/api/postal/complaints/{id}/handlings/{handling_id}` | 删除一条处理记录；`handling_count −1`；`status` 回退为最新剩余处理记录的 `result_status`（无剩余且导入基线亦无 → open） |
+| `POST`/`PUT`/`DELETE` | `/api/postal/address-changes[/{id}]` | 改地址工单 CRUD |
+| `POST`/`PUT`/`DELETE` | `/api/postal/follow-ups[/{id}]` | 回访 CRUD |
+| `POST`/`PUT`/`DELETE` | `/api/postal/finance[/{id}]` | 收款发票 CRUD |
+
 **关键点**：`import/commit` 返回 `{created, delivery_ids?, skipped_duplicates}`（投递记录导入用 `delivery_ids`，工单/发票用 `created`）。工单列表出参含 `postal_delivery_id`（前端据此显示「已关联读者 / 未匹配」）；改地址出参含 `applied_to_order`/`applied_by`/`applied_at`。删除被邮局投递引用的投递单位 `Partner` 会被 §partners 守卫拦（409，见 §3.17）。
+
+**投诉三态处理流程（PR#41）**：投诉 `status` 由两态扩为三态 **open(待处理) / in_progress(处理中) / resolved(已解决)**；每次「处理」经 `POST /complaints/{id}/handlings` 追加一行到独立子表 **`postal_complaint_handling_records`**（处理时间线：`handled_at` 处理时间 / `handled_by` 处理人 / `action` 处理过程 / `follow_result` 回访结果 / `result_status` 本次处理后状态；删投诉级联删），投诉 `handling_count` 每次 +1、`status` 由最新处理的 `result_status` 驱动（删处理记录则回退到剩余最新记录的状态，无剩余且无导入基线 → open）。前端 PostDelivery「投诉工单」tab 有「处理」抽屉展示该时间线。迁移 **`c7e9a1b3d5f2`**（down_revision `b5d7f9a1c3e6`）：给 `postal_complaints`/`postal_address_changes`/`postal_follow_ups`/`postal_finance` 补 `updated_at`（`postal_delivery` 已有，跳过）；投诉枚举两态→三态（MySQL 原生 ENUM `ALTER`，downgrade 收窄前先把 `in_progress` 回写 `open`）；新建 `postal_complaint_handling_records` 子表。
+
+### 4.17 全局搜索（顶栏快速跳转）
+
+顶栏全局搜索接口位于 `backend/app/api/search.py`（服务 `search_service.global_search`），前缀 `/api`，登录即可用。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/search?q=` | 跨 **订单 / 收报人 / 商品 / 期数** 检索，各类取 top-N（默认每类 6 条）返回，供顶栏 AutoComplete 下拉快速跳转 |
+
+**各实体匹配字段**（复用各列表已有搜索逻辑）：订单按 单号 `order_code` / 外部单号 `external_order_no` / 付款人 `payer_name` / 联系电话；收报人按 姓名 / 电话；商品按 编码 `code` / 名称 `display_name`；期数按 期号（`issue_number`，仅当输入为纯数字时匹配）。
+
+**前端跳转**（顶栏 AutoComplete 选中项）：订单 → 详情页；期数 → 报数页；收报人 / 商品 → 对应列表页并带上搜索词。
+
+> 附带修复：收报人列表「姓名搜索」此前失效（前端传 `name`、后端 `/api/recipients` 只认 `search`），PR#42 已统一为 `search` 参数。
 
 
 发货明细的生成遵循以下优先级规则：
