@@ -36,7 +36,6 @@ export const BILLING_OPTIONS = [
 export const COVERAGE_RULE_OPTIONS: Array<{ label: string; value: CoverageRule }> = [
   { label: '按起投月算（订阅）', value: 'term_from_month' },
   { label: '最新一期（单期）', value: 'latest_issue' },
-  { label: '固定日期', value: 'explicit' },
   { label: '自定义', value: 'custom' },
 ];
 
@@ -102,6 +101,13 @@ export function buildProductPayload(values: ProductFormValues): ProductCreatePay
 export function ProductFormFields({ editing }: { editing: boolean }) {
   const form = Form.useFormInstance<ProductFormValues>();
   const isBundle = Form.useWatch('is_bundle', form);
+  // 「固定日期(explicit)」已从可选项移除——导入端从不读取它、选了等于留空。
+  // 但若在编辑一个历史上已是该规则的商品，仍把它并回选项，避免编辑时丢失或显示成裸值。
+  const coverageRule = Form.useWatch('coverage_rule', form) as CoverageRule | undefined;
+  const coverageOptions =
+    coverageRule && !COVERAGE_RULE_OPTIONS.some((o) => o.value === coverageRule)
+      ? [...COVERAGE_RULE_OPTIONS, { label: COVERAGE_RULE_LABELS[coverageRule], value: coverageRule }]
+      : COVERAGE_RULE_OPTIONS;
 
   return (
     <>
@@ -146,7 +152,7 @@ export function ProductFormFields({ editing }: { editing: boolean }) {
 
       <Space style={{ display: 'flex' }} align="start">
         <Form.Item name="coverage_rule" label="覆盖期算法" style={{ width: 200 }}>
-          <Select options={COVERAGE_RULE_OPTIONS} />
+          <Select options={coverageOptions} />
         </Form.Item>
         <Form.Item name="list_price" label="参考价（仅对账提示）" style={{ width: 160 }}>
           <InputNumber min={0} style={{ width: '100%' }} prefix="¥" />
