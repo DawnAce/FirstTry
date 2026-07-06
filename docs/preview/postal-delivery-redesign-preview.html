@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>物流管理 · 邮局投递 · 重新设计效果图</title>
+<style>
+  :root{
+    --color-bg:#f5f5f7; --color-card:#fff; --color-accent:#0071e3;
+    --color-text-primary:#1d1d1f; --color-text-secondary:#86868b;
+    --color-border:rgba(0,0,0,.06); --color-divider:rgba(0,0,0,.04);
+    --shadow-card:0 1px 3px rgba(0,0,0,.04),0 1px 2px rgba(0,0,0,.06);
+    --radius-card:12px; --radius-input:8px; --radius-tag:20px;
+    --orange:#fa8c16; --green:#52c41a; --blue:#0071e3; --purple:#722ed1; --cyan:#13c2c2;
+    --font:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei','Helvetica Neue',sans-serif;
+  }
+  *{box-sizing:border-box;font-family:var(--font)}
+  body{margin:0;background:var(--color-bg);color:var(--color-text-primary);-webkit-font-smoothing:antialiased}
+  svg{display:block}
+  .mock-banner{background:#fffbe6;border-bottom:1px solid #ffe58f;padding:8px 20px;font-size:12.5px;color:#874d00;text-align:center}
+  .mock-banner b{color:#613400}
+  .app{display:flex;min-height:100vh}
+  .sider{width:220px;background:var(--color-card);border-right:1px solid var(--color-border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+  .logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--color-divider)}
+  .logo-icon{width:32px;height:32px;border-radius:8px;background:var(--color-accent);display:flex;align-items:center;justify-content:center;color:#fff}
+  .logo-t{display:flex;flex-direction:column;line-height:1.2}.logo-title{font-size:15px;font-weight:700;letter-spacing:-.01em}.logo-sub{font-size:11px;color:var(--color-text-secondary)}
+  .menu{flex:1;padding:8px;overflow-y:auto}
+  .mi{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;margin:2px 0;border-radius:var(--radius-input);font-size:14px;color:#42424a;cursor:default}
+  .mi .chev{margin-left:auto;color:#bbb}.mi.disabled{color:#c2c2c8}
+  .mi.child{height:36px;padding-left:40px;font-size:13.5px;color:#5a5a62}
+  .mi.child.active{background:rgba(0,113,227,.08);color:var(--color-accent);font-weight:600}
+  .mi.parent-open{color:var(--color-accent);font-weight:600}.mi.parent-open .ic{color:var(--color-accent)}
+  .ic{width:16px;height:16px;color:#8c8c94;flex-shrink:0}
+  .sider-foot{border-top:1px solid var(--color-divider);padding:12px;display:flex;align-items:center;gap:10px}
+  .ava{width:32px;height:32px;border-radius:50%;background:var(--color-accent);color:#fff;display:flex;align-items:center;justify-content:center}
+  .foot-n{font-size:13px;font-weight:500}.foot-r{font-size:11px;color:var(--color-text-secondary)}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .header{height:56px;background:var(--color-card);border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:16px;padding:0 20px;position:sticky;top:0;z-index:10}
+  .h-trigger,.h-ico{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary)}
+  .h-search{flex:0 0 340px;height:36px;background:var(--color-bg);border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 12px;color:#a0a0a6;font-size:13px}
+  .h-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .h-user{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:8px}
+  .content{padding:24px 28px;flex:1}.canvas{max-width:1240px;margin:0 auto}
+  .page-title{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:0 0 16px}
+  /* tab bar */
+  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--color-border);margin-bottom:18px}
+  .tab{display:flex;align-items:center;gap:7px;padding:10px 16px 12px;font-size:14.5px;color:#5a5a62;cursor:default;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab .em{font-size:15px}
+  .tab.on{color:var(--color-accent);font-weight:600;border-bottom-color:var(--color-accent)}
+  .tab .cnt{font-size:11px;color:#a0a0a6;background:#f0f0f2;border-radius:9px;padding:0 6px;line-height:16px}
+  .tab.on .cnt{background:rgba(0,113,227,.10);color:var(--color-accent)}
+  /* banner */
+  .desc{font-size:13px;color:var(--color-text-secondary);margin:0 0 14px;line-height:1.6}
+  .desc b{color:#5a5a62;font-weight:600}
+  /* card + toolbar */
+  .card{background:#fff;border-radius:var(--radius-card);box-shadow:var(--shadow-card);overflow:hidden}
+  .toolbar{display:flex;align-items:center;gap:10px;padding:14px 16px;flex-wrap:wrap;border-bottom:1px solid var(--color-divider)}
+  .sel{height:34px;border:1px solid var(--color-border);border-radius:8px;display:inline-flex;align-items:center;gap:8px;padding:0 10px;font-size:13px;color:#a0a0a6;background:#fff}
+  .sel .cv{margin-left:2px}
+  .search{width:200px;color:#a0a0a6}
+  .tail{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .btn{height:34px;border-radius:8px;padding:0 14px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;cursor:default;border:1px solid var(--color-border);background:#fff;color:var(--color-text-primary)}
+  .btn.primary{background:var(--color-accent);border-color:var(--color-accent);color:#fff}
+  .btn svg{width:14px;height:14px}
+  /* optional summary strip */
+  .summary{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--color-divider);font-size:13px;color:var(--color-text-secondary);flex-wrap:wrap;background:#fcfcfd}
+  .summary b{color:var(--color-text-primary);font-weight:600;font-variant-numeric:tabular-nums}
+  .summary .sep{color:#d8d8dc}
+  .summary .warn{color:var(--orange)}
+  .summary .opt{margin-left:auto;font-size:11px;color:#c0c0c6}
+  /* table */
+  table{width:100%;border-collapse:collapse}
+  thead th{background:#fafafa;text-align:left;font-size:12px;font-weight:600;color:var(--color-text-secondary);letter-spacing:.02em;padding:11px 14px;border-bottom:1px solid var(--color-divider);white-space:nowrap}
+  thead th.r{text-align:right}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13.5px;vertical-align:middle}
+  tbody td.r{text-align:right}
+  tbody tr.row:hover td{background:#fafafa}
+  .no{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;color:#42424a}
+  .nm{font-weight:600}
+  .addr{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sub{font-size:11px;color:var(--color-text-secondary);margin-top:2px}
+  .num{font-variant-numeric:tabular-nums;font-weight:600}
+  .cov{font-size:12px;color:var(--color-text-secondary);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tag{display:inline-flex;align-items:center;border-radius:var(--radius-tag);padding:1px 10px;font-size:12px;font-weight:500;line-height:19px;white-space:nowrap}
+  .t-blue{background:#e6f4ff;color:#0071e3}.t-gray{background:#f2f2f4;color:#8c8c94}.t-green{background:#f6ffed;color:#389e0d}.t-orange{background:#fff7e6;color:#d46b08}.t-cyan{background:#e6fffb;color:#08979c}
+  .muted{color:#b0b0b6}
+  .acts{display:inline-flex;gap:2px}
+  .icobtn{width:28px;height:28px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:#8c8c94;cursor:default}
+  .icobtn:hover{background:rgba(0,0,0,.05)}.icobtn.b:hover{color:var(--color-accent)}.icobtn.d:hover{color:#ff4d4f;background:rgba(255,77,79,.08)}
+  .icobtn svg{width:15px;height:15px}
+  .exp-row td{background:#fbfcff;border-bottom:1px solid var(--color-divider);padding:0}
+  .exp{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 24px;padding:14px 40px}
+  .exp .k{font-size:11px;color:var(--color-text-secondary);margin-bottom:3px}
+  .exp .v{font-size:13px}
+  .pager{display:flex;align-items:center;justify-content:space-between;padding:14px 16px}
+  .pager .info{font-size:12.5px;color:var(--color-text-secondary)}
+  .pages{display:flex;gap:4px}.pg{min-width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#42424a}.pg.on{background:rgba(0,113,227,.08);color:var(--color-accent);font-weight:600}.pg.arw{color:#bbb}
+  .callout{margin-top:22px;background:#f0f5ff;border:1px solid rgba(0,113,227,.14);border-radius:10px;padding:14px 16px;font-size:12.5px;color:#33415c;line-height:1.8}
+  .callout b{color:var(--color-accent)}
+  .callout .k{font-family:ui-monospace,Consolas,monospace;background:#fff;border:1px solid #dbe4f5;border-radius:4px;padding:0 5px;font-size:11.5px}
+  .callout table{margin-top:8px;font-size:12px}
+  .callout td{border:none;padding:3px 10px 3px 0;vertical-align:top}
+  .callout td:first-child{white-space:nowrap;color:#5a6b86;font-weight:600}
+</style>
+</head>
+<body>
+<div class="mock-banner">⚠️ 这是 <b>设计效果图（mockup）</b>，示例数据填充、方便直观确认方向 —— <b>不是真实系统、未连数据库</b>。左侧栏/顶栏与现系统一致，仅重做「邮局投递」正文；下方展示「投递名册」页，其余 5 个页签同套路。</div>
+<div class="app">
+  <aside class="sider">
+    <div class="logo"><div class="logo-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20V10M10 20V4M16 20v-7M20 20H3"/></svg></div><div class="logo-t"><span class="logo-title">发行系统</span><span class="logo-sub">中国经营报</span></div></div>
+    <nav class="menu">
+      <div class="mi disabled"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>仪表盘</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M20 20H3"/></svg>印数管理<svg class="chev ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+      <div class="mi parent-open"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h13v8H3zM16 10h3l2 3v2h-5M6.5 17a1.5 1.5 0 100 3 1.5 1.5 0 000-3m11 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/></svg>物流管理<svg class="chev ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></div>
+      <div class="mi child">ZTO-MF</div>
+      <div class="mi child">收件人</div>
+      <div class="mi child active">邮局投递</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>刊期表管理<svg class="chev ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-3M8 3v4h8V3M8 12h8M8 16h5"/></svg>订单管理<svg class="chev ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7l8-4 8 4-8 4-8-4zM4 7v10l8 4 8-4V7M12 11v10"/></svg>商品管理</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>客户管理</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-3M9 12h6M9 16h6M10 3v4h4V3"/></svg>合同管理</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M14.5 9c-.5-1-1.5-1.4-2.7-1.4-1.5 0-2.6.8-2.6 2 0 2.8 5.6 1.4 5.6 4.3 0 1.3-1.2 2.1-2.8 2.1-1.4 0-2.5-.5-3-1.6M12 6v12"/></svg>财务管理</div>
+    </nav>
+    <div class="sider-foot"><div class="ava"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div><div><div class="foot-n">admin</div><div class="foot-r">管理员</div></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="header">
+      <div class="h-trigger"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg></div>
+      <div class="h-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>搜索 订单/收报人/商品/期数</div>
+      <div class="h-right"><div class="h-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg></div><div class="h-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 015 .3c0 1.7-2.5 2-2.5 3.7M12 17h0"/></svg></div><div class="h-user"><div class="ava" style="width:30px;height:30px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div><div><div class="foot-n">admin</div><div class="foot-r">管理员</div></div></div></div>
+    </div>
+
+    <div class="content"><div class="canvas">
+      <h1 class="page-title">物流管理 · 邮局投递</h1>
+
+      <!-- tab bar (emoji icons kept) -->
+      <div class="tabbar">
+        <div class="tab on"><span class="em">📇</span>投递名册 <span class="cnt">128</span></div>
+        <div class="tab"><span class="em">📦</span>月度起投明细</div>
+        <div class="tab"><span class="em">📮</span>投诉工单 <span class="cnt">6</span></div>
+        <div class="tab"><span class="em">✏️</span>改地址 <span class="cnt">3</span></div>
+        <div class="tab"><span class="em">📞</span>回访</div>
+        <div class="tab"><span class="em">🧾</span>收款发票</div>
+      </div>
+
+      <p class="desc">邮局记录<b>不进「订单列表 / 客户管理」</b>，这里是它们完整名册的家（可搜可筛可导出）。每条 = 一条投递记录（<b>≠订单</b>）。</p>
+
+      <div class="card">
+        <!-- toolbar -->
+        <div class="toolbar">
+          <div class="sel">年度<svg class="cv" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="sel">起投月<svg class="cv" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="sel">渠道<svg class="cv" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="sel" style="width:170px">投递单位<svg class="cv" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="sel search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>搜索 姓名 / 编号</div>
+          <div class="tail">
+            <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V3M7 8l5-5 5 5M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>导入邮局明细</button>
+            <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新增投递记录</button>
+          </div>
+        </div>
+
+        <!-- optional light summary strip (NOT 4 big cards) -->
+        <div class="summary">
+          共 <b>128</b> 条投递记录 <span class="sep">·</span> 合计 <b>156</b> 份 <span class="sep">·</span> <b>9</b> 家投递单位 <span class="sep">·</span> <span class="warn"><b>12</b> 条未填投递单位</span>
+          <span class="opt">← 这条「概览行」可留可去（你说了大框非必需）</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:110px">编号</th>
+              <th>收报人</th>
+              <th>省/市/区 · 详细地址</th>
+              <th class="r" style="width:60px">份数</th>
+              <th style="width:150px">起止月</th>
+              <th style="width:150px">投递单位</th>
+              <th style="width:110px">渠道</th>
+              <th style="width:96px">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="row"><td class="no">2026-00128</td>
+              <td><div class="nm">王秀兰</div></td>
+              <td><div class="addr">北京市朝阳区建国路 88 号 SOHO 现代城 B 座 1201</div><div class="sub">138-1088-6621</div></td>
+              <td class="r"><span class="num">1</span></td>
+              <td><span class="cov">2026-01 ~ 2026-12</span></td>
+              <td><span class="tag t-blue">北京报刊发行局</span></td>
+              <td><span class="tag t-gray">CBJ+小程序</span></td>
+              <td><span class="acts"><span class="icobtn b" title="编辑"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d" title="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn b" title="收起"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></span></td>
+            </tr>
+            <tr class="exp-row"><td colspan="8"><div class="exp">
+              <div><div class="k">邮编</div><div class="v">100022</div></div>
+              <div><div class="k">产品</div><div class="v">中国经营报</div></div>
+              <div><div class="k">金额</div><div class="v">¥ 360.00</div></div>
+              <div><div class="k">业务员</div><div class="v">李娜</div></div>
+              <div><div class="k">电话</div><div class="v">138-1088-6621</div></div>
+              <div><div class="k">汇款名</div><div class="v">王秀兰</div></div>
+              <div><div class="k">平台订单号</div><div class="v" style="color:#0071e3">CBJ-20251228-0417</div></div>
+              <div><div class="k">起/止投日期</div><div class="v">2026-01-01 / 2026-12-31</div></div>
+            </div></td></tr>
+
+            <tr class="row"><td class="no">2026-00131</td>
+              <td><div class="nm">张国强</div></td>
+              <td><div class="addr">上海市浦东新区世纪大道 100 号环球金融中心 32F</div><div class="sub">139-2000-3388</div></td>
+              <td class="r"><span class="num">2</span></td>
+              <td><span class="cov">2026-03 ~ 2027-02</span></td>
+              <td><span class="tag t-blue">上海市邮政</span></td>
+              <td><span class="tag t-gray">中经报有赞</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+            <tr class="row"><td class="no">2026-00133</td>
+              <td><div class="nm">陈美华</div></td>
+              <td><div class="addr">广州市天河区体育西路 103 号维多利广场 A 塔</div><div class="sub">020-3888-1200</div></td>
+              <td class="r"><span class="num">1</span></td>
+              <td><span class="cov">2026-01 ~ 2026-06</span></td>
+              <td><span class="muted">—（未填）</span></td>
+              <td><span class="tag t-gray">淘宝发行部</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+            <tr class="row"><td class="no">2026-00140</td>
+              <td><div class="nm">刘建军</div></td>
+              <td><div class="addr">成都市锦江区红星路三段 1 号 IFS 国际金融中心</div><div class="sub">028-8512-6677</div></td>
+              <td class="r"><span class="num">1</span></td>
+              <td><span class="cov">2026-02 ~ 2027-01</span></td>
+              <td><span class="tag t-blue">成都报业发行</span></td>
+              <td><span class="tag t-gray">对公转账</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+            <tr class="row"><td class="no">2026-00142</td>
+              <td><div class="nm">赵丽</div></td>
+              <td><div class="addr">西安市雁塔区科技路 33 号高新国际商务中心</div><div class="sub">029-8833-2211</div></td>
+              <td class="r"><span class="num">3</span></td>
+              <td><span class="cov">2026-01 ~ 2026-12</span></td>
+              <td><span class="tag t-blue">西安市邮政</span></td>
+              <td><span class="tag t-gray">CBJ+小程序</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+            <tr class="row"><td class="no">2026-00145</td>
+              <td><div class="nm">孙伟</div></td>
+              <td><div class="addr">深圳市福田区福华三路 88 号财富大厦</div><div class="sub">0755-8266-9900</div></td>
+              <td class="r"><span class="num">1</span></td>
+              <td><span class="cov">2026-04 ~ 2027-03</span></td>
+              <td><span class="muted">—（未填）</span></td>
+              <td><span class="tag t-gray">中经报有赞</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="pager">
+          <div class="info">第 1-6 条 / 共 128 条</div>
+          <div class="pages"><div class="pg arw"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></div><div class="pg on">1</div><div class="pg">2</div><div class="pg">3</div><div class="pg">…</div><div class="pg">22</div><div class="pg arw"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div></div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <b>设计说明 / 待你拍板：</b><br>
+        ① <b>保留 emoji 页签</b>（📇📦📮✏️📞🧾），你喜欢这个小图标——只是把标题栏收拾干净，选中项蓝色下划线，页签后带条数小徽标（如 投诉 <span class="k">6</span>）。<br>
+        ② <b>砍掉横向滚动（每个页签都有这毛病）</b>：这里以「投递名册」示范——常驻列 编号 / 收报人 / 地址·电话 / 份数 / 起止月 / 投递单位 / 渠道 / 操作，其余（邮编·产品·金额·业务员·汇款名·平台订单号·起止投日期）收进<b>行内展开</b>（示例第一行已展开）。<br>
+        ③ <b>顶部不做 4 个大数据框</b>（按你说的）；只保留一条很轻的<b>「概览行」</b>：共 N 条 · 合计 M 份 · N 家投递单位 · <span style="color:#d46b08">X 条未填单位</span>（未填是要补的活）。这条你要是嫌多，也能整条去掉。<br>
+        ④ 每个页签沿用同一套（干净工具栏 + 精简表格 + 行内展开），各自保留原有功能：<br>
+        <table>
+          <tr><td>📦 月度起投明细</td><td>保持「左月份列表 + 右名册」主从结构（本就不错）；顶部指标条 收件人/总份数/投递单位 保留；生成当月明细 / 标记已发·冻结 / 导出 照旧。</td></tr>
+          <tr><td>📮 投诉工单</td><td>状态做成快筛（待处理/处理中/已解决 带计数）；处理时间线抽屉照旧；表格精简+展开。</td></tr>
+          <tr><td>✏️ 改地址</td><td>突出「待应用」工作队列（已关联未应用 = 能干的活）；「应用新地址」按钮保留；新旧姓名地址对比展开。</td></tr>
+          <tr><td>📞 回访</td><td>最轻，精简表格+展开长结果即可。</td></tr>
+          <tr><td>🧾 收款发票</td><td>可选「概览行」：合计金额/到款 · 未挂单数；挂单标记保留；发票明细展开。</td></tr>
+        </table>
+        <span style="color:#8a6d3b">开放问题：范围——先只做「投递名册」，还是 6 个页签一次做完？见下方选择。</span>
+      </div>
+    </div></div>
+  </div>
+</div>
+</body>
+</html>

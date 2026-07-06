@@ -63,7 +63,7 @@ export interface PostalDelivery {
   remittance_name: string | null;
 }
 
-export interface DeliveryListOut { rows: PostalDelivery[]; total: number }
+export interface DeliveryListOut { rows: PostalDelivery[]; total: number; summary: { total_copies: number; unit_count: number; missing_unit_count: number } }
 
 export interface DeliveryFilters {
   year?: number;
@@ -177,6 +177,7 @@ export interface PostalComplaint {
 export interface ComplaintListOut {
   rows: PostalComplaint[];
   total: number;
+  summary: { open: number; in_progress: number; resolved: number };
 }
 
 export interface ComplaintFilters {
@@ -246,7 +247,7 @@ export interface PostalAddressChange {
   notes: string | null;
 }
 
-export interface AddressChangeListOut { rows: PostalAddressChange[]; total: number }
+export interface AddressChangeListOut { rows: PostalAddressChange[]; total: number; summary: { pending_apply: number; unmatched: number; applied: number } }
 
 export interface AddrImportRow {
   external_order_no: string;
@@ -338,7 +339,7 @@ export interface PostalFinance {
   notes: string | null;
 }
 
-export interface FinanceListOut { rows: PostalFinance[]; total: number }
+export interface FinanceListOut { rows: PostalFinance[]; total: number; summary: { total_amount: number; total_net: number; unlinked_count: number } }
 
 export interface FinanceImportRow {
   payer_name: string;

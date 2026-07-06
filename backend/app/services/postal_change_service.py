@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -20,15 +20,13 @@ from app.services.address_service import normalize_address
 from app.services import postal_common as pc
 
 
-def list_address_changes(
+def _addr_query(
     db: Session,
     *,
     year: Optional[int] = None,
     applied: Optional[bool] = None,
     search: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 50,
-) -> Tuple[List[PostalAddressChange], int]:
+):
     q = db.query(PostalAddressChange)
     if year:
         q = q.filter(or_(
@@ -45,12 +43,45 @@ def list_address_changes(
             PostalAddressChange.new_name.contains(s),
             PostalAddressChange.external_order_no.contains(s),
         ))
+    return q
+
+
+def list_address_changes(
+    db: Session,
+    *,
+    year: Optional[int] = None,
+    applied: Optional[bool] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> Tuple[List[PostalAddressChange], int]:
+    q = _addr_query(db, year=year, applied=applied, search=search)
     total = q.count()
     rows = (
         q.order_by(PostalAddressChange.change_date.desc(), PostalAddressChange.id.desc())
         .offset(max(0, (page - 1) * page_size)).limit(page_size).all()
     )
     return rows, total
+
+
+def summarize_address_changes(
+    db: Session,
+    *,
+    year: Optional[int] = None,
+    search: Optional[str] = None,
+) -> dict:
+    """概览行：待应用（已关联未应用）/ 未匹配 / 已应用（忽略应用状态筛选）。"""
+    q = _addr_query(db, year=year, applied=None, search=search)
+    applied = q.filter(PostalAddressChange.applied_to_order.is_(True)).count()
+    pending_apply = q.filter(
+        PostalAddressChange.applied_to_order.is_(False),
+        PostalAddressChange.postal_delivery_id.isnot(None),
+    ).count()
+    unmatched = q.filter(
+        PostalAddressChange.applied_to_order.is_(False),
+        PostalAddressChange.postal_delivery_id.is_(None),
+    ).count()
+    return {"pending_apply": pending_apply, "unmatched": unmatched, "applied": applied}
 
 
 def list_follow_ups(

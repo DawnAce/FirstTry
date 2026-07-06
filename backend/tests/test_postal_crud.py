@@ -57,6 +57,25 @@ def _unit_id(client) -> int:
     return next(p["id"] for p in partners if p["name"] == "北京集订分送")
 
 
+def test_delivery_summary(client):
+    """概览行聚合：合计份数 / 投递单位数 / 未填单位条数（同筛选口径）。"""
+    unit = _unit_id(client)
+    client.post("/api/postal/deliveries", json={
+        "year": 2026, "delivery_no": "0801", "recipient_name": "甲",
+        "recipient_address": "地址A", "distribution_unit_id": unit, "copies": 2,
+    })
+    client.post("/api/postal/deliveries", json={
+        "year": 2026, "delivery_no": "0802", "recipient_name": "乙",
+        "recipient_address": "地址B", "copies": 3,  # 未填投递单位
+    })
+    body = client.get("/api/postal/deliveries?year=2026").json()
+    assert body["total"] == 2
+    s = body["summary"]
+    assert s["total_copies"] == 5
+    assert s["unit_count"] == 1
+    assert s["missing_unit_count"] == 1
+
+
 # --- 投递名册 --------------------------------------------------------
 
 def test_delivery_crud(client):

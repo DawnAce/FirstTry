@@ -3,7 +3,7 @@
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -15,7 +15,7 @@ from app.models import (
 from app.services import postal_common as pc
 
 
-def list_complaints(
+def _complaints_query(
     db: Session,
     *,
     year: Optional[int] = None,
@@ -23,9 +23,7 @@ def list_complaints(
     distribution_unit_id: Optional[int] = None,
     min_handling_count: Optional[int] = None,
     search: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 50,
-) -> Tuple[List[PostalComplaint], int]:
+):
     q = db.query(PostalComplaint)
     if year:
         q = q.filter(PostalComplaint.year == year)
@@ -43,6 +41,24 @@ def list_complaints(
                 PostalComplaint.external_order_no.contains(s),
             )
         )
+    return q
+
+
+def list_complaints(
+    db: Session,
+    *,
+    year: Optional[int] = None,
+    status: Optional[str] = None,
+    distribution_unit_id: Optional[int] = None,
+    min_handling_count: Optional[int] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> Tuple[List[PostalComplaint], int]:
+    q = _complaints_query(
+        db, year=year, status=status, distribution_unit_id=distribution_unit_id,
+        min_handling_count=min_handling_count, search=search,
+    )
     total = q.count()
     rows = (
         q.order_by(PostalComplaint.complaint_date.desc(), PostalComplaint.id.desc())
@@ -51,6 +67,35 @@ def list_complaints(
         .all()
     )
     return rows, total
+
+
+def summarize_complaints(
+    db: Session,
+    *,
+    year: Optional[int] = None,
+    distribution_unit_id: Optional[int] = None,
+    min_handling_count: Optional[int] = None,
+    search: Optional[str] = None,
+) -> dict:
+    """概览行：按状态计数（忽略状态筛选，用作快筛计数）。"""
+    q = _complaints_query(
+        db, year=year, status=None, distribution_unit_id=distribution_unit_id,
+        min_handling_count=min_handling_count, search=search,
+    )
+    rows = (
+        q.with_entities(PostalComplaint.status, func.count(PostalComplaint.id))
+        .group_by(PostalComplaint.status)
+        .all()
+    )
+    counts = {s.value: 0 for s in PostalComplaintStatus}
+    for status_val, cnt in rows:
+        key = status_val.value if hasattr(status_val, "value") else str(status_val)
+        counts[key] = int(cnt)
+    return {
+        "open": counts.get("open", 0),
+        "in_progress": counts.get("in_progress", 0),
+        "resolved": counts.get("resolved", 0),
+    }
 
 
 # --- 手工 CRUD --------------------------------------------------------

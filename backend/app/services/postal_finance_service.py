@@ -3,23 +3,21 @@
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Order, PostalFinance
 from app.services import postal_common as pc
 
 
-def list_finance(
+def _finance_query(
     db: Session,
     *,
     platform: Optional[str] = None,
     tax_category: Optional[str] = None,
     linked: Optional[bool] = None,
     search: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 50,
-) -> Tuple[List[PostalFinance], int]:
+):
     q = db.query(PostalFinance)
     if platform:
         q = q.filter(PostalFinance.platform == platform)
@@ -34,12 +32,45 @@ def list_finance(
             PostalFinance.buyer_title.contains(s),
             PostalFinance.external_order_no.contains(s),
         ))
+    return q
+
+
+def list_finance(
+    db: Session,
+    *,
+    platform: Optional[str] = None,
+    tax_category: Optional[str] = None,
+    linked: Optional[bool] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> Tuple[List[PostalFinance], int]:
+    q = _finance_query(db, platform=platform, tax_category=tax_category, linked=linked, search=search)
     total = q.count()
     rows = (
         q.order_by(PostalFinance.collected_at.desc(), PostalFinance.id.desc())
         .offset(max(0, (page - 1) * page_size)).limit(page_size).all()
     )
     return rows, total
+
+
+def summarize_finance(
+    db: Session,
+    *,
+    platform: Optional[str] = None,
+    tax_category: Optional[str] = None,
+    search: Optional[str] = None,
+) -> dict:
+    """概览行：合计金额 / 合计到款 / 未挂单数（忽略挂单筛选）。"""
+    q = _finance_query(db, platform=platform, tax_category=tax_category, linked=None, search=search)
+    total_amount = q.with_entities(func.coalesce(func.sum(PostalFinance.amount), 0)).scalar() or 0
+    total_net = q.with_entities(func.coalesce(func.sum(PostalFinance.net_amount), 0)).scalar() or 0
+    unlinked_count = q.filter(PostalFinance.order_id.is_(None)).count()
+    return {
+        "total_amount": float(total_amount),
+        "total_net": float(total_net),
+        "unlinked_count": int(unlinked_count),
+    }
 
 
 # --- 手工 CRUD --------------------------------------------------------
