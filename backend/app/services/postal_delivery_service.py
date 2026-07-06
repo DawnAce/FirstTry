@@ -7,7 +7,7 @@ from datetime import date
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -20,7 +20,7 @@ from app.models.postal_delivery import PostalDeliverySourceType
 from app.services import postal_common as pc
 
 
-def list_deliveries(
+def _deliveries_query(
     db: Session,
     *,
     year: Optional[int] = None,
@@ -28,9 +28,7 @@ def list_deliveries(
     distribution_unit_id: Optional[int] = None,
     month: Optional[int] = None,
     search: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 50,
-) -> Tuple[List[PostalDelivery], int]:
+):
     q = db.query(PostalDelivery)
     if year:
         q = q.filter(PostalDelivery.year == year)
@@ -52,6 +50,24 @@ def list_deliveries(
             PostalDelivery.recipient_name.contains(s),
             PostalDelivery.delivery_no.contains(s),
         ))
+    return q
+
+
+def list_deliveries(
+    db: Session,
+    *,
+    year: Optional[int] = None,
+    channel: Optional[str] = None,
+    distribution_unit_id: Optional[int] = None,
+    month: Optional[int] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> Tuple[List[PostalDelivery], int]:
+    q = _deliveries_query(
+        db, year=year, channel=channel,
+        distribution_unit_id=distribution_unit_id, month=month, search=search,
+    )
     total = q.count()
     rows = (
         q.order_by(PostalDelivery.year.desc(), PostalDelivery.id.desc())
@@ -60,6 +76,30 @@ def list_deliveries(
         .all()
     )
     return rows, total
+
+
+def summarize_deliveries(
+    db: Session,
+    *,
+    year: Optional[int] = None,
+    channel: Optional[str] = None,
+    distribution_unit_id: Optional[int] = None,
+    month: Optional[int] = None,
+    search: Optional[str] = None,
+) -> dict:
+    """概览行：合计份数 / 投递单位数 / 未填投递单位条数（同筛选口径）。"""
+    q = _deliveries_query(
+        db, year=year, channel=channel,
+        distribution_unit_id=distribution_unit_id, month=month, search=search,
+    )
+    total_copies = q.with_entities(func.coalesce(func.sum(PostalDelivery.copies), 0)).scalar() or 0
+    unit_count = q.with_entities(func.count(func.distinct(PostalDelivery.distribution_unit_id))).scalar() or 0
+    missing_unit_count = q.filter(PostalDelivery.distribution_unit_id.is_(None)).count()
+    return {
+        "total_copies": int(total_copies),
+        "unit_count": int(unit_count),
+        "missing_unit_count": int(missing_unit_count),
+    }
 
 
 # --- 手工 CRUD --------------------------------------------------------

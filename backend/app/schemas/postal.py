@@ -83,9 +83,16 @@ class DeliveryOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DeliverySummary(BaseModel):
+    total_copies: int = 0
+    unit_count: int = 0
+    missing_unit_count: int = 0
+
+
 class DeliveryListOut(BaseModel):
     rows: List[DeliveryOut]
     total: int
+    summary: DeliverySummary = DeliverySummary()
 
 
 class ComplaintOut(BaseModel):
@@ -114,9 +121,16 @@ class ComplaintOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ComplaintSummary(BaseModel):
+    open: int = 0
+    in_progress: int = 0
+    resolved: int = 0
+
+
 class ComplaintListOut(BaseModel):
     rows: List[ComplaintOut]
     total: int
+    summary: ComplaintSummary = ComplaintSummary()
 
 
 class AddressChangeOut(BaseModel):
@@ -145,9 +159,16 @@ class AddressChangeOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AddressChangeSummary(BaseModel):
+    pending_apply: int = 0
+    unmatched: int = 0
+    applied: int = 0
+
+
 class AddressChangeListOut(BaseModel):
     rows: List[AddressChangeOut]
     total: int
+    summary: AddressChangeSummary = AddressChangeSummary()
 
 
 class FollowUpOut(BaseModel):
@@ -191,9 +212,16 @@ class FinanceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FinanceSummary(BaseModel):
+    total_amount: float = 0
+    total_net: float = 0
+    unlinked_count: int = 0
+
+
 class FinanceListOut(BaseModel):
     rows: List[FinanceOut]
     total: int
+    summary: FinanceSummary = FinanceSummary()
 
 
 # =====================================================================

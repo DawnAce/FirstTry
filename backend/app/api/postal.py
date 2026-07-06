@@ -168,7 +168,11 @@ def list_deliveries(
         o = DeliveryOut.model_validate(r)
         o.distribution_unit_name = names.get(r.distribution_unit_id)
         out.append(o)
-    return DeliveryListOut(rows=out, total=total)
+    summary = delivery_svc.summarize_deliveries(
+        db, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
+        month=month, search=search,
+    )
+    return DeliveryListOut(rows=out, total=total, summary=summary)
 
 
 @router.post("/deliveries", response_model=DeliveryOut, status_code=201)
@@ -298,7 +302,11 @@ def list_complaints(
         o = ComplaintOut.model_validate(r)
         o.routed_unit_name = names.get(r.routed_unit_id)
         out.append(o)
-    return ComplaintListOut(rows=out, total=total)
+    summary = complaint_svc.summarize_complaints(
+        db, year=year, distribution_unit_id=distribution_unit_id,
+        min_handling_count=min_handling_count, search=search,
+    )
+    return ComplaintListOut(rows=out, total=total, summary=summary)
 
 
 @router.post("/complaints/import/preview")
@@ -405,7 +413,8 @@ def list_address_changes(
     rows, total = change_svc.list_address_changes(
         db, year=year, applied=applied, search=search, page=page, page_size=page_size,
     )
-    return AddressChangeListOut(rows=[AddressChangeOut.model_validate(r) for r in rows], total=total)
+    summary = change_svc.summarize_address_changes(db, year=year, search=search)
+    return AddressChangeListOut(rows=[AddressChangeOut.model_validate(r) for r in rows], total=total, summary=summary)
 
 
 @router.post("/address-changes/{change_id}/apply", response_model=AddressChangeOut)
@@ -541,7 +550,8 @@ def list_finance(
         db, platform=platform, tax_category=tax_category, linked=linked,
         search=search, page=page, page_size=page_size,
     )
-    return FinanceListOut(rows=[FinanceOut.model_validate(r) for r in rows], total=total)
+    summary = finance_svc.summarize_finance(db, platform=platform, tax_category=tax_category, search=search)
+    return FinanceListOut(rows=[FinanceOut.model_validate(r) for r in rows], total=total, summary=summary)
 
 
 @router.post("/finance/import/preview")
