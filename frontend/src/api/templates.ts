@@ -27,3 +27,8 @@ export const updateTemplate = (id: number, data: TemplateUpdate): Promise<AxiosR
 
 export const deleteTemplate = (id: number): Promise<AxiosResponse<void>> =>
   api.delete(`/templates/${id}`);
+
+export const reorderTemplates = (
+  items: { id: number; sort_order: number }[],
+): Promise<AxiosResponse<void>> =>
+  api.post('/templates/reorder', { items });

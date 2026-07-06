@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
 from app.models import ReportItemTemplate
-from app.schemas.template import TemplateOut, TemplateCreate, TemplateUpdate
+from app.schemas.template import TemplateOut, TemplateCreate, TemplateUpdate, TemplateReorder
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -39,6 +39,22 @@ def create_template(body: TemplateCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(template)
     return template
+
+
+@router.post("/reorder", status_code=204)
+def reorder_templates(body: TemplateReorder, db: Session = Depends(get_db)):
+    """Batch-update sort_order for drag-and-drop reordering."""
+    ids = [item.id for item in body.items]
+    if not ids:
+        return
+    rows = db.query(ReportItemTemplate).filter(ReportItemTemplate.id.in_(ids)).all()
+    by_id = {row.id: row for row in rows}
+    missing = [i for i in ids if i not in by_id]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"模板不存在: {missing}")
+    for item in body.items:
+        by_id[item.id].sort_order = item.sort_order
+    db.commit()
 
 
 @router.put("/{template_id}", response_model=TemplateOut)
