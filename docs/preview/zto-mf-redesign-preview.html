@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>物流管理 · ZTO-MF · 重新设计效果图</title>
+<style>
+  :root{
+    --color-bg:#f5f5f7; --color-card:#fff; --color-accent:#0071e3; --color-accent-hover:#0077ed;
+    --color-text-primary:#1d1d1f; --color-text-secondary:#86868b;
+    --color-border:rgba(0,0,0,.06); --color-divider:rgba(0,0,0,.04);
+    --shadow-card:0 1px 3px rgba(0,0,0,.04),0 1px 2px rgba(0,0,0,.06);
+    --radius-card:12px; --radius-input:8px; --radius-tag:20px;
+    --orange:#fa8c16; --green:#52c41a; --blue:#0071e3; --purple:#722ed1; --red:#ff4d4f; --cyan:#13c2c2;
+    --font:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei','Helvetica Neue',sans-serif;
+  }
+  *{box-sizing:border-box;font-family:var(--font)}
+  body{margin:0;background:var(--color-bg);color:var(--color-text-primary);-webkit-font-smoothing:antialiased}
+  svg{display:block}
+  .mock-banner{background:#fffbe6;border-bottom:1px solid #ffe58f;padding:8px 20px;font-size:12.5px;color:#874d00;text-align:center}
+  .mock-banner b{color:#613400}
+  .app{display:flex;min-height:100vh}
+  /* sidebar */
+  .sider{width:220px;background:var(--color-card);border-right:1px solid var(--color-border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+  .logo{height:56px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--color-divider)}
+  .logo-icon{width:32px;height:32px;border-radius:8px;background:var(--color-accent);display:flex;align-items:center;justify-content:center;color:#fff}
+  .logo-t{display:flex;flex-direction:column;line-height:1.2}
+  .logo-title{font-size:15px;font-weight:700;letter-spacing:-.01em}
+  .logo-sub{font-size:11px;color:var(--color-text-secondary)}
+  .menu{flex:1;padding:8px;overflow-y:auto}
+  .mi{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;margin:2px 0;border-radius:var(--radius-input);font-size:14px;color:#42424a;cursor:default}
+  .mi .chev{margin-left:auto;color:#bbb}
+  .mi.disabled{color:#c2c2c8}
+  .mi.child{height:36px;padding-left:40px;font-size:13.5px;color:#5a5a62}
+  .mi.child.active{background:rgba(0,113,227,.08);color:var(--color-accent);font-weight:600}
+  .mi.parent-open{color:var(--color-accent);font-weight:600}
+  .mi.parent-open .ic{color:var(--color-accent)}
+  .ic{width:16px;height:16px;color:#8c8c94;flex-shrink:0}
+  .sider-foot{border-top:1px solid var(--color-divider);padding:12px;display:flex;align-items:center;gap:10px}
+  .ava{width:32px;height:32px;border-radius:50%;background:var(--color-accent);color:#fff;display:flex;align-items:center;justify-content:center}
+  .foot-t{line-height:1.3}.foot-n{font-size:13px;font-weight:500}.foot-r{font-size:11px;color:var(--color-text-secondary)}
+  /* main */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .header{height:56px;background:var(--color-card);border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:16px;padding:0 20px;position:sticky;top:0;z-index:10}
+  .h-trigger,.h-ico{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary)}
+  .h-search{flex:0 0 340px;height:36px;background:var(--color-bg);border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 12px;color:#a0a0a6;font-size:13px}
+  .h-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .h-user{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:8px}
+  .content{padding:24px 28px;flex:1}.canvas{max-width:1240px;margin:0 auto}
+  /* page head + issue bar */
+  .page-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:16px}
+  .page-title{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:0;display:flex;align-items:center;gap:8px}
+  .page-sub{font-size:13px;color:var(--color-text-secondary);margin:6px 0 0}
+  .issuebar{display:flex;align-items:center;gap:10px;background:#fff;border-radius:var(--radius-card);box-shadow:var(--shadow-card);padding:10px 14px;margin-bottom:16px}
+  .field{height:34px;border:1px solid var(--color-border);border-radius:8px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;font-size:13px;color:#42424a;background:#fff}
+  .field .cal,.field .cv{color:#a0a0a6}
+  .field.k{font-weight:600;color:var(--color-text-primary)}
+  .issuebar .nav-ib{width:32px;height:32px;border:1px solid var(--color-border);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#8c8c94}
+  .issuebar .sp{margin-left:auto;font-size:12.5px;color:var(--color-text-secondary)}
+  /* stat cards */
+  .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
+  .stat-card{background:#fff;border-radius:var(--radius-card);box-shadow:var(--shadow-card);padding:16px;display:flex;align-items:flex-start;gap:12px}
+  .stat-ico{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .stat-label{font-size:12px;color:var(--color-text-secondary);font-weight:500;margin-bottom:4px}
+  .stat-value{font-size:22px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
+  .stat-value .suf{font-size:13px;font-weight:500;color:var(--color-text-secondary);margin-left:2px}
+  .stat-sub{font-size:11px;color:var(--color-text-secondary);margin-top:5px}
+  .stat-card.hero-ok{background:linear-gradient(135deg,#f6ffed,#eaffe0);box-shadow:0 1px 3px rgba(82,196,26,.15);border:1px solid #b7eb8f}
+  .stat-card.hero-bad{background:linear-gradient(135deg,#fff1f0,#ffece9);border:1px solid #ffccc7}
+  .hero-ok .stat-value{color:#389e0d}.hero-bad .stat-value{color:#cf1322}
+  .hero-ok .stat-sub{color:#52a327}
+  /* card + toolbar */
+  .card{background:#fff;border-radius:var(--radius-card);box-shadow:var(--shadow-card);overflow:hidden}
+  .toolbar{display:flex;align-items:center;gap:10px;padding:14px 16px;flex-wrap:wrap;border-bottom:1px solid var(--color-divider)}
+  .sel{height:34px;border:1px solid var(--color-border);border-radius:8px;display:inline-flex;align-items:center;gap:8px;padding:0 10px;font-size:13px;color:#a0a0a6;background:#fff}
+  .sel .cv{margin-left:2px}
+  .search{width:190px}
+  .more{color:var(--color-accent);font-size:13px;cursor:default;display:inline-flex;align-items:center;gap:4px}
+  .tb-tail{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .tb-count{font-size:13px;color:var(--color-text-secondary)}
+  .tb-count b{color:var(--color-text-primary);font-weight:600}
+  .btn{height:34px;border-radius:8px;padding:0 14px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;cursor:default;border:1px solid var(--color-border);background:#fff;color:var(--color-text-primary)}
+  .btn.primary{background:var(--color-accent);border-color:var(--color-accent);color:#fff}
+  .btn.danger{color:var(--red);border-color:#ffccc7}
+  .btn svg{width:14px;height:14px}
+  /* table */
+  table{width:100%;border-collapse:collapse}
+  thead th{background:#fafafa;text-align:left;font-size:12px;font-weight:600;color:var(--color-text-secondary);letter-spacing:.02em;padding:11px 14px;border-bottom:1px solid var(--color-divider);white-space:nowrap}
+  thead th.r{text-align:right}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--color-divider);font-size:13.5px;vertical-align:middle}
+  tbody td.r{text-align:right}
+  tbody tr.row:hover td{background:#fafafa}
+  .cbx{width:15px;height:15px;border:1.5px solid #c8c8ce;border-radius:4px;display:inline-block;vertical-align:middle}
+  .cbx.on{background:var(--color-accent);border-color:var(--color-accent);position:relative}
+  .cbx.on::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .nm{font-weight:600}
+  .sub{font-size:11px;color:var(--color-text-secondary);margin-top:2px}
+  .addr{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .num{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+  .tag{display:inline-flex;align-items:center;border-radius:var(--radius-tag);padding:1px 9px;font-size:11.5px;font-weight:500;line-height:18px;white-space:nowrap}
+  .t-blue{background:#e6f4ff;color:#0071e3}.t-green{background:#f6ffed;color:#389e0d}.t-purple{background:#f9f0ff;color:#722ed1}
+  .t-orange{background:#fff7e6;color:#d46b08}.t-gray{background:#f2f2f4;color:#8c8c94}.t-cyan{background:#e6fffb;color:#08979c}.t-red{background:#fff1f0;color:#cf1322}
+  .dot{width:6px;height:6px;border-radius:50%;margin-right:5px}
+  .st{display:inline-flex;align-items:center;font-size:12.5px}
+  .mk{display:inline-flex;flex-direction:column;gap:3px;align-items:flex-start}
+  .acts{display:inline-flex;gap:2px}
+  .icobtn{width:28px;height:28px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:#8c8c94;cursor:default}
+  .icobtn:hover{background:rgba(0,0,0,.05)}
+  .icobtn.b:hover{color:var(--color-accent)}.icobtn.d:hover{color:var(--red);background:rgba(255,77,79,.08)}
+  .icobtn svg{width:15px;height:15px}
+  .exp-row td{background:#fbfcff;border-bottom:1px solid var(--color-divider);padding:0}
+  .exp{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 24px;padding:14px 46px}
+  .exp .cell .k{font-size:11px;color:var(--color-text-secondary);margin-bottom:2px}
+  .exp .cell .v{font-size:13px}
+  .pager{display:flex;align-items:center;justify-content:space-between;padding:14px 16px}
+  .pager .info{font-size:12.5px;color:var(--color-text-secondary)}
+  .pages{display:flex;gap:4px}.pg{min-width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#42424a}.pg.on{background:rgba(0,113,227,.08);color:var(--color-accent);font-weight:600}.pg.arw{color:#bbb}
+  .callout{margin-top:22px;background:#f0f5ff;border:1px solid rgba(0,113,227,.14);border-radius:10px;padding:14px 16px;font-size:12.5px;color:#33415c;line-height:1.75}
+  .callout b{color:var(--color-accent)}
+  .callout .k{font-family:ui-monospace,Consolas,monospace;background:#fff;border:1px solid #dbe4f5;border-radius:4px;padding:0 5px;font-size:11.5px}
+  .batchbar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#eef5ff;border-bottom:1px solid #d6e6ff;font-size:13px}
+  .batchbar .lbl{color:#33415c;font-weight:600}
+  .bbtn{height:28px;border-radius:7px;padding:0 10px;font-size:12.5px;border:1px solid var(--color-border);background:#fff;color:#42424a;display:inline-flex;align-items:center}
+  .bbtn.d{color:var(--red);border-color:#ffccc7}
+</style>
+</head>
+<body>
+<div class="mock-banner">⚠️ 这是 <b>设计效果图（mockup）</b>，示例数据填充、方便直观确认方向 —— <b>不是真实系统、未连数据库</b>。左侧栏/顶栏与现系统一致，仅重做「物流管理 · ZTO-MF」正文。</div>
+<div class="app">
+  <aside class="sider">
+    <div class="logo"><div class="logo-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20V10M10 20V4M16 20v-7M20 20H3"/></svg></div><div class="logo-t"><span class="logo-title">发行系统</span><span class="logo-sub">中国经营报</span></div></div>
+    <nav class="menu">
+      <div class="mi disabled"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>仪表盘</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M20 20H3"/></svg>印数管理<svg class="chev ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+      <div class="mi parent-open"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h13v8H3zM16 10h3l2 3v2h-5M6.5 17a1.5 1.5 0 100 3 1.5 1.5 0 000-3m11 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/></svg>物流管理<svg class="chev ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></div>
+      <div class="mi child active">ZTO-MF</div>
+      <div class="mi child">收件人</div>
+      <div class="mi child">邮局投递</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>刊期表管理<svg class="chev ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-3M8 3v4h8V3M8 12h8M8 16h5"/></svg>订单管理<svg class="chev ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7l8-4 8 4-8 4-8-4zM4 7v10l8 4 8-4V7M12 11v10"/></svg>商品管理</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>客户管理</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-3M9 12h6M9 16h6M10 3v4h4V3"/></svg>合同管理</div>
+      <div class="mi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M14.5 9c-.5-1-1.5-1.4-2.7-1.4-1.5 0-2.6.8-2.6 2 0 2.8 5.6 1.4 5.6 4.3 0 1.3-1.2 2.1-2.8 2.1-1.4 0-2.5-.5-3-1.6M12 6v12"/></svg>财务管理</div>
+    </nav>
+    <div class="sider-foot"><div class="ava"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div><div class="foot-t"><div class="foot-n">admin</div><div class="foot-r">管理员</div></div></div>
+  </aside>
+
+  <div class="main">
+    <div class="header">
+      <div class="h-trigger"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h18M3 18h18"/></svg></div>
+      <div class="h-search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>搜索 订单/收报人/商品/期数</div>
+      <div class="h-right"><div class="h-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg></div><div class="h-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 015 .3c0 1.7-2.5 2-2.5 3.7M12 17h0"/></svg></div><div class="h-user"><div class="ava" style="width:30px;height:30px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div><div class="foot-t"><div class="foot-n">admin</div><div class="foot-r">管理员</div></div></div></div>
+    </div>
+
+    <div class="content"><div class="canvas">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">物流管理 · ZTO-MF
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#86868b" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h0"/></svg>
+          </h1>
+          <p class="page-sub">按期管理中通（ZTO）发货明细，并与「报数」中通物流公司合计对账。</p>
+        </div>
+      </div>
+
+      <!-- issue selector bar -->
+      <div class="issuebar">
+        <div class="nav-ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></div>
+        <div class="field k"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8c8c94" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>第 2654 期 · 2026-06-01（周一）<svg class="cv" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+        <div class="nav-ib"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+        <span class="sp">草稿 · 尚未确认</span>
+      </div>
+
+      <!-- reconciliation hero stat cards -->
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-ico" style="background:rgba(0,113,227,.08)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="1.8"><path d="M8 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-3M8 3v4h8V3M8 12h8M8 16h5"/></svg></div>
+          <div><div class="stat-label">报数 · 中通合计</div><div class="stat-value">1,473<span class="suf">份</span></div><div class="stat-sub">报数编辑页「中通物流公司」合计</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-ico" style="background:rgba(19,194,194,.10)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#13c2c2" stroke-width="1.8"><path d="M3 7h13v8H3zM16 10h3l2 3v2h-5M6.5 17a1.5 1.5 0 100 3 1.5 1.5 0 000-3m11 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/></svg></div>
+          <div><div class="stat-label">发货明细 · 合计</div><div class="stat-value">1,473<span class="suf">份</span></div><div class="stat-sub">当前 128 条明细份数求和</div></div>
+        </div>
+        <div class="stat-card hero-ok">
+          <div class="stat-ico" style="background:rgba(82,196,26,.14)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#389e0d" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5L16 9"/></svg></div>
+          <div><div class="stat-label">对账 · 差值</div><div class="stat-value">✓ 一致</div><div class="stat-sub">报数与发货明细一致（差 0 份）</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-ico" style="background:rgba(114,46,209,.08)"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#722ed1" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></div>
+          <div><div class="stat-label">记录数</div><div class="stat-value">128<span class="suf">条</span></div><div class="stat-sub">6 个渠道 · 12 家签约公司</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <!-- filter toolbar -->
+        <div class="toolbar">
+          <div class="sel">渠道<svg class="cv" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="sel" style="width:220px">签约公司<svg class="cv" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="sel">状态<svg class="cv" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="sel search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>搜索姓名</div>
+          <span class="more"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>更多筛选（频率 / 运输方式 / 子渠道）</span>
+          <div class="tb-tail">
+            <span class="tb-count">共 <b>128</b> 条 · 合计 <b>1,473</b> 份</span>
+            <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M8 11l4 4 4-4M4 19h16"/></svg>导出</button>
+            <button class="btn danger">清空本期</button>
+            <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新增</button>
+          </div>
+        </div>
+
+        <!-- batch bar (shown when rows selected) -->
+        <div class="batchbar">
+          <span class="cbx on"></span><span class="lbl">已选 2 条</span>
+          <button class="bbtn">设为正常</button><button class="bbtn d">设为停发</button>
+          <button class="bbtn">改截止日期</button><button class="bbtn d">批量删除</button>
+          <span style="color:#8ca0c0;margin-left:4px;cursor:default">取消选择</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px"><span class="cbx"></span></th>
+              <th>姓名 / 渠道</th>
+              <th>签约公司</th>
+              <th>收件信息（地址 · 电话）</th>
+              <th class="r" style="width:70px">份数</th>
+              <th style="width:120px">来源 · 同步</th>
+              <th style="width:74px">状态</th>
+              <th style="width:120px">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- expanded row -->
+            <tr class="row"><td><span class="cbx on"></span></td>
+              <td><div class="nm">北京悦途出行</div><div class="sub"><span class="tag t-blue">渠道订阅</span></div></td>
+              <td>北京悦途出行</td>
+              <td><div class="addr">北京市朝阳区建国路88号SOHO现代城B座1201</div><div class="sub">010-8588-xxxx</div></td>
+              <td class="r"><span class="num">200</span></td>
+              <td><div class="mk"><span class="tag t-blue">订单生成</span><span class="tag t-green">已同步</span></div></td>
+              <td><span class="st"><span class="dot" style="background:#52c41a"></span>正常</span></td>
+              <td><span class="acts"><span class="icobtn b" title="编辑"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d" title="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn" title="操作日志"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="icobtn b" title="收起"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></span></td>
+            </tr>
+            <tr class="exp-row"><td colspan="8"><div class="exp">
+              <div class="cell"><div class="k">子渠道</div><div class="v">—</div></div>
+              <div class="cell"><div class="k">频率</div><div class="v">周</div></div>
+              <div class="cell"><div class="k">运输方式</div><div class="v"><span class="tag t-blue">中通物流</span></div></div>
+              <div class="cell"><div class="k">截止日期</div><div class="v"><span class="tag" style="background:#000;color:#fff;border-radius:4px">长期</span></div></div>
+              <div class="cell"><div class="k">发货时间</div><div class="v">—</div></div>
+              <div class="cell"><div class="k">站点 / 站厅</div><div class="v">—</div></div>
+              <div class="cell"><div class="k">来源订单</div><div class="v" style="color:#0071e3">#CBJ-20260528-0041</div></div>
+              <div class="cell"><div class="k">备注</div><div class="v">大客户，整包配送</div></div>
+            </div></td></tr>
+
+            <tr class="row"><td><span class="cbx on"></span></td>
+              <td><div class="nm">王建国</div><div class="sub"><span class="tag t-blue">对公订阅</span></div></td>
+              <td>北京银行</td>
+              <td><div class="addr">北京市西城区金融大街35号国际企业大厦A座</div><div class="sub">138-1088-xxxx</div></td>
+              <td class="r"><span class="num">5</span></td>
+              <td><div class="mk"><span class="tag t-blue">订单生成</span><span class="tag t-green">已同步</span></div></td>
+              <td><span class="st"><span class="dot" style="background:#52c41a"></span>正常</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+
+            <tr class="row"><td><span class="cbx"></span></td>
+              <td><div class="nm">李明</div><div class="sub"><span class="tag t-green">个人订阅</span></div></td>
+              <td>—</td>
+              <td><div class="addr">上海市浦东新区世纪大道100号环球金融中心</div><div class="sub">139-2000-xxxx</div></td>
+              <td class="r"><span class="num">1</span></td>
+              <td><div class="mk"><span class="tag t-gray">手工</span><span class="tag t-orange">人工修改</span></div></td>
+              <td><span class="st"><span class="dot" style="background:#52c41a"></span>正常</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+
+            <tr class="row"><td><span class="cbx"></span></td>
+              <td><div class="nm">张伟</div><div class="sub"><span class="tag t-purple">记者站</span></div></td>
+              <td>—</td>
+              <td><div class="addr">广州市天河区体育西路103号维多利广场</div><div class="sub">020-3888-xxxx</div></td>
+              <td class="r"><span class="num">20</span></td>
+              <td><div class="mk"><span class="tag t-gray">历史导入</span><span class="tag t-green">已同步</span></div></td>
+              <td><span class="st"><span class="dot" style="background:#52c41a"></span>正常</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+
+            <tr class="row"><td><span class="cbx"></span></td>
+              <td><div class="nm">陈晓</div><div class="sub"><span class="tag t-orange">赠阅</span> <span class="tag t-orange">监管</span></div></td>
+              <td>—</td>
+              <td><div class="addr">北京市海淀区中关村南大街5号理工科技大厦</div><div class="sub">136-0100-xxxx</div></td>
+              <td class="r"><span class="num">2</span></td>
+              <td><div class="mk"><span class="tag t-gray">手工</span><span class="tag t-red">孤立</span></div></td>
+              <td><span class="st"><span class="dot" style="background:#ff4d4f"></span>停发</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+
+            <tr class="row"><td><span class="cbx"></span></td>
+              <td><div class="nm">库房留存</div><div class="sub"><span class="tag t-gray">库房留存</span></div></td>
+              <td>—</td>
+              <td><div class="addr">印厂 · 成品库</div><div class="sub">—</div></td>
+              <td class="r"><span class="num">50</span></td>
+              <td><div class="mk"><span class="tag t-gray">手工</span><span class="tag t-green">已同步</span></div></td>
+              <td><span class="st"><span class="dot" style="background:#52c41a"></span>正常</span></td>
+              <td><span class="acts"><span class="icobtn b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="icobtn d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="icobtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="pager">
+          <div class="info">第 1-6 条 / 共 128 条</div>
+          <div class="pages"><div class="pg arw"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></div><div class="pg on">1</div><div class="pg">2</div><div class="pg">3</div><div class="pg">…</div><div class="pg">7</div><div class="pg arw"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div></div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <b>设计说明 / 待你拍板：</b><br>
+        ① <b>把「对账」升级为主角</b>：顶部 4 张统计卡直接摆出 <b>报数中通合计 = 发货明细合计 → 差值（一致/不一致）</b>+ 记录数。这页的核心职责就是这道等式；现在它只在不一致时冒一条黄条，改成一眼可见。<b>不一致</b>时第 3 张卡变红、显示「✗ 差 N 份」（就是你截图里 1,473 vs 0 的情形）。<br>
+        ② <b>砍掉横向滚动</b>：原表 16 列铺满、必须左右拖。新表只留高频列（姓名·渠道 / 签约公司 / 收件信息 / 份数 / 来源·同步 / 状态 / 操作），其余（子渠道·频率·运输方式·发货时间·截止日期·站点·来源订单·备注）收进<b>行内展开</b>（点行尾 ⌄，示例第一行已展开）。地址+电话合成一格、给足宽度。<br>
+        ③ 期号选择独立成一条<b>期次条</b>（＜ 上一期 / 下一期 ＞ 快速翻期），比原来挤在筛选里更顺手。筛选精简为常用项 + 「更多筛选」。<br>
+        ④ 原有能力全保留：多选批量（设为正常/停发·改截止·批量删）、导出、清空本期、编辑/删除/操作日志、以及确认后的「中通校验快照」（确认过的期次在卡片下方展开显示确认时 vs 当前的差异）。
+      </div>
+    </div></div>
+  </div>
+</div>
+</body>
+</html>
