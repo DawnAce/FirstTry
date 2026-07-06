@@ -522,7 +522,7 @@ FirstTry/
 
 **起投月归批**：`postal_batch_service.generate_batch(year, month)` 收集 `coverage_start_date` 落在 `[当月1号, 次月1号)` 的**投递记录**（不再 JOIN 订单目标），冻结成行；省/市/区优先读投递记录、都空则 `normalize_address` 兜底（用日期区间避免 `extract` 的 SQLite/MySQL 差异）。
 
-**导入**：`postal_order_import_parser`（按表头解析「邮局读者明细」，零改动）+ `postal_delivery_import_service`（映射→`PostalDelivery`，不造订单；`(year, delivery_no)` 去重；投递单位有则挂 `Partner(distribution)` 无则空；产品留原文）。**投递名册**：`postal_delivery_service.list_deliveries`（年度/渠道/投递单位/起投月/搜索筛选）——邮局记录不进订单列表，这里是完整名册的家。
+**导入**：`postal_order_import_parser`（按表头解析「邮局读者明细」，零改动）+ `postal_delivery_import_service`（映射→`PostalDelivery`，不造订单；`(year, delivery_no)` 去重；投递单位有则挂 `Partner(distribution)` 无则空；产品留原文）。**投递名册**：`postal_delivery_service.list_deliveries`（年度/渠道/投递单位/起投月/搜索筛选）——邮局记录不进订单列表，这里是完整名册的家。四个列表（投递名册 / 投诉 / 改地址 / 收款发票）另返回 `summary` 聚合（合计份数·未填单位数 / 状态计数 / 待应用·未匹配·已应用 / 合计金额·未挂单数），供页面顶部「概览行」使用；各服务抽出 `_query` 复用于 list 与 `summarize_*`，状态/应用/挂单类计数忽略对应筛选维度以保持稳定。
 
 **服务 / API**：`app/services/postal_{order_import_parser,delivery_import_service,delivery_service,batch_service}.py`；`app/api/postal.py`（`/api/postal/deliveries`、`/import/preview|commit`、`/batches[...]/generate|mark-sent|export`）。`partners` 删除守卫检查 `PostalDelivery.distribution_unit_id`（在用则 409）。
 
