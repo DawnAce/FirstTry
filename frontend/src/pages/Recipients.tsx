@@ -39,6 +39,9 @@ import {
   InboxOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  CheckCircleFilled,
+  CloseCircleFilled,
+  ReloadOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -106,7 +109,8 @@ const syncStatusMeta: Record<string, { label: string; color: string }> = {
   manually_modified: { label: '人工修改', color: 'orange' },
   orphaned: { label: '孤立', color: 'red' },
 };
-const issueStatusLabel: Record<string, string> = { draft: '草稿 · 尚未确认', confirmed: '已确认', exported: '已导出' };
+const issueStatusLabel: Record<string, string> = { draft: '草稿', confirmed: '已确认', exported: '已导出' };
+const issueStatusColor: Record<string, string> = { draft: 'orange', confirmed: 'green', exported: 'blue' };
 
 const fieldLabels: Record<string, string> = {
   issue_number: '期号', sheet_name: '工作表', channel: '渠道', sub_channel: '子渠道', transport: '运输方式',
@@ -143,6 +147,7 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   const [batchDeadline, setBatchDeadline] = useState<dayjs.Dayjs | null>(null);
   const [exporting, setExporting] = useState(false);
   const [clearingIssue, setClearingIssue] = useState(false);
+  const [changeLogOpen, setChangeLogOpen] = useState(false);
 
   const { data: issues = [], isLoading: issuesLoading } = useQuery({
     queryKey: ['issues', 'shipping-details'],
@@ -282,6 +287,13 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
     setLogRecordId(record.id);
     setLogRecordName(record.name);
     setLogDrawerOpen(true);
+  };
+
+  const handleReverify = () => {
+    queryClient.invalidateQueries({ queryKey: ['report', currentIssue?.id] });
+    queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+    queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] });
+    message.success('已重新校验');
   };
 
   const refreshShippingDetails = () => {
@@ -459,14 +471,14 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
         : <CheckCircleOutlined style={{ fontSize: 21, color: '#86868b' }} />,
       bg: check ? (check.is_match ? 'rgba(82,196,26,.14)' : 'rgba(255,77,79,.12)') : 'rgba(0,0,0,.05)',
       label: '对账 · 差值',
-      value: check ? (check.is_match ? '✓ 一致' : `✗ 差 ${Math.abs(check.delta).toLocaleString()} 份`) : '—',
+      value: check ? (check.is_match ? '一致' : `差 ${Math.abs(check.delta).toLocaleString()} 份`) : '—',
       suffix: '',
       sub: check
         ? (check.is_match
           ? '报数与发货明细一致'
           : `报数 ${check.report_zt_total.toLocaleString()} / 发货 ${check.shipping_total.toLocaleString()}`)
         : '暂无报数校验',
-      cardClass: check ? (check.is_match ? 'zto-stat--ok' : 'zto-stat--bad') : '',
+      cardClass: '',
       valueColor: check ? (check.is_match ? '#389e0d' : '#cf1322') : undefined,
     },
     {
@@ -624,7 +636,9 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
           <Button className="zto-navib" icon={<RightOutlined />} disabled={!newerIssue} onClick={() => newerIssue && selectIssue(newerIssue.issue_number)} />
         </Tooltip>
         {currentIssue && (
-          <span className="zto-issue-status">{issueStatusLabel[currentIssue.status] || currentIssue.status}</span>
+          <Tag color={issueStatusColor[currentIssue.status] || 'default'} style={{ marginLeft: 'auto', marginInlineEnd: 0, fontWeight: 500 }}>
+            {issueStatusLabel[currentIssue.status] || currentIssue.status}
+          </Tag>
         )}
       </div>
 
@@ -652,37 +666,48 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
       {confirmationSummary && (
         <Card style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
-            <Space size="small" wrap>
-              <span style={{ fontSize: 15, fontWeight: 600 }}>当期中通校验状态</span>
-              <Tag color={confirmationSummary.confirmed_is_match ? 'green' : 'red'}>
-                确认时{confirmationSummary.confirmed_is_match ? '一致' : '不一致'}
-              </Tag>
-              <Tag color={confirmationSummary.current_is_match ? 'green' : 'orange'}>
-                当前{confirmationSummary.current_is_match ? '一致' : '不一致'}
-              </Tag>
-              {confirmationSummary.has_shipping_drift && (
-                <Tag color="gold">确认后明细已变更</Tag>
-              )}
-            </Space>
-            <span style={{ color: '#666', fontSize: 13 }}>
-              当前页合计 {currentShippingTotal.toLocaleString()} 份
-            </span>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>当期中通校验状态</span>
+            <span style={{ color: '#86868b', fontSize: 13 }}>当前页合计 {currentShippingTotal.toLocaleString()} 份</span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-            <div style={{ padding: 12, borderRadius: 12, background: '#fafafa' }}>
-              <div style={{ fontSize: 13, color: '#86868b', marginBottom: 6 }}>确认时快照</div>
-              <div style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 1.8 }}>
-                <div>报数中通：{confirmationSummary.confirmed_report_total.toLocaleString()} 份</div>
-                <div>发货明细：{confirmationSummary.confirmed_shipping_total.toLocaleString()} 份</div>
-                <div>差值：{confirmationSummary.confirmed_delta.toLocaleString()} 份</div>
+          <div className="zto-check-grid">
+            <div className={`zto-check-result ${confirmationSummary.current_is_match ? 'ok' : 'bad'}`}>
+              <div className="zto-check-title">当前校验结果</div>
+              <div className="zto-check-hero">
+                {confirmationSummary.current_is_match
+                  ? <CheckCircleFilled style={{ fontSize: 34, color: '#52c41a' }} />
+                  : <CloseCircleFilled style={{ fontSize: 34, color: '#ff4d4f' }} />}
+                <span className="zto-check-hero-text" style={{ color: confirmationSummary.current_is_match ? '#389e0d' : '#cf1322' }}>
+                  {confirmationSummary.current_is_match ? '当前一致' : '当前不一致'}
+                </span>
+              </div>
+              <div className="zto-check-rows">
+                <div><span>报数中通</span><b>{confirmationSummary.confirmed_report_total.toLocaleString()} 份</b></div>
+                <div><span>当前发货明细</span><b>{confirmationSummary.current_shipping_total.toLocaleString()} 份</b></div>
+                <div><span>当前差值</span><b>{confirmationSummary.current_delta.toLocaleString()} 份</b></div>
               </div>
             </div>
-            <div style={{ padding: 12, borderRadius: 12, background: '#fafafa' }}>
-              <div style={{ fontSize: 13, color: '#86868b', marginBottom: 6 }}>当前状态</div>
-              <div style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 1.8 }}>
-                <div>当前发货明细：{confirmationSummary.current_shipping_total.toLocaleString()} 份</div>
-                <div>相对报数差值：{confirmationSummary.current_delta.toLocaleString()} 份</div>
-                <div>{confirmationSummary.has_shipping_drift ? '当前数量已偏离确认快照' : '当前数量与确认快照一致'}</div>
+            <div className="zto-check-snapshot">
+              <div className="zto-check-title">确认时快照与变更</div>
+              <div className="zto-check-snapshot-body">
+                <div className="zto-check-rows">
+                  <div><span>确认时发货明细</span><b>{confirmationSummary.confirmed_shipping_total.toLocaleString()} 份</b></div>
+                  <div><span>当前发货明细</span><b>{confirmationSummary.current_shipping_total.toLocaleString()} 份</b></div>
+                  <div><span>与确认时差值</span><b style={{ color: (confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total) !== 0 ? '#d46b08' : undefined }}>{(confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total).toLocaleString()} 份</b></div>
+                </div>
+                <div className="zto-check-changes">
+                  {confirmationSummary.has_shipping_drift && <Tag color="orange" style={{ marginInlineEnd: 0 }}>确认后明细已变更</Tag>}
+                  <p className="zto-check-changes-text">
+                    {confirmationSummary.has_shipping_drift
+                      ? (confirmationSummary.current_is_match
+                        ? '当前数据与报数页一致，但发货明细已偏离确认时快照。'
+                        : '发货明细已偏离确认时快照，且当前与报数不一致。')
+                      : '当前发货明细与确认时快照一致。'}
+                  </p>
+                  <Space>
+                    <Button icon={<FileTextOutlined />} onClick={() => setChangeLogOpen(true)}>查看变更记录</Button>
+                    <Button className="zto-reverify-btn" icon={<ReloadOutlined />} onClick={handleReverify}>重新校验</Button>
+                  </Space>
+                </div>
               </div>
             </div>
           </div>
@@ -904,6 +929,35 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
             <Input.TextArea placeholder="请输入备注" rows={3} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="确认后可能变更的明细（人工修改 / 孤立）"
+        open={changeLogOpen}
+        onCancel={() => setChangeLogOpen(false)}
+        footer={null}
+        width={720}
+      >
+        {(() => {
+          const changed = allDetails.filter((d) => d.sync_status !== 'synced');
+          return changed.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 32, color: 'var(--color-text-secondary)' }}>本期无人工修改 / 孤立明细。</div>
+          ) : (
+            <Table
+              size="small"
+              rowKey="id"
+              dataSource={changed}
+              pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条` }}
+              columns={[
+                { title: '姓名', dataIndex: 'name', width: 100 },
+                { title: '渠道', dataIndex: 'channel', render: (v: string) => v || '—' },
+                { title: '签约公司', dataIndex: 'company', render: (v: string | null) => v || '—' },
+                { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
+                { title: '同步状态', dataIndex: 'sync_status', width: 100, render: (v: string) => <Tag color={v === 'orphaned' ? 'red' : 'orange'}>{v === 'orphaned' ? '孤立' : '人工修改'}</Tag> },
+              ]}
+            />
+          );
+        })()}
       </Modal>
 
       <Drawer
