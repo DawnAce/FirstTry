@@ -6,6 +6,33 @@ from app.schemas.issue import IssueOut
 from app.services.report_destination_service import resolve_report_destination
 
 
+# Sub-categories excluded from an issue's headline print total.
+# Single source of truth shared by /api/issues and the /api/dashboard aggregation.
+PRINT_TOTAL_EXCLUDED_SUBS = {
+    '临时加印_自留', '营报传媒加印', '财经中心加印',
+    '中经未来', '产经中心加印',
+}
+
+
+def compute_print_totals(db: Session, issue_ids: list[int]) -> dict[int, int]:
+    """Sum ReportEntry.value per issue (excluding non-print sub-categories).
+
+    Batched into a single query to avoid N+1 when listing many issues.
+    """
+    if not issue_ids:
+        return {}
+    rows = (
+        db.query(ReportEntry.issue_id, ReportEntry.sub_category, ReportEntry.value)
+        .filter(ReportEntry.issue_id.in_(issue_ids))
+        .all()
+    )
+    totals: dict[int, int] = {}
+    for issue_id, sub_category, value in rows:
+        if sub_category not in PRINT_TOTAL_EXCLUDED_SUBS:
+            totals[issue_id] = totals.get(issue_id, 0) + (value or 0)
+    return totals
+
+
 _CHINESE_DIGITS = "零一二三四五六七八九"
 
 

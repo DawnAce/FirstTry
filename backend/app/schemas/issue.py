@@ -27,6 +27,7 @@ class IssueOut(BaseModel):
     notes: Optional[str]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
+    print_total: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

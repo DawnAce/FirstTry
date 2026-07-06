@@ -37,7 +37,7 @@ from app.api.postal import router as postal_router
 from app.api.search import router as search_router
 from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule, ReportEntry
-from app.services.issue_service import build_issue_out
+from app.services.issue_service import build_issue_out, PRINT_TOTAL_EXCLUDED_SUBS
 
 app = FastAPI(title="中国经营报 · 印数管理系统", version="1.0.0")
 
@@ -95,11 +95,8 @@ def dashboard_data(db: Session = Depends(get_db), _user = Depends(get_current_us
 
     today = date.today()
 
-    # Excluded sub-categories for print total calculation
-    excluded_subs = {
-        '临时加印_自留', '营报传媒加印', '财经中心加印',
-        '中经未来', '产经中心加印',
-    }
+    # Excluded sub-categories for print total calculation (shared with /api/issues)
+    excluded_subs = PRINT_TOTAL_EXCLUDED_SUBS
 
     # Query 1: all issues (tiny table)
     all_issues = db.query(Issue).order_by(desc(Issue.issue_number)).all()
