@@ -397,7 +397,7 @@ export default function Templates() {
         onOk={handleSave}
         confirmLoading={saving}
         onCancel={() => setModalVisible(false)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="category" label="类别" rules={[{ required: true, message: '请选择或输入类别' }]}>
