@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Key } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import type { Key, ReactNode } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Table,
   Button,
@@ -19,7 +19,9 @@ import {
   Card,
   Tabs,
   Tooltip,
-  Alert,
+  Popover,
+  Row,
+  Col,
 } from 'antd';
 import {
   PlusOutlined,
@@ -30,6 +32,14 @@ import {
   EditOutlined,
   HistoryOutlined,
   DownloadOutlined,
+  FilterOutlined,
+  LeftOutlined,
+  RightOutlined,
+  FileTextOutlined,
+  InboxOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TableColumnsType, TableProps } from 'antd';
@@ -65,7 +75,6 @@ import {
 } from '../api/exports';
 import dayjs from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
-import { shippingDetailDisplayColumns } from './recipientShippingColumns';
 
 const typeLabels: Record<string, string> = { corporate: '对公', reader: '读者', sample: '样报' };
 const typeColors: Record<string, string> = { corporate: 'blue', reader: 'green', sample: 'purple' };
@@ -79,6 +88,25 @@ const SUB_CHANNEL_OPTIONS = ['监管', '政府'] as const;
 const FREQUENCY_OPTIONS = ['周', '半月', '月'] as const;
 const TRANSPORT_OPTIONS = ['中通物流', '邮政物流', '包车运输', '库房留存'] as const;
 const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
+
+const channelColors: Record<string, string> = {
+  '渠道订阅': 'blue', '对公订阅': 'blue', '个人订阅': 'green', '记者站': 'purple',
+  '赠阅': 'orange', '库房留存': 'default', '报社留存': 'cyan',
+};
+const transportColors: Record<string, string> = {
+  '中通物流': 'blue', '邮政物流': 'green', '包车运输': 'orange', '库房留存': 'default',
+};
+const sourceTypeMeta: Record<string, { label: string; color: string }> = {
+  manual: { label: '手工', color: 'default' },
+  order_generated: { label: '订单生成', color: 'blue' },
+  historical_import: { label: '历史导入', color: 'default' },
+};
+const syncStatusMeta: Record<string, { label: string; color: string }> = {
+  synced: { label: '已同步', color: 'green' },
+  manually_modified: { label: '人工修改', color: 'orange' },
+  orphaned: { label: '孤立', color: 'red' },
+};
+const issueStatusLabel: Record<string, string> = { draft: '草稿 · 尚未确认', confirmed: '已确认', exported: '已导出' };
 
 const fieldLabels: Record<string, string> = {
   issue_number: '期号', sheet_name: '工作表', channel: '渠道', sub_channel: '子渠道', transport: '运输方式',
@@ -101,6 +129,7 @@ interface ShippingFilters {
 
 function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number>();
@@ -132,6 +161,10 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
 
   const currentIssueNumber = currentIssue?.issue_number;
   const currentIssueDate = currentIssue?.publish_date ? dayjs(currentIssue.publish_date) : null;
+
+  const currentIdx = issues.findIndex((i) => i.issue_number === currentIssueNumber);
+  const olderIssue = currentIdx >= 0 && currentIdx < issues.length - 1 ? issues[currentIdx + 1] : null;
+  const newerIssue = currentIdx > 0 ? issues[currentIdx - 1] : null;
 
   useEffect(() => {
     if (initialIssueId == null || selectedIssueNumber != null || issues.length === 0) {
@@ -203,6 +236,18 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
     enabled: currentIssueNumber != null,
   });
 
+  // Unfiltered per-issue list — powers the "记录数 / 渠道 / 签约公司" overview card
+  // (kept separate from the filtered table query so filters don't skew the totals).
+  const { data: allDetails = [] } = useQuery({
+    queryKey: ['shippingDetailsAll', currentIssueNumber],
+    queryFn: async () => {
+      if (currentIssueNumber == null) return [];
+      const res = await getShippingDetails({ issue_number: currentIssueNumber });
+      return res.data;
+    },
+    enabled: currentIssueNumber != null,
+  });
+
   const { data: companyOptions = [] } = useQuery({
     queryKey: ['shippingCompanies', currentIssueNumber],
     queryFn: async () => {
@@ -241,6 +286,7 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
 
   const refreshShippingDetails = () => {
     queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
+    queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] });
     queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
     queryClient.invalidateQueries({ queryKey: ['operationLogs'] });
     queryClient.invalidateQueries({ queryKey: ['report', currentIssue?.id] });
@@ -380,15 +426,120 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
   };
   const confirmationSummary = report?.confirmation_summary;
   const currentShippingTotal = details.reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const check = report?.shipping_check;
+  const allChannelCount = new Set(allDetails.map((d) => d.channel).filter(Boolean)).size;
+  const allCompanyCount = new Set(allDetails.map((d) => d.company).filter(Boolean)).size;
+  const advancedFilterCount = [shippingFilters.frequency, shippingFilters.transport, shippingFilters.sub_channel].filter(Boolean).length;
+
+  const statCards: {
+    icon: ReactNode; bg: string; label: string; value: ReactNode; suffix?: string;
+    sub: string; cardClass?: string; valueColor?: string;
+  }[] = [
+    {
+      icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
+      bg: 'rgba(0, 113, 227, 0.08)',
+      label: '报数 · 中通合计',
+      value: check ? check.report_zt_total.toLocaleString() : '—',
+      suffix: check ? '份' : '',
+      sub: '报数编辑页「中通物流公司」合计',
+    },
+    {
+      icon: <InboxOutlined style={{ fontSize: 21, color: '#13c2c2' }} />,
+      bg: 'rgba(19, 194, 194, 0.10)',
+      label: '发货明细 · 合计',
+      value: check ? check.shipping_total.toLocaleString() : currentShippingTotal.toLocaleString(),
+      suffix: '份',
+      sub: `本期 ${allDetails.length} 条明细求和`,
+    },
+    {
+      icon: check
+        ? (check.is_match
+          ? <CheckCircleOutlined style={{ fontSize: 21, color: '#389e0d' }} />
+          : <CloseCircleOutlined style={{ fontSize: 21, color: '#cf1322' }} />)
+        : <CheckCircleOutlined style={{ fontSize: 21, color: '#86868b' }} />,
+      bg: check ? (check.is_match ? 'rgba(82,196,26,.14)' : 'rgba(255,77,79,.12)') : 'rgba(0,0,0,.05)',
+      label: '对账 · 差值',
+      value: check ? (check.is_match ? '✓ 一致' : `✗ 差 ${Math.abs(check.delta).toLocaleString()} 份`) : '—',
+      suffix: '',
+      sub: check
+        ? (check.is_match
+          ? '报数与发货明细一致'
+          : `报数 ${check.report_zt_total.toLocaleString()} / 发货 ${check.shipping_total.toLocaleString()}`)
+        : '暂无报数校验',
+      cardClass: check ? (check.is_match ? 'zto-stat--ok' : 'zto-stat--bad') : '',
+      valueColor: check ? (check.is_match ? '#389e0d' : '#cf1322') : undefined,
+    },
+    {
+      icon: <UnorderedListOutlined style={{ fontSize: 21, color: '#722ed1' }} />,
+      bg: 'rgba(114, 46, 209, 0.08)',
+      label: '记录数',
+      value: allDetails.length.toLocaleString(),
+      suffix: '条',
+      sub: `${allChannelCount} 个渠道 · ${allCompanyCount} 家签约公司`,
+    },
+  ];
 
   const shippingColumns: TableColumnsType<ShippingDetail> = [
-    ...shippingDetailDisplayColumns,
+    {
+      title: '姓名 / 渠道',
+      dataIndex: 'name',
+      key: 'name',
+      render: (_: unknown, r: ShippingDetail) => (
+        <div>
+          <div style={{ fontWeight: 600 }}>{r.name}</div>
+          <div style={{ marginTop: 2 }}>
+            {r.channel ? <Tag color={channelColors[r.channel] || 'default'} style={{ marginInlineEnd: 4 }}>{r.channel}</Tag> : null}
+            {r.sub_channel ? <Tag color={r.sub_channel === '监管' ? 'orange' : 'gold'} style={{ marginInlineEnd: 0 }}>{r.sub_channel}</Tag> : null}
+          </div>
+        </div>
+      ),
+    },
+    { title: '签约公司', dataIndex: 'company', key: 'company', render: (v: string | null) => v || '—' },
+    {
+      title: '收件信息（地址 · 电话）',
+      key: 'recv',
+      render: (_: unknown, r: ShippingDetail) => (
+        <div>
+          <Tooltip title={r.address || ''}>
+            <div className="zto-recv-addr">{r.address || '—'}</div>
+          </Tooltip>
+          <div className="zto-sub">{r.phone || '—'}</div>
+        </div>
+      ),
+    },
+    {
+      title: '份数',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      align: 'right',
+      width: 72,
+      render: (v: number) => <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{v ?? '—'}</span>,
+    },
+    {
+      title: '来源 · 同步',
+      key: 'mark',
+      width: 116,
+      render: (_: unknown, r: ShippingDetail) => (
+        <div className="zto-mark">
+          <Tag color={sourceTypeMeta[r.source_type]?.color || 'default'}>{sourceTypeMeta[r.source_type]?.label || r.source_type}</Tag>
+          <Tag color={syncStatusMeta[r.sync_status]?.color || 'default'}>{syncStatusMeta[r.sync_status]?.label || r.sync_status}</Tag>
+        </div>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 84,
+      render: (v: string) => (
+        <span><span className="zto-status-dot" style={{ background: v === '正常' ? '#52c41a' : '#ff4d4f' }} />{v || '—'}</span>
+      ),
+    },
     {
       title: '操作',
       key: 'actions',
-      width: 100,
-      fixed: 'end',
-      render: (_: any, record: ShippingDetail) => (
+      width: 110,
+      render: (_: unknown, record: ShippingDetail) => (
         <Space size="small">
           <Tooltip title="编辑">
             <Button type="text" size="small" icon={<EditOutlined style={{ color: '#1677ff' }} />} onClick={() => handleEdit(record)} />
@@ -406,160 +557,97 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
     },
   ];
 
-  return (
-    <div>
-      <div className="shipping-detail-filter-panel">
-        <div className="shipping-detail-filter-row shipping-detail-filter-row--issue">
-          <DatePicker
-            allowClear={false}
-            placeholder="出刊日期"
-            style={{ width: 220 }}
-            disabled={issues.length === 0}
-            value={currentIssueDate}
-            onChange={handleIssueDateChange}
-          />
-          <Select
-            placeholder="期号"
-            style={{ width: 180 }}
-            loading={issuesLoading}
-            disabled={issues.length === 0}
-            value={currentIssueNumber}
-            onChange={selectIssue}
-          >
-            {issues.map((issue) => (
-              <Select.Option key={issue.id} value={issue.issue_number}>
-                第 {issue.issue_number} 期（{dayjs(issue.publish_date).format('YYYY-MM-DD')}）
-              </Select.Option>
-            ))}
-          </Select>
-        </div>
-        <div className="shipping-detail-filter-row shipping-detail-filter-row--channel">
-          <Select
-            placeholder="渠道"
-            style={{ width: 170 }}
-            allowClear
-            value={shippingFilters.channel}
-            onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value, sub_channel: undefined }))}
-          >
-            {CHANNEL_OPTIONS.map((ch) => (
-              <Select.Option key={ch} value={ch}>{ch}</Select.Option>
-            ))}
-          </Select>
-          {shippingFilters.channel === '赠阅' && (
-            <Select
-              placeholder="子渠道"
-              style={{ width: 140 }}
-              allowClear
-              value={shippingFilters.sub_channel}
-              onChange={(value) => setShippingFilters((f) => ({ ...f, sub_channel: value }))}
-            >
-              {SUB_CHANNEL_OPTIONS.map((sc) => (
-                <Select.Option key={sc} value={sc}>{sc}</Select.Option>
-              ))}
-            </Select>
-          )}
-          <Select
-            mode="multiple"
-            placeholder="签约公司"
-            style={{ width: 320, maxWidth: '100%' }}
-            allowClear
-            maxTagCount="responsive"
-            value={shippingFilters.company}
-            onChange={(value: string[]) => setShippingFilters((f) => ({ ...f, company: value }))}
-          >
-            {companyOptions.map((c) => (
-              <Select.Option key={c} value={c}>{c}</Select.Option>
-            ))}
-          </Select>
-        </div>
-        <div className="shipping-detail-filter-row shipping-detail-filter-row--rest">
-          <Select
-            placeholder="频率"
-            style={{ width: 140 }}
-            allowClear
-            onChange={(value) => setShippingFilters((f) => ({ ...f, frequency: value }))}
-          >
-            {FREQUENCY_OPTIONS.map((fr) => (
-              <Select.Option key={fr} value={fr}>{fr}</Select.Option>
-            ))}
-          </Select>
-          <Select
-            placeholder="运输方式"
-            style={{ width: 160 }}
-            allowClear
-            onChange={(value) => setShippingFilters((f) => ({ ...f, transport: value }))}
-          >
-            {TRANSPORT_OPTIONS.map((tr) => (
-              <Select.Option key={tr} value={tr}>{tr}</Select.Option>
-            ))}
-          </Select>
-          <Select
-            placeholder="状态"
-            style={{ width: 140 }}
-            allowClear
-            onChange={(value) => setShippingFilters((f) => ({ ...f, status: value }))}
-          >
-            {SHIPPING_STATUS_OPTIONS.map((st) => (
-              <Select.Option key={st} value={st}>{st}</Select.Option>
-            ))}
-          </Select>
-        </div>
-        <div className="shipping-detail-filter-row shipping-detail-filter-row--footer">
-          <Input
-            className="shipping-detail-filter-search"
-            placeholder="搜索姓名"
-            style={{ width: 280, maxWidth: '100%' }}
-            allowClear
-            prefix={<SearchOutlined />}
-            onChange={(e) => setShippingFilters((f) => ({ ...f, search: e.target.value }))}
-          />
-          <div className="shipping-detail-filter-tail">
-            <span className="shipping-detail-filter-summary">
-              共 {details.length} 条记录，合计 {details.reduce((sum, d) => sum + (d.quantity ?? 0), 0)} 份
-            </span>
-            <Space size="small">
-              <Button
-                icon={<DownloadOutlined />}
-                onClick={handleExportShipping}
-                disabled={currentIssue?.id == null}
-                loading={exporting}
-              >
-                导出
-              </Button>
-              {isAdmin && (
-                <Popconfirm
-                  title={`确认清空第 ${currentIssueNumber ?? '-'} 期 ZTO-MF？`}
-                                    description="只删除该期 ZTO-MF，不会删除期号和报数数据。此操作不可恢复。"
-                  okText="清空"
-                  cancelText="取消"
-                  onConfirm={handleClearCurrentIssueShippingDetails}
-                  disabled={currentIssueNumber == null}
-                >
-                  <Button danger loading={clearingIssue} disabled={currentIssueNumber == null}>
-                    清空本期
-                  </Button>
-                </Popconfirm>
-              )}
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
-                新增
-              </Button>
-            </Space>
+  const renderExpanded = (r: ShippingDetail) => {
+    const deadlineText = (!r.deadline || r.deadline === '-' || r.deadline === '长期') ? '长期' : r.deadline;
+    const station = [r.station_name, r.station_hall].filter(Boolean).join(' / ');
+    const cells: { k: string; v: ReactNode }[] = [
+      { k: '子渠道', v: r.sub_channel || '—' },
+      { k: '频率', v: r.frequency || '—' },
+      { k: '运输方式', v: r.transport ? <Tag color={transportColors[r.transport] || 'default'}>{r.transport}</Tag> : '—' },
+      { k: '截止日期', v: deadlineText },
+      { k: '发货时间', v: r.shipped_at ? dayjs(r.shipped_at).format('YYYY-MM-DD') : '—' },
+      { k: '实发份数', v: r.shipped_quantity ?? '—' },
+      { k: '快递单号', v: r.tracking_no || '—' },
+      { k: '站点 / 站厅', v: station || '—' },
+      { k: '联系人', v: r.contact_person || '—' },
+      {
+        k: '来源订单',
+        v: r.order_id
+          ? <a onClick={() => navigate(`/orders/${r.order_id}`)}>查看订单 #{r.order_id}</a>
+          : '—',
+      },
+      { k: '备注', v: r.notes || '—' },
+      { k: '附加信息', v: r.extra_info || '—' },
+    ];
+    return (
+      <div className="zto-expand">
+        {cells.map((c) => (
+          <div className="zto-cell" key={c.k}>
+            <div className="k">{c.k}</div>
+            <div className="v">{c.v}</div>
           </div>
-        </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="zto-page">
+      {/* 期次条 */}
+      <div className="zto-issuebar">
+        <Tooltip title={olderIssue ? `上一期 第 ${olderIssue.issue_number} 期` : '已是最早期'}>
+          <Button className="zto-navib" icon={<LeftOutlined />} disabled={!olderIssue} onClick={() => olderIssue && selectIssue(olderIssue.issue_number)} />
+        </Tooltip>
+        <DatePicker
+          allowClear={false}
+          placeholder="出刊日期"
+          style={{ width: 160 }}
+          disabled={issues.length === 0}
+          value={currentIssueDate}
+          onChange={handleIssueDateChange}
+        />
+        <Select
+          placeholder="期号"
+          style={{ width: 220 }}
+          loading={issuesLoading}
+          disabled={issues.length === 0}
+          value={currentIssueNumber}
+          onChange={selectIssue}
+        >
+          {issues.map((issue) => (
+            <Select.Option key={issue.id} value={issue.issue_number}>
+              第 {issue.issue_number} 期（{dayjs(issue.publish_date).format('YYYY-MM-DD')}）
+            </Select.Option>
+          ))}
+        </Select>
+        <Tooltip title={newerIssue ? `下一期 第 ${newerIssue.issue_number} 期` : '已是最新期'}>
+          <Button className="zto-navib" icon={<RightOutlined />} disabled={!newerIssue} onClick={() => newerIssue && selectIssue(newerIssue.issue_number)} />
+        </Tooltip>
+        {currentIssue && (
+          <span className="zto-issue-status">{issueStatusLabel[currentIssue.status] || currentIssue.status}</span>
+        )}
       </div>
 
-      {report?.shipping_check && !report.shipping_check.is_match && (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 16 }}
-          title={
-            `中通份数不一致：报数合计 ${report.shipping_check.report_zt_total.toLocaleString()} 份，` +
-            `发货明细合计 ${report.shipping_check.shipping_total.toLocaleString()} 份，` +
-            `差值 ${report.shipping_check.delta.toLocaleString()} 份`
-          }
-        />
-      )}
+      {/* 对账统计卡 */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        {statCards.map((card, idx) => (
+          <Col xs={12} md={6} key={idx} style={{ display: 'flex' }}>
+            <Card className={`dashboard-stat-card ${card.cardClass || ''}`} size="small" style={{ flex: 1 }}>
+              <div className="dashboard-stat-card-inner">
+                <div className="dashboard-stat-icon" style={{ background: card.bg }}>{card.icon}</div>
+                <div className="dashboard-stat-content">
+                  <div className="dashboard-stat-label">{card.label}</div>
+                  <div className="dashboard-stat-value" style={card.valueColor ? { color: card.valueColor } : undefined}>
+                    {card.value}
+                    {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
+                  </div>
+                  <div className="dashboard-stat-sub">{card.sub}</div>
+                </div>
+              </div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
 
       {confirmationSummary && (
         <Card style={{ marginBottom: 16 }}>
@@ -601,43 +689,143 @@ function ShippingDetailsTab({ initialIssueId }: { initialIssueId?: number }) {
         </Card>
       )}
 
-      {selectedRowKeys.length > 0 && (
-        <div style={{
-          marginBottom: 12,
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          padding: '12px 16px',
-          background: '#fff',
-          borderRadius: 12,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
-        }}>
-          <span style={{ color: '#666' }}>已选 {selectedRowKeys.length} 条</span>
-          <Button size="small" onClick={() => handleBatchStatus('正常')}>设为正常</Button>
-          <Button size="small" danger onClick={() => handleBatchStatus('停发')}>设为停发</Button>
-          <DatePicker
-            size="small"
-            placeholder="选择截止日期"
-            value={batchDeadline}
-            onChange={setBatchDeadline}
+      <Card styles={{ body: { padding: 0 } }}>
+        <div className="zto-toolbar">
+          <Select
+            placeholder="渠道"
+            style={{ width: 150 }}
+            allowClear
+            value={shippingFilters.channel}
+            onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value, sub_channel: undefined }))}
+          >
+            {CHANNEL_OPTIONS.map((ch) => (
+              <Select.Option key={ch} value={ch}>{ch}</Select.Option>
+            ))}
+          </Select>
+          <Select
+            mode="multiple"
+            placeholder="签约公司"
+            style={{ width: 240, maxWidth: '100%' }}
+            allowClear
+            maxTagCount="responsive"
+            value={shippingFilters.company}
+            onChange={(value: string[]) => setShippingFilters((f) => ({ ...f, company: value }))}
+          >
+            {companyOptions.map((c) => (
+              <Select.Option key={c} value={c}>{c}</Select.Option>
+            ))}
+          </Select>
+          <Select
+            placeholder="状态"
+            style={{ width: 120 }}
+            allowClear
+            value={shippingFilters.status}
+            onChange={(value) => setShippingFilters((f) => ({ ...f, status: value }))}
+          >
+            {SHIPPING_STATUS_OPTIONS.map((st) => (
+              <Select.Option key={st} value={st}>{st}</Select.Option>
+            ))}
+          </Select>
+          <Input
+            placeholder="搜索姓名"
+            prefix={<SearchOutlined />}
+            style={{ width: 190 }}
+            allowClear
+            value={shippingFilters.search ?? ''}
+            onChange={(e) => setShippingFilters((f) => ({ ...f, search: e.target.value }))}
           />
-          <Button size="small" onClick={handleBatchDeadline}>修改截止日期</Button>
-          <Popconfirm title={`确认删除选中的 ${selectedRowKeys.length} 条记录？`} onConfirm={handleBatchDelete}>
-            <Button size="small" danger>批量删除</Button>
-          </Popconfirm>
-          <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+          <Popover
+            trigger="click"
+            placement="bottomLeft"
+            title="更多筛选"
+            content={
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 200 }}>
+                <Select
+                  placeholder="频率"
+                  style={{ width: '100%' }}
+                  allowClear
+                  value={shippingFilters.frequency}
+                  onChange={(value) => setShippingFilters((f) => ({ ...f, frequency: value }))}
+                >
+                  {FREQUENCY_OPTIONS.map((fr) => (
+                    <Select.Option key={fr} value={fr}>{fr}</Select.Option>
+                  ))}
+                </Select>
+                <Select
+                  placeholder="运输方式"
+                  style={{ width: '100%' }}
+                  allowClear
+                  value={shippingFilters.transport}
+                  onChange={(value) => setShippingFilters((f) => ({ ...f, transport: value }))}
+                >
+                  {TRANSPORT_OPTIONS.map((tr) => (
+                    <Select.Option key={tr} value={tr}>{tr}</Select.Option>
+                  ))}
+                </Select>
+                <Select
+                  placeholder="子渠道"
+                  style={{ width: '100%' }}
+                  allowClear
+                  value={shippingFilters.sub_channel}
+                  onChange={(value) => setShippingFilters((f) => ({ ...f, sub_channel: value }))}
+                >
+                  {SUB_CHANNEL_OPTIONS.map((sc) => (
+                    <Select.Option key={sc} value={sc}>{sc}</Select.Option>
+                  ))}
+                </Select>
+              </div>
+            }
+          >
+            <Button icon={<FilterOutlined />}>更多筛选{advancedFilterCount > 0 ? ` · ${advancedFilterCount}` : ''}</Button>
+          </Popover>
+          <div className="zto-toolbar-tail">
+            <span className="zto-toolbar-count">
+              共 <b>{details.length}</b> 条 · 合计 <b>{currentShippingTotal.toLocaleString()}</b> 份
+            </span>
+            <Button icon={<DownloadOutlined />} onClick={handleExportShipping} disabled={currentIssue?.id == null} loading={exporting}>
+              导出
+            </Button>
+            {isAdmin && (
+              <Popconfirm
+                title={`确认清空第 ${currentIssueNumber ?? '-'} 期 ZTO-MF？`}
+                description="只删除该期 ZTO-MF，不会删除期号和报数数据。此操作不可恢复。"
+                okText="清空"
+                cancelText="取消"
+                onConfirm={handleClearCurrentIssueShippingDetails}
+                disabled={currentIssueNumber == null}
+              >
+                <Button danger loading={clearingIssue} disabled={currentIssueNumber == null}>
+                  清空本期
+                </Button>
+              </Popconfirm>
+            )}
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
+              新增
+            </Button>
+          </div>
         </div>
-      )}
 
-      <Card style={{ padding: 0 }}>
+        {selectedRowKeys.length > 0 && (
+          <div className="zto-batchbar">
+            <span className="zto-batch-lbl">已选 {selectedRowKeys.length} 条</span>
+            <Button size="small" onClick={() => handleBatchStatus('正常')}>设为正常</Button>
+            <Button size="small" danger onClick={() => handleBatchStatus('停发')}>设为停发</Button>
+            <DatePicker size="small" placeholder="截止日期" value={batchDeadline} onChange={setBatchDeadline} />
+            <Button size="small" onClick={handleBatchDeadline}>改截止日期</Button>
+            <Popconfirm title={`确认删除选中的 ${selectedRowKeys.length} 条记录？`} onConfirm={handleBatchDelete}>
+              <Button size="small" danger>批量删除</Button>
+            </Popconfirm>
+            <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+          </div>
+        )}
+
         <Table
           loading={isLoading}
           columns={shippingColumns}
           dataSource={details}
           rowKey="id"
           rowSelection={rowSelection}
-          scroll={{ x: 'max-content' }}
+          expandable={{ expandedRowRender: renderExpanded }}
           pagination={{ pageSize: 20, showTotal: (total) => `共 ${total} 条记录` }}
         />
       </Card>
@@ -804,18 +992,18 @@ export default function Recipients() {
     next.delete('search');
     setSearchParams(next, { replace: true });
   }, [activeTab, searchParams, setSearchParams]);
-  
+
   // Create/Edit modal
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecipient, setEditingRecipient] = useState<Recipient | null>(null);
   const [form] = Form.useForm();
-  
+
   // Subscription drawer
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [currentRecipient, setCurrentRecipient] = useState<Recipient | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [subLoading, setSubLoading] = useState(false);
-  
+
   // Subscription modal
   const [subModalVisible, setSubModalVisible] = useState(false);
   const [subForm] = Form.useForm();
@@ -1052,7 +1240,7 @@ export default function Recipients() {
           <Select.Option value="reader">读者</Select.Option>
           <Select.Option value="sample">样报</Select.Option>
         </Select>
-        
+
         <Select
           placeholder="状态"
           style={{ width: 120 }}
@@ -1062,7 +1250,7 @@ export default function Recipients() {
           <Select.Option value="active">正常</Select.Option>
           <Select.Option value="suspended">停发</Select.Option>
         </Select>
-        
+
         <Input
           placeholder="搜索姓名"
           style={{ width: 200 }}
@@ -1070,9 +1258,9 @@ export default function Recipients() {
           value={filters.search ?? ''}
           onChange={(e) => setFilters({ ...filters, search: e.target.value })}
         />
-        
+
         <div style={{ flex: 1 }} />
-        
+
         <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
           新增收件人
         </Button>
@@ -1099,11 +1287,11 @@ export default function Recipients() {
           <Form.Item label="姓名" name="name" rules={[{ required: true, message: '请输入姓名' }]}>
             <Input placeholder="请输入姓名" />
           </Form.Item>
-          
+
           <Form.Item label="电话" name="phone">
             <Input placeholder="请输入电话" />
           </Form.Item>
-          
+
           <Form.Item label="类型" name="type" rules={[{ required: true }]}>
             <Select>
               <Select.Option value="corporate">对公</Select.Option>
@@ -1111,7 +1299,7 @@ export default function Recipients() {
               <Select.Option value="sample">样报</Select.Option>
             </Select>
           </Form.Item>
-          
+
           <Form.Item label="频率" name="frequency" rules={[{ required: true }]}>
             <Select>
               <Select.Option value="weekly">周</Select.Option>
@@ -1119,19 +1307,19 @@ export default function Recipients() {
               <Select.Option value="monthly">月底</Select.Option>
             </Select>
           </Form.Item>
-          
+
           <Form.Item label="省份" name="province">
             <Input placeholder="请输入省份" />
           </Form.Item>
-          
+
           <Form.Item label="城市" name="city">
             <Input placeholder="请输入城市" />
           </Form.Item>
-          
+
           <Form.Item label="地址" name="address">
             <Input.TextArea placeholder="请输入详细地址" rows={3} />
           </Form.Item>
-          
+
           <Form.Item label="备注" name="notes">
             <Input.TextArea placeholder="请输入备注" rows={3} />
           </Form.Item>
@@ -1195,23 +1383,23 @@ export default function Recipients() {
               <Select.Option value="renewal">续订</Select.Option>
             </Select>
           </Form.Item>
-          
+
           <Form.Item label="开始日期" name="start_date" rules={[{ required: true, message: '请选择开始日期' }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          
+
           <Form.Item label="结束日期" name="end_date" rules={[{ required: true, message: '请选择结束日期' }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          
+
           <Form.Item label="时长(月)" name="duration_months">
             <InputNumber placeholder="例如: 12" style={{ width: '100%' }} min={1} />
           </Form.Item>
-          
+
           <Form.Item label="数量" name="quantity" rules={[{ required: true }]}>
             <InputNumber placeholder="发送数量" style={{ width: '100%' }} min={1} />
           </Form.Item>
-          
+
           <Form.Item label="备注" name="notes">
             <Input.TextArea placeholder="请输入备注" rows={3} />
           </Form.Item>
