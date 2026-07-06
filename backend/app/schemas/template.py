@@ -36,3 +36,12 @@ class TemplateUpdate(BaseModel):
     sort_order: Optional[int] = None
     excel_sheet: Optional[str] = None
     excel_cell: Optional[str] = None
+
+
+class TemplateReorderItem(BaseModel):
+    id: int
+    sort_order: int
+
+
+class TemplateReorder(BaseModel):
+    items: list[TemplateReorderItem]
