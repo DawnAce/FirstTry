@@ -244,7 +244,7 @@ export default function LogisticsIssues() {
               icon={<SendOutlined />}
               onClick={(e) => {
                 e.stopPropagation();
-                navigate(`/recipients?tab=shipping&issueId=${r.issue_id}`);
+                navigate(`/logistics/issues/${r.issue_id}`);
               }}
             >
               进入详情
@@ -364,7 +364,7 @@ export default function LogisticsIssues() {
           onRow={(record) => ({
             onClick: () => {
               if (record.issue_id == null) navigate('/');
-              else navigate(`/recipients?tab=shipping&issueId=${record.issue_id}`);
+              else navigate(`/logistics/issues/${record.issue_id}`);
             },
             style: { cursor: 'pointer' },
           })}
