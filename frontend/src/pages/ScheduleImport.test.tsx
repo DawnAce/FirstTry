@@ -129,15 +129,21 @@ vi.mock('antd', async () => {
 vi.mock('@ant-design/icons', () => ({
   DeleteOutlined: () => <span />,
   InboxOutlined: () => <span />,
+  CalendarOutlined: () => <span />,
   CheckCircleFilled: () => <span />,
+  ClockCircleOutlined: () => <span />,
+  CloudUploadOutlined: () => <span />,
   DownloadOutlined: () => <span />,
   ExclamationCircleFilled: () => <span />,
+  FileDoneOutlined: () => <span />,
   FilePdfOutlined: () => <span />,
+  FileTextOutlined: () => <span />,
   InfoCircleOutlined: () => <span />,
   PauseCircleFilled: () => <span />,
   ProfileOutlined: () => <span />,
   ReloadOutlined: () => <span />,
   SearchOutlined: () => <span />,
+  UploadOutlined: () => <span />,
   WarningOutlined: () => <span />,
 }));
 

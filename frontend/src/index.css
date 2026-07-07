@@ -2082,6 +2082,92 @@ body {
   line-height: 1.6;
 }
 
+/* 默认（未上传）态 */
+.si-upload-note {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  margin: 14px 0 16px;
+}
+
+.si-upload-btns {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.si-upload-card .ant-upload-drag-icon .anticon {
+  color: var(--color-accent);
+}
+
+.si-guide-list {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  counter-reset: si-guide;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.si-guide-list li {
+  position: relative;
+  padding-left: 34px;
+  font-size: 13.5px;
+  color: #42424a;
+  line-height: 1.5;
+  counter-increment: si-guide;
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+.si-guide-list li::before {
+  content: counter(si-guide);
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 113, 227, 0.1);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.si-guide-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  background: #f0f5ff;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #33415c;
+  line-height: 1.6;
+}
+
+.si-guide-note .anticon {
+  color: var(--color-accent);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.si-uploads-actions {
+  display: inline-flex;
+  gap: 14px;
+}
+
+.si-uploads-actions a {
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
 @media (max-width: 1200px) {
   .shipping-detail-filter-row--footer {
     justify-content: flex-start;
