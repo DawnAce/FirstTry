@@ -46,6 +46,7 @@ const menuItems: MenuProps['items'] = [
     label: '物流管理',
     children: [
       { key: '/recipients', label: 'ZTO-MF' },
+      { key: '/logistics/issues', label: '期数总览' },
       { key: '/post-delivery', label: '邮局投递' },
     ],
   },
@@ -101,6 +102,7 @@ export default function AppLayout() {
   const getSelectedKey = () => {
     const path = location.pathname;
     if (path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import')) return '/';
+    if (path.startsWith('/logistics/issues')) return '/logistics/issues';
     if (path.startsWith('/recipients')) return '/recipients';
     if (path.startsWith('/post-delivery')) return '/post-delivery';
     if (path.startsWith('/history')) return '/history';
@@ -121,7 +123,7 @@ export default function AppLayout() {
     if (path === '/' || path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import') || path.startsWith('/history') || path.startsWith('/templates')) {
       return ['print-management'];
     }
-    if (path.startsWith('/recipients') || path.startsWith('/post-delivery')) {
+    if (path.startsWith('/recipients') || path.startsWith('/logistics') || path.startsWith('/post-delivery')) {
       return ['logistics-management'];
     }
     if (path.startsWith('/schedule')) {
