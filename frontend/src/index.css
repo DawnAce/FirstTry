@@ -1538,6 +1538,242 @@ body {
   }
 }
 
+/* ===== Publication schedule (期刊表) ===== */
+.sched-page {
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+.sched-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.sched-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.sched-sub {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 6px 0 0;
+}
+
+/* 年度概览 */
+.sched-overview .ant-card-body {
+  padding: 14px 18px !important;
+}
+
+.sched-overview-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 12px;
+}
+
+.sched-overview-row {
+  display: flex;
+  align-items: center;
+  gap: 16px 20px;
+  flex-wrap: wrap;
+}
+
+.sched-months {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.sched-month {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 46px;
+  padding: 7px 8px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.sched-month:hover {
+  border-color: var(--color-accent);
+  background: rgba(0, 113, 227, 0.04);
+}
+
+.sched-month.on {
+  border-color: var(--color-accent);
+  background: rgba(0, 113, 227, 0.08);
+}
+
+.sched-month-name {
+  font-size: 12.5px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.sched-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.sched-dot.normal { background: #52c41a; }
+.sched-dot.adjust { background: #fa8c16; }
+.sched-dot.rest { background: #c8c8ce; }
+
+.sched-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.sched-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 筛选工具栏 */
+.sched-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.sched-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sched-field > label {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.sched-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sched-count {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.sched-count b {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 月份卡片 */
+.sched-month-card .ant-card-head {
+  min-height: unset !important;
+  padding: 12px 16px !important;
+}
+
+.sched-mc-meta {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sched-date-main {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sched-date-wk {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 1px;
+}
+
+.sched-issue {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sched-muted {
+  color: #b0b0b6;
+}
+
+.sched-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--radius-tag);
+  padding: 1px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.sched-status.normal { background: #f6ffed; color: #389e0d; }
+.sched-status.rest { background: #fff7e6; color: #d46b08; }
+
+.sched-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.sched-pages {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sched-pages .actual {
+  margin-left: 6px;
+}
+
+.sched-pages .actual.mismatch {
+  color: #fa8c16;
+  font-weight: 500;
+}
+
+.sched-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--color-accent);
+  cursor: pointer;
+  border-top: 1px solid var(--color-divider);
+  transition: background var(--transition);
+}
+
+.sched-more:hover {
+  background: rgba(0, 113, 227, 0.03);
+}
+
 @media (max-width: 1200px) {
   .shipping-detail-filter-row--footer {
     justify-content: flex-start;
