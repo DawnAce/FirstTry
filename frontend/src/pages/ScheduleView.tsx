@@ -1,18 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Card, Col, DatePicker, InputNumber, Row, Select, Table } from 'antd';
+import { Alert, Button, Card, Col, DatePicker, InputNumber, Row, Select } from 'antd';
 import {
   CalendarOutlined,
   CoffeeOutlined,
   ReadOutlined,
   ReloadOutlined,
-  RightOutlined,
   SearchOutlined,
-  UpOutlined,
+  StopOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
-import type { TableProps } from 'antd';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { getSchedule, getScheduleYears } from '../api/schedule';
@@ -23,7 +21,6 @@ const { RangePicker } = DatePicker;
 
 const FALLBACK_YEAR = 2026;
 const DEFAULT_YEAR = dayjs().year();
-const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 type StatusFilterValue = 'all' | 'normal' | 'suspended';
 type MonthDotStatus = 'normal' | 'adjust' | 'rest';
@@ -33,6 +30,12 @@ const STATUS_OPTIONS: Array<{ label: string; value: StatusFilterValue }> = [
   { label: '正常', value: 'normal' },
   { label: '休刊', value: 'suspended' },
 ];
+
+const MONTH_STATE_LABEL: Record<MonthDotStatus, string> = {
+  normal: '正常',
+  adjust: '含调整',
+  rest: '含休刊',
+};
 
 interface Filters {
   month: number | null;
@@ -47,11 +50,12 @@ function isMismatch(row: ScheduleEntry): boolean {
   return row.actual_page_count != null && row.page_count != null && row.actual_page_count !== row.page_count;
 }
 
-// A month's overview dot: 版次调整(橙) 若有计划≠实际；否则该月无出版期(空/全休刊)→休刊(灰)；否则正常(绿)。
+// 某月状态：有计划≠实际→版次调整(橙)；否则含休刊周→休刊(灰)；否则正常(绿)。
+// 年度概览圆点与矩阵「月度状态」共用此口径，保持一致。
 function monthDotStatus(rows: ScheduleEntry[]): MonthDotStatus {
   if (rows.some(isMismatch)) return 'adjust';
-  const published = rows.filter((row) => !row.is_suspended && row.issue_number !== null);
-  return published.length === 0 ? 'rest' : 'normal';
+  if (rows.some((row) => row.is_suspended)) return 'rest';
+  return 'normal';
 }
 
 function buildYearOptions(selectedYear: number, dataYears: number[]) {
@@ -63,20 +67,29 @@ function buildYearOptions(selectedYear: number, dataYears: number[]) {
     .map((year) => ({ label: `${year} 年`, value: year }));
 }
 
-function renderPageCount(record: ScheduleEntry): ReactNode {
-  const planned = record.page_count;
-  const actual = record.actual_page_count;
-  if (planned == null && actual == null) return <span className="sched-muted">—</span>;
+// 排期矩阵的单元格：空 → 「—」；休刊 → 虚线 ⊘ 格；出版 → 日期 + 期号 + 状态·版数。
+function renderMatrixCell(row: ScheduleEntry | undefined): ReactNode {
+  if (!row) return <div className="mx-empty">—</div>;
+  if (row.is_suspended) {
+    return (
+      <div className="mx-cell rest">
+        <StopOutlined />
+        <span className="mx-rest-text">休刊</span>
+      </div>
+    );
+  }
+  const planned = row.page_count;
+  const actual = row.actual_page_count;
   const mismatch = actual != null && planned != null && actual !== planned;
+  const version = actual ?? planned;
   return (
-    <span className="sched-pages">
-      {planned != null && <span>计划 {planned} 版</span>}
-      {actual != null && (
-        <span className={`actual${mismatch ? ' mismatch' : ''}`}>
-          实际 {actual} 版{mismatch ? ' ⚠' : ''}
-        </span>
-      )}
-    </span>
+    <div className={`mx-cell${mismatch ? ' mismatch' : ''}`}>
+      <span className="mx-date">{dayjs(row.publish_date).format('MM-DD')}</span>
+      <span className="mx-issue">{row.issue_number !== null ? `第 ${row.issue_number} 期` : '—'}</span>
+      <span className="mx-meta">
+        {mismatch ? `实际 ${actual}版` : `正常${version != null ? ` · ${version}版` : ''}`}
+      </span>
+    </div>
   );
 }
 
@@ -84,7 +97,6 @@ export default function ScheduleView() {
   const [year, setYear] = useState(DEFAULT_YEAR);
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
-  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set());
 
   const yearsQuery = useQuery({
     queryKey: ['schedule-years'],
@@ -146,6 +158,12 @@ export default function ScheduleView() {
 
   const filteredMonthGroups = useMemo(() => groupScheduleRowsByMonth(filteredRows), [filteredRows]);
 
+  // 矩阵列数 = 各月周数的最大值（一个月最多 5 个出刊周），至少 1 列。
+  const weekColumns = useMemo(() => {
+    const maxWeeks = filteredMonthGroups.reduce((max, group) => Math.max(max, group.rows.length), 1);
+    return Array.from({ length: maxWeeks }, (_unused, index) => index);
+  }, [filteredMonthGroups]);
+
   const statCards: Array<{ icon: ReactNode; bg: string; label: string; value: ReactNode; suffix?: string; valueColor?: string }> = [
     {
       icon: <CalendarOutlined style={{ fontSize: 22, color: 'var(--color-accent)' }} />,
@@ -177,53 +195,10 @@ export default function ScheduleView() {
     },
   ];
 
-  const tableColumns: TableProps<ScheduleEntry>['columns'] = [
-    {
-      title: '出版日期',
-      dataIndex: 'publish_date',
-      key: 'publish_date',
-      width: 118,
-      render: (value: string, record) => (
-        <div>
-          <div className="sched-date-main">{dayjs(value).format('YYYY-MM-DD')}</div>
-          <div className="sched-date-wk">{WEEKDAYS[dayjs(value).day()]}{record.is_suspended ? ' · 休刊' : ''}</div>
-        </div>
-      ),
-    },
-    {
-      title: '期号',
-      key: 'issue_number',
-      width: 92,
-      render: (_value: unknown, record) => (
-        record.is_suspended || record.issue_number === null
-          ? <span className="sched-muted">—</span>
-          : <span className="sched-issue">第 {record.issue_number} 期</span>
-      ),
-    },
-    {
-      title: '状态',
-      dataIndex: 'is_suspended',
-      key: 'status',
-      width: 84,
-      render: (value: boolean) => (
-        value
-          ? <span className="sched-status rest"><span className="sched-status-dot" />休刊</span>
-          : <span className="sched-status normal"><span className="sched-status-dot" />正常</span>
-      ),
-    },
-    {
-      title: '版数',
-      dataIndex: 'page_count',
-      key: 'page_count',
-      render: (_value: number | null | undefined, record) => renderPageCount(record),
-    },
-  ];
-
   const handleYearChange = (nextYear: number) => {
     setYear(nextYear);
     setDraft(EMPTY_FILTERS);
     setApplied(EMPTY_FILTERS);
-    setExpandedMonths(new Set());
   };
 
   const applyFilters = () => setApplied(draft);
@@ -235,15 +210,6 @@ export default function ScheduleView() {
   const jumpToMonth = (month: number) => {
     setDraft((prev) => ({ ...prev, month: prev.month === month ? null : month }));
     setApplied((prev) => ({ ...prev, month: prev.month === month ? null : month }));
-  };
-
-  const toggleMonth = (month: number) => {
-    setExpandedMonths((prev) => {
-      const next = new Set(prev);
-      if (next.has(month)) next.delete(month);
-      else next.add(month);
-      return next;
-    });
   };
 
   const hasData = scheduleRows.length > 0;
@@ -369,49 +335,45 @@ export default function ScheduleView() {
         </div>
       </Card>
 
-      {/* 月份卡片 */}
+      {/* 全年排期矩阵 */}
       {!hasData && !scheduleQuery.isLoading && !scheduleQuery.isError ? (
         <Card><Alert type="info" showIcon title="暂无该年份刊期表" /></Card>
       ) : filteredRows.length === 0 && !scheduleQuery.isLoading ? (
         <Card><Alert type="info" showIcon title="当前筛选条件下暂无刊期记录" /></Card>
       ) : (
-        <Row gutter={[16, 16]}>
-          {filteredMonthGroups.map((group) => {
-            const published = group.rows.filter((row) => !row.is_suspended && row.issue_number !== null).length;
-            const suspended = group.rows.filter((row) => row.is_suspended).length;
-            const status = monthDotStatus(group.rows);
-            const expanded = expandedMonths.has(group.month);
-            const visibleRows = expanded ? group.rows : group.rows.slice(0, 4);
-            return (
-              <Col xs={24} xl={12} key={group.month}>
-                <Card
-                  className="sched-month-card"
-                  styles={{ body: { padding: 0 } }}
-                  title={`${year} 年 ${group.month} 月`}
-                  extra={(
-                    <span className="sched-mc-meta">
-                      {published} 期 / {suspended} 次休刊
-                      <span className={`sched-dot ${status}`} />
-                    </span>
-                  )}
-                >
-                  <Table<ScheduleEntry>
-                    rowKey="id"
-                    columns={tableColumns}
-                    dataSource={visibleRows}
-                    pagination={false}
-                    size="small"
-                  />
-                  {group.rows.length > 4 && (
-                    <div className="sched-more" onClick={() => toggleMonth(group.month)}>
-                      {expanded ? <>收起 <UpOutlined /></> : <>查看全部（{group.rows.length} 期）<RightOutlined /></>}
-                    </div>
-                  )}
-                </Card>
-              </Col>
-            );
-          })}
-        </Row>
+        <Card className="sched-matrix-card" styles={{ body: { padding: 16 } }} loading={scheduleQuery.isLoading}>
+          <div className="sched-matrix-title">{year} 年全年排期矩阵</div>
+          <div className="sched-matrix-wrap">
+            <table className="sched-matrix">
+              <thead>
+                <tr>
+                  <th className="col-month">月份</th>
+                  {weekColumns.map((i) => (
+                    <th key={i} className="col-issue">第 {i + 1} 期</th>
+                  ))}
+                  <th className="col-state">月度状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredMonthGroups.map((group) => {
+                  const published = group.rows.filter((row) => !row.is_suspended && row.issue_number !== null).length;
+                  const status = monthDotStatus(group.rows);
+                  return (
+                    <tr key={group.month}>
+                      <td className="mx-month">{group.month} 月</td>
+                      {weekColumns.map((i) => (
+                        <td key={i} className="mx-td">{renderMatrixCell(group.rows[i])}</td>
+                      ))}
+                      <td className="mx-state-td">
+                        <span className={`mx-state ${status}`}>{published} 期 / {MONTH_STATE_LABEL[status]}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );
