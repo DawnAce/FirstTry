@@ -46,7 +46,6 @@ const menuItems: MenuProps['items'] = [
     label: '物流管理',
     children: [
       { key: '/recipients', label: 'ZTO-MF' },
-      { key: '/recipients?tab=recipients', label: '收件人' },
       { key: '/post-delivery', label: '邮局投递' },
     ],
   },
@@ -102,9 +101,7 @@ export default function AppLayout() {
   const getSelectedKey = () => {
     const path = location.pathname;
     if (path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import')) return '/';
-    if (path.startsWith('/recipients')) {
-      return location.search.includes('tab=recipients') ? '/recipients?tab=recipients' : '/recipients';
-    }
+    if (path.startsWith('/recipients')) return '/recipients';
     if (path.startsWith('/post-delivery')) return '/post-delivery';
     if (path.startsWith('/history')) return '/history';
     if (path === '/schedule/import') return '/schedule/import';
