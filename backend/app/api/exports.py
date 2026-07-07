@@ -6,8 +6,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Issue, IssueAuditSnapshot, ReportEntry, ShippingDetail
+from app.models import Issue, IssueAuditSnapshot, ReportEntry, ShippingDetail, User
+from app.auth import get_current_user
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
+from app.services.operation_log_service import record_operation
 from app.services.excel_service import (
     export_report_excel, export_shipping_excel,
     get_report_filename, get_shipping_filename,
@@ -51,12 +53,21 @@ def _persist_export_snapshot(issue: Issue, snapshot_type: str, db: Session) -> N
 
 
 @router.get("/report")
-def export_report(issue_id: int, db: Session = Depends(get_db)):
+def export_report(issue_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
 
     output = export_report_excel(issue_id, db)
+    record_operation(
+        db,
+        user=user,
+        table_name="exports",
+        record_id=issue.id,
+        record_name=f"第{issue.issue_number}期",
+        action="export_report",
+        issue_number=issue.issue_number,
+    )
     _persist_export_snapshot(issue, "report_export", db)
     filename = get_report_filename(issue)
     return StreamingResponse(
@@ -67,12 +78,21 @@ def export_report(issue_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/shipping")
-def export_shipping(issue_id: int, db: Session = Depends(get_db)):
+def export_shipping(issue_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
 
     output = export_shipping_excel(issue_id, db)
+    record_operation(
+        db,
+        user=user,
+        table_name="exports",
+        record_id=issue.id,
+        record_name=f"第{issue.issue_number}期",
+        action="export_shipping",
+        issue_number=issue.issue_number,
+    )
     _persist_export_snapshot(issue, "shipping_export", db)
     filename = get_shipping_filename(issue)
     return StreamingResponse(
@@ -83,13 +103,22 @@ def export_shipping(issue_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/all")
-def export_all(issue_id: int, db: Session = Depends(get_db)):
+def export_all(issue_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
 
     report_bytes = export_report_excel(issue_id, db)
     shipping_bytes = export_shipping_excel(issue_id, db)
+    record_operation(
+        db,
+        user=user,
+        table_name="exports",
+        record_id=issue.id,
+        record_name=f"第{issue.issue_number}期",
+        action="export_all",
+        issue_number=issue.issue_number,
+    )
     _persist_export_snapshot(issue, "report_export", db)
     _persist_export_snapshot(issue, "shipping_export", db)
 

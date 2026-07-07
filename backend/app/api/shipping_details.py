@@ -11,9 +11,9 @@ from app.models.shipping_detail import (
     ShippingDetailSourceType,
     ShippingDetailSyncStatus,
 )
-from app.models.operation_log import OperationLog
 from app.models.user import User
 from app.auth import get_current_user, require_admin
+from app.services.operation_log_service import record_operation
 from app.schemas.shipping_detail import (
     ShipDetailIn,
     ShippingDetailBatchDelete,
@@ -133,20 +133,19 @@ def _copy_shipping_details_from_previous(
         )
 
     copied = len(previous_details)
-    db.add(
-        OperationLog(
-            table_name="shipping_details",
-            record_id=0,
-            record_name=f"批量复制到{issue_number}期",
-            action="batch_copy",
-            changes={
-                "from_issue": previous_issue_number,
-                "to_issue": issue_number,
-                "count": copied,
-            },
-            user_id=user.id,
-            username=user.username,
-        )
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_details",
+        record_id=0,
+        record_name=f"批量复制到{issue_number}期",
+        action="batch_copy",
+        issue_number=issue_number,
+        changes={
+            "from_issue": previous_issue_number,
+            "to_issue": issue_number,
+            "count": copied,
+        },
     )
     return copied, False
 
@@ -249,16 +248,17 @@ def create_shipping_detail(
     detail = ShippingDetail(**dump)
     db.add(detail)
     db.flush()  # get the id before commit
-    log = OperationLog(
+    record_operation(
+        db,
+        user=user,
         table_name="shipping_details",
         record_id=detail.id,
         record_name=detail.name,
         action="create",
+        issue_number=detail.issue_number,
+        channel=detail.channel,
         changes=_snapshot(detail),
-        user_id=user.id,
-        username=user.username,
     )
-    db.add(log)
     db.commit()
     db.refresh(detail)
     return detail
@@ -291,15 +291,17 @@ def batch_update_shipping_details(
             changes = _diff(old_snapshot, new_snapshot)
         if changes:
             affected_count += 1
-            db.add(OperationLog(
+            record_operation(
+                db,
+                user=user,
                 table_name="shipping_details",
                 record_id=detail.id,
                 record_name=detail.name,
                 action="update",
+                issue_number=detail.issue_number,
+                channel=detail.channel,
                 changes=changes,
-                user_id=user.id,
-                username=user.username,
-            ))
+            )
 
     db.commit()
     return ShippingDetailBatchResult(affected_count=affected_count)
@@ -333,16 +335,17 @@ def update_shipping_detail(
         new_snapshot = _snapshot(detail)
         changes = _diff(old_snapshot, new_snapshot)
     if changes:
-        log = OperationLog(
+        record_operation(
+            db,
+            user=user,
             table_name="shipping_details",
             record_id=detail.id,
             record_name=detail.name,
             action="update",
+            issue_number=detail.issue_number,
+            channel=detail.channel,
             changes=changes,
-            user_id=user.id,
-            username=user.username,
         )
-        db.add(log)
     db.commit()
     db.refresh(detail)
     return detail
@@ -372,15 +375,17 @@ def ship_shipping_detail(
         detail.tracking_no = data.tracking_no
     changes = _diff(old_snapshot, _snapshot(detail))
     if changes:
-        db.add(OperationLog(
+        record_operation(
+            db,
+            user=user,
             table_name="shipping_details",
             record_id=detail.id,
             record_name=detail.name,
             action="ship",
+            issue_number=detail.issue_number,
+            channel=detail.channel,
             changes=changes,
-            user_id=user.id,
-            username=user.username,
-        ))
+        )
     db.commit()
     db.refresh(detail)
     return detail
@@ -402,15 +407,17 @@ def unship_shipping_detail(
     detail.tracking_no = None
     changes = _diff(old_snapshot, _snapshot(detail))
     if changes:
-        db.add(OperationLog(
+        record_operation(
+            db,
+            user=user,
             table_name="shipping_details",
             record_id=detail.id,
             record_name=detail.name,
             action="unship",
+            issue_number=detail.issue_number,
+            channel=detail.channel,
             changes=changes,
-            user_id=user.id,
-            username=user.username,
-        ))
+        )
     db.commit()
     db.refresh(detail)
     return detail
@@ -426,15 +433,17 @@ def batch_delete_shipping_details(
     _ensure_all_ids_found(data.ids, details)
 
     for detail in details:
-        db.add(OperationLog(
+        record_operation(
+            db,
+            user=user,
             table_name="shipping_details",
             record_id=detail.id,
             record_name=detail.name,
             action="delete",
+            issue_number=detail.issue_number,
+            channel=detail.channel,
             changes=_snapshot(detail),
-            user_id=user.id,
-            username=user.username,
-        ))
+        )
         db.delete(detail)
 
     db.commit()
@@ -457,18 +466,19 @@ def clear_shipping_details_by_issue(
         .all()
     )
     affected_count = len(details)
-    db.add(OperationLog(
+    record_operation(
+        db,
+        user=_user,
         table_name="shipping_details",
         record_id=0,
         record_name=f"清空{issue_number}期发货明细",
         action="batch_delete_issue",
+        issue_number=issue_number,
         changes={
             "issue_number": issue_number,
             "count": affected_count,
         },
-        user_id=_user.id,
-        username=_user.username,
-    ))
+    )
     for detail in details:
         db.delete(detail)
 
@@ -485,16 +495,17 @@ def delete_shipping_detail(
     detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
     if not detail:
         raise HTTPException(status_code=404, detail="发货明细不存在")
-    log = OperationLog(
+    record_operation(
+        db,
+        user=user,
         table_name="shipping_details",
         record_id=detail.id,
         record_name=detail.name,
         action="delete",
+        issue_number=detail.issue_number,
+        channel=detail.channel,
         changes=_snapshot(detail),
-        user_id=user.id,
-        username=user.username,
     )
-    db.add(log)
     db.delete(detail)
     db.commit()
     return {"message": "Deleted"}

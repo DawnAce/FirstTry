@@ -8,7 +8,6 @@ from app.models import (
     Issue,
     IssueAuditSnapshot,
     IssueStatus,
-    OperationLog,
     ReportEntry,
     ReportRevision,
     ShippingDetail,
@@ -27,6 +26,7 @@ from app.schemas.report import (
 )
 from app.auth import get_current_user, require_admin
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
+from app.services.operation_log_service import record_operation
 
 router = APIRouter(prefix="/api/issues/{issue_id}/report", tags=["reports"])
 
@@ -88,20 +88,19 @@ def _copy_previous_shipping_details_for_confirm(
         )
 
     copied = len(previous_details)
-    db.add(
-        OperationLog(
-            table_name="shipping_details",
-            record_id=0,
-            record_name=f"批量复制到{issue.issue_number}期",
-            action="batch_copy",
-            changes={
-                "from_issue": previous_issue.issue_number,
-                "to_issue": issue.issue_number,
-                "count": copied,
-            },
-            user_id=user.id,
-            username=user.username,
-        )
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_details",
+        record_id=0,
+        record_name=f"批量复制到{issue.issue_number}期",
+        action="batch_copy",
+        issue_number=issue.issue_number,
+        changes={
+            "from_issue": previous_issue.issue_number,
+            "to_issue": issue.issue_number,
+            "count": copied,
+        },
     )
     return copied
 
@@ -247,6 +246,20 @@ def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = De
         )
     )
     issue.status = IssueStatus.confirmed
+    record_operation(
+        db,
+        user=user,
+        table_name="reports",
+        record_id=issue.id,
+        record_name=f"第{issue.issue_number}期",
+        action="confirm",
+        issue_number=issue.issue_number,
+        changes={
+            "zt_report_total": zt_report_total,
+            "zt_shipping_total": zt_shipping_total,
+            "delta": zt_report_total - zt_shipping_total,
+        },
+    )
     db.commit()
     result = {
         "message": "Report confirmed",
@@ -307,6 +320,16 @@ def revoke_report(
 
     # Revert to draft
     issue.status = IssueStatus.draft
+    record_operation(
+        db,
+        user=user,
+        table_name="reports",
+        record_id=issue.id,
+        record_name=f"第{issue.issue_number}期",
+        action="revoke",
+        issue_number=issue.issue_number,
+        changes={"revision_number": rev_number, "reason": reason},
+    )
     db.commit()
 
     return {"message": "报数已作废", "revision_number": rev_number}

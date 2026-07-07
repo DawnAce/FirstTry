@@ -14,6 +14,10 @@ from app.database import Base
 from app.models import Issue, IssueAuditSnapshot, IssueStatus, PublicationSchedule, ReportEntry, ShippingDetail, User, UserRole
 
 
+def _admin_user() -> User:
+    return User(id=1, username="admin", role=UserRole.admin, password_hash="x")
+
+
 class ReportShippingChainTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine(
@@ -142,7 +146,7 @@ class ReportShippingChainTests(unittest.TestCase):
         )
         db.commit()
 
-        response = export_shipping(issue.id, db=db)
+        response = export_shipping(issue.id, db=db, user=_admin_user())
 
         self.assertIn(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -225,7 +229,7 @@ class ReportShippingChainTests(unittest.TestCase):
         )
         db.commit()
 
-        response = export_shipping(issue.id, db=db)
+        response = export_shipping(issue.id, db=db, user=_admin_user())
 
         self.assertIn(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -254,7 +258,7 @@ class ReportShippingChainTests(unittest.TestCase):
         )
         db.commit()
 
-        response = export_report(issue.id, db=db)
+        response = export_report(issue.id, db=db, user=_admin_user())
 
         self.assertIn(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -287,7 +291,7 @@ class ReportShippingChainTests(unittest.TestCase):
         db.add(issue)
         db.commit()
 
-        response = export_report(issue.id, db=db)
+        response = export_report(issue.id, db=db, user=_admin_user())
         workbook = load_workbook(io.BytesIO(self._read_streaming_response_bytes(response)))
 
         self.assertIn("第十四期", workbook["北京印厂"]["A3"].value)
@@ -306,7 +310,7 @@ class ReportShippingChainTests(unittest.TestCase):
         )
         db.commit()
 
-        response = export_all(issue.id, db=db)
+        response = export_all(issue.id, db=db, user=_admin_user())
 
         self.assertEqual(response.media_type, "application/zip")
         snapshot_types = {
