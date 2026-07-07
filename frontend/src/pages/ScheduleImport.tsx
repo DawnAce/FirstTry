@@ -826,7 +826,7 @@ export default function ScheduleImport() {
             rowKey="id"
             columns={uploadColumns}
             dataSource={uploadsQuery.data ?? []}
-            pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条`, showSizeChanger: true, size: 'default' }}
+            pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条`, showSizeChanger: true }}
             size="middle"
           />
         )}
