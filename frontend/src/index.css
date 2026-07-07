@@ -1822,6 +1822,266 @@ body {
 .mx-state.adjust { background: #fff7e6; color: #d46b08; }
 .mx-state.rest { background: #f2f2f4; color: #8c8c94; }
 
+/* ===== Import schedule (导入期刊表) ===== */
+.si-page {
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+.si-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.si-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.si-sub {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 6px 0 0;
+}
+
+/* PDF 上传 / 解析预览卡 */
+.si-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.si-file-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #fff1f0;
+  color: #cf1322;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.si-file-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.si-file-status {
+  font-size: 12px;
+  color: #52c41a;
+  margin-top: 2px;
+}
+
+.si-file-hint {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.si-links {
+  display: flex;
+  gap: 22px;
+  margin-top: 16px;
+}
+
+.si-links a {
+  color: var(--color-accent);
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* 导入摘要卡 */
+.si-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+  margin-bottom: 16px;
+}
+
+.si-kv {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.si-kv .k {
+  color: var(--color-text-secondary);
+  min-width: 68px;
+}
+
+.si-kv .k::after {
+  content: '：';
+}
+
+.si-kv .v {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.si-kv .v.warn {
+  color: #fa8c16;
+}
+
+.si-overwrite-alert {
+  margin-bottom: 16px;
+}
+
+.si-summary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.si-summary-actions-row {
+  display: flex;
+  gap: 10px;
+}
+
+.si-dirty-hint {
+  font-size: 12px;
+  color: #d46b08;
+}
+
+/* 人工确认预览卡 */
+.si-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.si-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.si-chip {
+  padding: 3px 11px;
+  font-size: 12.5px;
+  border-radius: 14px;
+  background: #f0f0f2;
+  color: #5a5a62;
+  cursor: pointer;
+  border: none;
+  transition: all var(--transition);
+}
+
+.si-chip:hover {
+  background: #e8e8ea;
+}
+
+.si-chip.on {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.si-toolbar-tail {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.si-count-hint {
+  padding: 10px 16px;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.si-groups {
+  padding: 12px 16px 0;
+}
+
+.si-group {
+  margin-bottom: 18px;
+}
+
+.si-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 4px 0 10px;
+}
+
+.si-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.si-add-row {
+  padding: 4px 16px 16px;
+}
+
+.si-row-flagged td {
+  background: #fffaf0 !important;
+}
+
+/* 校验状态胶囊 */
+.si-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--radius-tag);
+  padding: 1px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.si-val-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.si-val.normal { background: #f6ffed; color: #389e0d; }
+.si-val.pending { background: #fff7e6; color: #d46b08; cursor: default; }
+.si-val.error { background: #fff1f0; color: #cf1322; }
+.si-val.rest { background: #f2f2f4; color: #8c8c94; }
+
+/* 人工确认说明卡 */
+.si-help-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.si-help-list li {
+  font-size: 13px;
+  color: #5a5a62;
+  line-height: 1.6;
+}
+
 @media (max-width: 1200px) {
   .shipping-detail-filter-row--footer {
     justify-content: flex-start;

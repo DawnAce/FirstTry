@@ -101,6 +101,12 @@ vi.mock('antd', async () => {
     Row: passthrough,
     Select: ({ disabled }: { disabled?: boolean }) => React.createElement('select', { disabled }),
     Space: passthrough,
+    Steps: () => React.createElement('div'),
+    Input: Object.assign(() => React.createElement('input'), {
+      Search: () => React.createElement('input'),
+      TextArea: () => React.createElement('textarea'),
+    }),
+    Tooltip: passthrough,
     Statistic: ({ title, value, suffix }: {
       title?: React.ReactNode;
       value?: React.ReactNode;
@@ -123,6 +129,16 @@ vi.mock('antd', async () => {
 vi.mock('@ant-design/icons', () => ({
   DeleteOutlined: () => <span />,
   InboxOutlined: () => <span />,
+  CheckCircleFilled: () => <span />,
+  DownloadOutlined: () => <span />,
+  ExclamationCircleFilled: () => <span />,
+  FilePdfOutlined: () => <span />,
+  InfoCircleOutlined: () => <span />,
+  PauseCircleFilled: () => <span />,
+  ProfileOutlined: () => <span />,
+  ReloadOutlined: () => <span />,
+  SearchOutlined: () => <span />,
+  WarningOutlined: () => <span />,
 }));
 
 describe('ScheduleImport', () => {
@@ -155,7 +171,7 @@ describe('ScheduleImport', () => {
 
     const html = renderToString(<ScheduleImport />);
 
-    expect(html).toContain('上传 PDF 预览');
+    expect(html).toContain('PDF 上传与解析预览');
     expect(html).not.toContain('仅管理员可上传刊期 PDF');
   });
 
@@ -193,17 +209,17 @@ describe('ScheduleImport', () => {
     const html = renderToString(<ScheduleImport />);
 
     expect(html).toContain('新增一行');
-    expect(html).toContain('应用手动修正并重新校验');
+    expect(html).toContain('应用修正并重新校验');
   });
 
-  it('disables upload and year selection while committing a preview', () => {
+  it('disables the confirm save and year selection while committing a preview', () => {
     state.isAdmin = true;
     state.reactStateValues = [2026, preview, false, true, null, 'schedule.pdf', null];
 
     const html = renderToString(<ScheduleImport />);
 
-    expect(html).toContain('data-testid="schedule-upload-dragger" data-disabled="true"');
     expect(html).toContain('<select disabled=""></select>');
+    expect(html).toContain('<button disabled="">确认保存</button>');
   });
 
   it('commits preview rows and clears preview state after confirmation succeeds', async () => {
