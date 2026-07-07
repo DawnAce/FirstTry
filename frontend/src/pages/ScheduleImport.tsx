@@ -20,17 +20,22 @@ import {
   message,
 } from 'antd';
 import {
+  CalendarOutlined,
   CheckCircleFilled,
+  ClockCircleOutlined,
+  CloudUploadOutlined,
   DeleteOutlined,
   DownloadOutlined,
   ExclamationCircleFilled,
+  FileDoneOutlined,
   FilePdfOutlined,
-  InboxOutlined,
+  FileTextOutlined,
   InfoCircleOutlined,
   PauseCircleFilled,
   ProfileOutlined,
   ReloadOutlined,
   SearchOutlined,
+  UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
@@ -120,6 +125,7 @@ export default function ScheduleImport() {
   const [monthFilter, setMonthFilter] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('all');
   const [searchText, setSearchText] = useState('');
+  const [noticeOpen, setNoticeOpen] = useState(true);
   const yearOptions = useMemo(() => buildYearOptions(year), [year]);
 
   const uploadsQuery = useQuery({
@@ -137,6 +143,40 @@ export default function ScheduleImport() {
   );
   const previewIssueRange = preview ? formatIssueRange(preview.summary) : '-';
   const hasDraftRowChanges = preview ? JSON.stringify(draftRows) !== JSON.stringify(preview.rows) : false;
+
+  // 默认（未上传）态：从上传记录派生的概览数据。
+  const uploads = uploadsQuery.data ?? [];
+  const committedCount = uploads.filter((upload) => upload.status === 'committed').length;
+  const latestUpload = uploads.length
+    ? [...uploads].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
+    : undefined;
+  const latestTime = latestUpload ? (latestUpload.committed_at ?? latestUpload.created_at) : null;
+  const landingStats: Array<{ icon: ReactNode; bg: string; label: string; value: ReactNode }> = [
+    {
+      icon: <CalendarOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
+      bg: 'rgba(0,113,227,.08)',
+      label: '当前年份',
+      value: <>{year}<span className="dashboard-stat-suffix"> 年</span></>,
+    },
+    {
+      icon: <FileDoneOutlined style={{ fontSize: 21, color: '#52c41a' }} />,
+      bg: 'rgba(82,196,26,.12)',
+      label: '已保存期刊表',
+      value: <>{committedCount}<span className="dashboard-stat-suffix"> 份</span></>,
+    },
+    {
+      icon: <CheckCircleFilled style={{ fontSize: 21, color: '#52c41a' }} />,
+      bg: 'rgba(82,196,26,.12)',
+      label: '最近导入状态',
+      value: latestUpload ? renderStatus(latestUpload.status) : <span className="dashboard-stat-suffix">暂无</span>,
+    },
+    {
+      icon: <ClockCircleOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
+      bg: 'rgba(0,113,227,.08)',
+      label: '最近更新时间',
+      value: <span style={{ fontSize: 15 }}>{latestTime ? dayjs(latestTime).format('YYYY-MM-DD HH:mm') : '—'}</span>,
+    },
+  ];
 
   // 统计：解析记录 / 正常 / 休刊 / 异常·待确认。
   const counts = useMemo(() => {
@@ -250,6 +290,29 @@ export default function ScheduleImport() {
 
   const handleContinueEdit = () => {
     document.querySelector('.si-preview-area')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleScrollToUpload = () => {
+    document.querySelector('.si-upload-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleDownloadTemplate = () => {
+    const text = [
+      '年度期刊表 PDF 导入说明',
+      '',
+      '1. 文件须为「可抽取文字」的文本 PDF（非扫描件）；扫描件请先 OCR 成可复制文字。',
+      '2. 每一期一行，包含出版日期、期号；休刊周不填期号。',
+      '3. 版数以「对开XX版」形式标注，系统会自动提取为默认版数。',
+      '4. 单个文件大小不超过 20MB。',
+      '5. 上传后系统仅生成预览，需人工核对并点「确认保存」后才写入正式期刊表。',
+    ].join('\n');
+    const blob = new Blob([`﻿${text}`], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '年度期刊表导入说明.txt';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleDraftRowChange = (draftIndex: number, patch: Partial<ScheduleDraftRow>) => {
@@ -436,13 +499,24 @@ export default function ScheduleImport() {
     {
       title: '操作',
       key: 'action',
-      render: (_: unknown, record: ScheduleUpload) => (
-        record.status === 'previewed' ? (
-          <Popconfirm title="确认删除此待确认记录？" onConfirm={() => handleDiscardUpload(record.id)} okText="删除" cancelText="取消">
-            <Button type="link" danger size="small" icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
-        ) : null
-      ),
+      render: (_: unknown, record: ScheduleUpload) => {
+        if (record.status === 'committed') {
+          return (
+            <span className="si-uploads-actions">
+              <a href="/schedule">查看记录</a>
+              <a onClick={handleScrollToUpload}>再次导入</a>
+            </span>
+          );
+        }
+        if (record.status === 'previewed') {
+          return (
+            <Popconfirm title="确认删除此待确认记录？" onConfirm={() => handleDiscardUpload(record.id)} okText="删除" cancelText="取消">
+              <Button type="link" danger size="small" icon={<DeleteOutlined />}>删除</Button>
+            </Popconfirm>
+          );
+        }
+        return null;
+      },
     },
   ];
 
@@ -471,22 +545,83 @@ export default function ScheduleImport() {
           description="当前账号没有导入权限，请联系管理员处理年度刊期表导入。"
         />
       ) : !preview ? (
-        <Card className="si-upload-card" title="PDF 上传与解析预览">
-          <Dragger
-            accept=".pdf,application/pdf"
-            beforeUpload={handlePreviewUpload}
-            disabled={previewing || committing}
-            maxCount={1}
-            showUploadList={false}
-          >
-            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-            <p className="ant-upload-text">点击或拖拽上传年度刊期 PDF</p>
-            <p className="ant-upload-hint">选择文件后将自动解析并生成预览，不会直接写入正式刊期表</p>
-          </Dragger>
-          {previewFileName && <div className="si-file-hint">当前预览文件：{previewFileName}</div>}
-          {previewing && <Alert style={{ marginTop: 16 }} type="info" showIcon title="正在解析 PDF，请稍候..." />}
-          {previewError && <Alert style={{ marginTop: 16 }} type="error" showIcon title="解析预览失败" description={previewError} />}
-        </Card>
+        <>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col xs={24} lg={16} style={{ display: 'flex' }}>
+              <Card className="si-upload-card" title="PDF 上传与解析预览" style={{ flex: 1 }}>
+                <Dragger
+                  accept=".pdf,application/pdf"
+                  beforeUpload={handlePreviewUpload}
+                  disabled={previewing || committing}
+                  maxCount={1}
+                  showUploadList={false}
+                >
+                  <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
+                  <p className="ant-upload-text">点击或拖拽上传年度期刊 PDF</p>
+                  <p className="ant-upload-hint">选择文件后将自动解析并生成预览，不会直接写入正式期刊表</p>
+                </Dragger>
+                <div className="si-upload-note">支持 PDF 格式，单文件大小不超过 20MB</div>
+                <div className="si-upload-btns">
+                  <Upload
+                    accept=".pdf,application/pdf"
+                    beforeUpload={handlePreviewUpload}
+                    disabled={previewing || committing}
+                    maxCount={1}
+                    showUploadList={false}
+                  >
+                    <Button type="primary" icon={<UploadOutlined />} loading={previewing} disabled={committing}>选择文件上传</Button>
+                  </Upload>
+                  <Button icon={<FileTextOutlined />} onClick={handleDownloadTemplate}>下载模板说明</Button>
+                </div>
+                {previewFileName && <div className="si-file-hint">当前预览文件：{previewFileName}</div>}
+                {previewing && <Alert style={{ marginTop: 16 }} type="info" showIcon title="正在解析 PDF，请稍候..." />}
+                {previewError && <Alert style={{ marginTop: 16 }} type="error" showIcon title="解析预览失败" description={previewError} />}
+              </Card>
+            </Col>
+            <Col xs={24} lg={8} style={{ display: 'flex' }}>
+              <Card className="si-guide-card" title="导入说明" style={{ flex: 1 }}>
+                <ol className="si-guide-list">
+                  <li>上传年度期刊 PDF</li>
+                  <li>系统自动解析并生成预览</li>
+                  <li>人工核对期号、版数和休刊项</li>
+                  <li>确认保存后写入正式期刊表</li>
+                </ol>
+                <div className="si-guide-note">
+                  <InfoCircleOutlined />
+                  <span>保存前可随时返回修改，不会影响当前正式期刊表。</span>
+                </div>
+              </Card>
+            </Col>
+          </Row>
+
+          {noticeOpen && (
+            <Alert
+              style={{ marginBottom: 16 }}
+              type="info"
+              showIcon
+              closable
+              onClose={() => setNoticeOpen(false)}
+              icon={<InfoCircleOutlined />}
+              title="如需覆盖既有期刊表，请先确认年份后再上传。"
+            />
+          )}
+
+          <Row gutter={16}>
+            {landingStats.map((card, idx) => (
+              <Col xs={12} md={6} key={idx} style={{ display: 'flex' }}>
+                <Card className="dashboard-stat-card" size="small" style={{ flex: 1 }} loading={uploadsQuery.isLoading}>
+                  <div className="dashboard-stat-card-inner" style={{ alignItems: 'center' }}>
+                    <div className="dashboard-stat-icon" style={{ background: card.bg }}>{card.icon}</div>
+                    <div className="dashboard-stat-content">
+                      <div className="dashboard-stat-label">{card.label}</div>
+                      <div className="dashboard-stat-value">{card.value}</div>
+                    </div>
+                  </div>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </>
       ) : (
         <>
           <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -691,7 +826,7 @@ export default function ScheduleImport() {
             rowKey="id"
             columns={uploadColumns}
             dataSource={uploadsQuery.data ?? []}
-            pagination={false}
+            pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条`, showSizeChanger: true, size: 'default' }}
             size="middle"
           />
         )}
