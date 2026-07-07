@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from app.models import PublicationSchedule, Issue, ReportEntry, ReportItemTemplate
 from app.schemas.issue import IssueOut
-from app.services.report_destination_service import resolve_report_destination
+from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 
 
 # Sub-categories excluded from an issue's headline print total.
@@ -29,6 +29,35 @@ def compute_print_totals(db: Session, issue_ids: list[int]) -> dict[int, int]:
     totals: dict[int, int] = {}
     for issue_id, sub_category, value in rows:
         if sub_category not in PRINT_TOTAL_EXCLUDED_SUBS:
+            totals[issue_id] = totals.get(issue_id, 0) + (value or 0)
+    return totals
+
+
+def compute_zt_report_totals(db: Session, issue_ids: list[int]) -> dict[int, int]:
+    """Sum ReportEntry.value per issue for the 中通 (ZTO) destination bucket only.
+
+    Mirrors :func:`compute_print_totals` batching but keeps only entries that
+    resolve to ``DESTINATION_ZTO`` (excluding the non-print 加印 sub-categories),
+    so the per-issue result equals ``reports.get_report``'s ``report_zt_total``.
+    """
+    if not issue_ids:
+        return {}
+    rows = (
+        db.query(
+            ReportEntry.issue_id,
+            ReportEntry.category,
+            ReportEntry.sub_category,
+            ReportEntry.destination,
+            ReportEntry.value,
+        )
+        .filter(ReportEntry.issue_id.in_(issue_ids))
+        .all()
+    )
+    totals: dict[int, int] = {}
+    for issue_id, category, sub_category, destination, value in rows:
+        if sub_category in PRINT_TOTAL_EXCLUDED_SUBS:
+            continue
+        if resolve_report_destination(category, sub_category, destination) == DESTINATION_ZTO:
             totals[issue_id] = totals.get(issue_id, 0) + (value or 0)
     return totals
 
