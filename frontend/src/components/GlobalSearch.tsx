@@ -14,17 +14,15 @@ const TYPE_META: Record<SearchHitType, { label: string; color: string }> = {
   product: { label: '商品', color: 'purple' },
   issue: { label: '期数', color: 'gold' },
 };
-const TYPE_ORDER: SearchHitType[] = ['order', 'recipient', 'product', 'issue'];
+const TYPE_ORDER: SearchHitType[] = ['order', 'product', 'issue'];
 
-/** 一条命中 → 跳转目标；无详情路由的（收报人/商品）跳列表页并带上搜索词。 */
+/** 一条命中 → 跳转目标；无详情路由的（商品）跳列表页并带上搜索词。 */
 function hitTarget(hit: SearchHit): string {
   switch (hit.type) {
     case 'order':
       return `/orders/${hit.id}`;
     case 'issue':
       return `/report/${hit.id}`;
-    case 'recipient':
-      return `/recipients?tab=recipients&search=${encodeURIComponent(hit.ref ?? hit.title)}`;
     case 'product':
       return `/products?q=${encodeURIComponent(hit.ref ?? hit.title)}`;
     default:
@@ -116,7 +114,7 @@ export default function GlobalSearch() {
       }}
       notFoundContent={debounced.length >= 1 ? (isFetching ? '搜索中…' : '无匹配') : null}
     >
-      <Input allowClear prefix={<SearchOutlined style={{ color: '#bbb' }} />} placeholder="搜索 订单/收报人/商品/期数" />
+      <Input allowClear prefix={<SearchOutlined style={{ color: '#bbb' }} />} placeholder="搜索 订单/商品/期数" />
     </AutoComplete>
   );
 }
