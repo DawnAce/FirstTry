@@ -1,9 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/AppLayout';
 import Dashboard from './pages/DashboardPage';
 import ReportEditor from './pages/ReportEditor';
-import Recipients from './pages/Recipients';
+import LogisticsOverview from './pages/LogisticsOverview';
 import PostDelivery from './pages/PostDelivery';
 import History from './pages/History';
 import LogisticsIssues from './pages/LogisticsIssues';
@@ -37,6 +37,14 @@ function LegacyShippingRedirect() {
   return <Navigate to={target} replace />;
 }
 
+// ZTO-MF 菜单现在打开工作台；但旧书签 /recipients?tab=shipping&issueId=N 仍要落到该期详情。
+function WorkbenchOrRedirect() {
+  const [searchParams] = useSearchParams();
+  const issueId = searchParams.get('issueId');
+  if (issueId) return <Navigate to={`/logistics/issues/${issueId}`} replace />;
+  return <LogisticsOverview />;
+}
+
 function App() {
   return (
     <AuthProvider>
@@ -46,7 +54,7 @@ function App() {
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/report/:issueId" element={<ReportEditor />} />
-            <Route path="/recipients" element={<Recipients />} />
+            <Route path="/recipients" element={<WorkbenchOrRedirect />} />
             <Route path="/logistics/issues" element={<LogisticsIssues />} />
             <Route path="/logistics/issues/:id" element={<LogisticsIssueDetail />} />
             <Route path="/post-delivery" element={<PostDelivery />} />

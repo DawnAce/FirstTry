@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout, Menu, Badge, Avatar, Dropdown, Tooltip } from 'antd';
 import {
   HomeOutlined,
@@ -135,6 +135,13 @@ export default function AppLayout() {
     return [];
   };
 
+  // 受控展开：SPA 跨组导航后保证当前分组展开（否则高亮项藏在折叠组里）。
+  const [openKeys, setOpenKeys] = useState<string[]>(getOpenKeys());
+  useEffect(() => {
+    setOpenKeys((prev) => Array.from(new Set([...prev, ...getOpenKeys()])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
   const userMenuItems: MenuProps['items'] = [
     {
       key: 'logout',
@@ -174,7 +181,8 @@ export default function AppLayout() {
             <Menu
               mode="inline"
               selectedKeys={[getSelectedKey()]}
-              defaultOpenKeys={getOpenKeys()}
+              openKeys={openKeys}
+              onOpenChange={(keys) => setOpenKeys(keys as string[])}
               onClick={({ key }) => {
                 if (!key.startsWith('/dashboard')) {
                   navigate(key);
