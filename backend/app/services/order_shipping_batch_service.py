@@ -25,7 +25,6 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Issue,
-    OperationLog,
     Order,
     OrderItem,
     OrderItemStatus,
@@ -55,6 +54,7 @@ from app.services.order_shipping_sync_service import (
     apply_order_shipping_sync,
     preview_order_shipping_sync,
 )
+from app.services.operation_log_service import record_operation
 
 _SINGLE_ISSUE_TYPES = (FulfillmentType.single_issue, FulfillmentType.makeup)
 
@@ -299,20 +299,20 @@ def ship_all_for_issue(
             if operator_id is not None
             else None
         )
-        db.add(
-            OperationLog(
-                table_name="shipping_details",
-                record_id=0,
-                record_name=f"批量标记 {issue_number} 期已发",
-                action="ship_batch",
-                changes={
-                    "issue_number": issue_number,
-                    "count": len(rows),
-                    "shipped_at": ship_date.isoformat(),
-                },
-                user_id=operator_id,
-                username=username,
-            )
+        record_operation(
+            db,
+            user_id=operator_id,
+            username=username,
+            table_name="shipping_details",
+            record_id=0,
+            record_name=f"批量标记 {issue_number} 期已发",
+            action="ship_batch",
+            issue_number=issue_number,
+            changes={
+                "issue_number": issue_number,
+                "count": len(rows),
+                "shipped_at": ship_date.isoformat(),
+            },
         )
     db.commit()
     return ShipBatchResult(

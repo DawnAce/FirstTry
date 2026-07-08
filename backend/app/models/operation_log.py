@@ -14,4 +14,7 @@ class OperationLog(Base):
     changes = Column(JSON, nullable=True)
     user_id = Column(Integer, nullable=True)
     username = Column(String(50), nullable=True)
+    issue_number = Column(Integer, nullable=True, index=True)  # 期数（可空、非 FK；工作台按期过滤 feed）
+    channel = Column(String(100), nullable=True)  # 渠道（单条发货操作时取 ShippingDetail.channel）
+    status = Column(String(20), nullable=False, server_default="success", default="success")  # 成功/失败
     created_at = Column(DateTime, server_default=func.now(), index=True)
