@@ -4,7 +4,7 @@ These rows are assembled by the service layer via GROUP BY aggregation, so
 they are plain ``BaseModel``s (not ``from_attributes`` ORM projections).
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
@@ -115,3 +115,65 @@ class BsCirculationOut(BaseModel):
     grand_total: int
     unexpanded_subscriptions: int
     year: Optional[int] = None
+
+
+# --- ZTO-MF 跨期总览（工作台 + 期数总览）---------------------------------------
+
+class PeriodRowOut(BaseModel):
+    """某一期的物流总览行（服务端算好 status，前端不重算）。delta = 报数 − 发货。"""
+
+    issue_number: int
+    issue_id: Optional[int] = None
+    year: int
+    publish_date: date
+    status: str            # 未创建 / 草稿 / 异常 / 待上传 / 已上传
+    report_zt_total: int   # 报数·中通合计
+    shipping_total: int    # 发货明细·合计
+    delta: int             # 报数 − 发货（正数=发货缺口/少发）
+    is_match: bool
+    detail_count: int
+    has_shipping_drift: bool
+    exception_note: str
+    last_updated_at: Optional[datetime] = None
+
+
+class OverviewKpiOut(BaseModel):
+    """总览 KPI 计数（均不含休刊）。工作台"待上传"卡 = pending + uncreated（决策②）。"""
+
+    total: int
+    uploaded: int
+    pending: int      # 已开期、无发货明细
+    uncreated: int    # 刊历有此期、系统未建
+    exception: int
+    draft: int
+
+
+class OverviewReminderOut(BaseModel):
+    """工作台待处理提醒（3 项，本年）。"""
+
+    no_shipping_count: int         # 尚未上传发货明细（待上传 + 未创建）
+    delta_diff_count: int          # 报数与发货差异（异常且 delta≠0）
+    draft_unconfirmed_count: int   # 草稿未确认
+
+
+class LatestUpdateOut(BaseModel):
+    issue_number: int
+    last_updated_at: datetime
+    status: str
+
+
+class OverviewExtrasOut(BaseModel):
+    """仅 scope=workbench 返回。"""
+
+    recent_issues: List[PeriodRowOut]
+    upcoming_issues: List[PeriodRowOut]
+    reminders: OverviewReminderOut
+    latest_this_month: Optional[LatestUpdateOut] = None
+
+
+class OverviewOut(BaseModel):
+    scope: str                       # workbench | periods
+    year: Optional[int] = None
+    rows: List[PeriodRowOut]
+    kpi: OverviewKpiOut
+    extras: Optional[OverviewExtrasOut] = None

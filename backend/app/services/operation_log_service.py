@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.operation_log import OperationLog
 from app.models.user import User
+from app.cache import invalidate_overview_cache
 
 
 def record_operation(
@@ -55,4 +56,6 @@ def record_operation(
         status=status,
     )
     db.add(log)
+    # 任一 ZTO-MF 写操作都影响工作台/期数总览聚合 → 失效其缓存（记录点即状态变更点）。
+    invalidate_overview_cache()
     return log

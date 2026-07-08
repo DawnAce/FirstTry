@@ -27,6 +27,7 @@ from app.schemas.report import (
 from app.auth import get_current_user, require_admin
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.services.operation_log_service import record_operation
+from app.cache import invalidate_overview_cache
 
 router = APIRouter(prefix="/api/issues/{issue_id}/report", tags=["reports"])
 
@@ -199,6 +200,7 @@ def update_report(issue_id: int, data: ReportDataUpdate, db: Session = Depends(g
             entry.value = entry_data.value
 
     db.commit()
+    invalidate_overview_cache()
     return {"message": "Report updated"}
 
 

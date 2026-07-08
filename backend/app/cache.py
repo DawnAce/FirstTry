@@ -20,3 +20,24 @@ def set_dashboard_cache(data: dict) -> None:
 def invalidate_dashboard_cache() -> None:
     global _dashboard_cache
     _dashboard_cache = {"data": None, "expires_at": 0}
+
+
+# --- ZTO-MF overview aggregate cache (工作台 + 期数总览) -----------------------
+# Keyed by (scope, year). scope='workbench' 恒为本年 → 归一化用 year=None 作键。
+_overview_cache: dict = {}
+OVERVIEW_CACHE_TTL = 30  # seconds
+
+
+def get_overview_cache(scope: str, year: int | None):
+    entry = _overview_cache.get((scope, year))
+    if entry is not None and time.time() < entry["expires_at"]:
+        return entry["data"]
+    return None
+
+
+def set_overview_cache(scope: str, year: int | None, data) -> None:
+    _overview_cache[(scope, year)] = {"data": data, "expires_at": time.time() + OVERVIEW_CACHE_TTL}
+
+
+def invalidate_overview_cache() -> None:
+    _overview_cache.clear()
