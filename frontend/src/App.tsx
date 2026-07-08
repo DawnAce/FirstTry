@@ -6,6 +6,7 @@ import ReportEditor from './pages/ReportEditor';
 import Recipients from './pages/Recipients';
 import PostDelivery from './pages/PostDelivery';
 import History from './pages/History';
+import LogisticsIssues from './pages/LogisticsIssues';
 import Templates from './pages/Templates';
 import HistoryImport from './pages/HistoryImport';
 import ScheduleView from './pages/ScheduleView';
@@ -45,6 +46,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/report/:issueId" element={<ReportEditor />} />
             <Route path="/recipients" element={<Recipients />} />
+            <Route path="/logistics/issues" element={<LogisticsIssues />} />
             <Route path="/post-delivery" element={<PostDelivery />} />
             <Route path="/shipping/:issueId" element={<LegacyShippingRedirect />} />
             <Route path="/history" element={<History />} />
