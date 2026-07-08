@@ -199,7 +199,7 @@ export default function History() {
             icon={<SendOutlined />}
             onClick={(e) => {
               e.stopPropagation();
-              navigate(`/recipients?tab=shipping&issueId=${r.id}`);
+              navigate(`/logistics/issues/${r.id}`);
             }}
           >
             中通明细

@@ -186,7 +186,7 @@ export default function Dashboard() {
           <Button
             type="link"
             size="small"
-            onClick={(e) => { e.stopPropagation(); navigate(`/recipients?tab=shipping&issueId=${record.id}`); }}
+            onClick={(e) => { e.stopPropagation(); navigate(`/logistics/issues/${record.id}`); }}
           >
             明细
           </Button>
