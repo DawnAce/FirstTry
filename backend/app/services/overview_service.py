@@ -35,8 +35,8 @@ from app.schemas.analytics import (
 )
 from app.services.issue_service import compute_zt_report_totals
 
-_RECENT_LIMIT = 10
-_UPCOMING_LIMIT = 8
+_RECENT_LIMIT = 5
+_UPCOMING_LIMIT = 5
 
 
 def _compute_status(
