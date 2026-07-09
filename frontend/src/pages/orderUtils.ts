@@ -257,6 +257,13 @@ export function canVoidOrder(status: OrderStatus): boolean {
   return status !== 'void';
 }
 
+// 删除是管理员清理入口（草稿 / 误建 / 测试遗留）：仅草稿或已作废、且未生成任何
+// 发货明细（synced_count === 0）的订单可硬删。生效订单须先作废；已生成发货明细的
+// 订单被后端 RESTRICT 拦下（改用作废停发）。
+export function canDeleteOrder(status: OrderStatus, syncedCount: number): boolean {
+  return (status === 'draft' || status === 'void') && syncedCount === 0;
+}
+
 // 退款 / 取消是「生效订单」上的商业操作；已作废订单不可退；已全额退款 / 已取消不再可退/可取消。
 export function canRefundOrder(
   status: OrderStatus,

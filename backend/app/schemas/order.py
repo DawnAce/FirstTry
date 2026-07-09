@@ -271,6 +271,12 @@ class BulkVoidIn(BaseModel):
     reason: str = Field(min_length=1, max_length=255)
 
 
+class BulkDeleteIn(BaseModel):
+    """Payload for POST /orders/bulk-delete (hard delete, admin only)."""
+
+    order_ids: List[int] = Field(min_length=1)
+
+
 class BulkOpFailure(BaseModel):
     order_id: int
     detail: str

@@ -549,6 +549,14 @@ export const bulkVoidOrders = (
 ): Promise<AxiosResponse<BulkOpResult>> =>
   api.post<BulkOpResult>('/orders/bulk-void', { order_ids: orderIds, reason });
 
+export const deleteOrder = (id: number): Promise<AxiosResponse<{ message: string; id: number }>> =>
+  api.delete(`/orders/${id}`);
+
+export const bulkDeleteOrders = (
+  orderIds: number[],
+): Promise<AxiosResponse<BulkOpResult>> =>
+  api.post<BulkOpResult>('/orders/bulk-delete', { order_ids: orderIds });
+
 export const exportOrders = (
   params?: ListOrdersParams,
 ): Promise<AxiosResponse<Blob>> =>

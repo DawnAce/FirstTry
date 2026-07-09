@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   billingTypeLabel,
   canConfirmOrder,
+  canDeleteOrder,
   canEditOrder,
   canVoidOrder,
   deliveryMethodLabel,
@@ -213,6 +214,16 @@ describe('canEditOrder / canConfirmOrder / canVoidOrder', () => {
     expect(canVoidOrder('pending_confirmation')).toBe(true);
     expect(canVoidOrder('active')).toBe(true);
     expect(canVoidOrder('void')).toBe(false);
+  });
+  it('allows delete only on draft/void with no shipping details', () => {
+    expect(canDeleteOrder('draft', 0)).toBe(true);
+    expect(canDeleteOrder('void', 0)).toBe(true);
+    // active / pending must be voided first
+    expect(canDeleteOrder('active', 0)).toBe(false);
+    expect(canDeleteOrder('pending_confirmation', 0)).toBe(false);
+    // any generated shipping detail blocks delete
+    expect(canDeleteOrder('draft', 1)).toBe(false);
+    expect(canDeleteOrder('void', 3)).toBe(false);
   });
 });
 
