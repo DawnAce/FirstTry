@@ -31,7 +31,7 @@ All mutating helpers log an ``order_events`` row through
 import enum
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy import or_
@@ -67,6 +67,9 @@ from app.services.expected_issues_calculator import compute_expected_issues
 from app.services.order_code_service import generate_order_code
 from app.services.order_event_logger import log_event
 from app.services.order_pricing_service import build_pricing_preview
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 # Fields safe to edit on an ``active`` order. Structural fields
@@ -726,6 +729,85 @@ def void_order(
     db.commit()
     db.refresh(order)
     return order
+
+
+# Statuses a hard delete is allowed from. Business/active orders must be voided
+# first — deletion is for clearing drafts, mistakes and test leftovers, not for
+# retiring live subscriptions (those keep their audit trail via 作废).
+_DELETABLE_STATUSES = {OrderStatus.draft, OrderStatus.void}
+
+
+def delete_order(
+    db: Session,
+    order_id: int,
+    operator: Optional["User"] = None,
+) -> dict:
+    """Hard-delete an order. Only ``draft`` / ``void`` orders with NO generated
+    shipping details may be removed.
+
+    Guards (return a friendly 409 instead of a raw DB error):
+    * status must be draft or void — active orders must be voided first.
+    * the order must have produced no ``shipping_details`` — the ``orders`` FK on
+      that table is ``ON DELETE RESTRICT`` at the DB level, so deleting one that
+      shipped would fail anyway; we surface a clear message first.
+
+    Cascade behaviour (DB-enforced): ``order_items`` / ``order_events`` /
+    ``payment_collections`` / ``invoices`` / ``refunds`` are removed via
+    ``ON DELETE CASCADE``; ``postal_*`` rows survive with their ``order_id`` set
+    NULL (real delivery records, not owned by the order). The removal is logged
+    to ``operation_logs`` (the order's own event rows are gone with it).
+    """
+    from app.services.operation_log_service import record_operation
+
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
+    if order.status not in _DELETABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="仅草稿或已作废订单可删除，请先作废后再删除",
+        )
+    shipped = (
+        db.query(ShippingDetail)
+        .filter(ShippingDetail.order_id == order_id)
+        .count()
+    )
+    if shipped > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该订单已生成 {shipped} 条发货明细，不能删除；如需停发请改用作废",
+        )
+
+    label = order.order_code or order.external_order_no or f"#{order.id}"
+    record_operation(
+        db,
+        user=operator,
+        table_name="orders",
+        record_id=order.id,
+        record_name=label,
+        action="delete_order",
+    )
+    db.delete(order)
+    db.commit()
+    return {"id": order_id, "label": label}
+
+
+def bulk_delete_orders(
+    db: Session,
+    order_ids: List[int],
+    operator: Optional["User"] = None,
+) -> dict:
+    """Delete many orders. Per-order failure (404 / 409 — not deletable) is
+    collected, not aborting the batch; each delete commits independently."""
+    succeeded: List[int] = []
+    failed: List[dict] = []
+    for oid in order_ids:
+        try:
+            delete_order(db, oid, operator=operator)
+            succeeded.append(oid)
+        except HTTPException as exc:
+            failed.append({"order_id": oid, "detail": str(exc.detail)})
+    return {"succeeded": succeeded, "failed": failed}
 
 
 def _as_money(value) -> Decimal:

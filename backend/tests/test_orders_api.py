@@ -409,6 +409,8 @@ def test_sensitive_endpoints_require_admin(client):
         client.post("/api/orders/bulk-void", json={"order_ids": [oid], "reason": "xx"}).status_code
         == 403
     )
+    assert client.delete(f"/api/orders/{oid}").status_code == 403
+    assert client.post("/api/orders/bulk-delete", json={"order_ids": [oid]}).status_code == 403
     assert client.get("/api/orders/export").status_code == 403
 
     # 运营日常 → 放行（非 403）
@@ -975,3 +977,117 @@ def test_pricing_preview_endpoint_returns_coverage_and_price(client):
     assert body["unit_price"] == "195"
     assert body["subtotal"] == "390"
     assert body["price_label"] == "ZTO-MF 快递半年套餐"
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/orders/{id}  +  POST /api/orders/bulk-delete
+# ---------------------------------------------------------------------------
+
+
+def _open_session():
+    """Grab a live session on the same in-memory engine the app uses (via the
+    active get_db override) — for inserting/inspecting rows directly in tests."""
+    from app.database import get_db
+
+    gen = app.dependency_overrides[get_db]()
+    db = next(gen)
+    return db, gen
+
+
+def test_delete_draft_order_removes_it_and_cascades_children(client):
+    oid = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+    # draft order has items — deletion must cascade them away
+    r = client.delete(f"/api/orders/{oid}")
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == oid
+    assert client.get(f"/api/orders/{oid}").status_code == 404
+
+    db, _ = _open_session()
+    from app.models import OrderItem
+
+    assert db.query(OrderItem).filter(OrderItem.order_id == oid).count() == 0
+    db.close()
+
+
+def test_delete_void_order_succeeds(client):
+    oid = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+    client.post(f"/api/orders/{oid}/void", json={"reason": "测试"})
+    assert client.get(f"/api/orders/{oid}").json()["status"] == "void"
+    assert client.delete(f"/api/orders/{oid}").status_code == 200
+    assert client.get(f"/api/orders/{oid}").status_code == 404
+
+
+def test_delete_active_order_is_rejected_409(client):
+    oid = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+    assert client.get(f"/api/orders/{oid}").json()["status"] == "active"
+    r = client.delete(f"/api/orders/{oid}")
+    assert r.status_code == 409, r.text
+    assert "作废" in r.json()["detail"]
+    # still there
+    assert client.get(f"/api/orders/{oid}").status_code == 200
+
+
+def test_delete_missing_order_returns_404(client):
+    assert client.delete("/api/orders/999999").status_code == 404
+
+
+def test_delete_order_with_shipping_details_is_rejected_409(client):
+    oid = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+    client.post(f"/api/orders/{oid}/confirm")
+    client.post(f"/api/orders/{oid}/void", json={"reason": "测试"})
+
+    # attach a shipping detail to this order directly
+    db, _ = _open_session()
+    from app.models import ShippingDetail
+
+    db.add(
+        ShippingDetail(
+            issue_number=2625,
+            sheet_name="测试",
+            channel="渠道订阅",
+            name="测试明细",
+            order_id=oid,
+        )
+    )
+    db.commit()
+    db.close()
+
+    r = client.delete(f"/api/orders/{oid}")
+    assert r.status_code == 409, r.text
+    assert "发货明细" in r.json()["detail"]
+    assert client.get(f"/api/orders/{oid}").status_code == 200
+
+
+def test_bulk_delete_partial_success(client):
+    d1 = client.post("/api/orders", json=_make_create_payload()).json()["id"]  # draft → deletable
+    a1 = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+    client.post(f"/api/orders/{a1}/confirm")  # active → not deletable
+
+    res = client.post("/api/orders/bulk-delete", json={"order_ids": [d1, a1]})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["succeeded"] == [d1]
+    assert len(body["failed"]) == 1
+    assert body["failed"][0]["order_id"] == a1
+    # draft gone, active survives
+    assert client.get(f"/api/orders/{d1}").status_code == 404
+    assert client.get(f"/api/orders/{a1}").status_code == 200
+
+
+def test_delete_order_writes_operation_log(client):
+    oid = client.post("/api/orders", json=_make_create_payload()).json()["id"]
+    client.delete(f"/api/orders/{oid}")
+
+    db, _ = _open_session()
+    from app.models.operation_log import OperationLog
+
+    log = (
+        db.query(OperationLog)
+        .filter(OperationLog.table_name == "orders", OperationLog.action == "delete_order")
+        .first()
+    )
+    assert log is not None
+    assert log.record_id == oid
+    db.close()

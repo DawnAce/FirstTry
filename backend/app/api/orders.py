@@ -39,6 +39,7 @@ from app.models.order_event import OrderEvent
 from app.schemas.order import (
     BatchSyncSummary,
     BulkConfirmIn,
+    BulkDeleteIn,
     BulkOpResult,
     BulkVoidIn,
     FulfillmentProgress,
@@ -200,6 +201,19 @@ def bulk_void(
     """Batch void orders with one shared reason. Per-order failure collected."""
     return order_service.bulk_void_orders(
         db, payload.order_ids, reason=payload.reason, operator_id=user.id
+    )
+
+
+@router.post("/bulk-delete", response_model=BulkOpResult)
+def bulk_delete(
+    payload: BulkDeleteIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Batch hard-delete orders. Only draft/void orders with no shipping details
+    are removed; per-order failure is collected, not aborting the batch."""
+    return order_service.bulk_delete_orders(
+        db, payload.order_ids, operator=user
     )
 
 
@@ -387,6 +401,18 @@ def void_order(
     )
     fresh = order_service.get_order_detail(db, order.id)
     return _build_order_out(db, fresh)
+
+
+@router.delete("/{order_id}")
+def delete_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Hard-delete a draft/void order that has no generated shipping details.
+    Active orders must be voided first (409); shipped orders are refused (409)."""
+    result = order_service.delete_order(db, order_id, operator=user)
+    return {"message": "订单已删除", **result}
 
 
 @router.post("/{order_id}/refund", response_model=OrderOut)

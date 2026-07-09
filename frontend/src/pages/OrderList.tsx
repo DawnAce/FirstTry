@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -18,6 +19,7 @@ import {
 } from 'antd';
 import {
   CheckOutlined,
+  DeleteOutlined,
   DownloadOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -27,8 +29,10 @@ import type { TableColumnsType, TableProps } from 'antd';
 import type { Dayjs } from 'dayjs';
 import {
   bulkConfirmOrders,
+  bulkDeleteOrders,
   bulkVoidOrders,
   confirmOrder,
+  deleteOrder,
   exportOrders,
   listOrders,
   orderQueryKeys,
@@ -41,6 +45,7 @@ import type {
 } from '../api/orders';
 import {
   canConfirmOrder,
+  canDeleteOrder,
   canVoidOrder,
   driftColor,
   driftLabel,
@@ -168,6 +173,15 @@ export default function OrderList() {
 
   const rows = ordersQuery.data?.rows ?? [];
 
+  // 选中项里真正可删的（草稿/作废且无发货明细）——批量删除只对这些生效。
+  const deletableSelectedIds = useMemo(
+    () =>
+      rows
+        .filter((r) => selectedKeys.includes(r.id) && canDeleteOrder(r.status, r.synced_count))
+        .map((r) => r.id),
+    [rows, selectedKeys],
+  );
+
   const voidMutation = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) => voidOrder(id, reason),
     onSuccess: () => {
@@ -216,6 +230,21 @@ export default function OrderList() {
       setBulkVoidReason('');
     },
     onError: () => message.error('批量作废失败'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteOrder(id).then((r) => r.data),
+    onSuccess: () => {
+      message.success('订单已删除');
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.all });
+    },
+    onError: () => message.error('删除失败'),
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => bulkDeleteOrders(ids).then((r) => r.data),
+    onSuccess: (res) => reportBulk(res, '删除'),
+    onError: () => message.error('批量删除失败'),
   });
 
   const handleExport = async () => {
@@ -425,6 +454,26 @@ export default function OrderList() {
               作废
             </Button>
           )}
+          {isAdmin && canDeleteOrder(row.status, row.synced_count) && (
+            <Popconfirm
+              title="删除订单"
+              description={
+                <span>
+                  将永久删除该订单及其明细 / 收款 / 事件记录，不可恢复。
+                  <br />
+                  仅用于清理草稿 / 误建 / 测试数据。确定删除？
+                </span>
+              }
+              okText="确认删除"
+              okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
+              cancelText="取消"
+              onConfirm={() => deleteMutation.mutate(row.id)}
+            >
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -545,6 +594,32 @@ export default function OrderList() {
           >
             批量作废
           </Button>
+          <Popconfirm
+            title={`批量删除 ${deletableSelectedIds.length} 单`}
+            description={
+              <span>
+                将永久删除选中项中可删的 {deletableSelectedIds.length} 单
+                {selectedKeys.length > deletableSelectedIds.length && (
+                  <>（{selectedKeys.length - deletableSelectedIds.length} 单不可删，将跳过）</>
+                )}
+                ，不可恢复。确定？
+              </span>
+            }
+            okText="确认删除"
+            okButtonProps={{ danger: true, loading: bulkDeleteMutation.isPending }}
+            cancelText="取消"
+            disabled={deletableSelectedIds.length === 0}
+            onConfirm={() => bulkDeleteMutation.mutate(deletableSelectedIds)}
+          >
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              disabled={deletableSelectedIds.length === 0}
+            >
+              批量删除{deletableSelectedIds.length > 0 ? ` (${deletableSelectedIds.length})` : ''}
+            </Button>
+          </Popconfirm>
           <Button size="small" type="link" onClick={() => setSelectedKeys([])}>
             清除选择
           </Button>
