@@ -88,8 +88,8 @@ export default function LogisticsOverview() {
     { label: '草稿未确认', desc: '草稿数据待确认提交', count: extras?.reminders.draft_unconfirmed_count ?? 0, color: '#722ed1' },
   ];
 
-  const recent = extras?.recent_issues ?? [];
-  const upcoming = extras?.upcoming_issues ?? [];
+  const recent = (extras?.recent_issues ?? []).slice(0, 5);
+  const upcoming = (extras?.upcoming_issues ?? []).slice(0, 5);
 
   const logColumns: ColumnsType<OperationLog> = [
     { title: '时间', dataIndex: 'created_at', render: (v: string) => <span style={{ whiteSpace: 'nowrap' }}>{dayjs(v).format('MM-DD HH:mm')}</span> },
@@ -107,7 +107,7 @@ export default function LogisticsOverview() {
         onClick={clickable ? () => goDetail(row) : undefined}
         style={{
           cursor: clickable ? 'pointer' : 'default', border: '1px solid var(--color-border, #eee)', borderRadius: 10,
-          padding: '10px 12px', minWidth: 128, flex: '1 1 128px', background: '#fff',
+          padding: '10px 12px', minWidth: 0, flex: '1 1 0', background: '#fff',
         }}
       >
         <div style={{ fontWeight: 600, fontSize: 13 }}>第 {row.issue_number} 期</div>
@@ -163,13 +163,13 @@ export default function LogisticsOverview() {
           >
             <div style={{ fontSize: 13, fontWeight: 600, color: '#5a5a62', marginBottom: 8 }}>最近期数</div>
             {recent.length > 0 ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>{recent.map(renderPeriodCard)}</div>
+              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 10, marginBottom: 16 }}>{recent.map(renderPeriodCard)}</div>
             ) : (
               <div style={{ color: 'var(--color-text-secondary)', fontSize: 13, marginBottom: 16 }}>暂无已开期数</div>
             )}
             <div style={{ fontSize: 13, fontWeight: 600, color: '#5a5a62', marginBottom: 8 }}>后续期数</div>
             {upcoming.length > 0 ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>{upcoming.map(renderPeriodCard)}</div>
+              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 10 }}>{upcoming.map(renderPeriodCard)}</div>
             ) : (
               <div style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>暂无后续期数</div>
             )}
