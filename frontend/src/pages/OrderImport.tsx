@@ -95,6 +95,8 @@ export default function OrderImport() {
   const [giftPublication, setGiftPublication] = useState<string | undefined>(undefined);
   const [giftNote, setGiftNote] = useState('');
   const [preview, setPreview] = useState<ImportPreviewOut | null>(null);
+  // 往期单选填补期号：{external_order_no: 期号}。留空=不补，照常导入。
+  const [issueOverrides, setIssueOverrides] = useState<Record<string, number>>({});
 
   const [drawerMode, setDrawerMode] = useState<'quick' | 'detail' | null>(null);
   const [detailRow, setDetailRow] = useState<ImportPreviewRow | null>(null);
@@ -116,17 +118,21 @@ export default function OrderImport() {
       }
       return previewOrderImport(file as File, settings);
     },
-    onSuccess: (res) => setPreview(res.data),
+    onSuccess: (res) => {
+      setPreview(res.data);
+      setIssueOverrides({}); // 新预览：行可能重排，作废旧的补期号
+    },
     onError: (err: { response?: { data?: { detail?: string } } }) =>
       message.error(err.response?.data?.detail ?? '预览失败'),
   });
 
   const commitMutation = useMutation({
-    mutationFn: () => commitOrderImport(preview!.session_id),
+    mutationFn: () => commitOrderImport(preview!.session_id, issueOverrides),
     onSuccess: (res) => {
       message.success(`成功导入 ${res.data.created} 单（跳过重复 ${res.data.skipped_duplicates}）`);
       setPreview(null);
       setFile(null);
+      setIssueOverrides({});
     },
     onError: (err: { response?: { data?: { detail?: string } } }) =>
       message.error(err.response?.data?.detail ?? '导入失败'),
@@ -181,6 +187,12 @@ export default function OrderImport() {
     previewMutation.mutate();
   };
 
+  // 该行是否为「缺期号、待补」的往期单期单：可导入、有单期明细无期号、且带补期号提醒。
+  const needsIssueNumber = (r: ImportPreviewRow): boolean =>
+    r.decision === 'import' &&
+    r.items.some((it) => it.fulfillment_type === 'single_issue' && !it.issue_number) &&
+    r.warnings.some((w) => w.includes('期号'));
+
   const columns: TableColumnsType<ImportPreviewRow> = [
     { title: '结果', dataIndex: 'decision', key: 'decision', width: 100, render: (d: ImportDecision) => <Tag color={DECISION_META[d].color}>{DECISION_META[d].label}</Tag> },
     { title: '来源单号', dataIndex: 'external_order_no', key: 'ext', width: 160, ellipsis: true },
@@ -221,6 +233,26 @@ export default function OrderImport() {
               </Text>
             ))}
             {r.warnings.map((w, i) => (<Text key={`w${i}`} type="warning" style={{ fontSize: 12 }}>⚠ {w}</Text>))}
+            {needsIssueNumber(r) && (
+              <Space size={4} onClick={(e) => e.stopPropagation()}>
+                <Text style={{ fontSize: 12 }}>补期号：</Text>
+                <InputNumber
+                  size="small"
+                  min={1}
+                  placeholder="选填"
+                  style={{ width: 110 }}
+                  value={issueOverrides[r.external_order_no] ?? null}
+                  onChange={(v) =>
+                    setIssueOverrides((prev) => {
+                      const next = { ...prev };
+                      if (v == null) delete next[r.external_order_no];
+                      else next[r.external_order_no] = v;
+                      return next;
+                    })
+                  }
+                />
+              </Space>
+            )}
           </Space>
         );
       },
@@ -317,7 +349,7 @@ export default function OrderImport() {
 
           <Card
             size="small"
-            title="③ 预览（点任意行看详情；待确认行可直接加商品）"
+            title="③ 预览（点任意行看详情；待确认行可直接加商品；往期单可行内补期号，选填、留空也能导入）"
             extra={
               isAdmin ? (
                 <Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>

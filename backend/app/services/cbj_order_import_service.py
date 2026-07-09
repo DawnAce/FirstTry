@@ -503,13 +503,36 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings) -> T
     return out, session_id
 
 
-def commit_import(db: Session, session_id: str, operator_id: Optional[int] = None) -> dict:
-    """Create the previewed importable orders atomically (single commit)."""
+def commit_import(
+    db: Session,
+    session_id: str,
+    operator_id: Optional[int] = None,
+    issue_overrides: Optional[dict[str, int]] = None,
+) -> dict:
+    """Create the previewed importable orders atomically (single commit).
+
+    ``issue_overrides`` (optional) maps ``external_order_no`` → 期号 for 往期
+    单 whose issue number was blank at preview (客服 tells it per order). Each
+    override is applied only to that order's **single_issue item(s) that still
+    lack an issue_number** — subscription rows and already-numbered items are
+    never touched. Unknown 单号 are ignored (kept 选填, never blocks the commit).
+    """
     payload = pop_order_import_session(session_id)
     if payload is None:
         raise HTTPException(status_code=400, detail="导入会话不存在或已过期，请重新预览")
 
     rows = payload["rows"]
+
+    if issue_overrides:
+        for r in rows:
+            ext = r["order_create"].get("external_order_no")
+            if ext is None or ext not in issue_overrides:
+                continue
+            issue_no = issue_overrides[ext]
+            for item in r["order_create"].get("items", []):
+                if item.get("fulfillment_type") == "single_issue" and not item.get("issue_number"):
+                    item["issue_number"] = issue_no
+
     existing = {
         e
         for (e,) in db.query(Order.external_order_no)

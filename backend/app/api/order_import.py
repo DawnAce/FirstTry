@@ -68,6 +68,8 @@ async def preview(
 
 class CommitIn(BaseModel):
     session_id: str
+    # 往期单选填补期号：{external_order_no: 期号}。只作用于单期且无期号的行，留空=现状。
+    issue_overrides: dict[str, int] | None = None
 
 
 @router.post("/commit")
@@ -76,4 +78,9 @@ def commit(
     db: Session = Depends(get_db),
     user: User = Depends(require_admin),
 ):
-    return commit_import(db, body.session_id, operator_id=getattr(user, "id", None))
+    return commit_import(
+        db,
+        body.session_id,
+        operator_id=getattr(user, "id", None),
+        issue_overrides=body.issue_overrides,
+    )
