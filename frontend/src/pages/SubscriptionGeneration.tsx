@@ -12,17 +12,17 @@ import type { Dayjs } from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
 import {
   activateSubImport, createSubBatch, createSubImport, downloadSubArtifact, generateSubBatch,
-  getSubBatch, getSubImportIssues, listSubArtifacts, listSubBatches,
+  getSubBatch, getSubImportIssues, getSubImportRecords, listSubArtifacts, listSubBatches,
 } from '../api/subscription';
 import type {
-  Artifact, BatchStatus, ImportStatus, ImportVersion, IssueLevel, SubBatch, ValidationIssue,
+  Artifact, BatchStatus, ImportStatus, ImportVersion, IssueLevel, SubBatch, SubRecord, ValidationIssue,
 } from '../api/subscription';
 
 const { Title, Text } = Typography;
 
 const BATCH_STATUS_META: Record<BatchStatus, { label: string; color: string }> = {
   draft: { label: '草稿', color: 'default' },
-  pending_validation: { label: '待校验', color: 'orange' },
+  pending_validation: { label: '待设为有效', color: 'orange' },
   ready: { label: '可生成', color: 'cyan' },
   generated: { label: '已生成', color: 'green' },
   archived: { label: '已归档', color: 'default' },
@@ -153,11 +153,39 @@ function IssuesDrawer({ versionId, open, onClose }: { versionId: number | null; 
   );
 }
 
+/** 明细预览抽屉（只读，解析出的全部记录） */
+function RecordsDrawer({ versionId, open, onClose }: { versionId: number | null; open: boolean; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ['subRecords', versionId],
+    queryFn: () => getSubImportRecords(versionId as number).then((r) => r.data),
+    enabled: open && versionId != null,
+  });
+  const cols: TableColumnsType<SubRecord> = [
+    { title: '地区', dataIndex: 'region_name', width: 64, render: (v) => v || '—' },
+    { title: '姓名', dataIndex: 'name', width: 90 },
+    { title: '电话', dataIndex: 'phone', width: 120, render: (v) => v || '—' },
+    { title: '省/市/区', key: 'r', width: 150, render: (_: unknown, r) => [r.province, r.city, r.district].filter(Boolean).join(' ') || '—' },
+    { title: '详细地址', dataIndex: 'address', ellipsis: true },
+    { title: '份数', dataIndex: 'copies', width: 56, align: 'right' },
+    { title: '金额', dataIndex: 'amount', width: 80, align: 'right', render: (v) => (v != null ? `¥${v}` : '—') },
+    { title: '渠道', dataIndex: 'source_channel', width: 110, render: (v) => v || '—' },
+    { title: '来源', dataIndex: 'source_file_role', width: 56, render: (v) => (v ? <Tag>{v}</Tag> : '—') },
+  ];
+  return (
+    <Drawer title="解析明细（只读）" width={980} open={open} onClose={onClose} destroyOnClose>
+      <Table<SubRecord> rowKey="id" size="small" loading={q.isLoading}
+        columns={cols} dataSource={q.data ?? []}
+        pagination={{ pageSize: 50, showTotal: (t) => `共 ${t} 条` }} />
+    </Drawer>
+  );
+}
+
 /** 批次详情：版本历史 + 生成 + 产物 */
 function BatchDetailPanel({ batchId }: { batchId: number }) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const [issuesFor, setIssuesFor] = useState<number | null>(null);
+  const [recordsFor, setRecordsFor] = useState<number | null>(null);
 
   const batchQ = useQuery({ queryKey: ['subBatch', batchId], queryFn: () => getSubBatch(batchId).then((r) => r.data) });
   const artifactsQ = useQuery({ queryKey: ['subArtifacts', batchId], queryFn: () => listSubArtifacts(batchId).then((r) => r.data) });
@@ -197,6 +225,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
     return (
       <List.Item
         actions={[
+          <Button key="r" type="link" size="small" onClick={() => setRecordsFor(v.id)}>查看明细</Button>,
           <Button key="i" type="link" size="small" onClick={() => setIssuesFor(v.id)}>校验问题</Button>,
           ...(isAdmin && v.status === 'validation_passed'
             ? [<Popconfirm key="a" title="设为当前有效版本？旧有效版本将被替代。" onConfirm={() => activateMut.mutate(v.id)}>
@@ -271,6 +300,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
       </Card>
 
       <IssuesDrawer versionId={issuesFor} open={issuesFor != null} onClose={() => setIssuesFor(null)} />
+      <RecordsDrawer versionId={recordsFor} open={recordsFor != null} onClose={() => setRecordsFor(null)} />
     </Space>
   );
 }

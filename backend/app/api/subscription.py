@@ -25,6 +25,7 @@ from app.schemas.subscription import (
     GenerationRunOut,
     ImportStatusOut,
     ImportVersionOut,
+    RecordOut,
     ValidationIssueOut,
 )
 from app.services import attachment_service
@@ -96,6 +97,13 @@ def get_import(version_id: int, db: Session = Depends(get_db), _user: User = Dep
 def get_import_issues(version_id: int, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
     version = batch_svc.get_version(db, version_id)
     return sorted(version.issues, key=lambda i: (i.level.value, i.row_no or 0))
+
+
+@router.get("/imports/{version_id}/records", response_model=List[RecordOut])
+def get_import_records(version_id: int, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+    """该版本解析出的全部明细（只读预览）。"""
+    version = batch_svc.get_version(db, version_id)
+    return sorted(version.records, key=lambda r: r.id)
 
 
 @router.post("/imports/{version_id}/activate", response_model=ImportVersionOut)

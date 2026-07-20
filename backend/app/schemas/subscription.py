@@ -83,6 +83,32 @@ class ValidationIssueOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RecordOut(BaseModel):
+    """解析后的一条明细（只读预览）。"""
+
+    id: int
+    name: str
+    phone: Optional[str] = None
+    province: Optional[str] = None
+    city: Optional[str] = None
+    district: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    copies: int
+    months: Optional[int] = None
+    amount: Optional[Decimal] = None
+    region_name: Optional[str] = None
+    source_channel: Optional[str] = None
+    remittance_name: Optional[str] = None
+    remittance_date: Optional[str] = None
+    source_file_role: Optional[str] = None
+    source_row: Optional[int] = None
+    excluded: bool = False
+    exclude_reason: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class ImportStatusOut(BaseModel):
     """导入版本的解析/校验状态 + 问题计数。"""
 

@@ -58,6 +58,28 @@ export interface ValidationIssue {
   message: string;
 }
 
+export interface SubRecord {
+  id: number;
+  name: string;
+  phone: string | null;
+  province: string | null;
+  city: string | null;
+  district: string | null;
+  address: string | null;
+  postal_code: string | null;
+  copies: number;
+  months: number | null;
+  amount: string | null;
+  region_name: string | null;
+  source_channel: string | null;
+  remittance_name: string | null;
+  remittance_date: string | null;
+  source_file_role: string | null;
+  source_row: number | null;
+  excluded: boolean;
+  exclude_reason: string | null;
+}
+
 export interface ImportStatusOut {
   version: ImportVersion;
   issue_counts: Record<IssueLevel, number>;
@@ -123,6 +145,10 @@ export function getSubImport(versionId: number): Promise<AxiosResponse<ImportSta
 
 export function getSubImportIssues(versionId: number): Promise<AxiosResponse<ValidationIssue[]>> {
   return api.get(`/subscription/imports/${versionId}/issues`);
+}
+
+export function getSubImportRecords(versionId: number): Promise<AxiosResponse<SubRecord[]>> {
+  return api.get(`/subscription/imports/${versionId}/records`);
 }
 
 export function activateSubImport(versionId: number): Promise<AxiosResponse<ImportVersion>> {
