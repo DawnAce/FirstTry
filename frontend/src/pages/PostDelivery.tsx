@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -18,7 +19,6 @@ import {
   Select,
   Space,
   Table,
-  Tabs,
   Tag,
   Timeline,
   Typography,
@@ -1370,21 +1370,23 @@ function FinanceTab() {
   );
 }
 
+const POST_TABS = [
+  { key: 'deliveries', label: '投递名册', component: DeliveriesTab },
+  { key: 'batches', label: '月度起投明细', component: BatchesTab },
+  { key: 'complaints', label: '投诉工单', component: ComplaintsTab },
+  { key: 'address', label: '改地址', component: AddressChangesTab },
+  { key: 'follow', label: '回访', component: FollowUpsTab },
+  { key: 'finance', label: '收款发票', component: FinanceTab },
+] as const;
+
 export default function PostDelivery() {
+  const { tab } = useParams<{ tab: string }>();
+  const current = POST_TABS.find((t) => t.key === tab) ?? POST_TABS[0];
+  const Content = current.component;
   return (
     <div>
-      <Title level={3} style={{ marginTop: 0 }}>物流管理 · 邮局投递</Title>
-      <Tabs
-        defaultActiveKey="deliveries"
-        items={[
-          { key: 'deliveries', label: '📇 投递名册', children: <DeliveriesTab /> },
-          { key: 'batches', label: '📦 月度起投明细', children: <BatchesTab /> },
-          { key: 'complaints', label: '📮 投诉工单', children: <ComplaintsTab /> },
-          { key: 'address', label: '✏️ 改地址', children: <AddressChangesTab /> },
-          { key: 'follow', label: '📞 回访', children: <FollowUpsTab /> },
-          { key: 'finance', label: '🧾 收款发票', children: <FinanceTab /> },
-        ]}
-      />
+      <Title level={3} style={{ marginTop: 0 }}>邮局管理 · {current.label}</Title>
+      <Content />
     </div>
   );
 }

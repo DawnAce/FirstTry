@@ -11,6 +11,7 @@ import {
   QuestionCircleOutlined,
   LogoutOutlined,
   CarOutlined,
+  InboxOutlined,
   FileTextOutlined,
   TeamOutlined,
   DollarOutlined,
@@ -43,11 +44,23 @@ const menuItems: MenuProps['items'] = [
   {
     key: 'logistics-management',
     icon: <CarOutlined />,
-    label: '物流管理',
+    label: '快递管理',
     children: [
       { key: '/recipients', label: 'ZTO-MF' },
       { key: '/logistics/issues', label: '期数总览' },
-      { key: '/post-delivery', label: '邮局投递' },
+    ],
+  },
+  {
+    key: 'post-management',
+    icon: <InboxOutlined />,
+    label: '邮局管理',
+    children: [
+      { key: '/post-delivery/deliveries', label: '投递名册' },
+      { key: '/post-delivery/batches', label: '月度起投明细' },
+      { key: '/post-delivery/complaints', label: '投诉工单' },
+      { key: '/post-delivery/address', label: '改地址' },
+      { key: '/post-delivery/follow', label: '回访' },
+      { key: '/post-delivery/finance', label: '收款发票' },
     ],
   },
   {
@@ -104,7 +117,7 @@ export default function AppLayout() {
     if (path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import')) return '/';
     if (path.startsWith('/logistics/issues')) return '/logistics/issues';
     if (path.startsWith('/recipients')) return '/recipients';
-    if (path.startsWith('/post-delivery')) return '/post-delivery';
+    if (path.startsWith('/post-delivery')) return path;
     if (path.startsWith('/history')) return '/history';
     if (path === '/schedule/import') return '/schedule/import';
     if (path.startsWith('/schedule')) return '/schedule';
@@ -123,8 +136,11 @@ export default function AppLayout() {
     if (path === '/' || path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import') || path.startsWith('/history') || path.startsWith('/templates')) {
       return ['print-management'];
     }
-    if (path.startsWith('/recipients') || path.startsWith('/logistics') || path.startsWith('/post-delivery')) {
+    if (path.startsWith('/recipients') || path.startsWith('/logistics')) {
       return ['logistics-management'];
+    }
+    if (path.startsWith('/post-delivery')) {
+      return ['post-management'];
     }
     if (path.startsWith('/schedule')) {
       return ['schedule-management'];
