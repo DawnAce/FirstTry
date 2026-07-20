@@ -8,11 +8,17 @@
 
 import re
 from contextlib import suppress
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
 MAX_FILENAME_BYTES = 255
+
+
+def sha256_hex(content: bytes) -> str:
+    """内容 SHA-256 十六进制摘要（来源文件 / 生成产物追溯用）。"""
+    return sha256(content).hexdigest()
 
 
 def _truncate_utf8(value: str, max_bytes: int) -> str:
