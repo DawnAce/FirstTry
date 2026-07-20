@@ -208,6 +208,50 @@ def test_golden_august_exact(db):
     gold_files = sorted(os.path.basename(f) for f in glob.glob(os.path.join(region_dir, "*集订分送表*.xlsx")))
     assert my_files == gold_files, "地区分送表文件清单不一致"
 
+    # 版式 1:1：明细/汇总表数据区必须有细边框 + 列宽与黄金样本一致。
+    def _wb(art_type, region=None):
+        art = next(x for x in run.artifacts if x.artifact_type.value == art_type and (region is None or x.region_name == region))
+        return load_workbook(att.resolve_path(art.stored_path))
+
+    gwb = load_workbook(os.path.join(os.path.dirname(summary_path), "..", "北京-2026年8月中国经营报订阅汇总+明细+申请.xlsx"))
+    mwb = _wb("workbook")
+
+    def _has_box(c):
+        b = c.border
+        return all(getattr(b, s) and getattr(b, s).style for s in ("left", "right", "top", "bottom"))
+
+    for sheet in ("北京-汇总", "北京-明细"):
+        ms, gs = mwb[sheet], gwb[sheet]
+        mw = {k: round(v.width, 1) for k, v in ms.column_dimensions.items() if v.width}
+        gw = {k: round(v.width, 1) for k, v in gs.column_dimensions.items() if v.width}
+        assert mw == gw, f"[{sheet}] 列宽与黄金样本不一致"
+        # 凡黄金样本有内容且有四边框处，生成结果也必须有（数据表格区）。
+        for row in gs.iter_rows():
+            for gc in row:
+                if gc.value is not None and _has_box(gc):
+                    assert _has_box(ms.cell(gc.row, gc.column)), f"[{sheet}] {gc.coordinate} 缺边框"
+
+    # 汇总表 + 区域文件：有内容单元格样式与黄金样本逐格一致（0 差异）。
+    def _sig(c):
+        bd = "".join(s[0] for s in ("left", "right", "top", "bottom") if getattr(c.border, s) and getattr(c.border, s).style)
+        val = "F" if isinstance(c.value, str) and c.value.startswith("=") else c.value
+        return (val, c.font.name, bool(c.font.bold), c.alignment.horizontal, c.alignment.vertical, bd, c.number_format)
+
+    from openpyxl.utils import range_boundaries
+
+    def _assert_same(mine, gold, name):
+        c1, r1, c2, r2 = range_boundaries(gold.calculate_dimension())
+        for rr in range(r1, r2 + 1):
+            for cc in range(c1, c2 + 1):
+                g = gold.cell(rr, cc)
+                if g.value is not None:
+                    assert _sig(mine.cell(rr, cc)) == _sig(g), f"[{name}] {g.coordinate} 样式不一致"
+
+    _assert_same(_wb("postal_summary")["汇总"], load_workbook(summary_path)["汇总"], "汇总表")
+    sh_file = next(f for f in gold_files if "上海" in f)
+    _assert_same(_wb("region_detail", "上海")["数据页"],
+                 load_workbook(os.path.join(region_dir, sh_file))["数据页"], "区域-上海")
+
 
 @pytest.mark.skipif(_golden_paths("7月") is None, reason="缺 7月 黄金样本（桌面）")
 def test_golden_july_parses_xls_and_generates(db):

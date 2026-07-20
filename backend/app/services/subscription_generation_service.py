@@ -19,7 +19,7 @@ from typing import List, Optional
 
 import openpyxl
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font
+from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.worksheet.properties import PageSetupProperties
 from sqlalchemy.orm import Session
 
@@ -38,15 +38,47 @@ from app.services import subscription_import_service as import_svc
 BASE_FONT = "宋体"
 FN = Font(name=BASE_FONT, size=11)
 FB = Font(name=BASE_FONT, size=11, bold=True)
-CUR = "0.00"
-CENTER = Alignment(horizontal="center", vertical="center")
 RULE_VERSION = "v1"
 TEMPLATE_VERSION = "v1"
 REGION_TEMPLATE = os.path.join(os.path.dirname(__file__), "..", "templates", "postal_region_template.xlsx")
 
+# 样式常量（对齐黄金样本）。
+_THIN = Side(style="thin")
+BOX = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+CC = Alignment(horizontal="center", vertical="center")
+LC = Alignment(horizontal="left", vertical="center")
+RC = Alignment(horizontal="right", vertical="center")
+VC = Alignment(vertical="center")
+MC = Alignment(horizontal="center")               # 份数：水平居中、垂直默认（对齐样本）
+WRAP = Alignment(vertical="center", wrap_text=True)
+WRAPC = Alignment(horizontal="center", vertical="center", wrap_text=True)
+NF_YEN0 = "\\¥#,##0"           # 明细/汇总 金额（¥、无小数）
+NF_YEN_ACC = '"￥"#,##0.00;"￥"\\-#,##0.00'   # 明细 金额表头会计格式
+NF_YEN2 = '"¥"#,##0.00'         # 汇总表 款额
+NF_INT = "#,##0"               # 汇总表 单价
+NF_TEXT = "@"                  # 文本（电话/编号/地址）
+NF_COPIES = "0_ "             # 份数
+CENTER = CC
+
 
 def _cn(d: date) -> str:
     return f"{d.year}年{d.month}月{d.day}日"
+
+
+def _box(ws, r1: int, r2: int, c1: int, c2: int) -> None:
+    """给矩形区域每个单元格加细边框（合并区先加边框再合并即为外框）。"""
+    for r in range(r1, r2 + 1):
+        for c in range(c1, c2 + 1):
+            ws.cell(row=r, column=c).border = BOX
+
+
+def _cell(ws, r: int, c: int, value, *, font=FN, al=CC, nf=None):
+    cell = ws.cell(row=r, column=c, value=value)
+    cell.font = font
+    cell.alignment = al
+    if nf:
+        cell.number_format = nf
+    return cell
 
 
 def _a4(ws, *, landscape: bool, print_area: str) -> None:
@@ -90,87 +122,104 @@ def _build_workbook(records: List[SubscriptionRecord], batch: SubscriptionBatch,
     headers = ["地区", "姓名", "联系电话", "省", "市", "区", "详细地址", "邮编", "年度",
                "产品名称", "起月日", "止月日", "份数", "金额", "渠道", "汇款名称", "汇款日期"]
     for c, h in enumerate(headers, start=1):
-        det.cell(row=1, column=c, value=h).font = FB
+        al = CC if c == 1 else (RC if c == 14 else LC)
+        _cell(det, 1, c, h, font=FB, al=al)
+    det.cell(row=1, column=13).number_format = NF_COPIES
+    det.cell(row=1, column=3).number_format = NF_TEXT
+    det.cell(row=1, column=14).number_format = NF_YEN_ACC
     for i, r in enumerate(records, start=2):
-        det.cell(row=i, column=1, value=r.region_name or "").font = FN
-        det.cell(row=i, column=2, value=r.name).font = FN
-        det.cell(row=i, column=3, value=(r.phone or "")).font = FN
-        det.cell(row=i, column=4, value=r.province or "").font = FN
-        det.cell(row=i, column=5, value=r.city or "").font = FN
-        det.cell(row=i, column=6, value=r.district or "").font = FN
-        det.cell(row=i, column=7, value=r.address or "").font = FN
-        det.cell(row=i, column=8, value=(r.postal_code or "")).font = FN
-        det.cell(row=i, column=9, value=f"{batch.year}年").font = FN
-        det.cell(row=i, column=10, value="中国经营报").font = FN
-        det.cell(row=i, column=11, value=f"{mm}01").font = FN
-        det.cell(row=i, column=12, value="1231").font = FN
-        det.cell(row=i, column=13, value=int(r.copies or 0)).font = FN
-        amt = det.cell(row=i, column=14, value=f"=M{i}*{N}*20")  # 复刻活公式
-        amt.font = FN
-        det.cell(row=i, column=15, value=r.source_channel or "").font = FN
-        det.cell(row=i, column=16, value=r.remittance_name or "").font = FN
-        det.cell(row=i, column=17, value=r.remittance_date or "").font = FN
+        _cell(det, i, 1, r.region_name or "", al=CC)
+        _cell(det, i, 2, r.name, al=VC, nf=NF_TEXT)
+        _cell(det, i, 3, r.phone or "", al=LC, nf=NF_TEXT)
+        _cell(det, i, 4, r.province or "", al=LC)
+        _cell(det, i, 5, r.city or "", al=LC)
+        _cell(det, i, 6, r.district or "", al=LC)
+        _cell(det, i, 7, r.address or "", al=LC)
+        _cell(det, i, 8, r.postal_code or "", al=LC, nf=NF_TEXT)
+        _cell(det, i, 9, f"{batch.year}年", al=LC)
+        _cell(det, i, 10, "中国经营报", al=LC)
+        _cell(det, i, 11, f"{mm}01", al=LC, nf=NF_TEXT)
+        _cell(det, i, 12, "1231", al=RC, nf=NF_TEXT)
+        _cell(det, i, 13, int(r.copies or 0), al=MC, nf=NF_COPIES)
+        _cell(det, i, 14, f"=M{i}*{N}*20", al=RC, nf=NF_YEN0)
+        _cell(det, i, 15, r.source_channel or "", al=LC)
+        _cell(det, i, 16, r.remittance_name or "", al=LC)
+        _cell(det, i, 17, r.remittance_date or "", al=LC)
+    _box(det, 1, last, 1, 17)
+    # 合计行（份数/金额求和）+ 制表人/时间 页脚（对齐黄金样本）。
+    tot = last + 1
+    mtot = _cell(det, tot, 13, f"=SUM(M2:M{last})", al=MC, nf=NF_COPIES)
+    ntot = _cell(det, tot, 14, f"=SUM(N2:N{last})", al=RC, nf=NF_YEN0)
+    mtot.border = BOX
+    ntot.border = BOX
+    _cell(det, last + 4, 14, "制表人：", al=VC)
+    _cell(det, last + 5, 14, "时间：", al=VC)
+    dft = _cell(det, last + 5, 15, make_date, al=VC)
+    dft.number_format = 'yyyy"年"m"月"d"日"'
+    for rr in range(1, last + 6):
+        det.row_dimensions[rr].height = 15
     _widths(det, {"A": 6, "B": 7, "C": 12, "D": 9, "E": 7, "G": 30, "H": 7.4, "I": 7,
-                  "J": 9.5, "K": 6.2, "L": 6.2, "M": 4.9, "N": 10.9, "O": 15.8, "P": 17.7, "Q": 21.1})
+                  "J": 9.5, "K": 6.2, "L": 6.2, "M": 4.9, "N": 10.9, "O": 15.8, "P": 17.7, "Q": 21.1, "R": 9.7})
     _a4(det, landscape=True, print_area=f"北京-明细!$A$1:$Q${max(last, 32)}")
 
     # --- 北京-汇总 ---
     su = wb.create_sheet("北京-汇总", 0)
     su.merge_cells("A1:D1")
-    su["A1"] = f"北京局-{batch.year}年{batch.start_month}月各地区订报汇总"
-    su["A1"].font = FB
-    su["A1"].alignment = CENTER
+    _cell(su, 1, 1, f"北京局-{batch.year}年{batch.start_month}月各地区订报汇总", font=FB, al=CC)
+    su.row_dimensions[1].height = 28
     for c, h in enumerate(["序号", "地区", "金额", "数量"], start=1):
-        su.cell(row=2, column=c, value=h).font = FB
+        _cell(su, 2, c, h, font=FB, al=CC)
     r = 3
     for idx, region in enumerate(regions, start=1):
-        su.cell(row=r, column=1, value=idx).font = FN
-        su.cell(row=r, column=2, value=region).font = FN
-        su.cell(row=r, column=3,
-                value=f"=SUMIF('北京-明细'!$A$2:$A${last},B{r},'北京-明细'!$N$2:$N${last})").font = FN
-        su.cell(row=r, column=4,
-                value=f"=SUMIF('北京-明细'!$A$2:$A${last},B{r},'北京-明细'!$M$2:$M${last})").font = FN
+        _cell(su, r, 1, idx, al=CC)
+        _cell(su, r, 2, region, al=CC)
+        _cell(su, r, 3, f"=SUMIF('北京-明细'!$A$2:$A${last},B{r},'北京-明细'!$N$2:$N${last})", al=CC, nf=NF_YEN0)
+        _cell(su, r, 4, f"=SUMIF('北京-明细'!$A$2:$A${last},B{r},'北京-明细'!$M$2:$M${last})", al=CC)
         r += 1
+    _cell(su, r, 1, "合计", font=FB, al=CC)
+    _cell(su, r, 3, f"=SUM(C3:C{r-1})", font=FB, al=CC, nf=NF_YEN0)
+    _cell(su, r, 4, f"=SUM(D3:D{r-1})", font=FB, al=CC)
+    _box(su, 2, r, 1, 4)
     su.merge_cells(f"A{r}:B{r}")
-    su.cell(row=r, column=1, value="合计").font = FB
-    su.cell(row=r, column=3, value=f"=SUM(C3:C{r-1})").font = FB
-    su.cell(row=r, column=4, value=f"=SUM(D3:D{r-1})").font = FB
-    su.cell(row=r + 2, column=3, value="制表人：").font = FN
-    su.cell(row=r + 3, column=3, value="制表时间：").font = FN
-    dcell = su.cell(row=r + 3, column=4, value=make_date)
-    dcell.font = FN
+    _cell(su, r + 2, 3, "制表人：", al=VC)
+    _cell(su, r + 3, 3, "制表时间：", al=VC)
+    dcell = _cell(su, r + 3, 4, make_date, al=VC)
     dcell.number_format = 'yyyy"年"m"月"d"日"'
-    _widths(su, {"A": 16, "B": 24, "C": 28, "D": 24})
+    _widths(su, {"A": 16, "B": 24, "C": 28, "D": 24, "E": 30.7, "F": 9.8})
     _a4(su, landscape=False, print_area="北京-汇总!$A$1:$D$20")
 
-    # --- 未到款申请（8月紧凑版） ---
+    # --- 未到款申请（8月紧凑版；无边框、隐藏网格线、段落跨两行） ---
     ap = wb.create_sheet("未到款申请")
-    for rng in ("A1:I1", "A2:I2", "A3:I3", "A5:I5", "A6:I6", "A7:I7", "A8:I8", "A9:I9", "F12:I12"):
+    ap.sheet_view.showGridLines = False
+    for rng in ("A1:I1", "A2:I2", "A3:I4", "A5:I5", "A6:I6", "A7:I7", "A8:I8", "A9:I9", "F12:I12"):
         ap.merge_cells(rng)
-    ap["A1"] = "未到款提前订报的申请"
-    ap["A1"].font = FB
-    ap["A1"].alignment = CENTER
-    ap["A2"] = "尊敬的领导："
-    ap["A3"] = (f"         {batch.year}年{batch.start_month}月份《中国经营报》订阅共计{count}份。"
-                f"付费读者款项正在流程中，为不影响读者按时收报，现申请先行支付订报款人民币"
-                f"{total_amount:,.2f}元整。")
-    ap["A5"] = "汇款信息："
-    ap["A6"] = "名称：中国邮政集团有限公司北京市报刊发行局"
-    ap["A7"] = "账号：0200 0031 0905 4203 874"
-    ap["A8"] = "开户行：中国工商银行股份有限公司北京珠市口支行"
-    ap["A9"] = "妥否，请领导批示！（名单附后）"
-    ap["F11"] = "发行部："
-    ap["F12"] = _cn(make_date)
-    for row in ap.iter_rows():
-        for cell in row:
-            if cell.value is not None and cell.font is not FB:
-                cell.font = FN
-    _widths(ap, {"A": 6, "B": 9, "C": 7, "E": 14, "F": 10, "G": 19, "H": 7})
+    _cell(ap, 1, 1, "未到款提前订报的申请", font=FB, al=WRAPC)
+    _cell(ap, 2, 1, "尊敬的领导：", font=FB, al=WRAP)
+    _cell(ap, 3, 1,
+          (f"         {batch.year}年{batch.start_month}月份《中国经营报》订阅共计{count}份。"
+           f"付费读者款项正在流程中，为不影响读者按时收报，现申请先行支付订报款人民币"
+           f"{total_amount:,.2f}元整。"), al=WRAP)
+    _cell(ap, 5, 1, "汇款信息：", font=FB, al=WRAP)
+    _cell(ap, 6, 1, "名称：中国邮政集团有限公司北京市报刊发行局", al=WRAP)
+    _cell(ap, 7, 1, "账号：0200 0031 0905 4203 874", al=WRAP)
+    _cell(ap, 8, 1, "开户行：中国工商银行股份有限公司北京珠市口支行", al=WRAP)
+    _cell(ap, 9, 1, "妥否，请领导批示！（名单附后）", font=FB, al=WRAP)
+    _cell(ap, 11, 6, "发行部：", al=CC)
+    _cell(ap, 12, 6, _cn(make_date), al=CC)
+    _apply_apply_row_heights(ap)
+    _widths(ap, {"A": 6, "B": 9, "C": 7, "E": 14, "F": 10, "G": 19, "H": 7, "J": 9})
     _a4(ap, landscape=False, print_area="未到款申请!$A$1:$I$17")
 
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
+
+
+def _apply_apply_row_heights(ap) -> None:
+    heights = {1: 24, 2: 24, 3: 28, 4: 28, 5: 24, 6: 24, 7: 24, 8: 24, 9: 26,
+               10: 26, 11: 28, 12: 26, 13: 24, 14: 16.8, 15: 26, 16: 16.8, 17: 16.8}
+    for rr, h in heights.items():
+        ap.row_dimensions[rr].height = h
 
 
 # --- (b) 北京局订报汇总表 ----------------------------------------------------
@@ -188,34 +237,35 @@ def _build_postal_summary(records: List[SubscriptionRecord], batch: Subscription
     wb = Workbook()
     ws = wb.active
     ws.title = "汇总"
+    ws.row_dimensions[1].height = 24
     for c, h in enumerate(["代码", "报刊名称", "订期", "省份", "条数", "份数", "单价", "款额"], start=1):
-        ws.cell(row=1, column=c, value=h).font = FB
+        _cell(ws, 1, c, h, font=FB, al=CC)
     r = 2
     for region in regions:
         cnt = agg[region]["count"]
         cop = agg[region]["copies"]
-        ws.cell(row=r, column=3, value=f"{mm}01-1231").font = FN
-        ws.cell(row=r, column=4, value=region).font = FN
-        ws.cell(row=r, column=5, value=cnt).font = FN
-        ws.cell(row=r, column=6, value=cop).font = FN
-        ws.cell(row=r, column=7, value=unit).font = FN
-        ws.cell(row=r, column=8, value=cop * unit).font = FN
+        _cell(ws, r, 3, f"{mm}01-1231", al=CC)
+        _cell(ws, r, 4, region, al=CC)
+        _cell(ws, r, 5, cnt, al=CC)
+        _cell(ws, r, 6, cop, al=CC)
+        _cell(ws, r, 7, unit, al=CC, nf=NF_INT)
+        _cell(ws, r, 8, cop * unit, al=CC, nf=NF_YEN2)
         r += 1
-    # 代码 / 报刊名称 两列纵向合并。
+    if regions:
+        _cell(ws, 2, 1, "1-76", al=CC)
+        _cell(ws, 2, 2, "中国经营报", al=CC)
+    _cell(ws, r, 1, "合计", font=FB, al=CC)
+    _cell(ws, r, 5, sum(a["count"] for a in agg.values()), font=FB, al=CC)
+    _cell(ws, r, 6, sum(a["copies"] for a in agg.values()), font=FB, al=CC)
+    _cell(ws, r, 7, None, font=FB, al=CC, nf=NF_INT)
+    _cell(ws, r, 8, sum(a["copies"] for a in agg.values()) * unit, font=FB, al=CC, nf=NF_YEN2)
+    _box(ws, 1, r, 1, 8)
     if regions:
         ws.merge_cells(f"A2:A{r-1}")
         ws.merge_cells(f"B2:B{r-1}")
-        ws.cell(row=2, column=1, value="1-76").font = FN
-        ws.cell(row=2, column=1).alignment = CENTER
-        ws.cell(row=2, column=2, value="中国经营报").font = FN
-        ws.cell(row=2, column=2).alignment = CENTER
     ws.merge_cells(f"A{r}:D{r}")
-    ws.cell(row=r, column=1, value="合计").font = FB
-    ws.cell(row=r, column=5, value=sum(a["count"] for a in agg.values())).font = FB
-    ws.cell(row=r, column=6, value=sum(a["copies"] for a in agg.values())).font = FB
-    ws.cell(row=r, column=8, value=sum(a["copies"] for a in agg.values()) * unit).font = FB
     _widths(ws, {"A": 12, "B": 18, "C": 15, "D": 12, "E": 10, "F": 10, "G": 10, "H": 14})
-    _a4(ws, landscape=False, print_area=f"汇总!$A$1:$H${r}")
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
@@ -224,16 +274,19 @@ def _build_postal_summary(records: List[SubscriptionRecord], batch: Subscription
 # --- (c) 地区集订分送表（邮局模板 · 数据页填充） -----------------------------
 
 def _build_region_detail(region: str, recs: List[SubscriptionRecord], batch: SubscriptionBatch) -> bytes:
+    from copy import copy
     mm = f"{batch.start_month:02d}"
     wb = openpyxl.load_workbook(REGION_TEMPLATE)
     ws = wb["数据页"]
+    proto = [ws.cell(row=2, column=c)._style for c in range(1, 16)]  # 模板第2行样式原型
     for i, r in enumerate(recs, start=1):
         row = i + 1
         vals = [str(i), str(batch.year), None, "1-76", "中国经营报", f"{mm}01", "1231",
                 str(int(r.copies or 0)), r.name, (r.phone or ""), r.province or "",
                 r.city or "", r.district or "", r.address or "", (r.postal_code or "")]
         for c, v in enumerate(vals, start=1):
-            ws.cell(row=row, column=c, value=v)
+            cell = ws.cell(row=row, column=c, value=v)
+            cell._style = copy(proto[c - 1])   # 逐格复刻模板样式（对齐/文本格式/边框）
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
