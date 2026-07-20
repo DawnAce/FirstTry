@@ -256,7 +256,6 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
 
     make_date = batch.make_date or date.today()
     N = import_svc.months_for(batch.start_month)
-    yy = batch.year % 100
     m = batch.start_month
 
     run = SubscriptionGenerationRun(
@@ -284,8 +283,8 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
 
     try:
         wb_bytes = _build_workbook(records, batch, N, make_date)
-        _store(SubscriptionArtifactType.workbook,
-               f"北京-{batch.year}年{m}月中国经营报订阅汇总+明细+申请.xlsx", wb_bytes)
+        wb_name = f"北京-{batch.year}年{m}月中国经营报订阅汇总+明细+申请.xlsx"
+        _store(SubscriptionArtifactType.workbook, wb_name, wb_bytes)
 
         ps_bytes = _build_postal_summary(records, batch, N)
         _store(SubscriptionArtifactType.postal_summary, "北京局订报汇总表.xlsx", ps_bytes)
@@ -300,12 +299,14 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
             _store(SubscriptionArtifactType.region_detail, fname, rd, region=region)
             region_files.append((fname, rd))
 
+        # ZIP 完整还原「输出」文件夹结构：顶层汇总+明细+申请，子目录「北京邮局订报数据」。
         zbio = io.BytesIO()
         with zipfile.ZipFile(zbio, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("北京局订报汇总表.xlsx", ps_bytes)
+            zf.writestr(wb_name, wb_bytes)
+            zf.writestr("北京邮局订报数据/北京局订报汇总表.xlsx", ps_bytes)
             for fname, content in region_files:
-                zf.writestr(fname, content)
-        _store(SubscriptionArtifactType.zip, f"北京{yy}年{m}月订报明细.zip", zbio.getvalue())
+                zf.writestr(f"北京邮局订报数据/{fname}", content)
+        _store(SubscriptionArtifactType.zip, f"北京-{batch.year}年{m}月中国经营报订报数据.zip", zbio.getvalue())
 
         run.status = SubscriptionRunStatus.success
         run.ended_at = datetime.now()
