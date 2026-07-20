@@ -198,23 +198,6 @@ export default function OrderImport() {
     previewMutation.mutate();
   };
 
-  // 该行是否为「缺期号、待补」的往期单期单：可导入、有单期明细无期号、且带补期号提醒。
-  const needsIssueNumber = (r: ImportPreviewRow): boolean =>
-    r.decision === 'import' &&
-    r.items.some((it) => it.fulfillment_type === 'single_issue' && !it.issue_number) &&
-    r.warnings.some((w) => w.includes('期号'));
-
-  // 该行是否为「缺期次、待补」的商学院单期：可导入、有商学院单期明细无 issue_label、且带补期次提醒。
-  const needsIssueLabel = (r: ImportPreviewRow): boolean =>
-    r.decision === 'import' &&
-    r.items.some(
-      (it) =>
-        it.fulfillment_type === 'single_issue' &&
-        it.publication === 'business_school' &&
-        !it.issue_label,
-    ) &&
-    r.warnings.some((w) => w.includes('期次'));
-
   // 期次标签校验（镜像后端 is_valid_issue_label）：YYYY-MM 或 YYYY-MM~MM（合刊月份递增）。
   const isValidIssueLabel = (label: string): boolean => {
     const m = /^(\d{4})-(0[1-9]|1[0-2])(?:~(0[1-9]|1[0-2]))?$/.exec(label.trim());
@@ -252,62 +235,70 @@ export default function OrderImport() {
           );
         }
         return (
-          <Space direction="vertical" size={0}>
+          <Space direction="vertical" size={2} style={{ width: '100%' }}>
             {r.delivery_overridden_to_zto && <Tag color="orange">投递→中通（请核对）</Tag>}
-            {r.items.map((it, i) => (
-              <Text key={i} style={{ fontSize: 12 }}>
-                {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
-                {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
-                {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{it.issue_number ? ` · 第${it.issue_number}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal} · 覆盖{formatCoverage(it.coverage_start_date, it.coverage_end_date)}
-              </Text>
-            ))}
+            {r.items.map((it, i) => {
+              const key = `${r.external_order_no}#${i}`;
+              const needNumber =
+                it.fulfillment_type === 'single_issue' &&
+                it.publication !== 'business_school' &&
+                !it.issue_number;
+              const needLabel =
+                it.fulfillment_type === 'single_issue' &&
+                it.publication === 'business_school' &&
+                !it.issue_label;
+              return (
+                <div key={i}>
+                  <Text style={{ fontSize: 12 }}>
+                    {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
+                    {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
+                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{it.issue_number ? ` · 第${it.issue_number}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal} · 覆盖{formatCoverage(it.coverage_start_date, it.coverage_end_date)}
+                  </Text>
+                  {needNumber && (
+                    <Space size={4} style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
+                      <Text type="warning" style={{ fontSize: 12 }}>补期号：</Text>
+                      <InputNumber
+                        size="small"
+                        min={1}
+                        placeholder="选填"
+                        style={{ width: 100 }}
+                        value={issueOverrides[key] ?? null}
+                        onChange={(v) =>
+                          setIssueOverrides((prev) => {
+                            const next = { ...prev };
+                            if (v == null) delete next[key];
+                            else next[key] = v;
+                            return next;
+                          })
+                        }
+                      />
+                    </Space>
+                  )}
+                  {needLabel && (
+                    <Space size={4} style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
+                      <Text type="warning" style={{ fontSize: 12 }}>补期次：</Text>
+                      <Input
+                        size="small"
+                        placeholder="选填，如 2026-06"
+                        style={{ width: 130 }}
+                        status={labelOverrides[key] && !isValidIssueLabel(labelOverrides[key]) ? 'error' : undefined}
+                        value={labelOverrides[key] ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setLabelOverrides((prev) => {
+                            const next = { ...prev };
+                            if (!v.trim()) delete next[key];
+                            else next[key] = v.trim();
+                            return next;
+                          });
+                        }}
+                      />
+                    </Space>
+                  )}
+                </div>
+              );
+            })}
             {r.warnings.map((w, i) => (<Text key={`w${i}`} type="warning" style={{ fontSize: 12 }}>⚠ {w}</Text>))}
-            {needsIssueNumber(r) && (
-              <Space size={4} onClick={(e) => e.stopPropagation()}>
-                <Text style={{ fontSize: 12 }}>补期号：</Text>
-                <InputNumber
-                  size="small"
-                  min={1}
-                  placeholder="选填"
-                  style={{ width: 110 }}
-                  value={issueOverrides[r.external_order_no] ?? null}
-                  onChange={(v) =>
-                    setIssueOverrides((prev) => {
-                      const next = { ...prev };
-                      if (v == null) delete next[r.external_order_no];
-                      else next[r.external_order_no] = v;
-                      return next;
-                    })
-                  }
-                />
-              </Space>
-            )}
-            {needsIssueLabel(r) && (
-              <Space size={4} onClick={(e) => e.stopPropagation()}>
-                <Text style={{ fontSize: 12 }}>补期次：</Text>
-                <Input
-                  size="small"
-                  placeholder="选填，如 2026-06"
-                  style={{ width: 130 }}
-                  status={
-                    labelOverrides[r.external_order_no] &&
-                    !isValidIssueLabel(labelOverrides[r.external_order_no])
-                      ? 'error'
-                      : undefined
-                  }
-                  value={labelOverrides[r.external_order_no] ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setLabelOverrides((prev) => {
-                      const next = { ...prev };
-                      if (!v.trim()) delete next[r.external_order_no];
-                      else next[r.external_order_no] = v.trim();
-                      return next;
-                    });
-                  }}
-                />
-              </Space>
-            )}
           </Space>
         );
       },
@@ -404,7 +395,7 @@ export default function OrderImport() {
 
           <Card
             size="small"
-            title="③ 预览（点任意行看详情；待确认行可直接加商品；往期单 / 商学院单期可行内补期号 / 期次，选填、留空也能导入）"
+            title="③ 预览（点任意行看详情；待确认行可直接加商品；每个缺期的单期 SKU 可各自行内补期号 / 期次，选填、留空也能导入）"
             extra={
               isAdmin ? (
                 <Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
