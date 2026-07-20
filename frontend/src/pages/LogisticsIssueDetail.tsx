@@ -586,7 +586,7 @@ export default function LogisticsIssueDetail() {
       {/* 标题 + 状态 */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1d1d1f', margin: 0, letterSpacing: '-0.02em' }}>
-          物流管理 · ZTO-MF
+          快递管理 · ZTO-MF
         </h2>
         {currentIssue && (
           <>

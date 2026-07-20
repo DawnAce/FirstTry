@@ -57,7 +57,8 @@ function App() {
             <Route path="/recipients" element={<WorkbenchOrRedirect />} />
             <Route path="/logistics/issues" element={<LogisticsIssues />} />
             <Route path="/logistics/issues/:id" element={<LogisticsIssueDetail />} />
-            <Route path="/post-delivery" element={<PostDelivery />} />
+            <Route path="/post-delivery" element={<Navigate to="/post-delivery/deliveries" replace />} />
+            <Route path="/post-delivery/:tab" element={<PostDelivery />} />
             <Route path="/shipping/:issueId" element={<LegacyShippingRedirect />} />
             <Route path="/history" element={<History />} />
             <Route path="/templates" element={<Templates />} />
