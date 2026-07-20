@@ -378,6 +378,7 @@ def _build_order_items(
             coverage_start_date=coverage_start_date,
             coverage_end_date=coverage_end_date,
             issue_number=item_data.issue_number,
+            issue_label=item_data.issue_label,
             total_quantity=item_data.total_quantity,
             unit_price=unit_price,
             subtotal=subtotal,

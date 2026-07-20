@@ -78,12 +78,20 @@ export function previewOrderImport(
 export function commitOrderImport(
   sessionId: string,
   issueOverrides?: Record<string, number>,
+  issueLabelOverrides?: Record<string, string>,
 ): Promise<AxiosResponse<ImportCommitOut>> {
-  const body: { session_id: string; issue_overrides?: Record<string, number> } = {
+  const body: {
+    session_id: string;
+    issue_overrides?: Record<string, number>;
+    issue_label_overrides?: Record<string, string>;
+  } = {
     session_id: sessionId,
   };
   if (issueOverrides && Object.keys(issueOverrides).length > 0) {
     body.issue_overrides = issueOverrides;
+  }
+  if (issueLabelOverrides && Object.keys(issueLabelOverrides).length > 0) {
+    body.issue_label_overrides = issueLabelOverrides;
   }
   return api.post('/order-import/commit', body);
 }

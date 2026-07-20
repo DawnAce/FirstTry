@@ -55,7 +55,10 @@ from app.services.taobao_order_import_parser import (
 )
 from app.services.order_code_service import allocate_order_codes
 from app.services.order_import_status_service import map_commercial_status
-from app.services.issue_label import normalize_business_school_issue_label
+from app.services.issue_label import (
+    is_valid_issue_label,
+    normalize_business_school_issue_label,
+)
 from app.services.latest_issue_resolver import resolve_latest_issue
 from app.services.order_service import create_imported_order
 from app.services.product_resolver_service import (
@@ -508,14 +511,19 @@ def commit_import(
     session_id: str,
     operator_id: Optional[int] = None,
     issue_overrides: Optional[dict[str, int]] = None,
+    issue_label_overrides: Optional[dict[str, str]] = None,
 ) -> dict:
     """Create the previewed importable orders atomically (single commit).
 
-    ``issue_overrides`` (optional) maps ``external_order_no`` → 期号 for 往期
-    单 whose issue number was blank at preview (客服 tells it per order). Each
-    override is applied only to that order's **single_issue item(s) that still
-    lack an issue_number** — subscription rows and already-numbered items are
-    never touched. Unknown 单号 are ignored (kept 选填, never blocks the commit).
+    ``issue_overrides`` (optional) maps ``external_order_no`` → 期号 for 中国经营报
+    往期单 whose numeric issue_number was blank at preview. ``issue_label_overrides``
+    is the 商学院月刊 counterpart: maps 单号 → normalised 期次标签 ("YYYY-MM" /
+    "YYYY-MM~MM") for 商学院 single-issue rows whose issue_label was blank (导出无
+    分册名). Each override applies only to that order's single_issue item(s) that
+    still lack the corresponding field — subscription rows and already-filled
+    items are never touched; issue_label_overrides additionally only touch
+    business_school items and silently ignore malformed labels. Unknown 单号 are
+    ignored (both are 选填, never block the commit).
     """
     payload = pop_order_import_session(session_id)
     if payload is None:
@@ -532,6 +540,22 @@ def commit_import(
             for item in r["order_create"].get("items", []):
                 if item.get("fulfillment_type") == "single_issue" and not item.get("issue_number"):
                     item["issue_number"] = issue_no
+
+    if issue_label_overrides:
+        for r in rows:
+            ext = r["order_create"].get("external_order_no")
+            if ext is None or ext not in issue_label_overrides:
+                continue
+            label = (issue_label_overrides[ext] or "").strip()
+            if not is_valid_issue_label(label):
+                continue  # 非法格式 → 忽略，不卡流程（前端已校验，这里再兜一层）
+            for item in r["order_create"].get("items", []):
+                if (
+                    item.get("fulfillment_type") == "single_issue"
+                    and item.get("publication") == "business_school"
+                    and not item.get("issue_label")
+                ):
+                    item["issue_label"] = label
 
     existing = {
         e

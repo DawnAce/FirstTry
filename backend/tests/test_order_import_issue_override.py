@@ -138,3 +138,88 @@ def test_override_does_not_overwrite_existing_issue_number(db):
     res = commit_import(db, sid, issue_overrides={"EC-PAST-4": 2650})
     assert res["created"] == 1
     assert _issue_number_of(db, "EC-PAST-4") == 2600
+
+
+# --- 商学院单期：issue_label 选填补录 -------------------------------------
+
+
+def _bs_single_issue_row(ext, *, issue_label=None):
+    """商学院月刊单期（导出无分册名时 issue_label 空，待操作员补期次）。"""
+    return {
+        "order_create": {
+            "order_date": "2026-05-01",
+            "external_order_no": ext,
+            "payer_name": "商学院单期",
+            "total_amount": "34",
+            "paid_amount": "34",
+            "items": [
+                {
+                    "publication": "business_school",
+                    "fulfillment_type": "single_issue",
+                    "billing_type": "paid",
+                    "issue_label": issue_label,
+                    "total_quantity": 1,
+                    "unit_price": "34",
+                    "subtotal": "34",
+                    "targets": [],
+                }
+            ],
+        },
+        "commercial_status": "shipped",
+        "source_status_raw": "交易成功",
+        "is_historical_archive": False,
+    }
+
+
+def _issue_label_of(db, ext):
+    order = db.query(Order).filter(Order.external_order_no == ext).first()
+    assert order is not None
+    item = db.query(OrderItem).filter(OrderItem.order_id == order.id).first()
+    return item.issue_label
+
+
+def test_label_override_fills_blank_business_school_single_issue(db):
+    sid = save_order_import_session({"mode": "recent", "rows": [_bs_single_issue_row("EC-BS-1")]})
+    res = commit_import(db, sid, issue_label_overrides={"EC-BS-1": "2026-06"})
+    assert res["created"] == 1
+    assert _issue_label_of(db, "EC-BS-1") == "2026-06"
+
+
+def test_label_override_accepts_cross_month(db):
+    sid = save_order_import_session({"mode": "recent", "rows": [_bs_single_issue_row("EC-BS-2")]})
+    res = commit_import(db, sid, issue_label_overrides={"EC-BS-2": "2026-02~03"})
+    assert res["created"] == 1
+    assert _issue_label_of(db, "EC-BS-2") == "2026-02~03"
+
+
+def test_label_override_ignores_malformed(db):
+    sid = save_order_import_session({"mode": "recent", "rows": [_bs_single_issue_row("EC-BS-3")]})
+    # 非法格式 → 忽略、不报错、期次仍空、照常导入
+    res = commit_import(db, sid, issue_label_overrides={"EC-BS-3": "2026年6月"})
+    assert res["created"] == 1
+    assert _issue_label_of(db, "EC-BS-3") is None
+
+
+def test_label_override_does_not_overwrite_existing(db):
+    sid = save_order_import_session(
+        {"mode": "recent", "rows": [_bs_single_issue_row("EC-BS-4", issue_label="2026-05")]}
+    )
+    res = commit_import(db, sid, issue_label_overrides={"EC-BS-4": "2026-06"})
+    assert res["created"] == 1
+    assert _issue_label_of(db, "EC-BS-4") == "2026-05"
+
+
+def test_label_override_does_not_touch_cbj_issue_number_row(db):
+    """label override 只作用商学院；中国经营报往期单（issue_number 路线）不受影响。"""
+    sid = save_order_import_session({"mode": "recent", "rows": [_single_issue_row("EC-PAST-5")]})
+    res = commit_import(db, sid, issue_label_overrides={"EC-PAST-5": "2026-06"})
+    assert res["created"] == 1
+    assert _issue_number_of(db, "EC-PAST-5") is None
+
+
+def test_no_label_override_leaves_label_blank(db):
+    """现状回归：不带 label override，商学院单期期次照旧留空、照常导入。"""
+    sid = save_order_import_session({"mode": "recent", "rows": [_bs_single_issue_row("EC-BS-5")]})
+    res = commit_import(db, sid)
+    assert res["created"] == 1
+    assert _issue_label_of(db, "EC-BS-5") is None

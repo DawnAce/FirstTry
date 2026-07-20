@@ -50,3 +50,26 @@ def normalize_business_school_issue_label(name: Optional[str]) -> Optional[str]:
             lo, hi = sorted((m1, m2))
             return f"{year:04d}-{lo:02d}~{hi:02d}"
     return f"{year:04d}-{m1:02d}"
+
+
+# A NORMALISED label as produced above: "YYYY-MM" (single month) or
+# "YYYY-MM~MM" (cross-month 合刊). Used to validate an operator-typed label
+# (导入预览里手工补录商学院单期的期次). Mirrored on the frontend.
+_LABEL_RE = re.compile(r"^(?P<year>\d{4})-(?P<m1>0[1-9]|1[0-2])(?:~(?P<m2>0[1-9]|1[0-2]))?$")
+
+
+def is_valid_issue_label(label: Optional[str]) -> bool:
+    """True if ``label`` is a well-formed normalised issue label.
+
+    Accepts ``"2026-06"`` and ``"2026-02~03"``. For the cross-month form the two
+    months must differ and be in ascending order (matching how the normaliser
+    emits them). Everything else (None, free text, out-of-range months) is False.
+    """
+    if not label:
+        return False
+    m = _LABEL_RE.match(label.strip())
+    if not m:
+        return False
+    if m.group("m2"):
+        return int(m.group("m1")) < int(m.group("m2"))
+    return True

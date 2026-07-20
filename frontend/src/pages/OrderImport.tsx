@@ -97,6 +97,8 @@ export default function OrderImport() {
   const [preview, setPreview] = useState<ImportPreviewOut | null>(null);
   // 往期单选填补期号：{external_order_no: 期号}。留空=不补，照常导入。
   const [issueOverrides, setIssueOverrides] = useState<Record<string, number>>({});
+  // 商学院单期选填补期次标签：{external_order_no: "YYYY-MM" / "YYYY-MM~MM"}。
+  const [labelOverrides, setLabelOverrides] = useState<Record<string, string>>({});
 
   const [drawerMode, setDrawerMode] = useState<'quick' | 'detail' | null>(null);
   const [detailRow, setDetailRow] = useState<ImportPreviewRow | null>(null);
@@ -121,18 +123,27 @@ export default function OrderImport() {
     onSuccess: (res) => {
       setPreview(res.data);
       setIssueOverrides({}); // 新预览：行可能重排，作废旧的补期号
+      setLabelOverrides({});
     },
     onError: (err: { response?: { data?: { detail?: string } } }) =>
       message.error(err.response?.data?.detail ?? '预览失败'),
   });
 
   const commitMutation = useMutation({
-    mutationFn: () => commitOrderImport(preview!.session_id, issueOverrides),
+    mutationFn: () => {
+      // 只把格式合法的期次标签传给后端（非法值前端就丢弃，后端也会再兜一层）
+      const validLabels: Record<string, string> = {};
+      for (const [ext, label] of Object.entries(labelOverrides)) {
+        if (isValidIssueLabel(label)) validLabels[ext] = label;
+      }
+      return commitOrderImport(preview!.session_id, issueOverrides, validLabels);
+    },
     onSuccess: (res) => {
       message.success(`成功导入 ${res.data.created} 单（跳过重复 ${res.data.skipped_duplicates}）`);
       setPreview(null);
       setFile(null);
       setIssueOverrides({});
+      setLabelOverrides({});
     },
     onError: (err: { response?: { data?: { detail?: string } } }) =>
       message.error(err.response?.data?.detail ?? '导入失败'),
@@ -193,6 +204,24 @@ export default function OrderImport() {
     r.items.some((it) => it.fulfillment_type === 'single_issue' && !it.issue_number) &&
     r.warnings.some((w) => w.includes('期号'));
 
+  // 该行是否为「缺期次、待补」的商学院单期：可导入、有商学院单期明细无 issue_label、且带补期次提醒。
+  const needsIssueLabel = (r: ImportPreviewRow): boolean =>
+    r.decision === 'import' &&
+    r.items.some(
+      (it) =>
+        it.fulfillment_type === 'single_issue' &&
+        it.publication === 'business_school' &&
+        !it.issue_label,
+    ) &&
+    r.warnings.some((w) => w.includes('期次'));
+
+  // 期次标签校验（镜像后端 is_valid_issue_label）：YYYY-MM 或 YYYY-MM~MM（合刊月份递增）。
+  const isValidIssueLabel = (label: string): boolean => {
+    const m = /^(\d{4})-(0[1-9]|1[0-2])(?:~(0[1-9]|1[0-2]))?$/.exec(label.trim());
+    if (!m) return false;
+    return m[3] ? Number(m[2]) < Number(m[3]) : true;
+  };
+
   const columns: TableColumnsType<ImportPreviewRow> = [
     { title: '结果', dataIndex: 'decision', key: 'decision', width: 100, render: (d: ImportDecision) => <Tag color={DECISION_META[d].color}>{DECISION_META[d].label}</Tag> },
     { title: '来源单号', dataIndex: 'external_order_no', key: 'ext', width: 160, ellipsis: true },
@@ -250,6 +279,32 @@ export default function OrderImport() {
                       return next;
                     })
                   }
+                />
+              </Space>
+            )}
+            {needsIssueLabel(r) && (
+              <Space size={4} onClick={(e) => e.stopPropagation()}>
+                <Text style={{ fontSize: 12 }}>补期次：</Text>
+                <Input
+                  size="small"
+                  placeholder="选填，如 2026-06"
+                  style={{ width: 130 }}
+                  status={
+                    labelOverrides[r.external_order_no] &&
+                    !isValidIssueLabel(labelOverrides[r.external_order_no])
+                      ? 'error'
+                      : undefined
+                  }
+                  value={labelOverrides[r.external_order_no] ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setLabelOverrides((prev) => {
+                      const next = { ...prev };
+                      if (!v.trim()) delete next[r.external_order_no];
+                      else next[r.external_order_no] = v.trim();
+                      return next;
+                    });
+                  }}
                 />
               </Space>
             )}
@@ -349,7 +404,7 @@ export default function OrderImport() {
 
           <Card
             size="small"
-            title="③ 预览（点任意行看详情；待确认行可直接加商品；往期单可行内补期号，选填、留空也能导入）"
+            title="③ 预览（点任意行看详情；待确认行可直接加商品；往期单 / 商学院单期可行内补期号 / 期次，选填、留空也能导入）"
             extra={
               isAdmin ? (
                 <Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
