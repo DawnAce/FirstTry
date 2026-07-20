@@ -65,6 +65,20 @@ from app.models.postal_complaint import (
 )
 from app.models.postal_change import PostalAddressChange, PostalFollowUp
 from app.models.postal_finance import PostalFinance
+from app.models.subscription_batch import (
+    SubscriptionArtifactType,
+    SubscriptionBatch,
+    SubscriptionBatchStatus,
+    SubscriptionGenerationRun,
+    SubscriptionImportStatus,
+    SubscriptionImportVersion,
+    SubscriptionIssueLevel,
+    SubscriptionOutputArtifact,
+    SubscriptionRecord,
+    SubscriptionRunStatus,
+    SubscriptionSourceFile,
+    SubscriptionValidationIssue,
+)
 
 __all__ = [
     "PublicationSchedule",
@@ -107,4 +121,12 @@ __all__ = [
     "PostalComplaint", "PostalComplaintStatus", "PostalComplaintHandlingRecord",
     "PostalAddressChange", "PostalFollowUp",
     "PostalFinance",
+    # 邮局订报数据生成模块（上传驱动 · 版本流水 · 生成产物）
+    "SubscriptionBatch", "SubscriptionBatchStatus",
+    "SubscriptionImportVersion", "SubscriptionImportStatus",
+    "SubscriptionSourceFile",
+    "SubscriptionRecord",
+    "SubscriptionValidationIssue", "SubscriptionIssueLevel",
+    "SubscriptionGenerationRun", "SubscriptionRunStatus",
+    "SubscriptionOutputArtifact", "SubscriptionArtifactType",
 ]

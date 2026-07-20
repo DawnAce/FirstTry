@@ -5,6 +5,7 @@ import Dashboard from './pages/DashboardPage';
 import ReportEditor from './pages/ReportEditor';
 import LogisticsOverview from './pages/LogisticsOverview';
 import PostDelivery from './pages/PostDelivery';
+import SubscriptionGeneration from './pages/SubscriptionGeneration';
 import History from './pages/History';
 import LogisticsIssues from './pages/LogisticsIssues';
 import LogisticsIssueDetail from './pages/LogisticsIssueDetail';
@@ -58,6 +59,7 @@ function App() {
             <Route path="/logistics/issues" element={<LogisticsIssues />} />
             <Route path="/logistics/issues/:id" element={<LogisticsIssueDetail />} />
             <Route path="/post-delivery" element={<Navigate to="/post-delivery/deliveries" replace />} />
+            <Route path="/post-delivery/subscription" element={<SubscriptionGeneration />} />
             <Route path="/post-delivery/:tab" element={<PostDelivery />} />
             <Route path="/shipping/:issueId" element={<LegacyShippingRedirect />} />
             <Route path="/history" element={<History />} />
