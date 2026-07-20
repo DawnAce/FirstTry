@@ -1,12 +1,12 @@
 """邮局订报数据生成模块 · 来源文件解析（来源A 订阅明细 / 来源B 读者统计）。
 
-**按表头名识别、不靠文件名**（文档 §5）。表头映射做成可配置常量 ——
-样本到位后在 ``SOURCE_A_HEADERS`` / ``SOURCE_B_HEADERS`` 锁定精确列名即可，
-其余流水线（校验 / 计算 / 生成）不受影响。
+**表头已按 7月/8月 黄金样本锁定**（按表头名识别、不靠文件名，文档 §5）：
 
-来源A（.xls/.xlsx 订阅明细）→ 逐行 ``ParsedRow``（主明细）。
-来源B（.xlsx/.csv 读者统计）→ 汇总口径，用于与来源A 对账。CSV **必须识别 UTF-8 BOM**，
-其它编码无法可靠判断则拒绝处理（返回阻断问题）。
+* 来源A《…订阅明细~陈海影.xls/.xlsx》—— 17 列，**全量纳入**明细。
+* 来源B《读者统计表~M月.xlsx/.csv》—— 标题在第1行、表头在第2行；**仅取 物流平台=邮局
+  且 起投日期月份=本批月份** 的行。CSV **必须 UTF-8/BOM**，其它编码拒绝（不猜）。
+
+明细 = 全部A（顺序在前）+ 筛后B（追加），按 姓名+电话 去重（见 import_service）。
 """
 
 import csv
@@ -16,30 +16,53 @@ from typing import Dict, List, Optional, Tuple
 
 from openpyxl import load_workbook
 
-
-# --- 可配置表头映射（样本到位后锁定） --------------------------------------
-# field -> 可接受的表头名（按优先级）。识别时大小写/首尾空白已归一。
+# --- 锁定表头（field -> 可接受列名） ---------------------------------------
 SOURCE_A_HEADERS: Dict[str, List[str]] = {
-    "name": ["姓名", "收报人", "订户姓名", "客户姓名"],
-    "phone": ["电话", "联系电话", "手机", "手机号"],
-    "address": ["地址", "详细地址", "收货地址", "通讯地址"],
-    "province": ["省", "省份"],
-    "city": ["市", "城市", "地市"],
-    "district": ["区", "区县", "县区"],
+    "name": ["姓名"],
+    "phone": ["联系电话", "电话"],
+    "address": ["详细地址", "地址"],
+    "addr_alt": ["省"],   # 样本把完整地址写进「省」列、详细地址列常为空 → 兜底取「省」
     "postal_code": ["邮编", "邮政编码"],
-    "copies": ["份数", "订阅份数", "数量"],
-    "months": ["月数", "订阅月数", "订期", "订阅期限"],
-    "region": ["地区", "投递地区", "所属地区"],
-    "distribution_unit": ["投递单位", "集订分送", "分送单位"],
+    "copies": ["份数"],
+    "channel": ["渠道"],
+    "remittance_name": ["汇款名称"],
+    "remittance_date": ["汇款日期"],
 }
-# 来源A 必备列（缺失则阻断，不猜）。
-SOURCE_A_REQUIRED = ["name", "address"]
+SOURCE_A_REQUIRED = ["name", "copies"]
 
 SOURCE_B_HEADERS: Dict[str, List[str]] = {
-    "region": ["地区", "省份", "省", "所属地区"],
-    "count": ["条数", "订户数", "记录数", "户数"],
-    "copies": ["份数", "订阅份数", "数量"],
+    "name": ["姓名"],
+    "phone": ["电话", "联系电话"],
+    "address": ["地址", "详细地址"],
+    "postal_code": ["邮政编码", "邮编"],
+    "copies": ["份数"],
+    "channel": ["订单平台", "来源平台"],
+    "logistics": ["物流平台"],
+    "start_date": ["起投日期"],
+    "status": ["状态"],
 }
+SOURCE_B_REQUIRED = ["name", "address", "logistics", "start_date"]
+
+# 省份 → 地区短名（与黄金样本文件名一致）。
+REGION_SPECIAL = {
+    "内蒙古自治区": "内蒙",
+    "广西壮族自治区": "广西",
+    "宁夏回族自治区": "宁夏",
+    "新疆维吾尔自治区": "新疆",
+    "西藏自治区": "西藏",
+}
+
+
+def province_to_region(province: Optional[str]) -> Optional[str]:
+    if not province:
+        return None
+    p = province.strip()
+    if p in REGION_SPECIAL:
+        return REGION_SPECIAL[p]
+    for suf in ("自治区", "省", "市"):
+        if p.endswith(suf) and len(p) > len(suf):
+            return p[: -len(suf)]
+    return p
 
 
 @dataclass
@@ -48,24 +71,18 @@ class ParsedRow:
     source_row: int
     name: str = ""
     phone: str = ""
-    province: str = ""
-    city: str = ""
-    district: str = ""
     address: str = ""
     postal_code: str = ""
     copies: Optional[int] = None
-    months: Optional[int] = None
-    region: str = ""
-    distribution_unit: str = ""
-    excluded: bool = False
-    exclude_reason: str = ""
-    raw: dict = field(default_factory=dict)
+    channel: str = ""
+    remittance_name: str = ""
+    remittance_date: str = ""
 
 
 @dataclass
 class ParseIssue:
-    level: str          # block | warn | info
-    source: str         # A | B
+    level: str
+    source: str
     sheet_or_file: str = ""
     row_no: Optional[int] = None
     field_name: str = ""
@@ -77,20 +94,14 @@ class ParseIssue:
 class ParseResult:
     rows: List[ParsedRow] = field(default_factory=list)
     issues: List[ParseIssue] = field(default_factory=list)
-    # 来源B 汇总（对账用）：{"total_count": n, "total_copies": n, "by_region": {...}}
-    summary_b: dict = field(default_factory=dict)
 
 
-def _norm_header(v) -> str:
+def _norm(v) -> str:
     return str(v).strip() if v is not None else ""
 
 
-def _cell(v) -> str:
-    return "" if v is None else str(v).strip()
-
-
 def _to_int(v) -> Optional[int]:
-    s = _cell(v)
+    s = _norm(v)
     if not s:
         return None
     try:
@@ -99,11 +110,41 @@ def _to_int(v) -> Optional[int]:
         return None
 
 
-def _build_header_map(header_row, config: Dict[str, List[str]]) -> Dict[str, int]:
-    """表头名 → 列索引；同名列冲突（同一 field 命中多列）留最先出现。"""
-    present = {}
+def _read_rows(content: bytes, filename: str) -> Tuple[str, List[list], Optional[str]]:
+    """把 .xls/.xlsx/.csv 读成 (sheet_name, rows, error)。"""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext == "csv":
+        if content.startswith(b"\xef\xbb\xbf"):
+            text = content.decode("utf-8-sig")
+        else:
+            try:
+                text = content.decode("utf-8")
+            except UnicodeDecodeError:
+                return "csv", [], "CSV 编码无法识别（需 UTF-8/带 BOM），请转换后重传"
+        return "csv", [list(r) for r in csv.reader(io.StringIO(text))], None
+    if ext == "xls":
+        import xlrd  # 仅旧格式需要
+        book = xlrd.open_workbook(file_contents=content)
+        sh = book.sheet_by_index(0)
+
+        def _xls_cell(r, c):
+            v = sh.cell_value(r, c)
+            # xlrd 把所有数字读成 float；整数值还原成 int（否则电话/邮编带 .0）。
+            if isinstance(v, float) and v.is_integer():
+                return int(v)
+            return v
+
+        rows = [[_xls_cell(r, c) for c in range(sh.ncols)] for r in range(sh.nrows)]
+        return sh.name, rows, None
+    wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
+    ws = wb.active
+    return ws.title, [list(r) for r in ws.iter_rows(values_only=True)], None
+
+
+def _header_map(header_row, config: Dict[str, List[str]]) -> Dict[str, int]:
+    present: Dict[str, int] = {}
     for idx, raw in enumerate(header_row):
-        name = _norm_header(raw)
+        name = _norm(raw)
         if name and name not in present:
             present[name] = idx
     field_col: Dict[str, int] = {}
@@ -115,110 +156,111 @@ def _build_header_map(header_row, config: Dict[str, List[str]]) -> Dict[str, int
     return field_col
 
 
-def _rows_from_xlsx(content: bytes):
-    wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
-    ws = wb.active
-    return ws.title, list(ws.iter_rows(values_only=True))
+def _find_header_row(rows: List[list], config: Dict[str, List[str]], required: List[str], max_scan: int = 5):
+    """在前几行里找表头（来源B 表头在第2行）。返回 (header_index, header_map) 或 (None, None)。"""
+    for i in range(min(max_scan, len(rows))):
+        hm = _header_map(rows[i], config)
+        if all(f in hm for f in required):
+            return i, hm
+    return None, None
 
 
-def _rows_from_csv(content: bytes) -> Tuple[str, list, Optional[str]]:
-    """CSV → (sheet_name, rows)。必须 UTF-8 BOM，否则返回错误说明。"""
-    if content.startswith(b"\xef\xbb\xbf"):
-        text = content.decode("utf-8-sig")
-    else:
-        # 尝试无 BOM 的 UTF-8；解不出则明确拒绝（不猜编码）。
-        try:
-            text = content.decode("utf-8")
-        except UnicodeDecodeError:
-            return "csv", [], "CSV 编码无法识别（需 UTF-8/带 BOM），请转换后重传"
-    reader = csv.reader(io.StringIO(text))
-    return "csv", [tuple(r) for r in reader], None
+def _get(row, hm, fld) -> str:
+    idx = hm.get(fld)
+    return _norm(row[idx]) if idx is not None and idx < len(row) else ""
 
 
 def parse_source_a(content: bytes, filename: str) -> ParseResult:
-    """来源A 订阅明细 → 逐行 ParsedRow。"""
     result = ParseResult()
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    try:
-        if ext == "csv":
-            sheet, all_rows, err = _rows_from_csv(content)
-            if err:
-                result.issues.append(ParseIssue("block", "A", sheet, None, "", "encoding", err))
-                return result
-        else:
-            sheet, all_rows = _rows_from_xlsx(content)
-    except Exception as exc:  # noqa: BLE001
-        result.issues.append(ParseIssue("block", "A", filename, None, "", "unreadable", f"来源A 无法读取：{exc}"))
+    sheet, rows, err = _read_rows(content, filename)
+    if err:
+        result.issues.append(ParseIssue("block", "A", sheet, None, "", "encoding", err))
         return result
-
-    if not all_rows:
+    if not rows:
         result.issues.append(ParseIssue("block", "A", sheet, None, "", "empty", "来源A 无数据行"))
         return result
-
-    header_map = _build_header_map(all_rows[0], SOURCE_A_HEADERS)
-    missing = [f for f in SOURCE_A_REQUIRED if f not in header_map]
-    if missing:
+    hidx, hm = _find_header_row(rows, SOURCE_A_HEADERS, SOURCE_A_REQUIRED)
+    if hm is None:
         result.issues.append(ParseIssue(
-            "block", "A", sheet, 1, ",".join(missing), "missing_header",
-            f"来源A 缺必备列：{missing}（按表头识别，请核对样本表头）",
-        ))
+            "block", "A", sheet, 1, "", "missing_header",
+            f"来源A 未找到含 {SOURCE_A_REQUIRED} 的表头（请核对样本表头）"))
         return result
-
-    def get(row, fld) -> str:
-        idx = header_map.get(fld)
-        return _cell(row[idx]) if idx is not None and idx < len(row) else ""
-
-    for i, row in enumerate(all_rows[1:], start=2):
-        if row is None or all(c is None or _cell(c) == "" for c in row):
-            continue  # 跳过空行
-        pr = ParsedRow(
+    for i, row in enumerate(rows[hidx + 1:], start=hidx + 2):
+        if not row or all(_norm(c) == "" for c in row):
+            continue
+        name = _get(row, hm, "name")
+        if not name:
+            continue  # 无姓名 = 非订户记录（空行/占位），跳过
+        result.rows.append(ParsedRow(
             source_file_role="A", source_row=i,
-            name=get(row, "name"), phone=get(row, "phone"),
-            province=get(row, "province"), city=get(row, "city"), district=get(row, "district"),
-            address=get(row, "address"), postal_code=get(row, "postal_code"),
-            copies=_to_int(row[header_map["copies"]]) if "copies" in header_map and header_map["copies"] < len(row) else None,
-            months=_to_int(row[header_map["months"]]) if "months" in header_map and header_map["months"] < len(row) else None,
-            region=get(row, "region"), distribution_unit=get(row, "distribution_unit"),
-        )
-        result.rows.append(pr)
+            name=name, phone=_get(row, hm, "phone"),
+            address=_get(row, hm, "address") or _get(row, hm, "addr_alt"),
+            postal_code=_get(row, hm, "postal_code"),
+            copies=_to_int(row[hm["copies"]]) if hm["copies"] < len(row) else None,
+            channel=_get(row, hm, "channel"),
+            remittance_name=_get(row, hm, "remittance_name"),
+            remittance_date=_get(row, hm, "remittance_date"),
+        ))
     return result
 
 
-def parse_source_b(content: bytes, filename: str) -> ParseResult:
-    """来源B 读者统计 → 汇总口径（对账用）。"""
+def _month_of(start_raw: str) -> Optional[int]:
+    """来源B 起投日期 'YYYY/M/D' → month。"""
+    s = start_raw.strip().replace("-", "/")
+    parts = [p for p in s.split("/") if p]
+    if len(parts) >= 2:
+        try:
+            return int(parts[1])
+        except ValueError:
+            return None
+    return None
+
+
+def _year_of(start_raw: str) -> Optional[int]:
+    s = start_raw.strip().replace("-", "/")
+    parts = [p for p in s.split("/") if p]
+    if parts:
+        try:
+            return int(parts[0])
+        except ValueError:
+            return None
+    return None
+
+
+def parse_source_b(content: bytes, filename: str, year: int, month: int) -> ParseResult:
+    """来源B → 仅 物流平台=邮局 且 起投日期(年,月)=本批 的行。"""
     result = ParseResult()
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    try:
-        if ext == "csv":
-            sheet, all_rows, err = _rows_from_csv(content)
-            if err:
-                result.issues.append(ParseIssue("block", "B", sheet, None, "", "encoding", err))
-                return result
-        else:
-            sheet, all_rows = _rows_from_xlsx(content)
-    except Exception as exc:  # noqa: BLE001
-        result.issues.append(ParseIssue("block", "B", filename, None, "", "unreadable", f"来源B 无法读取：{exc}"))
+    sheet, rows, err = _read_rows(content, filename)
+    if err:
+        result.issues.append(ParseIssue("block", "B", sheet, None, "", "encoding", err))
         return result
-
-    if not all_rows:
-        result.issues.append(ParseIssue("warn", "B", sheet, None, "", "empty", "来源B 无数据行（跳过对账）"))
+    if not rows:
+        result.issues.append(ParseIssue("warn", "B", sheet, None, "", "empty", "来源B 无数据行"))
         return result
-
-    header_map = _build_header_map(all_rows[0], SOURCE_B_HEADERS)
-    total_count = 0
-    total_copies = 0
-    by_region: Dict[str, dict] = {}
-    for row in all_rows[1:]:
-        if row is None or all(c is None or _cell(c) == "" for c in row):
+    hidx, hm = _find_header_row(rows, SOURCE_B_HEADERS, SOURCE_B_REQUIRED)
+    if hm is None:
+        result.issues.append(ParseIssue(
+            "warn", "B", sheet, None, "", "missing_header",
+            f"来源B 未找到含 {SOURCE_B_REQUIRED} 的表头，跳过来源B"))
+        return result
+    for i, row in enumerate(rows[hidx + 1:], start=hidx + 2):
+        if not row or all(_norm(c) == "" for c in row):
             continue
-        region = _cell(row[header_map["region"]]) if "region" in header_map and header_map["region"] < len(row) else ""
-        cnt = _to_int(row[header_map["count"]]) if "count" in header_map and header_map["count"] < len(row) else None
-        cop = _to_int(row[header_map["copies"]]) if "copies" in header_map and header_map["copies"] < len(row) else None
-        total_count += cnt or 0
-        total_copies += cop or 0
-        if region:
-            agg = by_region.setdefault(region, {"count": 0, "copies": 0})
-            agg["count"] += cnt or 0
-            agg["copies"] += cop or 0
-    result.summary_b = {"total_count": total_count, "total_copies": total_copies, "by_region": by_region}
+        logistics = _get(row, hm, "logistics")
+        if logistics != "邮局":
+            continue
+        start_raw = _get(row, hm, "start_date")
+        if _month_of(start_raw) != month or _year_of(start_raw) != year:
+            continue
+        name = _get(row, hm, "name")
+        if not name:
+            continue  # 无姓名 = 空行/占位，跳过
+        result.rows.append(ParsedRow(
+            source_file_role="B", source_row=i,
+            name=name, phone=_get(row, hm, "phone"),
+            address=_get(row, hm, "address"), postal_code=_get(row, hm, "postal_code"),
+            copies=_to_int(row[hm["copies"]]) if hm["copies"] < len(row) else None,
+            channel=_get(row, hm, "channel"),
+            remittance_name="未到", remittance_date="",
+        ))
     return result

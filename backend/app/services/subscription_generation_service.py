@@ -1,21 +1,23 @@
-"""邮局订报数据生成模块 · 文件生成（文档 §8 输出 / §9 版式）。
+"""邮局订报数据生成模块 · 文件生成（严格对齐 7月/8月 黄金样本）。
 
-基于批次**当前有效版本**的有效明细，生成四类产物并落盘、登记 artifacts：
-1. 北京-YYYY年M月中国经营报订阅汇总+明细+申请.xlsx（北京-汇总 / 北京-明细 / 未到款申请）
-2. 北京局订报汇总表.xlsx（按地区：条数/份数/单价/款额）
-3. 1-76《中国经营报》集订分送表~YYYY年M月起报~地区.xlsx（仅有订户地区各一张）
-4. 北京YY年M月订报明细.zip（邮局汇总 + 全部地区明细）
+基于批次**当前有效版本**的有效明细，生成三类产物并落盘、登记 artifacts：
+1. 北京-{Y}年{M}月中国经营报订阅汇总+明细+申请.xlsx（北京-汇总 / 北京-明细 / 未到款申请）
+2. 北京局订报汇总表.xlsx（代码|报刊名称|订期|省份|条数|份数|单价|款额）
+3. 1-76《中国经营报》集订分送表~{Y}年{M}月起报~{地区}.xlsx（仅有订户地区；用邮局模板保留说明页/产品页）
+并打包 北京{yy}年{M}月订报明细.zip（邮局汇总 + 全部地区明细）。
 
-版式按 §9：宋体11、标题加粗、金额货币两位小数、日期真日期值(yyyy年m月d日)、A4/打印区域。
-**签名图片锚点与像素级列宽待黄金样本到位后精修**（本期为规范化可用版本）。
+金额/汇总**复刻活公式**（明细 =M*N*20、汇总 SUMIF）；单价=N×20，N=13−起始月。
+版式：宋体11、标题/表头/合计加粗、A4+打印区域；无签名图片（签名为文字）。
 """
 
 import io
+import os
 import zipfile
 from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
+import openpyxl
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.properties import PageSetupProperties
@@ -31,23 +33,20 @@ from app.models import (
     SubscriptionRunStatus,
 )
 from app.services import attachment_service
-from app.services import subscription_calc_service as calc
+from app.services import subscription_import_service as import_svc
 
 BASE_FONT = "宋体"
-FONT_NORMAL = Font(name=BASE_FONT, size=11)
-FONT_BOLD = Font(name=BASE_FONT, size=11, bold=True)
-CURRENCY_FMT = "0.00"
+FN = Font(name=BASE_FONT, size=11)
+FB = Font(name=BASE_FONT, size=11, bold=True)
+CUR = "0.00"
+CENTER = Alignment(horizontal="center", vertical="center")
 RULE_VERSION = "v1"
 TEMPLATE_VERSION = "v1"
+REGION_TEMPLATE = os.path.join(os.path.dirname(__file__), "..", "templates", "postal_region_template.xlsx")
 
 
-def _cn_date(d: date) -> str:
+def _cn(d: date) -> str:
     return f"{d.year}年{d.month}月{d.day}日"
-
-
-def _set_col_widths(ws, widths: dict) -> None:
-    for col, w in widths.items():
-        ws.column_dimensions[col].width = w
 
 
 def _a4(ws, *, landscape: bool, print_area: str) -> None:
@@ -59,141 +58,182 @@ def _a4(ws, *, landscape: bool, print_area: str) -> None:
     ws.print_area = print_area
 
 
-def _header_row(ws, row_idx: int, headers: List[str]) -> None:
+def _widths(ws, widths: dict) -> None:
+    for col, w in widths.items():
+        ws.column_dimensions[col].width = w
+
+
+def _region_order(records: List[SubscriptionRecord]) -> List[str]:
+    """按明细首次出现顺序列出地区（与黄金样本一致）。"""
+    order: List[str] = []
+    for r in records:
+        reg = r.region_name or "(未识别地区)"
+        if reg not in order:
+            order.append(reg)
+    return order
+
+
+# --- (a) 汇总 + 明细 + 申请 --------------------------------------------------
+
+def _build_workbook(records: List[SubscriptionRecord], batch: SubscriptionBatch, N: int, make_date: date) -> bytes:
+    count = len(records)
+    total_amount = sum((r.amount or Decimal(0)) for r in records)
+    last = count + 1  # 明细数据末行
+    mm = f"{batch.start_month:02d}"
+    regions = _region_order(records)
+
+    wb = Workbook()
+
+    # --- 北京-明细（先建，供汇总 SUMIF 引用） ---
+    det = wb.active
+    det.title = "北京-明细"
+    headers = ["地区", "姓名", "联系电话", "省", "市", "区", "详细地址", "邮编", "年度",
+               "产品名称", "起月日", "止月日", "份数", "金额", "渠道", "汇款名称", "汇款日期"]
     for c, h in enumerate(headers, start=1):
-        cell = ws.cell(row=row_idx, column=c, value=h)
-        cell.font = FONT_BOLD
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        det.cell(row=1, column=c, value=h).font = FB
+    for i, r in enumerate(records, start=2):
+        det.cell(row=i, column=1, value=r.region_name or "").font = FN
+        det.cell(row=i, column=2, value=r.name).font = FN
+        det.cell(row=i, column=3, value=(r.phone or "")).font = FN
+        det.cell(row=i, column=4, value=r.province or "").font = FN
+        det.cell(row=i, column=5, value=r.city or "").font = FN
+        det.cell(row=i, column=6, value=r.district or "").font = FN
+        det.cell(row=i, column=7, value=r.address or "").font = FN
+        det.cell(row=i, column=8, value=(r.postal_code or "")).font = FN
+        det.cell(row=i, column=9, value=f"{batch.year}年").font = FN
+        det.cell(row=i, column=10, value="中国经营报").font = FN
+        det.cell(row=i, column=11, value=f"{mm}01").font = FN
+        det.cell(row=i, column=12, value="1231").font = FN
+        det.cell(row=i, column=13, value=int(r.copies or 0)).font = FN
+        amt = det.cell(row=i, column=14, value=f"=M{i}*{N}*20")  # 复刻活公式
+        amt.font = FN
+        det.cell(row=i, column=15, value=r.source_channel or "").font = FN
+        det.cell(row=i, column=16, value=r.remittance_name or "").font = FN
+        det.cell(row=i, column=17, value=r.remittance_date or "").font = FN
+    _widths(det, {"A": 6, "B": 7, "C": 12, "D": 9, "E": 7, "G": 30, "H": 7.4, "I": 7,
+                  "J": 9.5, "K": 6.2, "L": 6.2, "M": 4.9, "N": 10.9, "O": 15.8, "P": 17.7, "Q": 21.1})
+    _a4(det, landscape=True, print_area=f"北京-明细!$A$1:$Q${max(last, 32)}")
 
+    # --- 北京-汇总 ---
+    su = wb.create_sheet("北京-汇总", 0)
+    su.merge_cells("A1:D1")
+    su["A1"] = f"北京局-{batch.year}年{batch.start_month}月各地区订报汇总"
+    su["A1"].font = FB
+    su["A1"].alignment = CENTER
+    for c, h in enumerate(["序号", "地区", "金额", "数量"], start=1):
+        su.cell(row=2, column=c, value=h).font = FB
+    r = 3
+    for idx, region in enumerate(regions, start=1):
+        su.cell(row=r, column=1, value=idx).font = FN
+        su.cell(row=r, column=2, value=region).font = FN
+        su.cell(row=r, column=3,
+                value=f"=SUMIF('北京-明细'!$A$2:$A${last},B{r},'北京-明细'!$N$2:$N${last})").font = FN
+        su.cell(row=r, column=4,
+                value=f"=SUMIF('北京-明细'!$A$2:$A${last},B{r},'北京-明细'!$M$2:$M${last})").font = FN
+        r += 1
+    su.merge_cells(f"A{r}:B{r}")
+    su.cell(row=r, column=1, value="合计").font = FB
+    su.cell(row=r, column=3, value=f"=SUM(C3:C{r-1})").font = FB
+    su.cell(row=r, column=4, value=f"=SUM(D3:D{r-1})").font = FB
+    su.cell(row=r + 2, column=3, value="制表人：").font = FN
+    su.cell(row=r + 3, column=3, value="制表时间：").font = FN
+    dcell = su.cell(row=r + 3, column=4, value=make_date)
+    dcell.font = FN
+    dcell.number_format = 'yyyy"年"m"月"d"日"'
+    _widths(su, {"A": 16, "B": 24, "C": 28, "D": 24})
+    _a4(su, landscape=False, print_area="北京-汇总!$A$1:$D$20")
 
-# --- 各工作簿构建 -----------------------------------------------------------
-
-def _build_workbook(records: List[SubscriptionRecord], batch: SubscriptionBatch, make_date: date) -> bytes:
-    """北京-汇总 / 北京-明细 / 未到款申请 三 sheet。"""
-    summary = calc.summarize(records)
-    wb = Workbook()
-
-    # 北京-汇总（A4 竖版）。
-    ws1 = wb.active
-    ws1.title = "北京-汇总"
-    ws1["A1"] = f"北京-{batch.year}年{batch.start_month}月中国经营报订阅汇总"
-    ws1["A1"].font = FONT_BOLD
-    _header_row(ws1, 3, ["项目", "条数", "份数", "款额"])
-    ws1.cell(row=4, column=1, value="合计").font = FONT_NORMAL
-    ws1.cell(row=4, column=2, value=summary["total_count"])
-    ws1.cell(row=4, column=3, value=summary["total_copies"])
-    amt = ws1.cell(row=4, column=4, value=float(summary["total_amount"]))
-    amt.number_format = CURRENCY_FMT
-    ws1.cell(row=6, column=1, value=f"制作日期：{_cn_date(make_date)}").font = FONT_NORMAL
-    _set_col_widths(ws1, {"A": 16, "B": 24, "C": 28, "D": 24})
-    _a4(ws1, landscape=False, print_area="A1:D20")
-
-    # 北京-明细（A4 横版）。
-    ws2 = wb.create_sheet("北京-明细")
-    headers = ["序号", "收报人", "电话", "地区", "省", "市/区", "详细地址", "邮编", "份数", "月数", "款额", "投递单位"]
-    _header_row(ws2, 1, headers)
-    valid = [r for r in records if not r.excluded]
-    for i, r in enumerate(valid, start=1):
-        ws2.append([
-            i, r.name, r.phone or "", r.region_name or "", r.province or "",
-            " ".join(x for x in [r.city or "", r.district or ""] if x), r.address or "",
-            r.postal_code or "", int(r.copies or 0), int(r.months or 0),
-            float(r.amount or 0), "",
-        ])
-        ws2.cell(row=i + 1, column=11).number_format = CURRENCY_FMT
-    total_row = len(valid) + 2
-    ws2.cell(row=total_row, column=1, value="合计").font = FONT_BOLD
-    ws2.cell(row=total_row, column=9, value=summary["total_copies"]).font = FONT_BOLD
-    tot = ws2.cell(row=total_row, column=11, value=float(summary["total_amount"]))
-    tot.font = FONT_BOLD
-    tot.number_format = CURRENCY_FMT
-    # 合计行后空两行，写制表人/时间（§9.3 页脚）。
-    ws2.cell(row=total_row + 3, column=1, value="制表人：").font = FONT_NORMAL
-    ws2.cell(row=total_row + 4, column=1, value=f"时间：{_cn_date(make_date)}").font = FONT_NORMAL
-    _set_col_widths(ws2, {"A": 6, "B": 7, "C": 12, "D": 9, "E": 7, "F": 7, "G": 30, "H": 8, "I": 6, "J": 6, "K": 12, "L": 14})
-    _a4(ws2, landscape=True, print_area=f"A1:L{total_row + 4}")
-
-    # 未到款申请（A4 竖版）—— 用本批次全部有效订报款（§9.4）。
-    ws3 = wb.create_sheet("未到款申请")
-    ws3["A1"] = f"未到款申请 · {batch.year}年{batch.start_month}月"
-    ws3["A1"].font = FONT_BOLD
-    ws3["A3"] = f"份数合计：{summary['total_copies']}"
-    ws3["A4"] = "款额合计："
-    a4amt = ws3.cell(row=4, column=2, value=float(summary["total_amount"]))
-    a4amt.number_format = CURRENCY_FMT
-    ws3["A6"] = "发行部（签名）："
-    ws3["A8"] = f"制作日期：{_cn_date(make_date)}"
-    for r in (3, 4, 6, 8):
-        ws3.cell(row=r, column=1).font = FONT_NORMAL
-    _set_col_widths(ws3, {"A": 20, "B": 20})
-    _a4(ws3, landscape=False, print_area="A1:B20")
+    # --- 未到款申请（8月紧凑版） ---
+    ap = wb.create_sheet("未到款申请")
+    for rng in ("A1:I1", "A2:I2", "A3:I3", "A5:I5", "A6:I6", "A7:I7", "A8:I8", "A9:I9", "F12:I12"):
+        ap.merge_cells(rng)
+    ap["A1"] = "未到款提前订报的申请"
+    ap["A1"].font = FB
+    ap["A1"].alignment = CENTER
+    ap["A2"] = "尊敬的领导："
+    ap["A3"] = (f"         {batch.year}年{batch.start_month}月份《中国经营报》订阅共计{count}份。"
+                f"付费读者款项正在流程中，为不影响读者按时收报，现申请先行支付订报款人民币"
+                f"{total_amount:,.2f}元整。")
+    ap["A5"] = "汇款信息："
+    ap["A6"] = "名称：中国邮政集团有限公司北京市报刊发行局"
+    ap["A7"] = "账号：0200 0031 0905 4203 874"
+    ap["A8"] = "开户行：中国工商银行股份有限公司北京珠市口支行"
+    ap["A9"] = "妥否，请领导批示！（名单附后）"
+    ap["F11"] = "发行部："
+    ap["F12"] = _cn(make_date)
+    for row in ap.iter_rows():
+        for cell in row:
+            if cell.value is not None and cell.font is not FB:
+                cell.font = FN
+    _widths(ap, {"A": 6, "B": 9, "C": 7, "E": 14, "F": 10, "G": 19, "H": 7})
+    _a4(ap, landscape=False, print_area="未到款申请!$A$1:$I$17")
 
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
 
 
-def _build_postal_summary(records: List[SubscriptionRecord], batch: SubscriptionBatch, unit_price: Decimal) -> bytes:
-    """北京局订报汇总表：按地区列条数/份数/单价/款额，合计与明细对平。"""
-    summary = calc.summarize(records)
+# --- (b) 北京局订报汇总表 ----------------------------------------------------
+
+def _build_postal_summary(records: List[SubscriptionRecord], batch: SubscriptionBatch, N: int) -> bytes:
+    mm = f"{batch.start_month:02d}"
+    unit = N * 20
+    regions = _region_order(records)
+    agg = {reg: {"count": 0, "copies": 0} for reg in regions}
+    for r in records:
+        reg = r.region_name or "(未识别地区)"
+        agg[reg]["count"] += 1
+        agg[reg]["copies"] += int(r.copies or 0)
+
     wb = Workbook()
     ws = wb.active
-    ws.title = "北京局订报汇总表"
-    ws["A1"] = f"北京局订报汇总表 · {batch.year}年{batch.start_month}月"
-    ws["A1"].font = FONT_BOLD
-    _header_row(ws, 3, ["地区", "条数", "份数", "单价", "款额"])
-    row_idx = 4
-    regions = sorted((k for k in summary["by_region"] if k != "(未识别地区)"))
-    if "(未识别地区)" in summary["by_region"]:
-        regions.append("(未识别地区)")
+    ws.title = "汇总"
+    for c, h in enumerate(["代码", "报刊名称", "订期", "省份", "条数", "份数", "单价", "款额"], start=1):
+        ws.cell(row=1, column=c, value=h).font = FB
+    r = 2
     for region in regions:
-        agg = summary["by_region"][region]
-        ws.cell(row=row_idx, column=1, value=region).font = FONT_NORMAL
-        ws.cell(row=row_idx, column=2, value=agg["count"])
-        ws.cell(row=row_idx, column=3, value=agg["copies"])
-        up = ws.cell(row=row_idx, column=4, value=float(unit_price))
-        up.number_format = CURRENCY_FMT
-        km = ws.cell(row=row_idx, column=5, value=float(agg["amount"]))
-        km.number_format = CURRENCY_FMT
-        row_idx += 1
-    ws.cell(row=row_idx, column=1, value="合计").font = FONT_BOLD
-    ws.cell(row=row_idx, column=2, value=summary["total_count"]).font = FONT_BOLD
-    ws.cell(row=row_idx, column=3, value=summary["total_copies"]).font = FONT_BOLD
-    tk = ws.cell(row=row_idx, column=5, value=float(summary["total_amount"]))
-    tk.font = FONT_BOLD
-    tk.number_format = CURRENCY_FMT
-    _set_col_widths(ws, {"A": 20, "B": 10, "C": 10, "D": 10, "E": 16})
-    _a4(ws, landscape=False, print_area=f"A1:E{row_idx}")
+        cnt = agg[region]["count"]
+        cop = agg[region]["copies"]
+        ws.cell(row=r, column=3, value=f"{mm}01-1231").font = FN
+        ws.cell(row=r, column=4, value=region).font = FN
+        ws.cell(row=r, column=5, value=cnt).font = FN
+        ws.cell(row=r, column=6, value=cop).font = FN
+        ws.cell(row=r, column=7, value=unit).font = FN
+        ws.cell(row=r, column=8, value=cop * unit).font = FN
+        r += 1
+    # 代码 / 报刊名称 两列纵向合并。
+    if regions:
+        ws.merge_cells(f"A2:A{r-1}")
+        ws.merge_cells(f"B2:B{r-1}")
+        ws.cell(row=2, column=1, value="1-76").font = FN
+        ws.cell(row=2, column=1).alignment = CENTER
+        ws.cell(row=2, column=2, value="中国经营报").font = FN
+        ws.cell(row=2, column=2).alignment = CENTER
+    ws.merge_cells(f"A{r}:D{r}")
+    ws.cell(row=r, column=1, value="合计").font = FB
+    ws.cell(row=r, column=5, value=sum(a["count"] for a in agg.values())).font = FB
+    ws.cell(row=r, column=6, value=sum(a["copies"] for a in agg.values())).font = FB
+    ws.cell(row=r, column=8, value=sum(a["copies"] for a in agg.values()) * unit).font = FB
+    _widths(ws, {"A": 12, "B": 18, "C": 15, "D": 12, "E": 10, "F": 10, "G": 10, "H": 14})
+    _a4(ws, landscape=False, print_area=f"汇总!$A$1:$H${r}")
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
 
 
-def _build_region_detail(region: str, records: List[SubscriptionRecord], batch: SubscriptionBatch) -> bytes:
-    """某地区的集订分送表。"""
-    wb = Workbook()
-    ws = wb.active
-    ws.title = region[:31] or "地区"
-    ws["A1"] = f"《中国经营报》集订分送表~{batch.year}年{batch.start_month}月起报~{region}"
-    ws["A1"].font = FONT_BOLD
-    headers = ["序号", "收报人", "电话", "详细地址", "邮编", "份数", "月数"]
-    _header_row(ws, 3, headers)
-    row_idx = 4
-    total_copies = 0
-    for i, r in enumerate(records, start=1):
-        ws.cell(row=row_idx, column=1, value=i).font = FONT_NORMAL
-        ws.cell(row=row_idx, column=2, value=r.name).font = FONT_NORMAL
-        ws.cell(row=row_idx, column=3, value=r.phone or "").font = FONT_NORMAL
-        ws.cell(row=row_idx, column=4, value=r.address or "").font = FONT_NORMAL
-        ws.cell(row=row_idx, column=5, value=r.postal_code or "").font = FONT_NORMAL
-        ws.cell(row=row_idx, column=6, value=int(r.copies or 0)).font = FONT_NORMAL
-        ws.cell(row=row_idx, column=7, value=int(r.months or 0)).font = FONT_NORMAL
-        total_copies += int(r.copies or 0)
-        row_idx += 1
-    ws.cell(row=row_idx, column=1, value="合计").font = FONT_BOLD
-    ws.cell(row=row_idx, column=6, value=total_copies).font = FONT_BOLD
-    _set_col_widths(ws, {"A": 6, "B": 10, "C": 14, "D": 34, "E": 8, "F": 6, "G": 6})
-    _a4(ws, landscape=True, print_area=f"A1:G{row_idx}")
+# --- (c) 地区集订分送表（邮局模板 · 数据页填充） -----------------------------
+
+def _build_region_detail(region: str, recs: List[SubscriptionRecord], batch: SubscriptionBatch) -> bytes:
+    mm = f"{batch.start_month:02d}"
+    wb = openpyxl.load_workbook(REGION_TEMPLATE)
+    ws = wb["数据页"]
+    for i, r in enumerate(recs, start=1):
+        row = i + 1
+        vals = [str(i), str(batch.year), None, "1-76", "中国经营报", f"{mm}01", "1231",
+                str(int(r.copies or 0)), r.name, (r.phone or ""), r.province or "",
+                r.city or "", r.district or "", r.address or "", (r.postal_code or "")]
+        for c, v in enumerate(vals, start=1):
+            ws.cell(row=row, column=c, value=v)
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
@@ -202,8 +242,7 @@ def _build_region_detail(region: str, records: List[SubscriptionRecord], batch: 
 # --- 编排 -------------------------------------------------------------------
 
 def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int] = None) -> SubscriptionGenerationRun:
-    """基于当前有效版本生成全部产物（同步）。"""
-    from fastapi import HTTPException  # 局部导入避免顶层耦合
+    from fastapi import HTTPException
 
     if batch.active_version_id is None:
         raise HTTPException(status_code=409, detail="批次尚无当前有效版本，请先上传并设为有效")
@@ -216,7 +255,9 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
         raise HTTPException(status_code=409, detail="当前有效版本无有效明细，无法生成")
 
     make_date = batch.make_date or date.today()
-    unit_price = batch.unit_price or calc.DEFAULT_PRICE_PER_COPY_MONTH
+    N = import_svc.months_for(batch.start_month)
+    yy = batch.year % 100
+    m = batch.start_month
 
     run = SubscriptionGenerationRun(
         batch_id=batch.id, version_id=version.id,
@@ -226,14 +267,11 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
     db.add(run)
     db.flush()
 
-    # 旧产物标历史（不删）。
     db.query(SubscriptionOutputArtifact).filter(
         SubscriptionOutputArtifact.batch_id == batch.id,
         SubscriptionOutputArtifact.is_historical == False,  # noqa: E712
     ).update({"is_historical": True}, synchronize_session=False)
 
-    yy = batch.year % 100
-    m = batch.start_month
     category = f"subscription/{batch.year}-{m:02d}/gen"
 
     def _store(atype, filename, content, region=None):
@@ -243,30 +281,25 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
             artifact_type=atype, region_name=region, filename=filename,
             stored_path=stored, sha256=attachment_service.sha256_hex(content),
         ))
-        return content
 
     try:
-        wb_bytes = _build_workbook(records, batch, make_date)
+        wb_bytes = _build_workbook(records, batch, N, make_date)
         _store(SubscriptionArtifactType.workbook,
                f"北京-{batch.year}年{m}月中国经营报订阅汇总+明细+申请.xlsx", wb_bytes)
 
-        ps_bytes = _build_postal_summary(records, batch, unit_price)
+        ps_bytes = _build_postal_summary(records, batch, N)
         _store(SubscriptionArtifactType.postal_summary, "北京局订报汇总表.xlsx", ps_bytes)
 
-        # 按地区分表（仅有订户地区）。
         by_region: dict = {}
         for r in records:
             by_region.setdefault(r.region_name or "(未识别地区)", []).append(r)
         region_files = []
-        seq = 1
-        for region in sorted(by_region):
-            rd_bytes = _build_region_detail(region, by_region[region], batch)
-            fname = f"{seq}-76《中国经营报》集订分送表~{batch.year}年{m}月起报~{region}.xlsx"
-            _store(SubscriptionArtifactType.region_detail, fname, rd_bytes, region=region)
-            region_files.append((fname, rd_bytes))
-            seq += 1
+        for region in _region_order(records):
+            rd = _build_region_detail(region, by_region[region], batch)
+            fname = f"1-76《中国经营报》集订分送表~{batch.year}年{m}月起报~{region}.xlsx"
+            _store(SubscriptionArtifactType.region_detail, fname, rd, region=region)
+            region_files.append((fname, rd))
 
-        # ZIP：邮局汇总 + 全部地区明细。
         zbio = io.BytesIO()
         with zipfile.ZipFile(zbio, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("北京局订报汇总表.xlsx", ps_bytes)

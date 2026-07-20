@@ -224,6 +224,10 @@ class SubscriptionRecord(Base):
     distribution_unit_id = Column(
         Integer, ForeignKey("partners.id"), nullable=True, index=True
     )
+    # 来源附加列（明细输出逐项一致所需）。
+    source_channel = Column(String(64), nullable=True)      # 渠道 / 订单平台
+    remittance_name = Column(String(128), nullable=True)    # 汇款名称（A 源；B 源记「未到」）
+    remittance_date = Column(String(128), nullable=True)    # 汇款日期原文（如「20260316到账9860.48」）
     # 溯源。
     source_file_role = Column(String(8), nullable=True)  # A / B
     source_row = Column(Integer, nullable=True)          # 来源行号
