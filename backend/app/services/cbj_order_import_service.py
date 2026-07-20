@@ -55,7 +55,10 @@ from app.services.taobao_order_import_parser import (
 )
 from app.services.order_code_service import allocate_order_codes
 from app.services.order_import_status_service import map_commercial_status
-from app.services.issue_label import normalize_business_school_issue_label
+from app.services.issue_label import (
+    is_valid_issue_label,
+    normalize_business_school_issue_label,
+)
 from app.services.latest_issue_resolver import resolve_latest_issue
 from app.services.order_service import create_imported_order
 from app.services.product_resolver_service import (
@@ -503,13 +506,84 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings) -> T
     return out, session_id
 
 
-def commit_import(db: Session, session_id: str, operator_id: Optional[int] = None) -> dict:
-    """Create the previewed importable orders atomically (single commit)."""
+def commit_import(
+    db: Session,
+    session_id: str,
+    operator_id: Optional[int] = None,
+    issue_overrides: Optional[dict[str, int]] = None,
+    issue_label_overrides: Optional[dict[str, str]] = None,
+) -> dict:
+    """Create the previewed importable orders atomically (single commit).
+
+    ``issue_overrides`` / ``issue_label_overrides`` (both optional) carry 选填
+    per-SKU 补录 for single-issue items whose 期号 / 期次 was blank at preview.
+    Keys are ``"{external_order_no}#{item_index}"`` — an order can hold several
+    single-issue SKUs each for a **different** issue, so each override targets one
+    specific item by its index within that order's ``items`` list (the same order
+    used to build the preview rows, so the frontend's item index maps 1:1).
+
+    * ``issue_overrides``: 单号#序号 → numeric 期号, applied to that item iff it is
+      single_issue with a blank issue_number (中国经营报 往期单).
+    * ``issue_label_overrides``: 单号#序号 → normalised 期次标签 ("YYYY-MM" /
+      "YYYY-MM~MM"), applied iff that item is a business_school single_issue with a
+      blank issue_label (导出无分册名); malformed labels are silently ignored.
+
+    Subscription rows, already-filled items, out-of-range indexes and unknown 单号
+    are all ignored — both are 选填 and never block the commit.
+    """
     payload = pop_order_import_session(session_id)
     if payload is None:
         raise HTTPException(status_code=400, detail="导入会话不存在或已过期，请重新预览")
 
     rows = payload["rows"]
+
+    # 补期号 / 补期次都按 **单个 item** 定位：键为 "订单号#item序号"。一张订单可能有多个
+    # 单期 SKU、各是不同期，所以补录必须精确到 item，不能整单套一个值。
+    if issue_overrides or issue_label_overrides:
+        by_ext: dict[str, dict] = {}
+        for r in rows:
+            ext = r["order_create"].get("external_order_no")
+            if ext is not None:
+                by_ext[ext] = r
+
+        def _resolve_item(key: str):
+            """"订单号#序号" → 该订单第 idx 个 item（越界/找不到 → None）。"""
+            ext, sep, idx_s = key.rpartition("#")
+            if not sep or not ext:
+                return None
+            r = by_ext.get(ext)
+            if r is None:
+                return None
+            try:
+                idx = int(idx_s)
+            except ValueError:
+                return None
+            items = r["order_create"].get("items", [])
+            if not 0 <= idx < len(items):
+                return None
+            return items[idx]
+
+        for key, issue_no in (issue_overrides or {}).items():
+            item = _resolve_item(key)
+            if item is None:
+                continue
+            if item.get("fulfillment_type") == "single_issue" and not item.get("issue_number"):
+                item["issue_number"] = issue_no
+
+        for key, raw_label in (issue_label_overrides or {}).items():
+            item = _resolve_item(key)
+            if item is None:
+                continue
+            label = (raw_label or "").strip()
+            if not is_valid_issue_label(label):
+                continue  # 非法格式 → 忽略，不卡流程（前端已校验，这里再兜一层）
+            if (
+                item.get("fulfillment_type") == "single_issue"
+                and item.get("publication") == "business_school"
+                and not item.get("issue_label")
+            ):
+                item["issue_label"] = label
+
     existing = {
         e
         for (e,) in db.query(Order.external_order_no)

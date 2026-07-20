@@ -75,6 +75,23 @@ export function previewOrderImport(
   return api.post('/order-import/preview', fd);
 }
 
-export function commitOrderImport(sessionId: string): Promise<AxiosResponse<ImportCommitOut>> {
-  return api.post('/order-import/commit', { session_id: sessionId });
+export function commitOrderImport(
+  sessionId: string,
+  issueOverrides?: Record<string, number>,
+  issueLabelOverrides?: Record<string, string>,
+): Promise<AxiosResponse<ImportCommitOut>> {
+  const body: {
+    session_id: string;
+    issue_overrides?: Record<string, number>;
+    issue_label_overrides?: Record<string, string>;
+  } = {
+    session_id: sessionId,
+  };
+  if (issueOverrides && Object.keys(issueOverrides).length > 0) {
+    body.issue_overrides = issueOverrides;
+  }
+  if (issueLabelOverrides && Object.keys(issueLabelOverrides).length > 0) {
+    body.issue_label_overrides = issueLabelOverrides;
+  }
+  return api.post('/order-import/commit', body);
 }
