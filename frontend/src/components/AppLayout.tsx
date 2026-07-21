@@ -57,7 +57,6 @@ const menuItems: MenuProps['items'] = [
     children: [
       { key: '/post-delivery/deliveries', label: '投递名册' },
       { key: '/post-delivery/subscription', label: '邮局订报生成' },
-      { key: '/post-delivery/batches', label: '月度起投明细' },
       { key: '/post-delivery/complaints', label: '投诉工单' },
       { key: '/post-delivery/address', label: '改地址' },
       { key: '/post-delivery/follow', label: '回访' },

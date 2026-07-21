@@ -108,23 +108,16 @@ def test_delivery_crud(client):
     assert client.get("/api/postal/deliveries?year=2026").json()["total"] == 0
 
 
-def test_delivery_delete_guarded_by_pending_batch(client):
+def test_delivery_delete(client):
     r = client.post("/api/postal/deliveries", json={
         "year": 2026, "delivery_no": "701", "recipient_name": "王五",
         "recipient_address": "北京市海淀区",
         "coverage_start_date": "2026-03-05", "coverage_end_date": "2026-09-05",
     })
     did = r.json()["id"]
-    # 生成 2026-03 批次（含该记录）
-    gb = client.post("/api/postal/batches/generate", json={"year": 2026, "month": 3})
-    assert gb.status_code == 200, gb.text
-    assert gb.json()["row_count"] == 1
-    bid = gb.json()["id"]
-    # 未发出批次引用 → 删除被拒 409
-    assert client.delete(f"/api/postal/deliveries/{did}").status_code == 409
-    # 标记已发后可删（快照已定格）
-    client.post(f"/api/postal/batches/{bid}/mark-sent")
+    # 月度批次层已移除，投递记录可直接删除
     assert client.delete(f"/api/postal/deliveries/{did}").status_code == 204
+    assert client.delete(f"/api/postal/deliveries/{did}").status_code == 404
 
 
 # --- 投诉工单 + 三态处理流程 ----------------------------------------
