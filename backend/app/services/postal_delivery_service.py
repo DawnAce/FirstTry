@@ -11,10 +11,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
-    PostalBatchStatus,
     PostalDelivery,
-    PostalDeliveryBatch,
-    PostalDeliveryRow,
 )
 from app.models.postal_delivery import PostalDeliverySourceType
 from app.services import postal_common as pc
@@ -167,21 +164,9 @@ def update_delivery(db: Session, delivery_id: int, patch: dict) -> PostalDeliver
 
 
 def delete_delivery(db: Session, delivery_id: int) -> None:
-    """删除投递记录。若被未发出(draft/generated)的月度明细引用则 409（已发批次已定格快照、放行）。"""
+    """删除投递记录。"""
     rec = db.query(PostalDelivery).filter(PostalDelivery.id == delivery_id).first()
     if rec is None:
         raise HTTPException(status_code=404, detail=f"投递记录 {delivery_id} 不存在")
-    pending = (
-        db.query(PostalDeliveryRow.id)
-        .join(PostalDeliveryBatch, PostalDeliveryRow.batch_id == PostalDeliveryBatch.id)
-        .filter(PostalDeliveryRow.postal_delivery_id == delivery_id)
-        .filter(PostalDeliveryBatch.status != PostalBatchStatus.sent)
-        .count()
-    )
-    if pending:
-        raise HTTPException(
-            status_code=409,
-            detail=f"该投递记录在 {pending} 条未发出的月度明细里，删除会影响待发批次（请先重生成或将批次标记已发）",
-        )
     db.delete(rec)
     db.commit()

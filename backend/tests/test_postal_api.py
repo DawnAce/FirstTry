@@ -107,41 +107,10 @@ def test_full_flow(client):
     assert resp.status_code == 200, resp.text
     assert resp.json()["created"] == 3
 
-    # 3) 生成 2026-01 批次
-    resp = client.post("/api/postal/batches/generate", json={"year": 2026, "month": 1})
-    assert resp.status_code == 200, resp.text
-    batch = resp.json()
-    assert batch["row_count"] == 3
-    assert batch["status"] == "generated"
-    bid = batch["id"]
-
-    # 4) 批次列表
-    resp = client.get("/api/postal/batches")
+    # 3) 投递名册可查到导入的 3 条
+    resp = client.get("/api/postal/deliveries")
     assert resp.status_code == 200
-    assert any(b["id"] == bid for b in resp.json())
-
-    # 5) 批次明细（投递单位名解析）
-    resp = client.get(f"/api/postal/batches/{bid}")
-    assert resp.status_code == 200
-    detail = resp.json()
-    assert len(detail["rows"]) == 3
-    units = {r["distribution_unit_name"] for r in detail["rows"]}
-    assert "北京集订分送" in units and None in units  # 有的标注、有的留空
-
-    # 6) 标记已发
-    resp = client.post(f"/api/postal/batches/{bid}/mark-sent")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "sent"
-
-    # 7) 已发后重新生成被拒
-    resp = client.post("/api/postal/batches/generate", json={"year": 2026, "month": 1})
-    assert resp.status_code == 409
-
-    # 8) 导出 Excel
-    resp = client.get(f"/api/postal/batches/{bid}/export")
-    assert resp.status_code == 200
-    assert "spreadsheetml" in resp.headers["content-type"]
-    assert len(resp.content) > 0
+    assert resp.json()["total"] == 3
 
 
 def test_reject_non_postal_upload(client):

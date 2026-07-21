@@ -109,11 +109,11 @@
 
 > 目标：小步、可回滚、CI 绿。数据层可先不合表，先在前端/API 层统一呈现，降低风险。
 
-**PR-A｜收款发票迁入财务管理**（改动小、独立、先行）
+**PR-A｜收款发票迁入财务管理**（改动小、独立、先行）— ✅ 已完成（PR #76）
 - 前端：把【邮局收款发票】从邮局管理导航移到财务管理；路由调整、面包屑更新。
 - 后端：`/api/postal/finance/*` 迁至财务命名空间（如 `/api/finance/postal-receipts/*`）；grep 全部调用方一并改，保证不漏。
 
-**PR-B｜删除月度起投明细/快照层**
+**PR-B｜删除月度起投明细/快照层** — ✅ 已完成
 - 删表前：先导出存量 `PostalDeliveryBatch` / `PostalDeliveryRow` 为 json 归档。
 - 前端：删除【月度起投明细】菜单、页面、相关 api 调用。
 - 后端：删除 `PostalDeliveryBatch` / `PostalDeliveryRow` 相关 endpoint、service、model；alembic 降级迁移（注意 downgrade 删表用 `drop_table`，勿先 drop_index）。

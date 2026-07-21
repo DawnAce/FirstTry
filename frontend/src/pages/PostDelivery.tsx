@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -13,7 +13,6 @@ import {
   Form,
   Input,
   InputNumber,
-  List,
   Modal,
   Popconfirm,
   Select,
@@ -27,12 +26,10 @@ import {
 } from 'antd';
 import {
   DeleteOutlined,
-  DownloadOutlined,
   EditOutlined,
   HistoryOutlined,
   InboxOutlined,
   PlusOutlined,
-  ThunderboltOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
@@ -55,16 +52,11 @@ import {
   deleteComplaintHandling,
   deleteDelivery,
   deleteFollowUp,
-  downloadPostalBatch,
-  generatePostalBatch,
   getComplaintDetail,
-  getPostalBatch,
   listAddressChanges,
   listComplaints,
   listDeliveries,
   listFollowUps,
-  listPostalBatches,
-  markPostalBatchSent,
   previewAddressChangeImport,
   previewComplaintImport,
   previewFollowUpImport,
@@ -84,9 +76,6 @@ import type {
   FollowImportRow,
   FollowUpPayload,
   PostalAddressChange,
-  PostalBatch,
-  PostalBatchRow,
-  PostalBatchStatus,
   PostalComplaint,
   PostalComplaintHandling,
   PostalComplaintStatus,
@@ -99,12 +88,6 @@ import type {
 } from '../api/postal';
 
 const { Title, Text } = Typography;
-
-const STATUS_META: Record<PostalBatchStatus, { label: string; color: string }> = {
-  draft: { label: '草稿', color: 'default' },
-  generated: { label: '已生成', color: 'cyan' },
-  sent: { label: '已发 · 冻结', color: 'green' },
-};
 
 const DECISION_META: Record<PostalImportDecision, { label: string; color: string }> = {
   import: { label: '✅ 导入', color: 'green' },
@@ -390,143 +373,6 @@ function DeliveriesTab() {
 }
 
 /** Tab：月度起投明细（主从） */
-function BatchesTab() {
-  const { isAdmin } = useAuth();
-  const qc = useQueryClient();
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [genMonth, setGenMonth] = useState<Dayjs | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-
-  const batchesQ = useQuery({ queryKey: ['postalBatches'], queryFn: () => listPostalBatches().then((r) => r.data) });
-  const batches = batchesQ.data ?? [];
-  const activeId = selectedId ?? batches[0]?.id ?? null;
-
-  const detailQ = useQuery({
-    queryKey: ['postalBatch', activeId],
-    queryFn: () => getPostalBatch(activeId as number).then((r) => r.data),
-    enabled: activeId != null,
-  });
-
-  const generateMut = useMutation({
-    mutationFn: () => generatePostalBatch(genMonth!.year(), genMonth!.month() + 1),
-    onSuccess: (res) => {
-      message.success(`已生成 ${res.data.year}-${String(res.data.month).padStart(2, '0')} 起投明细（${res.data.row_count} 行）`);
-      setSelectedId(res.data.id);
-      qc.invalidateQueries({ queryKey: ['postalBatches'] });
-      qc.invalidateQueries({ queryKey: ['postalBatch', res.data.id] });
-    },
-    onError: (err) => message.error(errText(err)),
-  });
-  const sentMut = useMutation({
-    mutationFn: (id: number) => markPostalBatchSent(id),
-    onSuccess: (res) => {
-      message.success('已标记为已发（冻结）');
-      qc.invalidateQueries({ queryKey: ['postalBatches'] });
-      qc.invalidateQueries({ queryKey: ['postalBatch', res.data.id] });
-    },
-    onError: (err) => message.error(errText(err)),
-  });
-
-  const detail = detailQ.data;
-  const rows = detail?.rows ?? [];
-  const totalCopies = useMemo(() => rows.reduce((s, r) => s + r.copies, 0), [rows]);
-  const unitCount = useMemo(() => new Set(rows.map((r) => r.distribution_unit_id).filter(Boolean)).size, [rows]);
-
-  const rowCols: TableColumnsType<PostalBatchRow> = [
-    { title: '收报人', key: 'name', width: 140, render: (_: unknown, r) => (
-      <Space direction="vertical" size={0}>
-        <Text>{r.snap_name}</Text>
-        {r.snap_phone && <Text type="secondary" style={{ fontSize: 12 }}>{r.snap_phone}</Text>}
-      </Space>
-    ) },
-    { title: '地区', key: 'region', width: 150, render: (_: unknown, r) => [r.snap_province, r.snap_city, r.snap_district].filter(Boolean).join(' ') || '—' },
-    { title: '详细地址', dataIndex: 'snap_address', ellipsis: true },
-    { title: '份数', dataIndex: 'copies', width: 64, align: 'right' },
-    { title: '投递单位', dataIndex: 'distribution_unit_name', width: 150, render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : <Text type="secondary">—(未填)</Text>) },
-    { title: '渠道', dataIndex: 'source_channel', width: 120, render: (v: string | null) => v || '—' },
-  ];
-
-  const renderBatchRowExpand = (r: PostalBatchRow) => (
-    <div className="postal-expand">
-      <div><div className="k">电话</div><div className="v">{r.snap_phone || '—'}</div></div>
-      <div><div className="k">邮编</div><div className="v">{r.snap_postal_code || '—'}</div></div>
-      <div><div className="k">起止月</div><div className="v">{r.coverage_start_date}~{r.coverage_end_date}</div></div>
-      <div><div className="k">业务员</div><div className="v">{r.salesperson || '—'}</div></div>
-    </div>
-  );
-
-  return (
-    <>
-      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
-        <Text type="secondary">按「起投月」把投递记录归成每月一版明细，冻结存档、导出交邮局。给过的不再给；完整名册在「投递名册」页看全量。</Text>
-        <Space wrap>
-          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入邮局明细</Button>
-          <DatePicker picker="month" value={genMonth} onChange={setGenMonth} placeholder="选起投月，如 2026-07" />
-          {isAdmin && <Button type="primary" icon={<ThunderboltOutlined />} onClick={() => generateMut.mutate()} loading={generateMut.isPending} disabled={!genMonth}>生成当月明细</Button>}
-        </Space>
-      </Flex>
-
-      <Flex gap={16} align="start">
-        <Card size="small" title="月度起投明细（按起投月）" style={{ width: 260, flex: '0 0 260px' }} styles={{ body: { padding: 0 } }} loading={batchesQ.isLoading}>
-          {batches.length === 0 ? (
-            <Empty style={{ padding: 24 }} image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无明细" />
-          ) : (
-            <List<PostalBatch> dataSource={batches} renderItem={(b) => {
-              const meta = STATUS_META[b.status];
-              const active = b.id === activeId;
-              return (
-                <List.Item onClick={() => setSelectedId(b.id)} style={{ cursor: 'pointer', padding: '10px 14px', background: active ? '#e6f4ff' : undefined, boxShadow: active ? 'inset 3px 0 0 #1677ff' : undefined }}>
-                  <Flex justify="space-between" align="center" style={{ width: '100%' }}>
-                    <Space direction="vertical" size={2}>
-                      <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>{b.year}-{String(b.month).padStart(2, '0')}</Text>
-                      <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
-                    </Space>
-                    <Space direction="vertical" size={2} align="end">
-                      <Text style={{ fontVariantNumeric: 'tabular-nums' }}>{b.row_count} 行</Text>
-                      {b.sent_at && <Text type="secondary" style={{ fontSize: 12 }}>{b.sent_at.slice(0, 10)} 发</Text>}
-                    </Space>
-                  </Flex>
-                </List.Item>
-              );
-            }} />
-          )}
-        </Card>
-
-        <Card size="small" style={{ flex: 1, minWidth: 0 }} loading={detailQ.isLoading && activeId != null}>
-          {!detail ? (
-            <Empty description="选择左侧一版明细查看清单" />
-          ) : (
-            <>
-              <Flex justify="space-between" align="center" wrap gap={12} style={{ marginBottom: 12 }}>
-                <Space size={24} wrap>
-                  <Text>起投月 <Text strong>{detail.batch.year}-{String(detail.batch.month).padStart(2, '0')}</Text></Text>
-                  <Text>收件人 <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>{detail.rows.length}</Text></Text>
-                  <Text>总份数 <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>{totalCopies}</Text></Text>
-                  <Text>投递单位 <Text strong>{unitCount}</Text></Text>
-                  <Tag color={STATUS_META[detail.batch.status].color}>{STATUS_META[detail.batch.status].label}</Tag>
-                </Space>
-                <Space>
-                  {isAdmin && detail.batch.status === 'generated' && (
-                    <Popconfirm title="标记为已发？之后本版冻结不可再生成。" onConfirm={() => sentMut.mutate(detail.batch.id)}>
-                      <Button loading={sentMut.isPending}>标记已发</Button>
-                    </Popconfirm>
-                  )}
-                  <Button icon={<DownloadOutlined />} onClick={() => downloadPostalBatch(detail.batch.id, `邮局投递明细_${detail.batch.year}-${String(detail.batch.month).padStart(2, '0')}.xlsx`).catch(() => message.error('导出失败'))}>导出 Excel</Button>
-                </Space>
-              </Flex>
-              <Table<PostalBatchRow> rowKey="id" columns={rowCols} dataSource={rows} size="small"
-                expandable={{ expandedRowRender: renderBatchRowExpand }}
-                pagination={{ pageSize: 50, showTotal: (t) => `共 ${t} 行` }} />
-            </>
-          )}
-        </Card>
-      </Flex>
-
-      <ReaderImportModal open={importOpen} onClose={() => setImportOpen(false)} />
-    </>
-  );
-}
-
 /** Tab：投诉工单 */
 function ComplaintsTab() {
   const [year, setYear] = useState<number | undefined>();
@@ -1191,7 +1037,6 @@ function FollowUpsTab() {
 
 const POST_TABS = [
   { key: 'deliveries', label: '投递名册', component: DeliveriesTab },
-  { key: 'batches', label: '月度起投明细', component: BatchesTab },
   { key: 'complaints', label: '投诉工单', component: ComplaintsTab },
   { key: 'address', label: '改地址', component: AddressChangesTab },
   { key: 'follow', label: '回访', component: FollowUpsTab },

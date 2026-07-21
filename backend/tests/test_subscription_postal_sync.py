@@ -12,12 +12,10 @@ from app.database import Base
 from app.models import (
     Partner,
     PartnerType,
-    PostalBatchStatus,
     PostalDelivery,
     PostalDeliverySourceType,
 )
 from app.services import attachment_service as att
-from app.services import postal_batch_service as pbs
 from app.services import subscription_import_service as imp
 from app.services import subscription_postal_sync_service as sync_svc
 from app.services import subscription_service as bs
@@ -94,9 +92,6 @@ def test_activate_syncs_into_postal_delivery(db):
     by_name = {p.recipient_name: p for p in pds}
     assert by_name["李四"].distribution_unit_id == _unit_id(db, "广东集订分送")
     assert by_name["张三"].distribution_unit_id == _unit_id(db, "北京集订分送")
-    # 月度起投明细能读到
-    mb = pbs.generate_batch(db, 2026, 8)
-    assert mb.row_count == 2
 
 
 def test_reactivate_replaces_no_duplicates(db):
@@ -121,18 +116,14 @@ def test_delivery_no_sequences_after_existing(db):
     assert int(p.delivery_no) == 701  # max(700)+1
 
 
-def test_sent_batch_rows_preserved_on_reactivate(db):
+def test_reactivate_fully_replaces_no_freeze(db):
+    """月度批次冻结层已移除：再激活整批替换，不再保留任何旧记录。"""
     batch, _ = _activate_batch(db, [("张三", "13800138000", "北京市朝阳区建国路1号")])
-    mb = pbs.generate_batch(db, 2026, 8)
-    pbs.mark_sent(db, mb.id)  # 冻结该月批次
-    # 再激活新版
     v2 = imp.create_version(db, batch, [("A", "a2.xlsx", _source_a([("赵六", "13500000000", "北京市海淀区中关村1号")]))], operator_id=None)
     ver2 = bs.activate_version(db, v2.id, operator_id=1)
-    # 被已发批次冻结引用的旧记录跳过删除
-    assert ver2.postal_sync["skipped_sent"] == 1
-    # 老张（已发冻结）仍在 + 新赵六
+    assert ver2.postal_sync["skipped_sent"] == 0
     names = {p.recipient_name for p in db.query(PostalDelivery).filter(PostalDelivery.subscription_batch_id == batch.id)}
-    assert "张三" in names and "赵六" in names
+    assert names == {"赵六"}  # 张三 被整批替换掉
 
 
 # --- 历史导入「新值优先」 ---------------------------------------------------

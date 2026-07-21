@@ -18,7 +18,6 @@ from app.models import (
     Partner,
     PostalComplaint,
     PostalDelivery,
-    PostalDeliveryRow,
     User,
 )
 from app.schemas.contract import PartnerCreate, PartnerOut, PartnerUpdate
@@ -111,17 +110,12 @@ def delete_partner(
         .filter(PostalDelivery.distribution_unit_id == partner_id)
         .count()
     )
-    postal_row_count = (
-        db.query(PostalDeliveryRow)
-        .filter(PostalDeliveryRow.distribution_unit_id == partner_id)
-        .count()
-    )
     complaint_count = (
         db.query(PostalComplaint)
         .filter(PostalComplaint.routed_unit_id == partner_id)
         .count()
     )
-    if contract_count or settlement_count or target_count or delivery_count or postal_row_count or complaint_count:
+    if contract_count or settlement_count or target_count or delivery_count or complaint_count:
         parts = []
         if contract_count:
             parts.append(f"{contract_count} 份合同")
@@ -131,8 +125,6 @@ def delete_partner(
             parts.append(f"{target_count} 个投递目标")
         if delivery_count:
             parts.append(f"{delivery_count} 条投递记录")
-        if postal_row_count:
-            parts.append(f"{postal_row_count} 条邮局投递明细")
         if complaint_count:
             parts.append(f"{complaint_count} 条邮局投诉")
         raise HTTPException(

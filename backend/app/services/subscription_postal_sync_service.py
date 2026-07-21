@@ -1,11 +1,10 @@
 """邮局订报生成 → 投递名册(PostalDelivery) 汇入（方向 B）。
 
-版本「设为有效」时，把该版有效明细写进 PostalDelivery，成为该月起投名单的真源；
-月度起投明细(postal_batch_service)照旧按 coverage_start_date 起投月读取即可反映。
+版本「设为有效」时，把该版有效明细写进 PostalDelivery，成为该月起投名单的真源。
 
 * 投递单位：省→集订分送映射，**北京兜底**（查不到本省专属单位即归「北京集订分送」）。
 * 编号：订报无天然编号 → 年内流水自增（max 现有数字编号 +1）。
-* 幂等：按 subscription_batch_id 先删旧汇入再重建；被**已发**月度批次引用的记录跳过（遵守冻结）。
+* 幂等：按 subscription_batch_id 先删旧汇入再重建。
 """
 
 import re
@@ -18,10 +17,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     Partner,
     PartnerType,
-    PostalBatchStatus,
     PostalDelivery,
-    PostalDeliveryBatch,
-    PostalDeliveryRow,
     PostalDeliverySourceType,
     SubscriptionImportVersion,
 )
@@ -73,19 +69,6 @@ def _parse_remittance_date(raw: Optional[str]) -> Optional[date]:
         return None
 
 
-def _sent_locked_delivery_ids(db: Session, batch_id: int) -> set:
-    """本订报批次汇入的记录里、已被『已发』月度批次冻结引用的 postal_delivery_id 集合。"""
-    rows = (
-        db.query(PostalDeliveryRow.postal_delivery_id)
-        .join(PostalDeliveryBatch, PostalDeliveryRow.batch_id == PostalDeliveryBatch.id)
-        .join(PostalDelivery, PostalDeliveryRow.postal_delivery_id == PostalDelivery.id)
-        .filter(PostalDelivery.subscription_batch_id == batch_id)
-        .filter(PostalDeliveryBatch.status == PostalBatchStatus.sent)
-        .all()
-    )
-    return {pid for (pid,) in rows if pid is not None}
-
-
 def sync_version_to_postal(db: Session, version: SubscriptionImportVersion, operator_id: Optional[int] = None) -> dict:
     """把某有效版本的明细汇入 PostalDelivery（幂等替换）。不 commit，由调用方掌控事务。"""
     batch = version.batch
@@ -94,19 +77,14 @@ def sync_version_to_postal(db: Session, version: SubscriptionImportVersion, oper
     coverage_start = date(year, month, 1)
     coverage_end = date(year, 12, 31)
 
-    # 幂等：删旧汇入，但跳过被已发月度批次冻结引用的。
-    locked = _sent_locked_delivery_ids(db, batch.id)
+    # 幂等：删本订报批次的旧汇入后重建。
     old = (
         db.query(PostalDelivery)
         .filter(PostalDelivery.subscription_batch_id == batch.id)
         .all()
     )
     replaced = 0
-    skipped_sent = 0
     for d in old:
-        if d.id in locked:
-            skipped_sent += 1
-            continue
         db.delete(d)
         replaced += 1
     db.flush()
@@ -143,4 +121,5 @@ def sync_version_to_postal(db: Session, version: SubscriptionImportVersion, oper
         seq += 1
         created += 1
 
-    return {"created": created, "replaced": replaced, "skipped_sent": skipped_sent}
+    # skipped_sent 恒为 0：月度批次冻结层已移除，保留字段仅为响应结构兼容。
+    return {"created": created, "replaced": replaced, "skipped_sent": 0}
