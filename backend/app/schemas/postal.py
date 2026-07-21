@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.postal_delivery import PostalBatchStatus
+from app.models.postal_delivery import PostalBatchStatus, PostalDeliverySourceType
 from app.models.postal_complaint import PostalComplaintStatus
 
 
@@ -79,6 +79,7 @@ class DeliveryOut(BaseModel):
     distribution_unit_name: Optional[str] = None
     salesperson: Optional[str] = None
     remittance_name: Optional[str] = None
+    source_type: Optional[PostalDeliverySourceType] = None
 
     model_config = {"from_attributes": True}
 

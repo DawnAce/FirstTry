@@ -192,8 +192,9 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
 
   const activateMut = useMutation({
     mutationFn: (vid: number) => activateSubImport(vid),
-    onSuccess: () => {
-      message.success('已设为当前有效版本');
+    onSuccess: (res) => {
+      const s = res.data.postal_sync;
+      message.success(`已设为当前有效版本 · 汇入投递名册 ${s.created} 条${s.skipped_sent ? `（${s.skipped_sent} 条已发冻结跳过）` : ''}`);
       qc.invalidateQueries({ queryKey: ['subBatch', batchId] });
       qc.invalidateQueries({ queryKey: ['subBatches'] });
     },
