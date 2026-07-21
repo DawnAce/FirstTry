@@ -222,6 +222,40 @@ def test_follow_up_crud(client):
     assert client.delete(f"/api/postal/follow-ups/{fid}").status_code == 204
 
 
+def test_unified_tickets_list(client):
+    # 三类各建一条
+    client.post("/api/postal/complaints", json={
+        "year": 2026, "delivery_no": "301", "complaint_date": "2026-05-10",
+        "missing_issues": "缺 5 月", "snap_name": "投诉甲",
+    })
+    client.post("/api/postal/address-changes", json={
+        "year": 2026, "delivery_no": "302", "change_date": "2026-05-11",
+        "new_name": "改址乙", "new_address": "北京市海淀区新址",
+    })
+    client.post("/api/postal/follow-ups", json={
+        "year": 2026, "delivery_no": "303", "follow_up_date": "2026-05-12",
+        "result": "已回访", "snap_name": "回访丙",
+    })
+
+    # 全部：三类混排 + 计数
+    r = client.get("/api/postal/tickets?year=2026")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 3
+    assert body["summary"] == {"complaint": 1, "address": 1, "follow": 1}
+    types = {row["type"] for row in body["rows"]}
+    assert types == {"complaint", "address", "follow"}
+    # 按日期倒序：回访(05-12) 在最前
+    assert body["rows"][0]["type"] == "follow"
+    assert body["rows"][0]["ticket_date"] == "2026-05-12"
+
+    # 按类型筛选
+    assert client.get("/api/postal/tickets?type=complaint&year=2026").json()["total"] == 1
+    assert client.get("/api/postal/tickets?type=address&year=2026").json()["rows"][0]["recipient_name"] == "改址乙"
+    # 未知类型 400
+    assert client.get("/api/postal/tickets?type=xxx").status_code == 400
+
+
 def test_finance_crud_net(client):
     r = client.post("/api/finance/postal-receipts", json={
         "payer_name": "吴十", "product": "《中国经营报》", "copies": 1,

@@ -64,6 +64,13 @@ def list_address_changes(
     return rows, total
 
 
+def get_address_change(db: Session, change_id: int) -> PostalAddressChange:
+    rec = db.query(PostalAddressChange).filter(PostalAddressChange.id == change_id).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+    return rec
+
+
 def summarize_address_changes(
     db: Session,
     *,
@@ -111,6 +118,13 @@ def list_follow_ups(
         .offset(max(0, (page - 1) * page_size)).limit(page_size).all()
     )
     return rows, total
+
+
+def get_follow_up(db: Session, follow_id: int) -> PostalFollowUp:
+    rec = db.query(PostalFollowUp).filter(PostalFollowUp.id == follow_id).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"回访记录 {follow_id} 不存在")
+    return rec
 
 
 def _current_target(db: Session, order_id: int) -> Optional[FulfillmentTarget]:

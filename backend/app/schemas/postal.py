@@ -14,6 +14,34 @@ class PostalCommitIn(BaseModel):
     session_id: str
 
 
+class TicketOut(BaseModel):
+    """统一客服工单行（投诉 / 改地址 / 回访 归一，仅用于列表呈现）。"""
+    type: str                       # complaint | address | follow
+    id: int
+    year: Optional[int] = None
+    delivery_no: Optional[str] = None
+    recipient_name: Optional[str] = None
+    postal_delivery_id: Optional[int] = None
+    order_id: Optional[int] = None
+    ticket_date: Optional[date] = None
+    summary: Optional[str] = None
+    status: Optional[str] = None     # 投诉三态；改地址 applied/pending/unmatched；回访 None
+    handling_count: Optional[int] = None
+    applied_to_order: Optional[bool] = None
+
+
+class TicketSummary(BaseModel):
+    complaint: int
+    address: int
+    follow: int
+
+
+class TicketListOut(BaseModel):
+    rows: List[TicketOut]
+    total: int
+    summary: TicketSummary
+
+
 class DeliveryOut(BaseModel):
     id: int
     year: int
