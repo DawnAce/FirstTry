@@ -322,8 +322,8 @@ function DeliveriesTab() {
   const cols: TableColumnsType<PostalDelivery> = [
     { title: '编号', dataIndex: 'delivery_no', width: 100, render: (v: string, r) => <Text style={{ fontVariantNumeric: 'tabular-nums' }}>{r.year}-{v}</Text> },
     { title: '收报人', dataIndex: 'recipient_name', width: 100 },
-    { title: '省/市/区 · 详细地址', key: 'addr', render: (_: unknown, r) => (
-      <Space direction="vertical" size={0}>
+    { title: '省/市/区 · 详细地址', key: 'addr', width: 320, render: (_: unknown, r) => (
+      <Space direction="vertical" size={0} style={{ maxWidth: 300 }}>
         <Text>{[r.recipient_province, r.recipient_city, r.recipient_district].filter(Boolean).join(' ') || '—'}</Text>
         <Text type="secondary" style={{ fontSize: 12 }} ellipsis>{r.recipient_address}{r.recipient_phone ? ` · ${r.recipient_phone}` : ''}</Text>
       </Space>
@@ -389,6 +389,7 @@ function DeliveriesTab() {
         </div>
         <Table<PostalDelivery> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small"
           expandable={{ expandedRowRender: renderDeliveryExpand }}
+          scroll={{ x: 1180 }}
           pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条投递记录`, showSizeChanger: false }} />
       </Card>
       <ReaderImportModal open={importOpen} onClose={() => setImportOpen(false)} />
