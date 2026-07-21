@@ -332,6 +332,16 @@ function DeliveriesTab() {
     { title: '起止月', key: 'coverage', width: 160, render: (_: unknown, r) => <Text type="secondary" style={{ fontSize: 12 }}>{r.coverage_start_date}~{r.coverage_end_date}</Text> },
     { title: '投递单位', dataIndex: 'distribution_unit_name', width: 150, render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : <Text type="secondary">—(未填)</Text>) },
     { title: '渠道', dataIndex: 'source_channel', width: 120, render: (v: string | null) => v || '—' },
+    { title: '来源', dataIndex: 'source_type', width: 96, render: (v: PostalDelivery['source_type']) => {
+      const meta: Record<string, { label: string; color: string }> = {
+        subscription_generated: { label: '订报生成', color: 'green' },
+        historical_import: { label: '名册导入', color: 'default' },
+        manual: { label: '手工', color: 'gold' },
+        order_generated: { label: '订单生成', color: 'blue' },
+      };
+      const m = v ? meta[v] : undefined;
+      return m ? <Tag color={m.color}>{m.label}</Tag> : '—';
+    } },
     ...(isAdmin ? [{
       title: '操作', key: 'act', width: 90, render: (_: unknown, r: PostalDelivery) => (
         <Space size={0}>

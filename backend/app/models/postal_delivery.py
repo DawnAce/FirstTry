@@ -40,11 +40,13 @@ class PostalDeliverySourceType(str, enum.Enum):
     * ``historical_import`` —— 导入《邮局读者明细》（默认）。
     * ``order_generated``   —— 将来：从真实平台订单同步生成。
     * ``manual``            —— 页面手工新增。
+    * ``subscription_generated`` —— 由「邮局订报生成」版本设为有效时汇入。
     """
 
     historical_import = "historical_import"
     order_generated = "order_generated"
     manual = "manual"
+    subscription_generated = "subscription_generated"
 
 
 class PostalDelivery(Base):
@@ -74,6 +76,13 @@ class PostalDelivery(Base):
         nullable=True,
     )
     external_order_no = Column(String(128), nullable=True, index=True)  # 平台订单号（将来补齐）
+    # 由哪个「邮局订报生成」批次汇入（用于幂等替换；SET NULL 保留记录）。多数为空。
+    subscription_batch_id = Column(
+        Integer,
+        ForeignKey("subscription_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     source_type = Column(
         SAEnum(PostalDeliverySourceType, name="postaldeliverysourcetype"),
         default=PostalDeliverySourceType.historical_import,

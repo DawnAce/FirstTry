@@ -117,6 +117,13 @@ class ImportStatusOut(BaseModel):
     can_activate: bool
 
 
+class ActivateOut(BaseModel):
+    """设为有效的结果 + 汇入投递名册的计数。"""
+
+    version: ImportVersionOut
+    postal_sync: dict  # {created, replaced, skipped_sent}
+
+
 # --- 生成 --------------------------------------------------------------------
 
 class ArtifactOut(BaseModel):

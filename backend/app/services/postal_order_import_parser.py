@@ -18,6 +18,9 @@ _SIGNATURE = {"编号", "姓名", "起月日", "投递单位"}
 _FIELDS = {
     "编号": "external_no_raw",
     "地区": "region",
+    "新姓名": "new_name",
+    "新电话": "new_phone",
+    "新地址": "new_address",
     "姓名": "name",
     "联系电话": "phone",
     "省": "province",
@@ -45,6 +48,9 @@ class ParsedPostalRow:
     row_no: int  # 1-based 数据行号（含表头则 +1），用于报错定位
     external_no_raw: str = ""
     region: str = ""
+    new_name: str = ""
+    new_phone: str = ""
+    new_address: str = ""
     name: str = ""
     phone: str = ""
     province: str = ""

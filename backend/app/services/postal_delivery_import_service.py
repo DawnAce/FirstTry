@@ -20,6 +20,7 @@ from app.models import Partner, PartnerType, PostalDelivery
 from app.models.postal_delivery import PostalDeliverySourceType
 from app.order_import_cache import pop_order_import_session, save_order_import_session
 from app.services import postal_common as pc
+from app.services.address_service import normalize_address
 from app.services.postal_order_import_parser import (
     ParsedPostalRow,
     is_postal_reader_export,
@@ -154,6 +155,31 @@ def build_postal_preview(
                 warnings.append(f"投递单位未匹配主数据：「{pr.distribution_unit_name}」→ 留空")
 
         remit = pc.parse_date(pr.remittance_date_raw)
+        # 新值优先：若有「新姓名/新电话/新地址」（因改件产生），用新值当收件人，原值留痕进 notes。
+        orig_addr = pc.compose_address(pr.province, pr.city, pr.district, pr.detail_address)
+        eff_name = pr.new_name or pr.name or "(未填写)"
+        eff_phone = pr.new_phone or pr.phone or None
+        eff_address = pr.new_address or orig_addr or "(未填写)"
+        eff_province = eff_city = eff_district = None
+        if pr.new_address:
+            try:
+                parsed = normalize_address(pr.new_address)
+                eff_province = parsed.get("province") or None
+                eff_city = parsed.get("city") or None
+                eff_district = parsed.get("district") or None
+            except Exception:  # noqa: BLE001 地址库异常不阻断
+                pass
+        else:
+            eff_province, eff_city, eff_district = (pr.province or None, pr.city or None, pr.district or None)
+        changed_bits = []
+        if pr.new_name and pr.new_name != pr.name:
+            changed_bits.append(f"原名:{pr.name}")
+        if pr.new_phone and pr.new_phone != pr.phone:
+            changed_bits.append(f"原话:{pr.phone}")
+        if pr.new_address and pr.new_address != orig_addr:
+            changed_bits.append(f"原址:{orig_addr}")
+        base_notes = _extras_notes(pr)
+        notes = "；".join([x for x in ([base_notes] if base_notes else []) + changed_bits]) or None
         data = {
             "year": year,
             "delivery_no": delivery_no,
@@ -161,12 +187,12 @@ def build_postal_preview(
             "order_id": None,
             "external_order_no": None,
             "source_type": PostalDeliverySourceType.historical_import.value,
-            "recipient_name": pr.name or "(未填写)",
-            "recipient_phone": pr.phone or None,
-            "recipient_province": pr.province or None,
-            "recipient_city": pr.city or None,
-            "recipient_district": pr.district or None,
-            "recipient_address": pc.compose_address(pr.province, pr.city, pr.district, pr.detail_address) or "(未填写)",
+            "recipient_name": eff_name,
+            "recipient_phone": eff_phone,
+            "recipient_province": eff_province,
+            "recipient_city": eff_city,
+            "recipient_district": eff_district,
+            "recipient_address": eff_address,
             "recipient_postal_code": pr.postal_code or None,
             # 产品认不出留原文（邮局是纯投递，不强求刊物枚举）。
             "product": pr.product_name or None,
@@ -179,13 +205,13 @@ def build_postal_preview(
             "salesperson": pr.salesperson or None,
             "remittance_name": pr.remittance_name or None,
             "remittance_date": remit.isoformat() if remit else None,
-            "notes": _extras_notes(pr),
+            "notes": notes,
         }
         seen_in_batch.add(key)
         out.append(PostalPreviewRow(
             delivery_no=delivery_no,
             year=year,
-            name=pr.name,
+            name=eff_name,
             amount=amount,
             decision="import",
             coverage_label=f"{cov_start:%Y-%m-%d}~{cov_end:%Y-%m-%d}",

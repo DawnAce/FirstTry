@@ -18,6 +18,7 @@ from app.models import (
     User,
 )
 from app.schemas.subscription import (
+    ActivateOut,
     ArtifactOut,
     BatchCreateIn,
     BatchDetailOut,
@@ -106,12 +107,13 @@ def get_import_records(version_id: int, db: Session = Depends(get_db), _user: Us
     return sorted(version.records, key=lambda r: r.id)
 
 
-@router.post("/imports/{version_id}/activate", response_model=ImportVersionOut)
+@router.post("/imports/{version_id}/activate", response_model=ActivateOut)
 def activate_import(version_id: int, db: Session = Depends(get_db), user: User = Depends(require_admin)):
-    version = batch_svc.activate_version(db, version_id)
+    version = batch_svc.activate_version(db, version_id, operator_id=getattr(user, "id", None))
+    sync = getattr(version, "postal_sync", {"created": 0, "replaced": 0, "skipped_sent": 0})
     _log(db, table="subscription_import_versions", record_id=version.id, action="update", user=user,
-         name=f"设为有效 V{version.version_no}")
-    return version
+         name=f"设为有效 V{version.version_no} · 汇入名册 {sync.get('created', 0)} 条")
+    return ActivateOut(version=version, postal_sync=sync)
 
 
 # --- 生成 --------------------------------------------------------------------

@@ -61,6 +61,7 @@ export interface PostalDelivery {
   distribution_unit_name: string | null;
   salesperson: string | null;
   remittance_name: string | null;
+  source_type: 'historical_import' | 'order_generated' | 'manual' | 'subscription_generated' | null;
 }
 
 export interface DeliveryListOut { rows: PostalDelivery[]; total: number; summary: { total_copies: number; unit_count: number; missing_unit_count: number } }
