@@ -230,7 +230,7 @@ def test_follow_up_crud(client):
 
 
 def test_finance_crud_net(client):
-    r = client.post("/api/postal/finance", json={
+    r = client.post("/api/finance/postal-receipts", json={
         "payer_name": "吴十", "product": "《中国经营报》", "copies": 1,
         "amount": "240.00", "fee_amount": "1.30", "collected_at": "2026-03-01",
         "buyer_title": "某公司", "tax_no": "91ABC", "tax_category": "普票", "platform": "CBJ+小程序",
@@ -241,10 +241,10 @@ def test_finance_crud_net(client):
     assert float(f["net_amount"]) == 238.70       # net = 金额 - 手续费
     fid = f["id"]
 
-    u = client.put(f"/api/postal/finance/{fid}", json={"fee_amount": "2.00"})
+    u = client.put(f"/api/finance/postal-receipts/{fid}", json={"fee_amount": "2.00"})
     assert u.status_code == 200
     assert float(u.json()["net_amount"]) == 238.00  # 手续费改动 → 重算
-    assert client.delete(f"/api/postal/finance/{fid}").status_code == 204
+    assert client.delete(f"/api/finance/postal-receipts/{fid}").status_code == 204
 
 
 # --- 回归：对抗式审查确认的缺陷修复 --------------------------------

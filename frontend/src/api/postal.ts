@@ -317,53 +317,6 @@ export function commitFollowUpImport(sessionId: string): Promise<AxiosResponse<P
   return api.post('/postal/follow-ups/import/commit', { session_id: sessionId });
 }
 
-// --- 收款 / 发票 (P4) ------------------------------------------------------
-
-export interface PostalFinance {
-  id: number;
-  order_id: number | null;
-  external_order_no: string | null;
-  link_by: string | null;
-  payer_name: string | null;
-  product: string | null;
-  copies: number | null;
-  amount: string | null;
-  fee_amount: string | null;
-  net_amount: string | null;
-  collected_at: string | null;
-  invoiced_amount: string | null;
-  buyer_title: string | null;
-  tax_no: string | null;
-  invoice_recipient: string | null;
-  tax_category: string | null;
-  platform: string | null;
-  notes: string | null;
-}
-
-export interface FinanceListOut { rows: PostalFinance[]; total: number; summary: { total_amount: number; total_net: number; unlinked_count: number } }
-
-export interface FinanceImportRow {
-  payer_name: string;
-  product: string;
-  amount: string | null;
-  tax_category: string;
-  platform: string;
-  decision: 'import' | 'duplicate';
-  linked: boolean;
-  link_by: string;
-}
-
-export function listFinance(f: { platform?: string; tax_category?: string; linked?: boolean; search?: string; page?: number; page_size?: number }): Promise<AxiosResponse<FinanceListOut>> {
-  return api.get('/postal/finance', { params: f });
-}
-export function previewFinanceImport(file: File): Promise<AxiosResponse<SimpleImportPreview<FinanceImportRow>>> {
-  const fd = new FormData(); fd.append('file', file);
-  return api.post('/postal/finance/import/preview', fd);
-}
-export function commitFinanceImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
-  return api.post('/postal/finance/import/commit', { session_id: sessionId });
-}
-
 // =====================================================================
 // 手工 CRUD（新增 / 编辑 / 删除）+ 投诉三态处理流程
 // =====================================================================
@@ -499,32 +452,4 @@ export function updateFollowUp(id: number, body: Partial<FollowUpPayload>): Prom
 }
 export function deleteFollowUp(id: number): Promise<AxiosResponse<void>> {
   return api.delete(`/postal/follow-ups/${id}`);
-}
-
-// --- 收款 / 发票 ---
-export interface FinancePayload {
-  external_order_no?: string | null;
-  payer_name?: string | null;
-  product?: string | null;
-  copies?: number | null;
-  amount?: number | null;
-  fee_amount?: number | null;
-  net_amount?: number | null;
-  collected_at?: string | null;
-  invoiced_amount?: number | null;
-  buyer_title?: string | null;
-  tax_no?: string | null;
-  invoice_recipient?: string | null;
-  tax_category?: string | null;
-  platform?: string | null;
-  notes?: string | null;
-}
-export function createFinance(body: FinancePayload): Promise<AxiosResponse<PostalFinance>> {
-  return api.post('/postal/finance', body);
-}
-export function updateFinance(id: number, body: Partial<FinancePayload>): Promise<AxiosResponse<PostalFinance>> {
-  return api.put(`/postal/finance/${id}`, body);
-}
-export function deleteFinance(id: number): Promise<AxiosResponse<void>> {
-  return api.delete(`/postal/finance/${id}`);
 }

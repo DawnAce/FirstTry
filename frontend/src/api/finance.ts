@@ -1,5 +1,6 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
+import type { PostalCommitOut, SimpleImportPreview } from './postal';
 
 // 财务管理：① 订单发票工作台(以订单为中心) + 发票登记/冲红；② 渠道结算(复用 partners)。
 // 写操作后端要求管理员；结算附件经鉴权接口取 blob 下载。金额字段以字符串到达。
@@ -154,4 +155,85 @@ export async function downloadSettlementAttachment(s: Settlement): Promise<void>
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+// ===========================================================================
+// 邮局收款 / 发票（原挂 /api/postal/finance，重构后迁入财务命名空间 /api/finance/postal-receipts）
+// 数据模型仍是 PostalFinance，仅 API 归属改变。
+// ===========================================================================
+
+export interface PostalFinance {
+  id: number;
+  order_id: number | null;
+  external_order_no: string | null;
+  link_by: string | null;
+  payer_name: string | null;
+  product: string | null;
+  copies: number | null;
+  amount: string | null;
+  fee_amount: string | null;
+  net_amount: string | null;
+  collected_at: string | null;
+  invoiced_amount: string | null;
+  buyer_title: string | null;
+  tax_no: string | null;
+  invoice_recipient: string | null;
+  tax_category: string | null;
+  platform: string | null;
+  notes: string | null;
+}
+
+export interface FinanceListOut {
+  rows: PostalFinance[];
+  total: number;
+  summary: { total_amount: number; total_net: number; unlinked_count: number };
+}
+
+export interface FinanceImportRow {
+  payer_name: string;
+  product: string;
+  amount: string | null;
+  tax_category: string;
+  platform: string;
+  decision: 'import' | 'duplicate';
+  linked: boolean;
+  link_by: string;
+}
+
+export interface FinancePayload {
+  external_order_no?: string | null;
+  payer_name?: string | null;
+  product?: string | null;
+  copies?: number | null;
+  amount?: number | null;
+  fee_amount?: number | null;
+  net_amount?: number | null;
+  collected_at?: string | null;
+  invoiced_amount?: number | null;
+  buyer_title?: string | null;
+  tax_no?: string | null;
+  invoice_recipient?: string | null;
+  tax_category?: string | null;
+  platform?: string | null;
+  notes?: string | null;
+}
+
+export function listFinance(f: { platform?: string; tax_category?: string; linked?: boolean; search?: string; page?: number; page_size?: number }): Promise<AxiosResponse<FinanceListOut>> {
+  return api.get('/finance/postal-receipts', { params: f });
+}
+export function previewFinanceImport(file: File): Promise<AxiosResponse<SimpleImportPreview<FinanceImportRow>>> {
+  const fd = new FormData(); fd.append('file', file);
+  return api.post('/finance/postal-receipts/import/preview', fd);
+}
+export function commitFinanceImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
+  return api.post('/finance/postal-receipts/import/commit', { session_id: sessionId });
+}
+export function createFinance(body: FinancePayload): Promise<AxiosResponse<PostalFinance>> {
+  return api.post('/finance/postal-receipts', body);
+}
+export function updateFinance(id: number, body: Partial<FinancePayload>): Promise<AxiosResponse<PostalFinance>> {
+  return api.put(`/finance/postal-receipts/${id}`, body);
+}
+export function deleteFinance(id: number): Promise<AxiosResponse<void>> {
+  return api.delete(`/finance/postal-receipts/${id}`);
 }
