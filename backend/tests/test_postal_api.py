@@ -298,13 +298,13 @@ def _fin_wb() -> bytes:
 
 
 def test_finance_import_and_list(client):
-    r = client.post("/api/postal/finance/import/preview",
+    r = client.post("/api/finance/postal-receipts/import/preview",
                     files={"file": ("f.xlsx", _fin_wb(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["counts"]["import"] == 2
-    assert client.post("/api/postal/finance/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
-    assert client.get("/api/postal/finance").json()["total"] == 2
+    assert client.post("/api/finance/postal-receipts/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
+    assert client.get("/api/finance/postal-receipts").json()["total"] == 2
     # 平台 + 普专票筛选
-    assert client.get("/api/postal/finance?platform=商学院APP").json()["total"] == 1
-    assert client.get("/api/postal/finance?tax_category=专票").json()["rows"][0]["payer_name"] == "吴婷"
+    assert client.get("/api/finance/postal-receipts?platform=商学院APP").json()["total"] == 1
+    assert client.get("/api/finance/postal-receipts?tax_category=专票").json()["rows"][0]["payer_name"] == "吴婷"

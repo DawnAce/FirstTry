@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>邮局管理 · 重构方案视觉稿</title>
+<style>
+  :root{
+    --primary:#1677ff; --primary-bg:#e6f0ff; --border:#e5e7eb; --text:#1f2328;
+    --muted:#6b7280; --bg:#f4f6f9; --green:#16a34a; --orange:#d97706; --red:#dc2626;
+    --purple:#7c3aed; --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--text);background:var(--bg);font-size:14px;line-height:1.5}
+  .app{display:flex;min-height:100vh}
+  /* sidebar */
+  .side{width:220px;background:#001529;color:#c9d1d9;flex-shrink:0;padding:12px 0}
+  .side .logo{color:#fff;font-weight:600;font-size:15px;padding:12px 20px 18px}
+  .side .grp{color:#6b7684;font-size:12px;padding:12px 20px 6px;letter-spacing:.5px}
+  .side a{display:flex;align-items:center;gap:8px;color:#c9d1d9;text-decoration:none;
+    padding:9px 20px;font-size:14px;cursor:pointer;border-left:3px solid transparent}
+  .side a:hover{background:#0d2135;color:#fff}
+  .side a.active{background:#1677ff;color:#fff;border-left-color:#69b1ff}
+  .side a .badge{margin-left:auto;font-size:10px;background:#faad14;color:#3b2600;
+    border-radius:8px;padding:1px 7px;font-weight:600}
+  .side a .badge.new{background:#52c41a;color:#fff}
+  /* main */
+  .main{flex:1;padding:20px 28px;overflow:auto}
+  .crumb{color:var(--muted);font-size:13px;margin-bottom:6px}
+  .crumb b{color:var(--text)}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);
+    padding:16px 18px;margin-bottom:16px}
+  .card h3{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .row{display:flex;gap:16px;flex-wrap:wrap}
+  .col{flex:1;min-width:0}
+  /* toolbar */
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:6px 14px;cursor:pointer;font-size:13px;color:var(--text)}
+  .seg button.on{background:var(--primary);color:#fff}
+  .inp{border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;background:#fff;color:var(--muted)}
+  .btn{border:1px solid var(--primary);background:var(--primary);color:#fff;border-radius:8px;
+    padding:6px 14px;font-size:13px;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--primary)}
+  .btn.grey{background:#fff;color:var(--text);border-color:var(--border)}
+  /* stats */
+  .stats{display:flex;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+  .stat{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 18px;min-width:130px;box-shadow:var(--shadow)}
+  .stat .n{font-size:22px;font-weight:600}
+  .stat .l{color:var(--muted);font-size:12px;margin-top:2px}
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+  th{color:var(--muted);font-weight:500;background:#fafbfc}
+  tr:hover td{background:#f8fbff}
+  .tag{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:500}
+  .tag.blue{background:#e6f0ff;color:#1677ff}
+  .tag.green{background:#e7f6e7;color:#16a34a}
+  .tag.orange{background:#fff2e0;color:#d97706}
+  .tag.red{background:#fde8e8;color:#dc2626}
+  .tag.grey{background:#f0f1f2;color:#6b7280}
+  .tag.purple{background:#f0e9ff;color:#7c3aed}
+  .link{color:var(--primary);cursor:pointer}
+  /* two pane */
+  .pane{display:flex;gap:16px}
+  .pane .list{flex:1.4}
+  .pane .detail{flex:1;background:#fff;border:1px solid var(--border);border-radius:10px;
+    box-shadow:var(--shadow);padding:0;overflow:hidden;align-self:flex-start}
+  .detail .dh{padding:14px 18px;border-bottom:1px solid var(--border);background:#fafbfc}
+  .detail .dh .t{font-weight:600;font-size:15px}
+  .detail .db{padding:16px 18px}
+  .kv{display:flex;font-size:13px;padding:5px 0}
+  .kv .k{color:var(--muted);width:82px;flex-shrink:0}
+  /* timeline */
+  .tl{position:relative;padding-left:20px;margin-top:8px}
+  .tl::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:#eceff3}
+  .tl .item{position:relative;padding:0 0 16px 0}
+  .tl .item::before{content:"";position:absolute;left:-18px;top:3px;width:10px;height:10px;
+    border-radius:50%;background:#fff;border:2px solid var(--primary)}
+  .tl .item.cb::before{border-color:var(--purple)}
+  .tl .item .th{font-size:13px;font-weight:600;display:flex;gap:8px;align-items:center}
+  .tl .item .tt{color:var(--muted);font-size:12px}
+  .tl .item .tx{font-size:13px;margin-top:2px;color:#374151}
+  /* diff box for address */
+  .diff{display:flex;gap:12px;margin:10px 0}
+  .diff .box{flex:1;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px}
+  .diff .box.old{background:#fafafa}
+  .diff .box.new{background:#f0fff4;border-color:#bbf7d0}
+  .diff .box .bl{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .arrow{align-self:center;color:var(--muted);font-size:18px}
+  .note{background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 14px;
+    font-size:13px;color:#7c5a00;margin-bottom:14px}
+  .note.blue{background:#e6f0ff;border-color:#91caff;color:#0958d9}
+  .callout{border-left:3px solid var(--primary);background:#f6faff;padding:8px 14px;font-size:13px;margin:10px 0;border-radius:0 6px 6px 0}
+  .steps{display:flex;gap:0;margin:6px 0 18px}
+  .steps .s{flex:1;text-align:center;position:relative;font-size:13px;color:var(--muted)}
+  .steps .s .dot{width:26px;height:26px;border-radius:50%;background:#fff;border:2px solid var(--border);
+    display:inline-flex;align-items:center;justify-content:center;margin-bottom:5px;font-weight:600}
+  .steps .s.done .dot{background:var(--green);border-color:var(--green);color:#fff}
+  .steps .s.cur .dot{background:var(--primary);border-color:var(--primary);color:#fff}
+  .steps .s::after{content:"";position:absolute;top:13px;left:50%;width:100%;height:2px;background:var(--border);z-index:-1}
+  .steps .s:last-child::after{display:none}
+  .steps .s.done::after{background:var(--green)}
+  .hide{display:none}
+  .flowbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;margin:8px 0}
+  .flowbox .b{border:1px solid var(--border);border-radius:8px;padding:8px 14px;background:#fff}
+  .flowbox .b.hl{border-color:var(--primary);background:#e6f0ff;color:#0958d9;font-weight:600}
+  .flowbox .ar{color:var(--muted)}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <nav class="side">
+    <div class="logo">📮 发行管理系统</div>
+    <div class="grp">邮局管理  <span style="color:#52c41a">（7→3）</span></div>
+    <a data-page="roster" class="active" onclick="go('roster',this)">📋 投递名册</a>
+    <a data-page="subgen" onclick="go('subgen',this)">🧾 邮局订报生成</a>
+    <a data-page="tickets" onclick="go('tickets',this)">🎫 客服工单 <span class="badge">合并3项</span></a>
+    <div class="grp">财务管理</div>
+    <a data-page="finance" onclick="go('finance',this)">💰 邮局收款发票 <span class="badge new">迁入</span></a>
+    <a style="opacity:.5">📑 发票 · 渠道结算 …</a>
+    <div class="grp">其他一级菜单</div>
+    <a style="opacity:.5">客户管理</a>
+    <a style="opacity:.5">订单管理</a>
+    <a style="opacity:.5">快递管理</a>
+  </nav>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- ============ 投递名册 ============ -->
+    <section id="roster">
+      <div class="crumb">邮局管理 / <b>投递名册</b></div>
+      <h1>投递名册</h1>
+      <div class="sub">纯台账 / 查询视图：记录“谁在被投递”，供客服工单挂靠。<b>不再生成任何名单</b>——给邮局的文件统一由「邮局订报生成」产出。</div>
+
+      <div class="note">🗑️ <b>删除层（已定）</b>：原【月度起投明细】/月度快照/批次冻结 <b>整层删除</b>。经确认，<b>给邮局的名单永远只来自「邮局订报生成」</b>；名册回归纯台账，只做记录与查询，不生成任何交邮局的名单。</div>
+
+      <div class="stats">
+        <div class="stat"><div class="n">1,284</div><div class="l">投递记录总数</div></div>
+        <div class="stat"><div class="n">96</div><div class="l">本月起投</div></div>
+        <div class="stat"><div class="n">7</div><div class="l">投递单位</div></div>
+        <div class="stat"><div class="n">312</div><div class="l">关联客服工单</div></div>
+      </div>
+
+      <div class="card">
+        <div class="toolbar">
+          <span class="inp">年度：2026 ▾</span>
+          <span class="inp">起投月：全部 ▾</span>
+          <span class="inp">渠道：全部 ▾</span>
+          <span class="inp">投递单位：全部 ▾</span>
+          <span class="inp">来源：全部 ▾</span>
+          <span class="inp">🔍 姓名/编号</span>
+          <button class="btn ghost" style="margin-left:auto">+ 新增</button>
+          <button class="btn grey">导入读者明细</button>
+        </div>
+        <table>
+          <thead><tr><th>编号</th><th>收报人</th><th>地址</th><th>份数</th><th>起投月</th><th>投递单位</th><th>来源</th><th>关联工单</th></tr></thead>
+          <tbody>
+            <tr><td>B0231</td><td>张为民</td><td>北京朝阳区…</td><td>1</td><td>2026-07</td><td>朝阳分局</td><td><span class="tag blue">订报生成</span></td><td><span class="tag red">投诉·处理中</span></td></tr>
+            <tr><td>B0232</td><td>李慧</td><td>北京海淀区…</td><td>2</td><td>2026-07</td><td>海淀分局</td><td><span class="tag grey">名册导入</span></td><td><span class="tag purple">改地址·待应用</span></td></tr>
+            <tr><td>B0233</td><td>王强</td><td>北京西城区…</td><td>1</td><td>2026-08</td><td>西城分局</td><td><span class="tag purple">订单生成</span></td><td>—</td></tr>
+            <tr><td>B0234</td><td>赵敏</td><td>北京东城区…</td><td>1</td><td>2026-07</td><td>东城分局</td><td><span class="tag green">手工</span></td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 订报生成 ============ -->
+    <section id="subgen" class="hide">
+      <div class="crumb">邮局管理 / <b>邮局订报生成</b></div>
+      <h1>邮局订报生成</h1>
+      <div class="sub">保留为独立菜单——它是一条重流程（上传两份源文件→解析→校验→生成产物→汇入名册），交互重、独立入口更好找。</div>
+
+      <div class="card">
+        <h3>2026年8月邮局订报 · V2（当前有效）</h3>
+        <div class="steps">
+          <div class="s done"><span class="dot">1</span><div>上传源文件</div></div>
+          <div class="s done"><span class="dot">2</span><div>解析</div></div>
+          <div class="s done"><span class="dot">3</span><div>校验</div></div>
+          <div class="s cur"><span class="dot">4</span><div>生成产物</div></div>
+          <div class="s"><span class="dot">5</span><div>汇入投递名册</div></div>
+        </div>
+        <div class="callout">校验结果：<span class="tag green">通过 312</span> &nbsp; <span class="tag orange">警告 4</span> &nbsp; <span class="tag red">阻断 0</span></div>
+        <div class="row" style="margin-top:12px">
+          <div class="col card" style="margin:0"><h3>📦 产物</h3>
+            <div class="kv"><span class="k">汇总表</span><span class="link">下载 xlsx</span></div>
+            <div class="kv"><span class="k">地区分送</span><span class="link">下载 xlsx</span></div>
+            <div class="kv"><span class="k">打包</span><span class="link">下载 zip</span></div>
+          </div>
+          <div class="col card" style="margin:0"><h3>🕘 版本流水（不可变）</h3>
+            <div class="kv"><span class="k">V2</span><span class="tag blue">当前有效</span></div>
+            <div class="kv"><span class="k">V1</span><span class="tag grey">已被取代</span></div>
+          </div>
+        </div>
+        <button class="btn" style="margin-top:12px">设为有效版本 → 汇入投递名册</button>
+      </div>
+    </section>
+
+    <!-- ============ 客服工单（核心重构） ============ -->
+    <section id="tickets" class="hide">
+      <div class="crumb">邮局管理 / <b>客服工单</b></div>
+      <h1>客服工单</h1>
+      <div class="sub">原【投诉工单】【改地址】【回访】三个菜单合并为一个「工单」，用<b>类型</b>区分；回访不再是菜单，降级为工单时间线里的一条处理记录。</div>
+
+      <div class="note">🎯 <b>参考成熟系统（Zendesk / Salesforce Case / 有赞客服）</b>：核心对象只有“工单”，靠 <b>类型</b> 维度区分；回访 = 工单下的一次跟进活动，不单独建表建菜单。</div>
+
+      <div class="toolbar">
+        <div class="seg">
+          <button class="on">全部</button>
+          <button onclick="tk('complaint',this)">🔴 投诉</button>
+          <button onclick="tk('addr',this)">🟣 改地址</button>
+        </div>
+        <span class="inp">年度：2026 ▾</span>
+        <span class="inp">状态：全部 ▾</span>
+        <span class="inp">🔍 收报人/编号</span>
+        <button class="btn ghost" style="margin-left:auto">+ 新建工单</button>
+        <button class="btn grey">导入</button>
+      </div>
+
+      <div class="pane">
+        <div class="list card" style="padding:0">
+          <table>
+            <thead><tr><th>类型</th><th>收报人</th><th>编号</th><th>摘要</th><th>状态</th><th>处理次</th></tr></thead>
+            <tbody>
+              <tr onclick="showTk('addr')" style="cursor:pointer"><td><span class="tag purple">改地址</span></td><td>李慧</td><td>B0232</td><td>迁居，新址海淀…</td><td><span class="tag orange">处理中</span></td><td>1</td></tr>
+              <tr onclick="showTk('complaint')" style="cursor:pointer"><td><span class="tag red">投诉</span></td><td>张为民</td><td>B0231</td><td>连续两期缺报</td><td><span class="tag orange">处理中</span></td><td>2</td></tr>
+              <tr style="cursor:pointer"><td><span class="tag red">投诉</span></td><td>王强</td><td>B0233</td><td>报纸破损</td><td><span class="tag green">已解决</span></td><td>1</td></tr>
+              <tr style="cursor:pointer"><td><span class="tag purple">改地址</span></td><td>赵敏</td><td>B0234</td><td>单位搬迁</td><td><span class="tag green">已解决·已应用</span></td><td>1</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 投诉详情 -->
+        <div class="detail" id="tk-complaint">
+          <div class="dh"><div class="t"><span class="tag red">投诉</span> 张为民 · B0231</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">连续两期缺报 · 状态 处理中 · 已处理 2 次</div></div>
+          <div class="db">
+            <div class="kv"><span class="k">收报人</span>张为民 / 138****2231</div>
+            <div class="kv"><span class="k">地址</span>北京朝阳区…</div>
+            <div class="kv"><span class="k">投递单位</span>朝阳分局</div>
+            <div class="kv"><span class="k">转派</span>朝阳局微信</div>
+            <h3 style="margin:16px 0 4px">🕘 处理时间线</h3>
+            <div class="tl">
+              <div class="item cb"><div class="th">电话回访 <span class="tag purple">回访</span></div>
+                <div class="tt">2026-07-18 · 客服小周</div>
+                <div class="tx">回访读者，确认本周已正常收到报纸，读者满意。</div></div>
+              <div class="item"><div class="th">转派处理</div>
+                <div class="tt">2026-07-12 · 客服小李</div>
+                <div class="tx">已转朝阳分局核查投递路线，承诺补投。</div></div>
+              <div class="item"><div class="th">工单创建</div>
+                <div class="tt">2026-07-10 · 系统导入</div>
+                <div class="tx">邮局转来缺报投诉。</div></div>
+            </div>
+            <button class="btn" style="width:100%;margin-top:6px">+ 添加处理 / 回访记录</button>
+            <div class="callout" style="margin-top:10px">💡「回访」就是这条时间线里的一种处理记录（渠道=电话），不再是独立菜单。</div>
+          </div>
+        </div>
+
+        <!-- 改地址详情 -->
+        <div class="detail hide" id="tk-addr">
+          <div class="dh"><div class="t"><span class="tag purple">改地址</span> 李慧 · B0232</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">迁居 · 状态 处理中 · 待应用</div></div>
+          <div class="db">
+            <div class="diff">
+              <div class="box old"><div class="bl">原地址</div>北京海淀区中关村南大街5号<br/>李慧 / 139****8802</div>
+              <div class="arrow">→</div>
+              <div class="box new"><div class="bl">新地址</div>北京海淀区上地十街10号<br/>李慧 / 139****8802</div>
+            </div>
+            <button class="btn" style="width:100%">✅ 应用新地址</button>
+            <div class="note blue" style="margin-top:12px">📌 <b>关键：工单不自己存地址真值。</b>「应用」= 把新地址写回<b>客户资料</b>（真值源），再由客户资料<b>同步给在履约的订单</b>——复用你已做好的逻辑。</div>
+            <div class="flowbox">
+              <span class="b hl">改地址工单<br/><small>受理+时间线</small></span><span class="ar">──应用──▶</span>
+              <span class="b">客户资料<br/><small>地址真值</small></span><span class="ar">──同步──▶</span>
+              <span class="b">履约订单</span>
+            </div>
+            <h3 style="margin:14px 0 4px">🕘 处理时间线</h3>
+            <div class="tl">
+              <div class="item"><div class="th">工单创建</div><div class="tt">2026-07-15 · 客服小李</div>
+                <div class="tx">读者来电告知迁居，登记新址，待核实后应用。</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 财务 · 收款发票 ============ -->
+    <section id="finance" class="hide">
+      <div class="crumb"><b>财务管理</b> / 邮局收款发票</div>
+      <h1>邮局收款发票 <span class="tag green" style="font-size:12px;vertical-align:middle">已从“邮局管理”迁入</span></h1>
+      <div class="sub">收款开票本质是财务，从邮局管理迁到财务管理，与“发票 / 渠道结算”同处一区，口径统一。</div>
+
+      <div class="note blue">📌 <b>改动点</b>：邮局管理下不再有【收款发票】。它按你的意见归入【财务管理】。功能不变（挂单/导入提现发票合集/普专票分类），只是换了“家”。</div>
+
+      <div class="stats">
+        <div class="stat"><div class="n">418</div><div class="l">收款条数</div></div>
+        <div class="stat"><div class="n">¥ 86,420</div><div class="l">合计金额</div></div>
+        <div class="stat"><div class="n">¥ 84,110</div><div class="l">合计到款</div></div>
+        <div class="stat"><div class="n" style="color:var(--orange)">12</div><div class="l">未挂单</div></div>
+      </div>
+
+      <div class="card" style="padding:0">
+        <div class="toolbar" style="padding:14px 16px 0;margin:0">
+          <span class="inp">平台：全部 ▾</span>
+          <span class="inp">票种：全部 ▾</span>
+          <span class="inp">挂单：全部 ▾</span>
+          <span class="inp">🔍 姓名/抬头/订单号</span>
+          <button class="btn grey" style="margin-left:auto">导入提现发票合集</button>
+        </div>
+        <table>
+          <thead><tr><th>姓名</th><th>商品</th><th>金额</th><th>到款日</th><th>票种</th><th>平台</th><th>挂单</th></tr></thead>
+          <tbody>
+            <tr><td>张为民</td><td>年度订报</td><td>¥240</td><td>2026-07-03</td><td><span class="tag blue">普票</span></td><td>CBJ小程序</td><td><span class="tag green">已挂·订单号</span></td></tr>
+            <tr><td>李慧</td><td>年度订报×2</td><td>¥480</td><td>2026-07-05</td><td><span class="tag purple">专票</span></td><td>商学院APP</td><td><span class="tag orange">姓名兜底</span></td></tr>
+            <tr><td>王强</td><td>年度订报</td><td>¥240</td><td>2026-07-06</td><td><span class="tag blue">普票</span></td><td>淘宝发行部</td><td><span class="tag grey">未挂单</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>邮局管理重构 · 视觉稿（非最终 UI，仅表达信息架构与页面职责）· 7 个二级菜单 → 3 个 + 收款发票迁入财务</footer>
+  </div>
+</div>
+
+<script>
+  function go(page,el){
+    document.querySelectorAll('.main > section').forEach(s=>s.classList.add('hide'));
+    document.getElementById(page).classList.remove('hide');
+    document.querySelectorAll('.side a').forEach(a=>a.classList.remove('active'));
+    if(el) el.classList.add('active');
+    window.scrollTo(0,0);
+  }
+  function showTk(kind){
+    document.getElementById('tk-complaint').classList.toggle('hide', kind!=='complaint');
+    document.getElementById('tk-addr').classList.toggle('hide', kind!=='addr');
+  }
+  function tk(kind,el){
+    el.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));
+    el.classList.add('on');
+    showTk(kind==='addr'?'addr':'complaint');
+  }
+</script>
+</body>
+</html>

@@ -34,6 +34,7 @@ from app.api.contracts import router as contracts_router
 from app.api.invoices import router as invoices_router
 from app.api.settlements import router as settlements_router
 from app.api.postal import router as postal_router
+from app.api.postal_finance import router as postal_finance_router
 from app.api.subscription import router as subscription_router
 from app.api.search import router as search_router
 from app.auth import get_current_user, require_admin
@@ -79,6 +80,7 @@ app.include_router(contracts_router, dependencies=[Depends(get_current_user)])
 app.include_router(invoices_router, dependencies=[Depends(get_current_user)])
 app.include_router(settlements_router, dependencies=[Depends(get_current_user)])
 app.include_router(postal_router, dependencies=[Depends(get_current_user)])
+app.include_router(postal_finance_router, dependencies=[Depends(get_current_user)])
 app.include_router(subscription_router, dependencies=[Depends(get_current_user)])
 app.include_router(search_router, dependencies=[Depends(get_current_user)])
 

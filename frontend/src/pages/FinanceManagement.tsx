@@ -52,6 +52,7 @@ import type {
 } from '../api/finance';
 import { listPartners, partnerQueryKeys } from '../api/contracts';
 import { useAuth } from '../contexts/AuthContext';
+import PostalReceiptsPanel from './PostalReceipts';
 
 const { Title, Text } = Typography;
 
@@ -574,7 +575,8 @@ export default function FinanceManagement() {
       <Card size="small" style={{ marginBottom: 12 }}>
         <Text type="secondary">
           <Text strong>订单发票</Text>：跟踪每张订单是否已开票、退款是否需要冲红；
-          <Text strong>渠道结算</Text>：登记与合作渠道的对账打款、是否按时、进项发票，并归档结算单。
+          <Text strong>渠道结算</Text>：登记与合作渠道的对账打款、是否按时、进项发票，并归档结算单；
+          <Text strong>邮局收款</Text>：邮局渠道（小程序 / APP / 淘宝）的收款开票与挂单。
           （应收 / 欠款汇总见「活动订单统计」。{isAdmin ? '可登记/编辑/上传。' : '仅管理员可编辑，您可查看与下载。'}）
         </Text>
       </Card>
@@ -582,6 +584,7 @@ export default function FinanceManagement() {
         items={[
           { key: 'invoices', label: '订单发票', children: <InvoicesPanel isAdmin={isAdmin} /> },
           { key: 'settlements', label: '渠道结算', children: <SettlementsPanel isAdmin={isAdmin} /> },
+          { key: 'postal-receipts', label: '邮局收款', children: <PostalReceiptsPanel /> },
         ]}
       />
     </div>

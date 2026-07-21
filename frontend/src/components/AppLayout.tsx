@@ -61,7 +61,6 @@ const menuItems: MenuProps['items'] = [
       { key: '/post-delivery/complaints', label: '投诉工单' },
       { key: '/post-delivery/address', label: '改地址' },
       { key: '/post-delivery/follow', label: '回访' },
-      { key: '/post-delivery/finance', label: '收款发票' },
     ],
   },
   {
