@@ -8,6 +8,7 @@ import {
   Descriptions,
   Divider,
   Drawer,
+  Dropdown,
   Empty,
   Flex,
   Form,
@@ -15,6 +16,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Table,
@@ -52,11 +54,11 @@ import {
   deleteComplaintHandling,
   deleteDelivery,
   deleteFollowUp,
+  getAddressChange,
   getComplaintDetail,
-  listAddressChanges,
-  listComplaints,
+  getFollowUp,
   listDeliveries,
-  listFollowUps,
+  listTickets,
   previewAddressChangeImport,
   previewComplaintImport,
   previewFollowUpImport,
@@ -85,6 +87,8 @@ import type {
   PostalImportPreview,
   PostalImportRow,
   SimpleImportPreview,
+  Ticket,
+  TicketType,
 } from '../api/postal';
 
 const { Title, Text } = Typography;
@@ -143,7 +147,6 @@ function ReaderImportModal({ open, onClose }: { open: boolean; onClose: () => vo
     onSuccess: (res) => {
       message.success(`成功导入 ${res.data.created} 条投递记录（跳过重复 ${res.data.skipped_duplicates}）`);
       qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
-      qc.invalidateQueries({ queryKey: ['postalBatches'] });
       reset(); onClose();
     },
     onError: (err) => message.error(errText(err)),
@@ -372,114 +375,6 @@ function DeliveriesTab() {
   );
 }
 
-/** Tab：月度起投明细（主从） */
-/** Tab：投诉工单 */
-function ComplaintsTab() {
-  const [year, setYear] = useState<number | undefined>();
-  const [status, setStatus] = useState<string | undefined>();
-  const [minHandling, setMinHandling] = useState<number | undefined>();
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [importOpen, setImportOpen] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<PostalComplaint | null>(null);
-  const [handlingId, setHandlingId] = useState<number | null>(null);
-  const PAGE_SIZE = 50;
-  const { isAdmin } = useAuth();
-  const qc = useQueryClient();
-
-  const unitsQ = useQuery({ queryKey: ['partners'], queryFn: () => listPartners().then((r) => r.data) });
-  const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
-  const deleteMut = useMutation({
-    mutationFn: (id: number) => deleteComplaint(id),
-    onSuccess: () => { message.success('已删除投诉'); qc.invalidateQueries({ queryKey: ['postalComplaints'] }); },
-    onError: (e) => message.error(errText(e)),
-  });
-
-  const q = useQuery({
-    queryKey: ['postalComplaints', { year, status, minHandling, search, page }],
-    queryFn: () => listComplaints({ year, status, min_handling_count: minHandling, search: search.trim() || undefined, page, page_size: PAGE_SIZE }).then((r) => r.data),
-  });
-  const data = q.data;
-
-  const cols: TableColumnsType<PostalComplaint> = [
-    { title: '接诉日期', dataIndex: 'complaint_date', width: 110, render: (v: string | null) => v || '—' },
-    { title: '收报人', dataIndex: 'snap_name', width: 100 },
-    { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string | null) => v || '—' },
-    { title: '投诉情况', dataIndex: 'missing_issues', ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '次数', dataIndex: 'handling_count', width: 64, align: 'right', render: (v: number | null) => v ?? '—' },
-    { title: '状态', dataIndex: 'status', width: 90, render: (s: PostalComplaintStatus) => <Tag color={COMPLAINT_STATUS_META[s].color}>{COMPLAINT_STATUS_META[s].label}</Tag> },
-    { title: '读者', key: 'reader', width: 100, render: (_: unknown, r) => readerTag(r.postal_delivery_id) },
-    {
-      title: '操作', key: 'act', width: isAdmin ? 150 : 80, render: (_: unknown, r: PostalComplaint) => (
-        <Space size={0}>
-          <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => setHandlingId(r.id)}>处理</Button>
-          {isAdmin && <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />}
-          {isAdmin && (
-            <Popconfirm title="删除该投诉？处理记录一并删除。" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
-              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
-          )}
-        </Space>
-      ),
-    },
-  ];
-
-  const renderComplaintExpand = (r: PostalComplaint) => (
-    <div className="postal-expand">
-      <div><div className="k">处理</div><div className="v">{r.routed_label ? <Tag>{r.routed_label}</Tag> : null}{r.handling || (r.routed_label ? '' : '—')}</div></div>
-      <div><div className="k">回访</div><div className="v">{r.follow_up || '—'}</div></div>
-      <div><div className="k">投递单位</div><div className="v">{r.routed_unit_name ? <Tag color="blue">{r.routed_unit_name}</Tag> : '—'}</div></div>
-      <div><div className="k">第一接诉人</div><div className="v">{r.first_handler || '—'}</div></div>
-      <div><div className="k">电话</div><div className="v">{r.snap_phone || '—'}</div></div>
-      <div><div className="k">地址</div><div className="v">{r.snap_address || '—'}</div></div>
-      <div><div className="k">备注</div><div className="v">{r.notes || '—'}</div></div>
-    </div>
-  );
-
-  return (
-    <>
-      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
-        <Space wrap>
-          <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
-          <Select allowClear placeholder="状态" style={{ width: 120 }} value={status} onChange={(v) => { setStatus(v); setPage(1); }}
-            options={COMPLAINT_STATUS_OPTS} />
-          <Select allowClear placeholder="处理次数" style={{ width: 130 }} value={minHandling} onChange={(v) => { setMinHandling(v); setPage(1); }}
-            options={[{ label: '≥2 次', value: 2 }, { label: '≥3 次', value: 3 }]} />
-          <Input.Search allowClear placeholder="搜索 收报人 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
-        </Space>
-        <Space>
-          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增投诉</Button>}
-          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入投诉</Button>
-        </Space>
-      </Flex>
-
-      <Card styles={{ body: { padding: 0 } }}>
-        <div className="postal-summary">
-          <span>共 <b>{data?.total ?? 0}</b> 条</span>
-          <span className="sep">·</span>
-          <span className={`postal-chip ${status === 'open' ? 'on' : ''}`} onClick={() => { setStatus(status === 'open' ? undefined : 'open'); setPage(1); }}>待处理 <b>{data?.summary.open ?? 0}</b></span>
-          <span className={`postal-chip ${status === 'in_progress' ? 'on' : ''}`} onClick={() => { setStatus(status === 'in_progress' ? undefined : 'in_progress'); setPage(1); }}>处理中 <b>{data?.summary.in_progress ?? 0}</b></span>
-          <span className={`postal-chip ${status === 'resolved' ? 'on' : ''}`} onClick={() => { setStatus(status === 'resolved' ? undefined : 'resolved'); setPage(1); }}>已解决 <b>{data?.summary.resolved ?? 0}</b></span>
-        </div>
-        <Table<PostalComplaint>
-          rowKey="id"
-          columns={cols}
-          dataSource={data?.rows ?? []}
-          loading={q.isLoading}
-          size="small"
-          expandable={{ expandedRowRender: renderComplaintExpand }}
-          pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }}
-        />
-      </Card>
-
-      <ComplaintImportModal open={importOpen} onClose={() => setImportOpen(false)} />
-      <ComplaintFormModal open={formOpen} editing={editing} unitOpts={unitOpts} onClose={() => { setFormOpen(false); setEditing(null); }} />
-      <ComplaintHandlingDrawer complaintId={handlingId} onClose={() => setHandlingId(null)} />
-    </>
-  );
-}
-
 /** 通用导入弹窗（改地址 / 回访 / 收款发票共用：counts import/duplicate/linked + 可配置列） */
 function SimpleImportModal<T extends object>(props: {
   open: boolean; onClose: () => void; title: string; hint: string; unit: string; linkedLabel: string;
@@ -634,6 +529,7 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
     onSuccess: () => {
       message.success(editing ? '投诉已更新' : '投诉已新增');
       qc.invalidateQueries({ queryKey: ['postalComplaints'] });
+      qc.invalidateQueries({ queryKey: ['postalTickets'] });
       onClose();
     },
     onError: (e) => message.error(errText(e)),
@@ -681,6 +577,7 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['postalComplaints'] });
+    qc.invalidateQueries({ queryKey: ['postalTickets'] });
     qc.invalidateQueries({ queryKey: ['postalComplaintDetail', complaintId] });
   };
   const addMut = useMutation({
@@ -771,7 +668,7 @@ function AddressChangeFormModal({ open, editing, onClose }: {
       const body: AddressChangePayload = { ...v, change_date: fromDay(v.change_date) };
       return editing ? updateAddressChange(editing.id, body) : createAddressChange(body);
     },
-    onSuccess: () => { message.success(editing ? '改地址已更新' : '改地址已新增'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); onClose(); },
+    onSuccess: () => { message.success(editing ? '改地址已更新' : '改地址已新增'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); qc.invalidateQueries({ queryKey: ['postalTickets'] }); onClose(); },
     onError: (e) => message.error(errText(e)),
   });
 
@@ -819,7 +716,7 @@ function FollowUpFormModal({ open, editing, onClose }: {
       const body: FollowUpPayload = { ...v, follow_up_date: fromDay(v.follow_up_date) };
       return editing ? updateFollowUp(editing.id, body) : createFollowUp(body);
     },
-    onSuccess: () => { message.success(editing ? '回访已更新' : '回访已新增'); qc.invalidateQueries({ queryKey: ['postalFollowUps'] }); onClose(); },
+    onSuccess: () => { message.success(editing ? '回访已更新' : '回访已新增'); qc.invalidateQueries({ queryKey: ['postalFollowUps'] }); qc.invalidateQueries({ queryKey: ['postalTickets'] }); onClose(); },
     onError: (e) => message.error(errText(e)),
   });
 
@@ -842,204 +739,317 @@ function FollowUpFormModal({ open, editing, onClose }: {
   );
 }
 
-/** Tab：改地址工单 */
-function AddressChangesTab() {
+const TICKET_TYPE_META: Record<TicketType, { label: string; color: string }> = {
+  complaint: { label: '投诉', color: 'red' },
+  address: { label: '改地址', color: 'purple' },
+  follow: { label: '回访', color: 'blue' },
+};
+
+function ticketStatusTag(t: Ticket) {
+  if (t.type === 'complaint') {
+    const m = t.status ? COMPLAINT_STATUS_META[t.status as PostalComplaintStatus] : null;
+    return m ? <Tag color={m.color}>{m.label}</Tag> : <Text type="secondary">—</Text>;
+  }
+  if (t.type === 'address') {
+    if (t.status === 'applied') return <Tag color="green">已应用</Tag>;
+    if (t.status === 'unmatched') return <Tag>未匹配</Tag>;
+    return <Tag color="orange">待应用</Tag>;
+  }
+  return <Text type="secondary">—</Text>;
+}
+
+/** 改地址详情抽屉：新旧对比 + 应用新地址（写回投递记录，挂单则同步履约订单）。 */
+function AddressDetailDrawer({ addressId, onEdit, onClose }: {
+  addressId: number | null; onEdit: (rec: PostalAddressChange) => void; onClose: () => void;
+}) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
-  const [year, setYear] = useState<number | undefined>();
-  const [applied, setApplied] = useState<boolean | undefined>();
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [importOpen, setImportOpen] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<PostalAddressChange | null>(null);
-  const PAGE_SIZE = 50;
-
+  const open = addressId != null;
   const q = useQuery({
-    queryKey: ['postalAddrChanges', { year, applied, search, page }],
-    queryFn: () => listAddressChanges({ year, applied, search: search.trim() || undefined, page, page_size: PAGE_SIZE }).then((r) => r.data),
+    queryKey: ['postalAddrDetail', addressId],
+    queryFn: () => getAddressChange(addressId as number).then((r) => r.data),
+    enabled: open,
   });
   const applyMut = useMutation({
-    mutationFn: (id: number) => applyAddressChange(id),
-    onSuccess: () => { message.success('已应用新地址到投递记录'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); qc.invalidateQueries({ queryKey: ['postalDeliveries'] }); },
+    mutationFn: () => applyAddressChange(addressId as number),
+    onSuccess: () => {
+      message.success('已应用新地址');
+      qc.invalidateQueries({ queryKey: ['postalTickets'] });
+      qc.invalidateQueries({ queryKey: ['postalAddrDetail', addressId] });
+    },
     onError: (e) => message.error(errText(e)),
   });
-  const deleteMut = useMutation({
-    mutationFn: (id: number) => deleteAddressChange(id),
-    onSuccess: () => { message.success('已删除改地址'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); },
-    onError: (e) => message.error(errText(e)),
-  });
-
-  const cols: TableColumnsType<PostalAddressChange> = [
-    { title: '修改日期', dataIndex: 'change_date', width: 110, render: (v: string | null) => v || '—' },
-    { title: '收报人', key: 'name', width: 140, render: (_: unknown, r) => <Space size={4}>{r.old_name || '—'}{r.new_name && <><span style={{ color: '#999' }}>→</span>{r.new_name}</>}</Space> },
-    { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string | null) => v || '—' },
-    { title: '新地址', dataIndex: 'new_address', ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '读者', key: 'reader', width: 100, render: (_: unknown, r) => readerTag(r.postal_delivery_id) },
-    { title: '应用', key: 'apply', width: 130, render: (_: unknown, r) => (
-      r.applied_to_order
-        ? <Tag color="green">✓ 已应用</Tag>
-        : (isAdmin && r.postal_delivery_id
-          ? <Popconfirm title="把新姓名/电话/地址写回投递记录？下一版明细即用新地址。" onConfirm={() => applyMut.mutate(r.id)}><Button size="small" loading={applyMut.isPending}>应用新地址</Button></Popconfirm>
-          : <Text type="secondary">{r.postal_delivery_id ? '—' : '未匹配'}</Text>)
-    ) },
-    ...(isAdmin ? [{
-      title: '操作', key: 'act', width: 90, render: (_: unknown, r: PostalAddressChange) => (
-        <Space size={0}>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />
-          <Popconfirm title="删除该改地址工单？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    } as TableColumnsType<PostalAddressChange>[number]] : []),
-  ];
-
-  const renderAddrExpand = (r: PostalAddressChange) => (
-    <div className="postal-expand">
-      <div><div className="k">新电话</div><div className="v">{r.new_phone || '—'}</div></div>
-      <div><div className="k">原电话</div><div className="v">{r.old_phone || '—'}</div></div>
-      <div><div className="k">原地址</div><div className="v">{r.old_address || '—'}</div></div>
-      <div><div className="k">份数 原→新</div><div className="v">{r.old_copies ?? '—'} → {r.new_copies ?? '—'}</div></div>
-      <div><div className="k">处理</div><div className="v">{r.routed_label ? <Tag>{r.routed_label}</Tag> : null}{r.handling || (r.routed_label ? '' : '—')}</div></div>
-      <div><div className="k">原起月日 / 实际起月日</div><div className="v">{r.original_start_month || '—'} / {r.effective_start_month || '—'}</div></div>
-      <div><div className="k">备注</div><div className="v">{r.notes || '—'}</div></div>
-    </div>
-  );
-
+  const a = q.data;
   return (
-    <>
-      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
-        <Space wrap>
-          <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
-          <Select allowClear placeholder="应用状态" style={{ width: 130 }} value={applied} onChange={(v) => { setApplied(v); setPage(1); }} options={[{ label: '已应用', value: true }, { label: '未应用', value: false }]} />
-          <Input.Search allowClear placeholder="搜索 姓名 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
+    <Drawer title="改地址工单" width={560} open={open} onClose={onClose} destroyOnClose
+      extra={isAdmin && a && <Button icon={<EditOutlined />} onClick={() => onEdit(a)}>编辑</Button>}>
+      {!a ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <div className="diff-row" style={{ display: 'flex', gap: 12 }}>
+            <Card size="small" title="原" style={{ flex: 1, background: '#fafafa' }}>
+              <div>{a.old_name || '—'}{a.old_phone ? ` / ${a.old_phone}` : ''}</div>
+              <div style={{ color: '#666' }}>{a.old_address || '—'}</div>
+              {a.old_copies != null && <div style={{ fontSize: 12, color: '#999' }}>份数 {a.old_copies}</div>}
+            </Card>
+            <Card size="small" title="新" style={{ flex: 1, background: '#f6ffed', borderColor: '#b7eb8f' }}>
+              <div>{a.new_name || '—'}{a.new_phone ? ` / ${a.new_phone}` : ''}</div>
+              <div style={{ color: '#237804' }}>{a.new_address || '—'}</div>
+              {a.new_copies != null && <div style={{ fontSize: 12, color: '#999' }}>份数 {a.new_copies}</div>}
+            </Card>
+          </div>
+          <Descriptions size="small" column={1} bordered items={[
+            { key: 'st', label: '起月日', children: `${a.original_start_month || '—'} → ${a.effective_start_month || '—'}` },
+            { key: 'h', label: '处理情况', children: <>{a.routed_label && <Tag>{a.routed_label}</Tag>}{a.handling || (a.routed_label ? '' : '—')}</> },
+            { key: 'r', label: '关联读者', children: readerTag(a.postal_delivery_id) },
+            { key: 'no', label: '编号', children: a.external_order_no || '—' },
+            { key: 'ap', label: '应用状态', children: a.applied_to_order
+                ? <Tag color="green">已应用{a.order_id ? '·已同步履约订单' : '·仅名册'}</Tag>
+                : (a.postal_delivery_id ? <Tag color="orange">待应用</Tag> : <Tag>未匹配（未关联读者）</Tag>) },
+          ]} />
+          {isAdmin && !a.applied_to_order && (
+            <Popconfirm
+              title="应用新地址？"
+              description={a.postal_delivery_id
+                ? '把新地址写回投递名册' + (a.order_id ? '，并同步该读者在履约的订单。' : '（该读者未挂订单，仅更新名册）。')
+                : '该工单未关联投递记录，无法应用（请先导入读者名册）。'}
+              okText="应用" onConfirm={() => applyMut.mutate()} disabled={!a.postal_delivery_id}
+            >
+              <Button type="primary" loading={applyMut.isPending} disabled={!a.postal_delivery_id}>✅ 应用新地址</Button>
+            </Popconfirm>
+          )}
+          {a.notes && <Text type="secondary">备注：{a.notes}</Text>}
         </Space>
-        <Space>
-          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增改地址</Button>}
-          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入改地址</Button>
-        </Space>
-      </Flex>
-      <Card styles={{ body: { padding: 0 } }}>
-        <div className="postal-summary">
-          <span>共 <b>{q.data?.total ?? 0}</b> 条</span>
-          <span className="sep">·</span>
-          <span className={`postal-chip ${applied === false ? 'on' : ''}`} onClick={() => { setApplied(applied === false ? undefined : false); setPage(1); }}>待应用 <b>{q.data?.summary.pending_apply ?? 0}</b></span>
-          <span className="postal-chip" style={{ cursor: 'default' }}>未匹配 <b>{q.data?.summary.unmatched ?? 0}</b></span>
-          <span className={`postal-chip ${applied === true ? 'on' : ''}`} onClick={() => { setApplied(applied === true ? undefined : true); setPage(1); }}>已应用 <b>{q.data?.summary.applied ?? 0}</b></span>
-        </div>
-        <Table<PostalAddressChange> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small"
-          expandable={{ expandedRowRender: renderAddrExpand }}
-          pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }} />
-      </Card>
-      <SimpleImportModal<AddrImportRow>
-        open={importOpen} onClose={() => setImportOpen(false)} title="导入邮局改地址" unit="条" linkedLabel="已关联读者" invalidateKey="postalAddrChanges"
-        hint="点击或拖拽含《邮局年改地址》的 .xlsx"
-        previewFn={previewAddressChangeImport} commitFn={commitAddressChangeImport}
-        rowKey={(r, i) => `${r.external_order_no}-${r.change_date}-${i}`}
-        columns={[
-          { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
-          { title: '编号', dataIndex: 'external_order_no', width: 130, render: (v: string, r) => <Space size={4}>{v}{r.linked && <Tag color="cyan" style={{ marginInlineEnd: 0 }}>已关联读者</Tag>}</Space> },
-          { title: '收报人', dataIndex: 'old_name', width: 100 },
-          { title: '修改日期', dataIndex: 'change_date', width: 110 },
-          { title: '新地址', dataIndex: 'new_address', ellipsis: true },
-          { title: '处理', dataIndex: 'routed_label', width: 100, render: (v: string | null) => v ? <Tag>{v}</Tag> : '—' },
-        ]}
-      />
-      <AddressChangeFormModal open={formOpen} editing={editing} onClose={() => { setFormOpen(false); setEditing(null); }} />
-    </>
+      )}
+    </Drawer>
   );
 }
 
-/** Tab：回访 */
-function FollowUpsTab() {
-  const [year, setYear] = useState<number | undefined>();
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [importOpen, setImportOpen] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<PostalFollowUp | null>(null);
-  const PAGE_SIZE = 50;
+/** 回访详情抽屉。 */
+function FollowDetailDrawer({ followId, onEdit, onClose }: {
+  followId: number | null; onEdit: (rec: PostalFollowUp) => void; onClose: () => void;
+}) {
+  const { isAdmin } = useAuth();
+  const open = followId != null;
+  const q = useQuery({
+    queryKey: ['postalFollowDetail', followId],
+    queryFn: () => getFollowUp(followId as number).then((r) => r.data),
+    enabled: open,
+  });
+  const f = q.data;
+  return (
+    <Drawer title="回访记录" width={480} open={open} onClose={onClose} destroyOnClose
+      extra={isAdmin && f && <Button icon={<EditOutlined />} onClick={() => onEdit(f)}>编辑</Button>}>
+      {!f ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
+        <Descriptions size="small" column={1} bordered items={[
+          { key: 'd', label: '回访日期', children: f.follow_up_date || '—' },
+          { key: 'n', label: '收报人', children: f.snap_name || '—' },
+          { key: 'no', label: '编号', children: f.external_order_no || '—' },
+          { key: 'b', label: '批次列头', children: f.batch_label || '—' },
+          { key: 'r', label: '回访结果', children: <span style={{ whiteSpace: 'pre-wrap' }}>{f.result || '—'}</span> },
+          { key: 'link', label: '关联读者', children: readerTag(f.postal_delivery_id) },
+        ]} />
+      )}
+    </Drawer>
+  );
+}
+
+/** Tab：客服工单（投诉 / 改地址 / 回访 统一） */
+function TicketsTab() {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
-  const deleteMut = useMutation({
-    mutationFn: (id: number) => deleteFollowUp(id),
-    onSuccess: () => { message.success('已删除回访'); qc.invalidateQueries({ queryKey: ['postalFollowUps'] }); },
-    onError: (e) => message.error(errText(e)),
-  });
+  const [type, setType] = useState<TicketType | undefined>();
+  const [year, setYear] = useState<number | undefined>();
+  const [status, setStatus] = useState<string | undefined>();
+  const [applied, setApplied] = useState<boolean | undefined>();
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+
+  // 详情抽屉
+  const [handlingId, setHandlingId] = useState<number | null>(null);
+  const [addressDetailId, setAddressDetailId] = useState<number | null>(null);
+  const [followDetailId, setFollowDetailId] = useState<number | null>(null);
+  // 导入弹窗
+  const [importType, setImportType] = useState<TicketType | null>(null);
+  // 表单弹窗（新增/编辑，需完整记录）
+  const [complaintForm, setComplaintForm] = useState<{ open: boolean; editing: PostalComplaint | null }>({ open: false, editing: null });
+  const [addressForm, setAddressForm] = useState<{ open: boolean; editing: PostalAddressChange | null }>({ open: false, editing: null });
+  const [followForm, setFollowForm] = useState<{ open: boolean; editing: PostalFollowUp | null }>({ open: false, editing: null });
+
+  const unitsQ = useQuery({ queryKey: ['partners'], queryFn: () => listPartners().then((r) => r.data) });
+  const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
 
   const q = useQuery({
-    queryKey: ['postalFollowUps', { year, search, page }],
-    queryFn: () => listFollowUps({ year, search: search.trim() || undefined, page, page_size: PAGE_SIZE }).then((r) => r.data),
+    queryKey: ['postalTickets', { type, year, status, applied, search, page }],
+    queryFn: () => listTickets({
+      type, year, status: type === 'complaint' ? status : undefined,
+      applied: type === 'address' ? applied : undefined,
+      search: search.trim() || undefined, page, page_size: PAGE_SIZE,
+    }).then((r) => r.data),
   });
+  const data = q.data;
 
-  const cols: TableColumnsType<PostalFollowUp> = [
-    { title: '回访日期', dataIndex: 'follow_up_date', width: 120, render: (v: string | null) => v || '—' },
-    { title: '批次', dataIndex: 'batch_label', width: 140, render: (v: string | null) => v || '—' },
-    { title: '收报人', dataIndex: 'snap_name', width: 110 },
-    { title: '编号', dataIndex: 'external_order_no', width: 110, render: (v: string | null) => v || '—' },
-    { title: '结果', dataIndex: 'result', ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '读者', key: 'reader', width: 100, render: (_: unknown, r) => readerTag(r.postal_delivery_id) },
-    ...(isAdmin ? [{
-      title: '操作', key: 'act', width: 90, render: (_: unknown, r: PostalFollowUp) => (
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['postalTickets'] });
+  const delComplaint = useMutation({ mutationFn: (id: number) => deleteComplaint(id), onSuccess: () => { message.success('已删除投诉'); invalidate(); }, onError: (e) => message.error(errText(e)) });
+  const delAddress = useMutation({ mutationFn: (id: number) => deleteAddressChange(id), onSuccess: () => { message.success('已删除改地址'); invalidate(); }, onError: (e) => message.error(errText(e)) });
+  const delFollow = useMutation({ mutationFn: (id: number) => deleteFollowUp(id), onSuccess: () => { message.success('已删除回访'); invalidate(); }, onError: (e) => message.error(errText(e)) });
+
+  const openDetail = (t: Ticket) => {
+    if (t.type === 'complaint') setHandlingId(t.id);
+    else if (t.type === 'address') setAddressDetailId(t.id);
+    else setFollowDetailId(t.id);
+  };
+  const openEdit = async (t: Ticket) => {
+    try {
+      if (t.type === 'complaint') {
+        const d = (await getComplaintDetail(t.id)).data;
+        setComplaintForm({ open: true, editing: d.complaint });
+      } else if (t.type === 'address') {
+        const rec = (await getAddressChange(t.id)).data;
+        setAddressForm({ open: true, editing: rec });
+      } else {
+        const rec = (await getFollowUp(t.id)).data;
+        setFollowForm({ open: true, editing: rec });
+      }
+    } catch (e) { message.error(errText(e)); }
+  };
+  const onDelete = (t: Ticket) => {
+    if (t.type === 'complaint') delComplaint.mutate(t.id);
+    else if (t.type === 'address') delAddress.mutate(t.id);
+    else delFollow.mutate(t.id);
+  };
+
+  const cols: TableColumnsType<Ticket> = [
+    { title: '类型', key: 'type', width: 84, render: (_: unknown, r) => <Tag color={TICKET_TYPE_META[r.type].color}>{TICKET_TYPE_META[r.type].label}</Tag> },
+    { title: '日期', dataIndex: 'ticket_date', width: 108, render: (v: string | null) => v || '—' },
+    { title: '收报人', dataIndex: 'recipient_name', width: 100, render: (v: string | null) => v || '—' },
+    { title: '编号', dataIndex: 'delivery_no', width: 90, render: (v: string | null) => v || '—' },
+    { title: '摘要', dataIndex: 'summary', ellipsis: true, render: (v: string | null) => v || '—' },
+    { title: '状态', key: 'status', width: 100, render: (_: unknown, r) => ticketStatusTag(r) },
+    { title: '处理次', dataIndex: 'handling_count', width: 68, align: 'right', render: (v: number | null) => v ?? '—' },
+    { title: '读者', key: 'reader', width: 96, render: (_: unknown, r) => readerTag(r.postal_delivery_id) },
+    {
+      title: '操作', key: 'act', width: isAdmin ? 170 : 80, render: (_: unknown, r: Ticket) => (
         <Space size={0}>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />
-          <Popconfirm title="删除该回访？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => openDetail(r)}>{r.type === 'complaint' ? '处理' : '详情'}</Button>
+          {isAdmin && <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />}
+          {isAdmin && (
+            <Popconfirm title={`删除该${TICKET_TYPE_META[r.type].label}工单？`} okText="删除" okButtonProps={{ danger: true }} onConfirm={() => onDelete(r)}>
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          )}
         </Space>
       ),
-    } as TableColumnsType<PostalFollowUp>[number]] : []),
+    },
   ];
 
-  const renderFollowExpand = (r: PostalFollowUp) => (
-    <div className="postal-expand">
-      <div style={{ gridColumn: '1 / -1' }}><div className="k">回访结果</div><div className="v" style={{ whiteSpace: 'pre-wrap' }}>{r.result || '—'}</div></div>
-    </div>
-  );
+  const sm = data?.summary;
+  const typeOptions = [
+    { label: `全部${sm ? ` ${sm.complaint + sm.address + sm.follow}` : ''}`, value: 'all' },
+    { label: `投诉${sm ? ` ${sm.complaint}` : ''}`, value: 'complaint' },
+    { label: `改地址${sm ? ` ${sm.address}` : ''}`, value: 'address' },
+    { label: `回访${sm ? ` ${sm.follow}` : ''}`, value: 'follow' },
+  ];
 
   return (
     <>
       <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
+        <Radio.Group
+          optionType="button" buttonStyle="solid" options={typeOptions}
+          value={type ?? 'all'}
+          onChange={(e) => { const v = e.target.value; setType(v === 'all' ? undefined : v); setStatus(undefined); setApplied(undefined); setPage(1); }}
+        />
         <Space wrap>
-          <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
-          <Input.Search allowClear placeholder="搜索 姓名 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
-        </Space>
-        <Space>
-          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增回访</Button>}
-          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入回访</Button>
+          {isAdmin && (
+            <Dropdown menu={{ items: [
+              { key: 'complaint', label: '新增投诉', onClick: () => setComplaintForm({ open: true, editing: null }) },
+              { key: 'address', label: '新增改地址', onClick: () => setAddressForm({ open: true, editing: null }) },
+              { key: 'follow', label: '新增回访', onClick: () => setFollowForm({ open: true, editing: null }) },
+            ] }}>
+              <Button type="primary" icon={<PlusOutlined />}>新建工单</Button>
+            </Dropdown>
+          )}
+          <Dropdown menu={{ items: [
+            { key: 'complaint', label: '导入投诉', onClick: () => setImportType('complaint') },
+            { key: 'address', label: '导入改地址', onClick: () => setImportType('address') },
+            { key: 'follow', label: '导入回访', onClick: () => setImportType('follow') },
+          ] }}>
+            <Button icon={<UploadOutlined />}>导入</Button>
+          </Dropdown>
         </Space>
       </Flex>
+
+      <Flex wrap gap={8} style={{ marginBottom: 12 }}>
+        <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
+        {type === 'complaint' && (
+          <>
+            <Select allowClear placeholder="状态" style={{ width: 120 }} value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={COMPLAINT_STATUS_OPTS} />
+          </>
+        )}
+        {type === 'address' && (
+          <Select allowClear placeholder="应用状态" style={{ width: 130 }} value={applied} onChange={(v) => { setApplied(v); setPage(1); }}
+            options={[{ label: '已应用', value: true }, { label: '未应用', value: false }]} />
+        )}
+        <Input.Search allowClear placeholder="搜索 收报人 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
+      </Flex>
+
       <Card styles={{ body: { padding: 0 } }}>
-        <div className="postal-summary">共 <b>{q.data?.total ?? 0}</b> 条回访记录</div>
-        <Table<PostalFollowUp> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small"
-          expandable={{ expandedRowRender: renderFollowExpand }}
-          pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }} />
+        <Table<Ticket>
+          rowKey={(r) => `${r.type}-${r.id}`}
+          columns={cols}
+          dataSource={data?.rows ?? []}
+          loading={q.isLoading}
+          size="small"
+          pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }}
+        />
       </Card>
-      <SimpleImportModal<FollowImportRow>
-        open={importOpen} onClose={() => setImportOpen(false)} title="导入回访（读者明细的回访列）" unit="条" linkedLabel="已关联读者" invalidateKey="postalFollowUps"
-        hint="点击或拖拽含《邮局读者明细》(带回访列)的 .xlsx"
-        previewFn={previewFollowUpImport} commitFn={commitFollowUpImport}
-        rowKey={(r, i) => `${r.external_order_no}-${r.batch_label}-${i}`}
+
+      {/* 详情抽屉 */}
+      <ComplaintHandlingDrawer complaintId={handlingId} onClose={() => setHandlingId(null)} />
+      <AddressDetailDrawer addressId={addressDetailId} onClose={() => setAddressDetailId(null)}
+        onEdit={(rec) => { setAddressDetailId(null); setAddressForm({ open: true, editing: rec }); }} />
+      <FollowDetailDrawer followId={followDetailId} onClose={() => setFollowDetailId(null)}
+        onEdit={(rec) => { setFollowDetailId(null); setFollowForm({ open: true, editing: rec }); }} />
+
+      {/* 表单弹窗 */}
+      <ComplaintFormModal open={complaintForm.open} editing={complaintForm.editing} unitOpts={unitOpts} onClose={() => setComplaintForm({ open: false, editing: null })} />
+      <AddressChangeFormModal open={addressForm.open} editing={addressForm.editing} onClose={() => setAddressForm({ open: false, editing: null })} />
+      <FollowUpFormModal open={followForm.open} editing={followForm.editing} onClose={() => setFollowForm({ open: false, editing: null })} />
+
+      {/* 导入弹窗 */}
+      <ComplaintImportModal open={importType === 'complaint'} onClose={() => setImportType(null)} />
+      <SimpleImportModal<AddrImportRow>
+        open={importType === 'address'} onClose={() => setImportType(null)} title="导入改地址" unit="条" linkedLabel="已关联" invalidateKey="postalTickets"
+        hint="点击或拖拽含《改地址》的 .xlsx"
+        previewFn={previewAddressChangeImport} commitFn={commitAddressChangeImport}
+        rowKey={(r, i) => `${r.external_order_no}-${i}`}
         columns={[
           { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
-          { title: '编号', dataIndex: 'external_order_no', width: 130, render: (v: string, r) => <Space size={4}>{v}{r.linked && <Tag color="cyan" style={{ marginInlineEnd: 0 }}>已关联读者</Tag>}</Space> },
-          { title: '收报人', dataIndex: 'name', width: 100 },
+          { title: '编号', dataIndex: 'external_order_no', width: 120 },
+          { title: '原姓名', dataIndex: 'old_name', width: 100 },
+          { title: '新地址', dataIndex: 'new_address', ellipsis: true },
+        ]}
+      />
+      <SimpleImportModal<FollowImportRow>
+        open={importType === 'follow'} onClose={() => setImportType(null)} title="导入回访" unit="条" linkedLabel="已关联" invalidateKey="postalTickets"
+        hint="点击或拖拽含《回访》的 .xlsx"
+        previewFn={previewFollowUpImport} commitFn={commitFollowUpImport}
+        rowKey={(r, i) => `${r.external_order_no}-${i}`}
+        columns={[
+          { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
+          { title: '编号', dataIndex: 'external_order_no', width: 120 },
+          { title: '姓名', dataIndex: 'name', width: 100 },
           { title: '批次', dataIndex: 'batch_label', width: 130 },
-          { title: '回访日期', dataIndex: 'follow_up_date', width: 110, render: (v: string | null) => v || '—' },
           { title: '结果', dataIndex: 'result', ellipsis: true },
         ]}
       />
-      <FollowUpFormModal open={formOpen} editing={editing} onClose={() => { setFormOpen(false); setEditing(null); }} />
     </>
   );
 }
 
 const POST_TABS = [
   { key: 'deliveries', label: '投递名册', component: DeliveriesTab },
-  { key: 'complaints', label: '投诉工单', component: ComplaintsTab },
-  { key: 'address', label: '改地址', component: AddressChangesTab },
-  { key: 'follow', label: '回访', component: FollowUpsTab },
+  { key: 'tickets', label: '客服工单', component: TicketsTab },
 ] as const;
 
 export default function PostDelivery() {

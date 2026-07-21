@@ -33,6 +33,8 @@ from app.schemas.postal import (
     HandlingCreateIn,
     HandlingRecordOut,
     PostalCommitIn,
+    TicketListOut,
+    TicketOut,
 )
 from app.services import postal_address_change_import_service as addr_import_svc
 from app.services import postal_change_service as change_svc
@@ -41,8 +43,32 @@ from app.services import postal_complaint_service as complaint_svc
 from app.services import postal_delivery_import_service as import_svc
 from app.services import postal_delivery_service as delivery_svc
 from app.services import postal_follow_up_import_service as follow_import_svc
+from app.services import postal_ticket_service as ticket_svc
 
 router = APIRouter(prefix="/api/postal", tags=["postal"])
+
+
+# --- 客服工单（投诉 / 改地址 / 回访 统一列表） --------------------------------
+
+@router.get("/tickets", response_model=TicketListOut)
+def list_tickets(
+    type: Optional[str] = None,
+    year: Optional[int] = None,
+    status: Optional[str] = None,
+    applied: Optional[bool] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    if type is not None and type not in ticket_svc.TICKET_TYPES:
+        raise HTTPException(status_code=400, detail=f"未知工单类型：{type}")
+    rows, total, summary = ticket_svc.list_tickets(
+        db, type=type, year=year, status=status, applied=applied,
+        search=search, page=page, page_size=page_size,
+    )
+    return TicketListOut(rows=[TicketOut(**r) for r in rows], total=total, summary=summary)
 
 
 def _partner_name(db: Session, partner_id) -> Optional[str]:
@@ -323,6 +349,11 @@ def apply_address_change(change_id: int, db: Session = Depends(get_db), user: Us
     return change_svc.apply_address_change(db, change_id, operator_id=getattr(user, "id", None))
 
 
+@router.get("/address-changes/{change_id}", response_model=AddressChangeOut)
+def get_address_change(change_id: int, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+    return AddressChangeOut.model_validate(change_svc.get_address_change(db, change_id))
+
+
 @router.post("/address-changes/import/preview")
 async def address_change_import_preview(
     file: UploadFile = File(...),
@@ -384,6 +415,11 @@ def list_follow_ups(
 ):
     rows, total = change_svc.list_follow_ups(db, year=year, search=search, page=page, page_size=page_size)
     return FollowUpListOut(rows=rows, total=total)
+
+
+@router.get("/follow-ups/{follow_id}", response_model=FollowUpOut)
+def get_follow_up(follow_id: int, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+    return FollowUpOut.model_validate(change_svc.get_follow_up(db, follow_id))
 
 
 @router.post("/follow-ups/import/preview")

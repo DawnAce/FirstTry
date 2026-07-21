@@ -216,6 +216,9 @@ export function commitAddressChangeImport(sessionId: string): Promise<AxiosRespo
 export function applyAddressChange(id: number): Promise<AxiosResponse<PostalAddressChange>> {
   return api.post(`/postal/address-changes/${id}/apply`);
 }
+export function getAddressChange(id: number): Promise<AxiosResponse<PostalAddressChange>> {
+  return api.get(`/postal/address-changes/${id}`);
+}
 
 // --- 回访 (P3) -------------------------------------------------------------
 
@@ -245,12 +248,52 @@ export interface FollowImportRow {
 export function listFollowUps(f: { year?: number; search?: string; page?: number; page_size?: number }): Promise<AxiosResponse<FollowUpListOut>> {
   return api.get('/postal/follow-ups', { params: f });
 }
+export function getFollowUp(id: number): Promise<AxiosResponse<PostalFollowUp>> {
+  return api.get(`/postal/follow-ups/${id}`);
+}
 export function previewFollowUpImport(file: File): Promise<AxiosResponse<SimpleImportPreview<FollowImportRow>>> {
   const fd = new FormData(); fd.append('file', file);
   return api.post('/postal/follow-ups/import/preview', fd);
 }
 export function commitFollowUpImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
   return api.post('/postal/follow-ups/import/commit', { session_id: sessionId });
+}
+
+// --- 客服工单（投诉 / 改地址 / 回访 统一列表） ------------------------------
+
+export type TicketType = 'complaint' | 'address' | 'follow';
+
+export interface Ticket {
+  type: TicketType;
+  id: number;
+  year: number | null;
+  delivery_no: string | null;
+  recipient_name: string | null;
+  postal_delivery_id: number | null;
+  order_id: number | null;
+  ticket_date: string | null;
+  summary: string | null;
+  status: string | null;            // 投诉三态；改地址 applied/pending/unmatched；回访 null
+  handling_count: number | null;
+  applied_to_order: boolean | null;
+}
+
+export interface TicketListOut {
+  rows: Ticket[];
+  total: number;
+  summary: { complaint: number; address: number; follow: number };
+}
+
+export function listTickets(f: {
+  type?: TicketType;
+  year?: number;
+  status?: string;
+  applied?: boolean;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<AxiosResponse<TicketListOut>> {
+  return api.get('/postal/tickets', { params: f });
 }
 
 // =====================================================================
