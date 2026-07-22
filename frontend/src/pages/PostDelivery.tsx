@@ -567,6 +567,7 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const [form] = Form.useForm();
+  const [editingFollow, setEditingFollow] = useState<PostalFollowUp | null>(null);
   const open = complaintId != null;
 
   const detailQ = useQuery({
@@ -588,15 +589,25 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
     onError: (e) => message.error(errText(e)),
   });
   const delMut = useMutation({
-    mutationFn: (hid: number) => deleteComplaintHandling(complaintId as number, hid),
-    onSuccess: () => { message.success('已删除该处理'); invalidate(); },
+    mutationFn: async (event: PostalComplaintHandling) => {
+      if (event.source_ticket_id) await deleteFollowUp(event.source_ticket_id);
+      else await deleteComplaintHandling(complaintId as number, event.id);
+    },
+    onSuccess: () => { message.success('已删除该时间线记录'); invalidate(); },
     onError: (e) => message.error(errText(e)),
   });
+  const editFollow = async (id: number) => {
+    try {
+      setEditingFollow((await getFollowUp(id)).data);
+    } catch (e) {
+      message.error(errText(e));
+    }
+  };
 
   const detail = detailQ.data;
   const c = detail?.complaint;
 
-  return (
+  return (<>
     <Drawer title="投诉处理" width={560} open={open} onClose={onClose} destroyOnClose>
       {!c ? <Empty description={detailQ.isLoading ? '加载中…' : '无数据'} /> : (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -624,19 +635,21 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
           )}
 
           <div>
-            <Divider plain style={{ marginTop: 0 }}>处理时间线</Divider>
+            <Divider plain style={{ marginTop: 0 }}>工单时间线</Divider>
             {(detail?.handlings.length ?? 0) === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无处理记录" />
             ) : (
               <Timeline items={detail!.handlings.map((h: PostalComplaintHandling) => ({
-                color: h.result_status === 'resolved' ? 'green' : (h.result_status === 'in_progress' ? 'blue' : 'gray'),
+                color: h.event_type === 'follow_up' ? 'green' : (h.result_status === 'resolved' ? 'green' : (h.result_status === 'in_progress' ? 'blue' : 'gray')),
                 children: (
                   <Space direction="vertical" size={2} style={{ width: '100%' }}>
                     <Space size={8} wrap>
                       <Text type="secondary" style={{ fontSize: 12 }}>{h.handled_at?.replace('T', ' ').slice(0, 16)}</Text>
                       {h.handled_by_name && <Tag>{h.handled_by_name}</Tag>}
+                      {h.event_type === 'follow_up' && <Tag color="green">回访</Tag>}
                       {h.result_status && <Tag color={COMPLAINT_STATUS_META[h.result_status as PostalComplaintStatus].color}>{COMPLAINT_STATUS_META[h.result_status as PostalComplaintStatus].label}</Tag>}
-                      {isAdmin && <Popconfirm title="删除该处理记录？次数与状态会回退。" onConfirm={() => delMut.mutate(h.id)}><Button type="link" size="small" danger>删除</Button></Popconfirm>}
+                      {isAdmin && h.source_ticket_id && <Button type="text" size="small" icon={<EditOutlined />} title="编辑回访" onClick={() => editFollow(h.source_ticket_id as number)} />}
+                      {isAdmin && <Popconfirm title={h.event_type === 'follow_up' ? '删除该回访记录？' : '删除该处理记录？次数与状态会回退。'} onConfirm={() => delMut.mutate(h)}><Button type="link" size="small" danger>删除</Button></Popconfirm>}
                     </Space>
                     <Text>{h.action}</Text>
                     {h.follow_result && <Text type="secondary" style={{ fontSize: 12 }}>回访：{h.follow_result}</Text>}
@@ -648,7 +661,13 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
         </Space>
       )}
     </Drawer>
-  );
+    <FollowUpFormModal
+      open={editingFollow != null}
+      editing={editingFollow}
+      onClose={() => setEditingFollow(null)}
+      onSaved={invalidate}
+    />
+  </>);
 }
 
 /** 改地址 · 新增 / 编辑 */
@@ -700,8 +719,8 @@ function AddressChangeFormModal({ open, editing, onClose }: {
 }
 
 /** 回访 · 新增 / 编辑 */
-function FollowUpFormModal({ open, editing, onClose }: {
-  open: boolean; editing: PostalFollowUp | null; onClose: () => void;
+function FollowUpFormModal({ open, editing, onClose, onSaved }: {
+  open: boolean; editing: PostalFollowUp | null; onClose: () => void; onSaved?: () => void;
 }) {
   const qc = useQueryClient();
   const [form] = Form.useForm();
@@ -716,7 +735,7 @@ function FollowUpFormModal({ open, editing, onClose }: {
       const body: FollowUpPayload = { ...v, follow_up_date: fromDay(v.follow_up_date) };
       return editing ? updateFollowUp(editing.id, body) : createFollowUp(body);
     },
-    onSuccess: () => { message.success(editing ? '回访已更新' : '回访已新增'); qc.invalidateQueries({ queryKey: ['postalFollowUps'] }); qc.invalidateQueries({ queryKey: ['postalTickets'] }); onClose(); },
+    onSuccess: () => { message.success(editing ? '回访已更新' : '回访已新增'); qc.invalidateQueries({ queryKey: ['postalFollowUps'] }); qc.invalidateQueries({ queryKey: ['postalTickets'] }); onSaved?.(); onClose(); },
     onError: (e) => message.error(errText(e)),
   });
 

@@ -152,11 +152,11 @@ export function listComplaints(f: ComplaintFilters): Promise<AxiosResponse<Compl
 export function previewComplaintImport(file: File): Promise<AxiosResponse<ComplaintImportPreview>> {
   const fd = new FormData();
   fd.append('file', file);
-  return api.post('/postal/complaints/import/preview', fd);
+  return api.post('/postal/tickets/import/complaint/preview', fd);
 }
 
 export function commitComplaintImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
-  return api.post('/postal/complaints/import/commit', { session_id: sessionId });
+  return api.post('/postal/tickets/import/complaint/commit', { session_id: sessionId });
 }
 
 // --- 改地址工单 (P3) -------------------------------------------------------
@@ -208,16 +208,16 @@ export function listAddressChanges(f: { year?: number; applied?: boolean; search
 }
 export function previewAddressChangeImport(file: File): Promise<AxiosResponse<SimpleImportPreview<AddrImportRow>>> {
   const fd = new FormData(); fd.append('file', file);
-  return api.post('/postal/address-changes/import/preview', fd);
+  return api.post('/postal/tickets/import/address/preview', fd);
 }
 export function commitAddressChangeImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
-  return api.post('/postal/address-changes/import/commit', { session_id: sessionId });
+  return api.post('/postal/tickets/import/address/commit', { session_id: sessionId });
 }
 export function applyAddressChange(id: number): Promise<AxiosResponse<PostalAddressChange>> {
-  return api.post(`/postal/address-changes/${id}/apply`);
+  return api.post(`/postal/tickets/${id}/apply`);
 }
 export function getAddressChange(id: number): Promise<AxiosResponse<PostalAddressChange>> {
-  return api.get(`/postal/address-changes/${id}`);
+  return api.get(`/postal/tickets/${id}`);
 }
 
 // --- 回访 (P3) -------------------------------------------------------------
@@ -249,14 +249,14 @@ export function listFollowUps(f: { year?: number; search?: string; page?: number
   return api.get('/postal/follow-ups', { params: f });
 }
 export function getFollowUp(id: number): Promise<AxiosResponse<PostalFollowUp>> {
-  return api.get(`/postal/follow-ups/${id}`);
+  return api.get(`/postal/tickets/${id}`);
 }
 export function previewFollowUpImport(file: File): Promise<AxiosResponse<SimpleImportPreview<FollowImportRow>>> {
   const fd = new FormData(); fd.append('file', file);
-  return api.post('/postal/follow-ups/import/preview', fd);
+  return api.post('/postal/tickets/import/follow/preview', fd);
 }
 export function commitFollowUpImport(sessionId: string): Promise<AxiosResponse<PostalCommitOut>> {
-  return api.post('/postal/follow-ups/import/commit', { session_id: sessionId });
+  return api.post('/postal/tickets/import/follow/commit', { session_id: sessionId });
 }
 
 // --- 客服工单（投诉 / 改地址 / 回访 统一列表） ------------------------------
@@ -351,6 +351,8 @@ export interface ComplaintPayload {
 export interface PostalComplaintHandling {
   id: number;
   complaint_id: number;
+  event_type: 'handling' | 'follow_up' | 'address_applied';
+  source_ticket_id: number | null;
   handled_at: string | null;
   handled_by: number | null;
   handled_by_name: string | null;
@@ -368,22 +370,22 @@ export interface HandlingPayload {
   result_status?: PostalComplaintStatus | null;
 }
 export function createComplaint(body: ComplaintPayload): Promise<AxiosResponse<PostalComplaint>> {
-  return api.post('/postal/complaints', body);
+  return api.post('/postal/tickets', { type: 'complaint', ...body });
 }
 export function updateComplaint(id: number, body: Partial<ComplaintPayload>): Promise<AxiosResponse<PostalComplaint>> {
-  return api.put(`/postal/complaints/${id}`, body);
+  return api.put(`/postal/tickets/${id}`, { type: 'complaint', ...body });
 }
 export function deleteComplaint(id: number): Promise<AxiosResponse<void>> {
-  return api.delete(`/postal/complaints/${id}`);
+  return api.delete(`/postal/tickets/${id}`);
 }
 export function getComplaintDetail(id: number): Promise<AxiosResponse<ComplaintDetail>> {
-  return api.get(`/postal/complaints/${id}`);
+  return api.get(`/postal/tickets/${id}`);
 }
 export function addComplaintHandling(id: number, body: HandlingPayload): Promise<AxiosResponse<ComplaintDetail>> {
-  return api.post(`/postal/complaints/${id}/handlings`, body);
+  return api.post(`/postal/tickets/${id}/handlings`, body);
 }
 export function deleteComplaintHandling(id: number, handlingId: number): Promise<AxiosResponse<ComplaintDetail>> {
-  return api.delete(`/postal/complaints/${id}/handlings/${handlingId}`);
+  return api.delete(`/postal/tickets/${id}/handlings/${handlingId}`);
 }
 
 // --- 改地址 ---
@@ -405,13 +407,13 @@ export interface AddressChangePayload {
   notes?: string | null;
 }
 export function createAddressChange(body: AddressChangePayload): Promise<AxiosResponse<PostalAddressChange>> {
-  return api.post('/postal/address-changes', body);
+  return api.post('/postal/tickets', { type: 'address', ...body });
 }
 export function updateAddressChange(id: number, body: Partial<AddressChangePayload>): Promise<AxiosResponse<PostalAddressChange>> {
-  return api.put(`/postal/address-changes/${id}`, body);
+  return api.put(`/postal/tickets/${id}`, { type: 'address', ...body });
 }
 export function deleteAddressChange(id: number): Promise<AxiosResponse<void>> {
-  return api.delete(`/postal/address-changes/${id}`);
+  return api.delete(`/postal/tickets/${id}`);
 }
 
 // --- 回访 ---
@@ -424,11 +426,11 @@ export interface FollowUpPayload {
   snap_name?: string | null;
 }
 export function createFollowUp(body: FollowUpPayload): Promise<AxiosResponse<PostalFollowUp>> {
-  return api.post('/postal/follow-ups', body);
+  return api.post('/postal/tickets', { type: 'follow', ...body });
 }
 export function updateFollowUp(id: number, body: Partial<FollowUpPayload>): Promise<AxiosResponse<PostalFollowUp>> {
-  return api.put(`/postal/follow-ups/${id}`, body);
+  return api.put(`/postal/tickets/${id}`, { type: 'follow', ...body });
 }
 export function deleteFollowUp(id: number): Promise<AxiosResponse<void>> {
-  return api.delete(`/postal/follow-ups/${id}`);
+  return api.delete(`/postal/tickets/${id}`);
 }

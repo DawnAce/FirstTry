@@ -85,6 +85,7 @@ def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
             "postal_delivery_id": postal_delivery_id,
             "order_id": order_id,
             "external_order_no": external,
+            "year": year,
             "change_date": cdate_iso,
             "old_name": ac.old_name or None,
             "old_phone": ac.old_phone or None,

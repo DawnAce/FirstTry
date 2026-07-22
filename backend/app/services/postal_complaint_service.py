@@ -11,6 +11,7 @@ from app.models import (
     PostalComplaintHandlingRecord,
     PostalComplaintStatus,
     PostalDelivery,
+    PostalTicketEventType,
 )
 from app.services import postal_common as pc
 
@@ -258,12 +259,17 @@ def delete_handling(db: Session, complaint_id: int, handling_id: int) -> PostalC
     )
     if h is None:
         raise HTTPException(status_code=404, detail=f"处理记录 {handling_id} 不存在")
+    if h.event_type != PostalTicketEventType.handling:
+        raise HTTPException(status_code=409, detail="该时间线事件应从对应工单删除")
     db.delete(h)
     rec.handling_count = max(0, (rec.handling_count or 0) - 1)
     db.flush()
     latest = (
         db.query(PostalComplaintHandlingRecord)
-        .filter(PostalComplaintHandlingRecord.complaint_id == complaint_id)
+        .filter(
+            PostalComplaintHandlingRecord.complaint_id == complaint_id,
+            PostalComplaintHandlingRecord.event_type == PostalTicketEventType.handling,
+        )
         .order_by(
             PostalComplaintHandlingRecord.handled_at.desc(),
             PostalComplaintHandlingRecord.id.desc(),

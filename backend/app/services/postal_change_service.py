@@ -12,8 +12,11 @@ from app.models import (
     FulfillmentTarget,
     OrderItem,
     PostalAddressChange,
+    PostalComplaint,
+    PostalComplaintHandlingRecord,
     PostalDelivery,
     PostalFollowUp,
+    PostalTicketEventType,
     TargetStatus,
 )
 from app.services.address_service import normalize_address
@@ -99,7 +102,7 @@ def list_follow_ups(
     page: int = 1,
     page_size: int = 50,
 ) -> Tuple[List[PostalFollowUp], int]:
-    q = db.query(PostalFollowUp)
+    q = db.query(PostalFollowUp).filter(PostalFollowUp.parent_ticket_id.is_(None))
     if year:
         q = q.filter(or_(
             PostalFollowUp.external_order_no.like(f"{year}-%"),
@@ -125,6 +128,56 @@ def get_follow_up(db: Session, follow_id: int) -> PostalFollowUp:
     if rec is None:
         raise HTTPException(status_code=404, detail=f"回访记录 {follow_id} 不存在")
     return rec
+
+
+def sync_follow_up_timeline(
+    db: Session,
+    rec: PostalFollowUp,
+    *,
+    operator_id: Optional[int] = None,
+) -> None:
+    """有同编号投诉时把回访挂入其时间线，否则保留为独立回访工单。"""
+    if rec.id is None:
+        db.flush()
+    complaint = None
+    if rec.external_order_no:
+        complaint = (
+            db.query(PostalComplaint)
+            .filter(PostalComplaint.external_order_no == rec.external_order_no)
+            .order_by(PostalComplaint.complaint_date.desc(), PostalComplaint.id.desc())
+            .first()
+        )
+    event = (
+        db.query(PostalComplaintHandlingRecord)
+        .filter(PostalComplaintHandlingRecord.source_ticket_id == rec.id)
+        .first()
+    )
+    if complaint is None:
+        rec.parent_ticket_id = None
+        if event is not None:
+            db.delete(event)
+        return
+
+    rec.parent_ticket_id = complaint.id
+    handled_at = (
+        datetime.combine(rec.follow_up_date, datetime.min.time())
+        if rec.follow_up_date else datetime.now()
+    )
+    if event is None:
+        event = PostalComplaintHandlingRecord(
+            ticket_id=complaint.id,
+            source_ticket_id=rec.id,
+            event_type=PostalTicketEventType.follow_up,
+            handled_by=operator_id,
+            action=rec.batch_label or "回访",
+            follow_result=rec.result,
+        )
+        db.add(event)
+    else:
+        event.ticket_id = complaint.id
+        event.action = rec.batch_label or "回访"
+        event.follow_result = rec.result
+    event.handled_at = handled_at
 
 
 def _current_target(db: Session, order_id: int) -> Optional[FulfillmentTarget]:
@@ -201,6 +254,14 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
     ac.applied_to_order = True
     ac.applied_by = operator_id
     ac.applied_at = datetime.now()
+    db.add(PostalComplaintHandlingRecord(
+        ticket_id=ac.id,
+        event_type=PostalTicketEventType.address_applied,
+        handled_at=ac.applied_at,
+        handled_by=operator_id,
+        action="应用新地址",
+        follow_result="已同步履约订单" if rec.order_id else "仅更新投递名册",
+    ))
     db.commit()
     db.refresh(ac)
     return ac
@@ -219,6 +280,7 @@ def create_address_change(db: Session, payload: dict, operator_id: Optional[int]
         postal_delivery_id=pd_id,
         order_id=order_id,
         external_order_no=external,
+        year=year,
         routed_label=pc.routed_label(handling) if handling else None,
         applied_to_order=False,
         **d,
@@ -235,13 +297,16 @@ def update_address_change(db: Session, change_id: int, patch: dict) -> PostalAdd
         raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
     patch = dict(patch)
     relink = "delivery_no" in patch
-    year = patch.pop("year", None)          # year 不是本表列，仅用于关联
+    year_present = "year" in patch
+    year = patch.pop("year", None)
     delivery_no = patch.pop("delivery_no", None)
     if relink:
         external, pd_id, order_id = pc.link_delivery(db, year, delivery_no)
         rec.external_order_no = external
         rec.postal_delivery_id = pd_id
         rec.order_id = order_id
+    if year_present:
+        rec.year = year
     if "handling" in patch:
         rec.routed_label = pc.routed_label(patch["handling"]) if patch["handling"] else None
     for k, v in patch.items():
@@ -267,9 +332,14 @@ def create_follow_up(db: Session, payload: dict, operator_id: Optional[int] = No
     delivery_no = d.pop("delivery_no", None)
     external, pd_id, order_id = pc.link_delivery(db, year, delivery_no)
     rec = PostalFollowUp(
-        postal_delivery_id=pd_id, order_id=order_id, external_order_no=external, **d
+        postal_delivery_id=pd_id,
+        order_id=order_id,
+        external_order_no=external,
+        year=year,
+        **d,
     )
     db.add(rec)
+    sync_follow_up_timeline(db, rec, operator_id=operator_id)
     db.commit()
     db.refresh(rec)
     return rec
@@ -281,6 +351,7 @@ def update_follow_up(db: Session, follow_id: int, patch: dict) -> PostalFollowUp
         raise HTTPException(status_code=404, detail=f"回访记录 {follow_id} 不存在")
     patch = dict(patch)
     relink = "delivery_no" in patch
+    year_present = "year" in patch
     year = patch.pop("year", None)
     delivery_no = patch.pop("delivery_no", None)
     if relink:
@@ -288,8 +359,11 @@ def update_follow_up(db: Session, follow_id: int, patch: dict) -> PostalFollowUp
         rec.external_order_no = external
         rec.postal_delivery_id = pd_id
         rec.order_id = order_id
+    if year_present:
+        rec.year = year
     for k, v in patch.items():
         setattr(rec, k, v)
+    sync_follow_up_timeline(db, rec)
     db.commit()
     db.refresh(rec)
     return rec
@@ -299,5 +373,12 @@ def delete_follow_up(db: Session, follow_id: int) -> None:
     rec = db.query(PostalFollowUp).filter(PostalFollowUp.id == follow_id).first()
     if rec is None:
         raise HTTPException(status_code=404, detail=f"回访记录 {follow_id} 不存在")
+    event = (
+        db.query(PostalComplaintHandlingRecord)
+        .filter(PostalComplaintHandlingRecord.source_ticket_id == follow_id)
+        .first()
+    )
+    if event is not None:
+        db.delete(event)
     db.delete(rec)
     db.commit()

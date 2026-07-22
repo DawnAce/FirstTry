@@ -35,6 +35,9 @@ from app.schemas.postal import (
     PostalCommitIn,
     TicketListOut,
     TicketOut,
+    TicketDetailOut,
+    TicketRecordOut,
+    TicketWriteIn,
 )
 from app.services import postal_address_change_import_service as addr_import_svc
 from app.services import postal_change_service as change_svc
@@ -109,6 +112,188 @@ def _complaint_detail(db: Session, complaint_id: int) -> ComplaintDetailOut:
         complaint=_complaint_out(db, rec),
         handlings=_handling_out(db, handlings),
     )
+
+
+def _ticket_record_out(db: Session, rec):
+    type_value = rec.type.value if hasattr(rec.type, "value") else str(rec.type)
+    if type_value == "complaint":
+        out = _complaint_out(db, rec)
+    elif type_value == "address":
+        out = AddressChangeOut.model_validate(rec)
+    else:
+        out = FollowUpOut.model_validate(rec)
+    return {"type": type_value, **out.model_dump()}
+
+
+# --- 客服工单统一导入 / 详情 / 写入 ----------------------------------------
+
+@router.post("/tickets/import/{ticket_type}/preview")
+async def ticket_import_preview(
+    ticket_type: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    if ticket_type not in ticket_svc.TICKET_TYPES:
+        raise HTTPException(status_code=400, detail=f"未知工单类型：{ticket_type}")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    services = {
+        "complaint": complaint_import_svc,
+        "address": addr_import_svc,
+        "follow": follow_import_svc,
+    }
+    out, _ = services[ticket_type].preview_import(db, content)
+    return out
+
+
+@router.post("/tickets/import/{ticket_type}/commit")
+def ticket_import_commit(
+    ticket_type: str,
+    body: PostalCommitIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    if ticket_type not in ticket_svc.TICKET_TYPES:
+        raise HTTPException(status_code=400, detail=f"未知工单类型：{ticket_type}")
+    services = {
+        "complaint": complaint_import_svc,
+        "address": addr_import_svc,
+        "follow": follow_import_svc,
+    }
+    return services[ticket_type].commit_import(
+        db, body.session_id, operator_id=getattr(user, "id", None)
+    )
+
+
+@router.post("/tickets", response_model=TicketRecordOut, status_code=201)
+def create_ticket(
+    body: TicketWriteIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    ticket_type = body.type
+    payload = body.model_dump(exclude={"type"})
+    if ticket_type == "complaint":
+        rec = complaint_svc.create_complaint(
+            db, payload, operator_id=getattr(user, "id", None)
+        )
+    elif ticket_type == "address":
+        rec = change_svc.create_address_change(
+            db, payload, operator_id=getattr(user, "id", None)
+        )
+    else:
+        rec = change_svc.create_follow_up(
+            db, payload, operator_id=getattr(user, "id", None)
+        )
+    return _ticket_record_out(db, rec)
+
+
+@router.get("/tickets/{ticket_id}", response_model=TicketDetailOut)
+def get_ticket_detail(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    rec = ticket_svc.get_ticket(db, ticket_id)
+    type_value = rec.type.value if hasattr(rec.type, "value") else str(rec.type)
+    if type_value == "complaint":
+        detail = _complaint_detail(db, ticket_id)
+        return {"type": "complaint", **detail.model_dump()}
+    return _ticket_record_out(db, rec)
+
+
+@router.put("/tickets/{ticket_id}", response_model=TicketRecordOut)
+def update_ticket(
+    ticket_id: int,
+    body: TicketWriteIn,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    rec = ticket_svc.get_ticket(db, ticket_id)
+    type_value = rec.type.value if hasattr(rec.type, "value") else str(rec.type)
+    if body.type != type_value:
+        raise HTTPException(status_code=409, detail="不能修改工单类型")
+    patch = body.model_dump(exclude={"type"}, exclude_unset=True)
+    if type_value == "complaint":
+        rec = complaint_svc.update_complaint(db, ticket_id, patch)
+    elif type_value == "address":
+        rec = change_svc.update_address_change(db, ticket_id, patch)
+    else:
+        rec = change_svc.update_follow_up(db, ticket_id, patch)
+    return _ticket_record_out(db, rec)
+
+
+@router.delete("/tickets/{ticket_id}", status_code=204)
+def delete_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    rec = ticket_svc.get_ticket(db, ticket_id)
+    type_value = rec.type.value if hasattr(rec.type, "value") else str(rec.type)
+    if type_value == "complaint":
+        complaint_svc.delete_complaint(db, ticket_id)
+    elif type_value == "address":
+        change_svc.delete_address_change(db, ticket_id)
+    else:
+        change_svc.delete_follow_up(db, ticket_id)
+
+
+@router.post("/tickets/{ticket_id}/apply", response_model=AddressChangeOut)
+def apply_ticket_address(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    rec = ticket_svc.get_ticket(db, ticket_id)
+    type_value = rec.type.value if hasattr(rec.type, "value") else str(rec.type)
+    if type_value != "address":
+        raise HTTPException(status_code=409, detail="只有改地址工单可以应用新地址")
+    return change_svc.apply_address_change(
+        db, ticket_id, operator_id=getattr(user, "id", None)
+    )
+
+
+@router.post(
+    "/tickets/{ticket_id}/handlings",
+    response_model=ComplaintDetailOut,
+    status_code=201,
+)
+def add_ticket_handling(
+    ticket_id: int,
+    body: HandlingCreateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    rec = ticket_svc.get_ticket(db, ticket_id)
+    type_value = rec.type.value if hasattr(rec.type, "value") else str(rec.type)
+    if type_value != "complaint":
+        raise HTTPException(status_code=409, detail="只有投诉工单可以登记处理")
+    complaint_svc.add_handling(
+        db,
+        ticket_id,
+        action=body.action,
+        follow_result=body.follow_result,
+        result_status=body.result_status,
+        operator_id=getattr(user, "id", None),
+    )
+    return _complaint_detail(db, ticket_id)
+
+
+@router.delete(
+    "/tickets/{ticket_id}/handlings/{handling_id}",
+    response_model=ComplaintDetailOut,
+)
+def delete_ticket_handling(
+    ticket_id: int,
+    handling_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    complaint_svc.delete_handling(db, ticket_id, handling_id)
+    return _complaint_detail(db, ticket_id)
 
 
 # --- 导入 -------------------------------------------------------------------

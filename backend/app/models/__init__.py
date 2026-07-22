@@ -55,12 +55,16 @@ from app.models.postal_delivery import (
     PostalDelivery,
     PostalDeliverySourceType,
 )
-from app.models.postal_complaint import (
+from app.models.postal_ticket import (
+    PostalTicket,
+    PostalTicketEventType,
+    PostalTicketType,
     PostalComplaint,
     PostalComplaintHandlingRecord,
     PostalComplaintStatus,
+    PostalAddressChange,
+    PostalFollowUp,
 )
-from app.models.postal_change import PostalAddressChange, PostalFollowUp
 from app.models.postal_finance import PostalFinance
 from app.models.subscription_batch import (
     SubscriptionArtifactType,
@@ -114,6 +118,7 @@ __all__ = [
     "ChannelSettlement", "SettlementStatus",
     # 邮局投递（投递记录层）
     "PostalDelivery", "PostalDeliverySourceType",
+    "PostalTicket", "PostalTicketType", "PostalTicketEventType",
     "PostalComplaint", "PostalComplaintStatus", "PostalComplaintHandlingRecord",
     "PostalAddressChange", "PostalFollowUp",
     "PostalFinance",

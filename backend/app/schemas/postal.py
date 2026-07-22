@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import Annotated, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -311,6 +311,8 @@ class HandlingCreateIn(BaseModel):
 class HandlingRecordOut(BaseModel):
     id: int
     complaint_id: int
+    event_type: str = "handling"
+    source_ticket_id: Optional[int] = None
     handled_at: Optional[datetime] = None
     handled_by: Optional[int] = None
     handled_by_name: Optional[str] = None
@@ -417,3 +419,49 @@ class FinanceUpdateIn(BaseModel):
     tax_category: Optional[str] = None
     platform: Optional[str] = None
     notes: Optional[str] = None
+
+
+# --- 统一客服工单写入契约 --------------------------------------------
+
+class ComplaintTicketWriteIn(ComplaintUpdateIn):
+    type: Literal["complaint"]
+
+
+class AddressTicketWriteIn(AddressChangeUpdateIn):
+    type: Literal["address"]
+
+
+class FollowTicketWriteIn(FollowUpUpdateIn):
+    type: Literal["follow"]
+
+
+TicketWriteIn = Annotated[
+    Union[ComplaintTicketWriteIn, AddressTicketWriteIn, FollowTicketWriteIn],
+    Field(discriminator="type"),
+]
+
+
+class ComplaintTicketOut(ComplaintOut):
+    type: Literal["complaint"] = "complaint"
+
+
+class AddressTicketOut(AddressChangeOut):
+    type: Literal["address"] = "address"
+
+
+class FollowTicketOut(FollowUpOut):
+    type: Literal["follow"] = "follow"
+
+
+class ComplaintTicketDetailOut(ComplaintDetailOut):
+    type: Literal["complaint"] = "complaint"
+
+
+TicketRecordOut = Annotated[
+    Union[ComplaintTicketOut, AddressTicketOut, FollowTicketOut],
+    Field(discriminator="type"),
+]
+TicketDetailOut = Annotated[
+    Union[ComplaintTicketDetailOut, AddressTicketOut, FollowTicketOut],
+    Field(discriminator="type"),
+]
