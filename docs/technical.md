@@ -1649,7 +1649,7 @@ draft ──confirm──> active ──void──> void
 
 > **收款发票已迁至财务管理**：原 `/api/postal/finance` + `/api/postal/finance/import/*` 迁为 **`/api/finance/postal-receipts`**（筛选 `platform`/`tax_category`/`linked`/`search`）+ **`/api/finance/postal-receipts/import/preview` · `/commit`**，作为财务管理第三个 Tab「邮局收款」；台账表 `postal_finance` 不变（见 §3.17 P4）。
 
-**手工 CRUD（PR#41，源台账各加页面内新增/编辑/删除，此前只能 Excel 导入；写操作均 `require_admin`）**：
+**旧类型接口兼容层（始于 PR #41；PR #80 后暂留，写操作均 `require_admin`）**：以下路径供旧调用方过渡使用，实际同样读写 `postal_tickets` / `postal_ticket_events`；新前端和新调用统一使用上表的 `/api/postal/tickets*`，不得继续扩展旧路径。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
