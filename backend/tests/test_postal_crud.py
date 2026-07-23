@@ -256,6 +256,71 @@ def test_unified_tickets_list(client):
     assert client.get("/api/postal/tickets?type=xxx").status_code == 400
 
 
+def test_unified_ticket_crud_merges_follow_up_into_complaint_timeline(client):
+    complaint = client.post("/api/postal/tickets", json={
+        "type": "complaint",
+        "year": 2026,
+        "delivery_no": "0901",
+        "complaint_date": "2026-07-20",
+        "snap_name": "王五",
+        "missing_issues": "少报一期",
+    })
+    assert complaint.status_code == 201, complaint.text
+    complaint_id = complaint.json()["id"]
+
+    address = client.post("/api/postal/tickets", json={
+        "type": "address",
+        "year": 2026,
+        "delivery_no": "0902",
+        "change_date": "2026-07-21",
+        "old_name": "赵六",
+        "new_address": "北京市朝阳区新址",
+    })
+    assert address.status_code == 201, address.text
+
+    follow = client.post("/api/postal/tickets", json={
+        "type": "follow",
+        "year": 2026,
+        "delivery_no": "0901",
+        "follow_up_date": "2026-07-22",
+        "batch_label": "20260722回访",
+        "result": "读者确认已补投",
+        "snap_name": "王五",
+    })
+    assert follow.status_code == 201, follow.text
+    assert follow.json()["type"] == "follow"
+    assert follow.json()["result"] == "读者确认已补投"
+    follow_id = follow.json()["id"]
+
+    tickets = client.get("/api/postal/tickets?year=2026").json()
+    assert tickets["total"] == 2
+    assert tickets["summary"] == {"complaint": 1, "address": 1, "follow": 0}
+
+    detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
+    follow_event = next(h for h in detail["handlings"] if h["event_type"] == "follow_up")
+    assert follow_event["source_ticket_id"] == follow_id
+    assert follow_event["follow_result"] == "读者确认已补投"
+
+    updated = client.put(f"/api/postal/tickets/{follow_id}", json={
+        "type": "follow",
+        "result": "读者确认问题已解决",
+    })
+    assert updated.status_code == 200, updated.text
+    detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
+    follow_event = next(h for h in detail["handlings"] if h["event_type"] == "follow_up")
+    assert follow_event["follow_result"] == "读者确认问题已解决"
+
+    wrong_type = client.put(f"/api/postal/tickets/{follow_id}", json={
+        "type": "address",
+        "new_address": "不应写入",
+    })
+    assert wrong_type.status_code == 409
+
+    assert client.delete(f"/api/postal/tickets/{follow_id}").status_code == 204
+    detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
+    assert all(h["event_type"] != "follow_up" for h in detail["handlings"])
+
+
 def test_finance_crud_net(client):
     r = client.post("/api/finance/postal-receipts", json={
         "payer_name": "吴十", "product": "《中国经营报》", "copies": 1,

@@ -166,13 +166,13 @@ def _complaint_wb() -> bytes:
 def test_complaint_import_and_list(client):
     data = _complaint_wb()
     r = client.post(
-        "/api/postal/complaints/import/preview",
+        "/api/postal/tickets/import/complaint/preview",
         files={"file": ("c.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["counts"]["import"] == 2
-    assert client.post("/api/postal/complaints/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
+    assert client.post("/api/postal/tickets/import/complaint/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
 
     # 列表 + 年度筛选
     lst = client.get("/api/postal/complaints?year=2024").json()
@@ -209,12 +209,12 @@ def _addr_wb() -> bytes:
 
 
 def test_address_change_import_list_apply(client):
-    r = client.post("/api/postal/address-changes/import/preview",
+    r = client.post("/api/postal/tickets/import/address/preview",
                     files={"file": ("a.xlsx", _addr_wb(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["counts"]["import"] == 2
-    assert client.post("/api/postal/address-changes/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
+    assert client.post("/api/postal/tickets/import/address/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
 
     lst = client.get("/api/postal/address-changes").json()
     assert lst["total"] == 2
@@ -238,12 +238,12 @@ def _fu_wb() -> bytes:
 
 
 def test_follow_up_import_and_list(client):
-    r = client.post("/api/postal/follow-ups/import/preview",
+    r = client.post("/api/postal/tickets/import/follow/preview",
                     files={"file": ("r.xlsx", _fu_wb(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["counts"]["import"] == 2  # 张三的两条回访
-    assert client.post("/api/postal/follow-ups/import/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
+    assert client.post("/api/postal/tickets/import/follow/commit", json={"session_id": body["session_id"]}).json()["created"] == 2
     assert client.get("/api/postal/follow-ups").json()["total"] == 2
 
 

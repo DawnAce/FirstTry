@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.models import PostalFollowUp
 from app.order_import_cache import pop_order_import_session, save_order_import_session
 from app.services import postal_common as pc
+from app.services.postal_change_service import sync_follow_up_timeline
 
 
 @dataclass
@@ -90,6 +91,7 @@ def build_follow_up_preview(db: Session, rows) -> FollowImportPreview:
             "postal_delivery_id": postal_delivery_id,
             "order_id": order_id,
             "external_order_no": external,
+            "year": year,
             "follow_up_date": fdate.isoformat() if fdate else None,
             "batch_label": fu.batch_label,
             "result": fu.result or None,
@@ -155,7 +157,9 @@ def commit_import(db: Session, session_id: str, operator_id: Optional[int] = Non
         if d["external_order_no"]:
             existing.add(key)
         d["follow_up_date"] = date.fromisoformat(d["follow_up_date"]) if d["follow_up_date"] else None
-        db.add(PostalFollowUp(**d))
+        rec = PostalFollowUp(**d)
+        db.add(rec)
+        sync_follow_up_timeline(db, rec, operator_id=operator_id)
         created += 1
     db.commit()
     return {"created": created, "skipped_duplicates": skipped}

@@ -1,31 +1,26 @@
-"""邮局客服工单 · 统一聚合读取（投诉 / 改地址 / 回访 三类归一为「工单」）。
-
-只做**列表呈现**的聚合：把三张表规整成统一的 TicketRow（类型 + 收报人 + 编号 +
-摘要 + 状态 + 日期 + 关联）。详情 / 编辑 / 应用 / 处理仍走各自现有接口，三表不合并
-（物理合表见后续 PR）。数据量为邮局量级，聚合与分页在内存完成。
-"""
+"""邮局客服工单统一查询与类型分发。"""
 
 from datetime import date
 from typing import List, Optional, Tuple
 
-from sqlalchemy import and_, or_
+from fastapi import HTTPException
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
-from app.models import (
-    PostalAddressChange,
-    PostalComplaint,
-    PostalFollowUp,
-)
+from app.models import PostalTicket, PostalTicketType
 
-TICKET_TYPES = ("complaint", "address", "follow")
+TICKET_TYPES = tuple(t.value for t in PostalTicketType)
 
 
-def _year_of(external_order_no: Optional[str], d: Optional[date]) -> Optional[int]:
-    if external_order_no and "-" in external_order_no:
-        head = external_order_no.split("-", 1)[0]
+def _year_of(rec: PostalTicket) -> Optional[int]:
+    if rec.year:
+        return rec.year
+    if rec.external_order_no and "-" in rec.external_order_no:
+        head = rec.external_order_no.split("-", 1)[0]
         if head.isdigit():
             return int(head)
-    return d.year if d else None
+    dt = _ticket_date(rec)
+    return dt.year if dt else None
 
 
 def _delivery_no(external_order_no: Optional[str]) -> Optional[str]:
@@ -34,104 +29,102 @@ def _delivery_no(external_order_no: Optional[str]) -> Optional[str]:
     return external_order_no
 
 
-def _addr_status(rec: PostalAddressChange) -> str:
+def _type_value(rec: PostalTicket) -> str:
+    return rec.type.value if hasattr(rec.type, "value") else str(rec.type)
+
+
+def _ticket_date(rec: PostalTicket):
+    type_value = _type_value(rec)
+    if type_value == PostalTicketType.complaint.value:
+        return rec.complaint_date
+    if type_value == PostalTicketType.address.value:
+        return rec.change_date
+    return rec.follow_up_date
+
+
+def _addr_status(rec: PostalTicket) -> str:
     if rec.applied_to_order:
         return "applied"
     return "pending" if rec.postal_delivery_id else "unmatched"
 
 
-def _row(*, type_, id, ext, dt, name, summary, status, postal_delivery_id,
-         order_id, handling_count=None, applied_to_order=None) -> dict:
+def _row(rec: PostalTicket) -> dict:
+    type_value = _type_value(rec)
+    if type_value == PostalTicketType.complaint.value:
+        name = rec.snap_name
+        summary = rec.missing_issues
+        status = rec.status.value if rec.status else None
+        handling_count = rec.handling_count
+        applied_to_order = None
+    elif type_value == PostalTicketType.address.value:
+        name = rec.new_name or rec.old_name
+        summary = rec.new_address
+        status = _addr_status(rec)
+        handling_count = None
+        applied_to_order = rec.applied_to_order
+    else:
+        name = rec.snap_name
+        summary = rec.result
+        status = None
+        handling_count = None
+        applied_to_order = None
     return {
-        "type": type_,
-        "id": id,
-        "year": _year_of(ext, dt),
-        "delivery_no": _delivery_no(ext),
+        "type": type_value,
+        "id": rec.id,
+        "year": _year_of(rec),
+        "delivery_no": _delivery_no(rec.external_order_no),
         "recipient_name": name,
-        "postal_delivery_id": postal_delivery_id,
-        "order_id": order_id,
-        "ticket_date": dt,
-        "summary": (summary or None),
+        "postal_delivery_id": rec.postal_delivery_id,
+        "order_id": rec.order_id,
+        "ticket_date": _ticket_date(rec),
+        "summary": summary or None,
         "status": status,
         "handling_count": handling_count,
         "applied_to_order": applied_to_order,
-        "_sort": (dt or date.min, id),
     }
 
 
-def _complaints(db, *, year, search, status) -> List[dict]:
-    q = db.query(PostalComplaint)
+def _ticket_date_expr():
+    return case(
+        (PostalTicket.type == PostalTicketType.complaint, PostalTicket.complaint_date),
+        (PostalTicket.type == PostalTicketType.address, PostalTicket.change_date),
+        else_=PostalTicket.follow_up_date,
+    )
+
+
+def _base_query(
+    db: Session,
+    *,
+    year: Optional[int],
+    search: Optional[str],
+):
+    # parent_ticket_id 非空的回访已经并入投诉时间线，不作为独立工单重复展示。
+    q = db.query(PostalTicket).filter(PostalTicket.parent_ticket_id.is_(None))
     if year:
         q = q.filter(or_(
-            PostalComplaint.external_order_no.like(f"{year}-%"),
-            PostalComplaint.year == year,
-            and_(PostalComplaint.complaint_date >= date(year, 1, 1),
-                 PostalComplaint.complaint_date < date(year + 1, 1, 1)),
-        ))
-    if status:
-        q = q.filter(PostalComplaint.status == status)
-    if search and search.strip():
-        s = search.strip()
-        q = q.filter(or_(
-            PostalComplaint.snap_name.contains(s),
-            PostalComplaint.external_order_no.contains(s),
-        ))
-    return [
-        _row(type_="complaint", id=c.id, ext=c.external_order_no, dt=c.complaint_date,
-             name=c.snap_name, summary=c.missing_issues,
-             status=(c.status.value if c.status else None),
-             postal_delivery_id=c.postal_delivery_id, order_id=c.order_id,
-             handling_count=c.handling_count)
-        for c in q.all()
-    ]
-
-
-def _addresses(db, *, year, search, applied) -> List[dict]:
-    q = db.query(PostalAddressChange)
-    if year:
-        q = q.filter(or_(
-            PostalAddressChange.external_order_no.like(f"{year}-%"),
-            and_(PostalAddressChange.change_date >= date(year, 1, 1),
-                 PostalAddressChange.change_date < date(year + 1, 1, 1)),
-        ))
-    if applied is not None:
-        q = q.filter(PostalAddressChange.applied_to_order.is_(applied))
-    if search and search.strip():
-        s = search.strip()
-        q = q.filter(or_(
-            PostalAddressChange.old_name.contains(s),
-            PostalAddressChange.new_name.contains(s),
-            PostalAddressChange.external_order_no.contains(s),
-        ))
-    return [
-        _row(type_="address", id=a.id, ext=a.external_order_no, dt=a.change_date,
-             name=(a.new_name or a.old_name), summary=a.new_address,
-             status=_addr_status(a), postal_delivery_id=a.postal_delivery_id,
-             order_id=a.order_id, applied_to_order=a.applied_to_order)
-        for a in q.all()
-    ]
-
-
-def _follows(db, *, year, search) -> List[dict]:
-    q = db.query(PostalFollowUp)
-    if year:
-        q = q.filter(or_(
-            PostalFollowUp.external_order_no.like(f"{year}-%"),
-            and_(PostalFollowUp.follow_up_date >= date(year, 1, 1),
-                 PostalFollowUp.follow_up_date < date(year + 1, 1, 1)),
+            PostalTicket.year == year,
+            PostalTicket.external_order_no.like(f"{year}-%"),
+            and_(
+                _ticket_date_expr() >= date(year, 1, 1),
+                _ticket_date_expr() < date(year + 1, 1, 1),
+            ),
         ))
     if search and search.strip():
         s = search.strip()
         q = q.filter(or_(
-            PostalFollowUp.snap_name.contains(s),
-            PostalFollowUp.external_order_no.contains(s),
+            PostalTicket.snap_name.contains(s),
+            PostalTicket.old_name.contains(s),
+            PostalTicket.new_name.contains(s),
+            PostalTicket.external_order_no.contains(s),
         ))
-    return [
-        _row(type_="follow", id=f.id, ext=f.external_order_no, dt=f.follow_up_date,
-             name=f.snap_name, summary=f.result, status=None,
-             postal_delivery_id=f.postal_delivery_id, order_id=f.order_id)
-        for f in q.all()
-    ]
+    return q
+
+
+def get_ticket(db: Session, ticket_id: int) -> PostalTicket:
+    rec = db.query(PostalTicket).filter(PostalTicket.id == ticket_id).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"客服工单 {ticket_id} 不存在")
+    return rec
 
 
 def list_tickets(
@@ -145,26 +138,43 @@ def list_tickets(
     page: int = 1,
     page_size: int = 50,
 ) -> Tuple[List[dict], int, dict]:
-    """返回 (当前页工单行, 匹配总数, 各类型计数)。type 缺省=全部三类。"""
-    rows: List[dict] = []
-    if type in (None, "complaint"):
-        rows += _complaints(db, year=year, search=search, status=status)
-    if type in (None, "address"):
-        rows += _addresses(db, year=year, search=search, applied=applied)
-    if type in (None, "follow"):
-        rows += _follows(db, year=year, search=search)
+    """返回当前页工单、匹配总数和忽略状态筛选的各类型计数。"""
+    q = _base_query(db, year=year, search=search)
+    if type:
+        q = q.filter(PostalTicket.type == PostalTicketType(type))
+    if status:
+        if type == PostalTicketType.complaint.value:
+            q = q.filter(PostalTicket.status == status)
+        elif type is None:
+            q = q.filter(or_(
+                PostalTicket.type != PostalTicketType.complaint,
+                PostalTicket.status == status,
+            ))
+    if applied is not None:
+        if type == PostalTicketType.address.value:
+            q = q.filter(PostalTicket.applied_to_order.is_(applied))
+        elif type is None:
+            q = q.filter(or_(
+                PostalTicket.type != PostalTicketType.address,
+                PostalTicket.applied_to_order.is_(applied),
+            ))
 
-    rows.sort(key=lambda r: r["_sort"], reverse=True)
-    total = len(rows)
-    start = max(0, (page - 1) * page_size)
-    page_rows = rows[start:start + page_size]
-    for r in page_rows:
-        r.pop("_sort", None)
+    total = q.count()
+    rows = (
+        q.order_by(_ticket_date_expr().desc(), PostalTicket.id.desc())
+        .offset(max(0, (page - 1) * page_size))
+        .limit(page_size)
+        .all()
+    )
 
-    # 各类型计数（年度 + 搜索口径，忽略类型/状态/应用筛选）——供 UI 分段筛选显示。
-    summary = {
-        "complaint": len(_complaints(db, year=year, search=search, status=None)),
-        "address": len(_addresses(db, year=year, search=search, applied=None)),
-        "follow": len(_follows(db, year=year, search=search)),
-    }
-    return page_rows, total, summary
+    summary_rows = (
+        _base_query(db, year=year, search=search)
+        .with_entities(PostalTicket.type, func.count(PostalTicket.id))
+        .group_by(PostalTicket.type)
+        .all()
+    )
+    summary = {ticket_type: 0 for ticket_type in TICKET_TYPES}
+    for ticket_type, count in summary_rows:
+        key = ticket_type.value if hasattr(ticket_type, "value") else str(ticket_type)
+        summary[key] = int(count)
+    return [_row(rec) for rec in rows], total, summary
