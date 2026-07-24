@@ -1930,10 +1930,19 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 **A**: 检查 `vite.config.ts` 中的 `base` 配置，确保与部署路径一致。
 
 ### Q5: 如何备份数据？
-**A**: 使用 `mysqldump` 导出数据库：
+**A**: 在 `backend` 目录运行统一备份命令；归档同时包含数据库、`backend/uploads` 附件和 SHA-256 校验清单：
+
 ```bash
-mysqldump -u user -p database_name > backup.sql
+python -m scripts.backup --output /path/to/offsite-backups --keep 14
 ```
+
+任务计划程序或 cron 每天调用一次即可。恢复演练前先校验归档：
+
+```bash
+python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS.zip
+```
+
+校验通过后，在**非生产库**解压并导入 `database.sql`，再把 `uploads/` 恢复到 `backend/uploads/`。至少每季度做一次完整恢复演练；备份目录必须位于另一块磁盘或远端存储，不能只留在应用服务器。
 
 ## 10. 未来扩展
 
