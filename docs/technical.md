@@ -279,7 +279,7 @@ FirstTry/
 | role | ENUM | 角色：admin/operator |
 | created_at | DATETIME | 创建时间 |
 
-**默认账户**：用户名 `admin`，密码 `admin123`，角色 `admin`。
+系统不内置默认密码。管理员账户通过 `python -m scripts.set_admin_password [用户名]` 创建或重置。
 
 ### 3.9 report_revisions（作废记录）
 记录报数确认和作废的修订历史。
@@ -556,7 +556,7 @@ FirstTry/
 ```json
 {
   "username": "admin",
-  "password": "admin123"
+  "password": "<管理员密码>"
 }
 ```
 

@@ -26,6 +26,7 @@ jobs:
       MYSQL_USER: ci
       MYSQL_PASSWORD: ci
       MYSQL_DATABASE: ci
+      JWT_SECRET: ci-only-secret-that-is-at-least-32-characters
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
