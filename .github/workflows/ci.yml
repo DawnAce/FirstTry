@@ -15,15 +15,27 @@ jobs:
   backend:
     name: 后端测试 (pytest)
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     defaults:
       run:
         working-directory: backend
-    # 测试用 SQLite 内存库（get_db 被 override），不连 MySQL；但 app.config.Settings
-    # 硬要这几个变量才能导入，给假值即可（create_engine 懒连接、startup 预热在测试里不触发）。
+    # 单元测试用 SQLite 内存库；同一 job 先用空 MySQL 验证完整迁移链。
     env:
-      MYSQL_HOST: localhost
+      MYSQL_HOST: 127.0.0.1
       MYSQL_PORT: "3306"
-      MYSQL_USER: ci
+      MYSQL_USER: root
       MYSQL_PASSWORD: ci
       MYSQL_DATABASE: ci
     steps:
@@ -37,6 +49,8 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pytest httpx
+      - name: 从空 MySQL 应用完整迁移
+        run: python -m alembic upgrade head
       - name: 跑测试
         run: python -m pytest -q
 

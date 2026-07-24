@@ -104,11 +104,19 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index('idx_recipient_created', 'subscriptions', ['recipient_id', 'created_at'], unique=False)
-    op.drop_table('user')
-    op.drop_index('ftx_name', table_name='product', mysql_prefix='FULLTEXT')
-    op.drop_index('idx_lookup', table_name='product')
-    op.drop_index('uq_bound', table_name='product')
-    op.drop_table('product')
+    op.create_table('users',
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('username', sa.String(length=50), nullable=False),
+    sa.Column('password_hash', sa.String(length=255), nullable=False),
+    sa.Column('role', sa.Enum('admin', 'operator', name='userrole'), nullable=False),
+    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('username')
+    )
+    # The original schema had singular ``user`` and ``product`` tables. Fresh
+    # databases do not, so compatibility cleanup must be conditional.
+    op.execute("DROP TABLE IF EXISTS `user`")
+    op.execute("DROP TABLE IF EXISTS `product`")
     # ### end Alembic commands ###
 
 
@@ -137,6 +145,7 @@ def downgrade() -> None:
     op.create_index('uq_bound', 'product', ['series_code', 'media_type', 'product_kind', 'start_date', 'end_date'], unique=True)
     op.create_index('idx_lookup', 'product', ['series_code', 'media_type', 'product_kind', 'start_date', 'end_date'], unique=False)
     op.create_index('ftx_name', 'product', ['series_name', 'display_name'], unique=False, mysql_prefix='FULLTEXT')
+    op.drop_table('users')
     op.create_table('user',
     sa.Column('Name', mysql.VARCHAR(length=50), server_default=sa.text("''"), nullable=False, comment='ç”¨æˆ·å\x90\x8d'),
     sa.Column('Password', mysql.VARCHAR(length=100), server_default=sa.text("''"), nullable=True, comment='å¯†ç\xa0\x81'),
