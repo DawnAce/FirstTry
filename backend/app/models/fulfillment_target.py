@@ -70,7 +70,7 @@ class FulfillmentTarget(Base):
         Integer,
         ForeignKey("partners.id"),
         nullable=True,
-        index=True,
+        index=False,
     )
     effective_from_issue = Column(Integer, nullable=True)
     effective_until_issue = Column(Integer, nullable=True)
@@ -99,6 +99,7 @@ class FulfillmentTarget(Base):
     allocation = relationship("FulfillmentAllocation", back_populates="targets")
 
     __table_args__ = (
+        Index("ix_targets_distribution_unit", "distribution_unit_id"),
         Index(
             "ix_targets_eff_status",
             "effective_from_issue",

@@ -1,6 +1,6 @@
 name: CI
 
-# 每个 PR + 合并到 main 时，自动在干净容器里跑后端测试 + 前端类型检查。
+# 每个 PR + 合并到 main 时，自动跑后端测试与完整前端门禁。
 on:
   pull_request:
   push:
@@ -56,7 +56,7 @@ jobs:
         run: python -m pytest -q
 
   frontend:
-    name: 前端类型检查 (tsc)
+    name: 前端检查 (lint + test + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,5 +70,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: 安装依赖
         run: npm ci
-      - name: 类型检查
-        run: npx tsc -b
+      - name: Lint
+        run: npm run lint
+      - name: 单元测试
+        run: npm test
+      - name: 生产构建
+        run: npm run build

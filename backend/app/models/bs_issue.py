@@ -9,7 +9,7 @@
 ——商学院走自己这套轻量「月→期」日历。系统不再只能从卖出过的订单被动反推有哪些期。
 """
 
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Column, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -20,7 +20,7 @@ class BsIssue(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     # 与 order_items.issue_label 完全一致："2026-01" / "2026-02~03"（合刊）。
-    issue_label = Column(String(32), unique=True, nullable=False, index=True)
+    issue_label = Column(String(32), nullable=False, index=True)
     year = Column(Integer, nullable=False, index=True)
     # 覆盖的自然月：单刊 month_start == month_end；2~3月合刊 month_start=2, month_end=3。
     month_start = Column(Integer, nullable=False)
@@ -31,3 +31,5 @@ class BsIssue(Base):
     updated_at = Column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    __table_args__ = (UniqueConstraint("issue_label", name="uq_bs_issues_issue_label"),)
