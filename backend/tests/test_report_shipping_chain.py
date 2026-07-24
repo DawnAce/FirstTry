@@ -4,6 +4,7 @@ import unittest
 from datetime import date
 
 from openpyxl import load_workbook
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -118,6 +119,7 @@ class ReportShippingChainTests(unittest.TestCase):
         db.flush()
         db.add_all(
             [
+                ReportEntry(issue_id=issue.id, category="social_use", sub_category="营报传媒_读者", value=16),
                 ShippingDetail(
                     issue_number=3002,
                     sheet_name="原始表",
@@ -215,7 +217,7 @@ class ReportShippingChainTests(unittest.TestCase):
             ],
         )
 
-    def test_shipping_export_persists_export_audit_snapshot(self):
+    def test_shipping_export_blocks_mismatched_totals(self):
         db = self.SessionLocal()
         issue = Issue(issue_number=3004, publish_date=date(2026, 6, 15), status=IssueStatus.confirmed)
         db.add(issue)
@@ -229,21 +231,11 @@ class ReportShippingChainTests(unittest.TestCase):
         )
         db.commit()
 
-        response = export_shipping(issue.id, db=db, user=_admin_user())
+        with self.assertRaises(HTTPException) as ctx:
+            export_shipping(issue.id, db=db, user=_admin_user())
 
-        self.assertIn(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            response.media_type,
-        )
-        snapshot = (
-            db.query(IssueAuditSnapshot)
-            .filter_by(issue_id=issue.id, snapshot_type="shipping_export")
-            .one()
-        )
-        self.assertEqual(snapshot.report_total, 30)
-        self.assertEqual(snapshot.shipping_total, 20)
-        self.assertEqual(snapshot.delta, 10)
-        self.assertEqual(snapshot.is_match, False)
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual(db.query(IssueAuditSnapshot).filter_by(issue_id=issue.id).count(), 0)
 
     def test_report_export_persists_export_audit_snapshot(self):
         db = self.SessionLocal()
@@ -305,7 +297,7 @@ class ReportShippingChainTests(unittest.TestCase):
         db.add_all(
             [
                 ReportEntry(issue_id=issue.id, category="social_use", sub_category="营报传媒_读者", value=26),
-                ShippingDetail(issue_number=3006, sheet_name="测试", channel="渠道订阅", name="甲", quantity=20),
+                ShippingDetail(issue_number=3006, sheet_name="测试", channel="渠道订阅", name="甲", quantity=26),
             ]
         )
         db.commit()
@@ -319,6 +311,17 @@ class ReportShippingChainTests(unittest.TestCase):
         }
         self.assertIn("report_export", snapshot_types)
         self.assertIn("shipping_export", snapshot_types)
+
+    def test_export_blocks_draft_issue(self):
+        db = self.SessionLocal()
+        issue = Issue(issue_number=3007, publish_date=date(2026, 7, 6), status=IssueStatus.draft)
+        db.add(issue)
+        db.commit()
+
+        with self.assertRaises(HTTPException) as ctx:
+            export_all(issue.id, db=db, user=_admin_user())
+
+        self.assertEqual(ctx.exception.status_code, 409)
 
     def test_confirm_mismatch_returns_snapshot_and_current_drift_values(self):
         db = self.SessionLocal()
