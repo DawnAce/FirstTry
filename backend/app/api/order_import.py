@@ -11,6 +11,7 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import User
 from app.models.order_item import Publication
+from app.upload import read_upload
 from app.services.cbj_order_import_service import (
     BatchSettings,
     commit_import,
@@ -34,9 +35,7 @@ async def preview(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    content = await read_upload(file)
     cutoff = None
     if cutoff_date:
         try:

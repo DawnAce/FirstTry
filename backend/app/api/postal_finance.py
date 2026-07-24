@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import User
+from app.upload import read_upload
 from app.schemas.postal import (
     FinanceCreateIn,
     FinanceListOut,
@@ -51,9 +52,7 @@ async def finance_import_preview(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    content = await read_upload(file)
     out, _ = finance_import_svc.preview_import(db, content)
     return out
 

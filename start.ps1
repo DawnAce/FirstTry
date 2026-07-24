@@ -16,12 +16,13 @@ if (-not (Test-Path "$ROOT\.env")) {
     exit 1
 }
 
-# Python venv（首次自动创建并装依赖）
+# Python venv（首次自动创建；每次部署同步锁定依赖）
 if (-not (Test-Path $PY)) {
-    Write-Host "⚙️  创建 Python 虚拟环境并安装依赖..." -ForegroundColor Yellow
+    Write-Host "⚙️  创建 Python 虚拟环境..." -ForegroundColor Yellow
     python -m venv "$ROOT\backend\venv"
-    & $PY -m pip install -r "$ROOT\backend\requirements.txt" -q
 }
+Write-Host "📦 同步后端依赖..." -ForegroundColor Yellow
+& $PY -m pip install -r "$ROOT\backend\requirements.txt" -q
 
 # 1) 构建前端（生产模式下 uvicorn 直接托管 frontend/dist）
 if ($env:SKIP_BUILD -eq "1") {
@@ -29,7 +30,7 @@ if ($env:SKIP_BUILD -eq "1") {
 } else {
     Write-Host "📦 构建前端..." -ForegroundColor Yellow
     Push-Location "$ROOT\frontend"
-    npm install --no-audit --no-fund
+    npm ci --no-audit --no-fund
     npm run build
     Pop-Location
 }

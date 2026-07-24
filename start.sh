@@ -16,22 +16,21 @@ if [ ! -f "$ROOT/.env" ]; then
     exit 1
 fi
 
-# Python venv（首次自动创建并装依赖）
+# Python venv（首次自动创建；每次部署同步锁定依赖）
 if [ ! -d "$ROOT/backend/venv" ]; then
-    echo "⚙️  创建 Python 虚拟环境并安装依赖..."
+    echo "⚙️  创建 Python 虚拟环境..."
     python3 -m venv "$ROOT/backend/venv"
-    source "$ROOT/backend/venv/bin/activate"
-    pip install -r "$ROOT/backend/requirements.txt" -q
-else
-    source "$ROOT/backend/venv/bin/activate"
 fi
+source "$ROOT/backend/venv/bin/activate"
+echo "📦 同步后端依赖..."
+python -m pip install -r "$ROOT/backend/requirements.txt" -q
 
 # 1) 构建前端（生产模式下 uvicorn 直接托管 frontend/dist）
 if [ "${SKIP_BUILD:-0}" = "1" ]; then
     echo "⏭  跳过前端构建 (SKIP_BUILD=1)"
 else
     echo "📦 构建前端..."
-    ( cd "$ROOT/frontend" && npm install --no-audit --no-fund && npm run build )
+    ( cd "$ROOT/frontend" && npm ci --no-audit --no-fund && npm run build )
 fi
 
 # 2) 应用数据库迁移（幂等；失败即中止）

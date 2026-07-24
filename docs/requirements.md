@@ -128,6 +128,7 @@
   - `/export/report` 会记录 `report_export` 快照
   - `/export/shipping` 会记录 `shipping_export` 快照
   - `/export/all` 会同时记录以上两类快照
+  - 正式导出仅允许已确认期次，且报数中通合计必须与发货明细合计一致；否则返回 409
 
 ### Step 6: 发送给相关方
 - **操作**：通过邮件或其他方式发送导出的 Excel

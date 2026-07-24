@@ -8,11 +8,13 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.config import get_settings
 from app.models.user import User
 
-SECRET_KEY = "zgjyb-report-system-secret-2026"
+settings = get_settings()
+SECRET_KEY = settings.JWT_SECRET
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 72
+ACCESS_TOKEN_EXPIRE_HOURS = settings.ACCESS_TOKEN_EXPIRE_HOURS
 
 security = HTTPBearer()
 
