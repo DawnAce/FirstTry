@@ -219,7 +219,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
     const s = v.summary_json as Record<string, unknown> | null;
     return (
       <List.Item
-        style={{ paddingInline: 16 }}
+        className="subscription-list-item"
         actions={[
           <Button key="r" type="link" size="small" onClick={() => setRecordsFor(v.id)}>查看明细</Button>,
           <Button key="i" type="link" size="small" onClick={() => setIssuesFor(v.id)}>校验问题</Button>,
@@ -247,7 +247,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
   };
 
   const artifactRow = (a: Artifact) => (
-    <List.Item style={{ paddingInline: 16 }} actions={[
+    <List.Item className="subscription-list-item" actions={[
       <Button key="d" type="link" size="small" icon={<DownloadOutlined />}
         onClick={() => downloadSubArtifact(a.id, a.filename).catch(() => message.error('下载失败'))}>下载</Button>,
     ]}>
