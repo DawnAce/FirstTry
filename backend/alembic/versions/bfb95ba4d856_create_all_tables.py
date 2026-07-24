@@ -90,6 +90,41 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('issue_id', 'recipient_id')
     )
+    op.create_table('shipping_details',
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('issue_number', sa.Integer(), nullable=False),
+    sa.Column('sheet_name', sa.String(length=50), nullable=False),
+    sa.Column('channel', sa.String(length=20), nullable=False),
+    sa.Column('sub_channel', sa.String(length=20), nullable=True),
+    sa.Column('transport', sa.String(length=20), nullable=False),
+    sa.Column('frequency', sa.String(length=20), nullable=False),
+    sa.Column('status', sa.String(length=10), nullable=False),
+    sa.Column('name', sa.String(length=100), nullable=False),
+    sa.Column('address', sa.Text(), nullable=True),
+    sa.Column('phone', sa.String(length=50), nullable=True),
+    sa.Column('quantity', sa.Integer(), nullable=True),
+    sa.Column('deadline', sa.String(length=50), nullable=True),
+    sa.Column('notes', sa.Text(), nullable=True),
+    sa.Column('extra_info', sa.Text(), nullable=True),
+    sa.Column('city', sa.String(length=50), nullable=True),
+    sa.Column('station_name', sa.String(length=100), nullable=True),
+    sa.Column('station_hall', sa.String(length=200), nullable=True),
+    sa.Column('contact_person', sa.String(length=100), nullable=True),
+    sa.Column('seq_number', sa.Integer(), nullable=True),
+    sa.Column('period_count', sa.Integer(), nullable=True),
+    sa.Column('confirmation', sa.String(length=20), nullable=True),
+    sa.Column('company', sa.String(length=100), nullable=True),
+    sa.Column('shipped_at', sa.DateTime(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+    )
+    indexed_columns = (
+        'issue_number', 'channel', 'sub_channel', 'transport',
+        'frequency', 'status', 'company',
+    )
+    for column in indexed_columns:
+        op.create_index(op.f(f'ix_shipping_details_{column}'), 'shipping_details', [column], unique=False)
     op.create_table('subscriptions',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('recipient_id', sa.Integer(), nullable=False),
@@ -159,6 +194,7 @@ def downgrade() -> None:
     )
     op.drop_index('idx_recipient_created', table_name='subscriptions')
     op.drop_table('subscriptions')
+    op.drop_table('shipping_details')
     op.drop_table('shipping_records')
     op.drop_table('report_entries')
     op.drop_table('report_item_templates')

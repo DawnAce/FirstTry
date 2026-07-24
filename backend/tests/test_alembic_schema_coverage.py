@@ -12,6 +12,8 @@ class AlembicSchemaCoverageTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("create_table('users'", migration)
+        self.assertIn("create_table('shipping_details'", migration)
+        self.assertIn("sa.Column('city', sa.String(length=50)", migration)
         self.assertIn("DROP TABLE IF EXISTS `user`", migration)
         self.assertIn("DROP TABLE IF EXISTS `product`", migration)
 
