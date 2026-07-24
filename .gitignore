@@ -16,6 +16,7 @@ frontend/dist/
 
 # Runtime uploads (原始上传 / 生成产物；含 PII，绝不入库)
 backend/uploads/
+backups/
 
 # 生产删单临时备份（含真实订单 PII，绝不入库）
 test-orders-backup.json
