@@ -34,6 +34,7 @@ from app.services import subscription_generation_service as gen_svc
 from app.services import subscription_import_service as import_svc
 from app.services import subscription_service as batch_svc
 from app.services.operation_log_service import record_operation
+from app.upload import read_upload
 
 router = APIRouter(prefix="/api/subscription", tags=["subscription"])
 
@@ -75,9 +76,9 @@ async def create_import(
     user: User = Depends(require_admin),
 ):
     batch = batch_svc.get_batch(db, batch_id)
-    files = [("A", file_a.filename, await file_a.read())]
+    files = [("A", file_a.filename, await read_upload(file_a, label="来源A文件"))]
     if file_b is not None:
-        files.append(("B", file_b.filename, await file_b.read()))
+        files.append(("B", file_b.filename, await read_upload(file_b, label="来源B文件")))
     version = import_svc.create_version(db, batch, files, reason=reason, operator_id=getattr(user, "id", None))
     _log(db, table="subscription_import_versions", record_id=version.id, action="create", user=user,
          name=f"批次{batch_id} V{version.version_no}")

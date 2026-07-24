@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import Partner, PostalComplaintStatus, User
+from app.upload import read_upload
 from app.schemas.postal import (
     AddressChangeCreateIn,
     AddressChangeListOut,
@@ -136,9 +137,7 @@ async def ticket_import_preview(
 ):
     if ticket_type not in ticket_svc.TICKET_TYPES:
         raise HTTPException(status_code=400, detail=f"未知工单类型：{ticket_type}")
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    content = await read_upload(file)
     services = {
         "complaint": complaint_import_svc,
         "address": addr_import_svc,
@@ -304,9 +303,7 @@ async def import_preview(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    content = await read_upload(file)
     out, _ = import_svc.preview_import(db, content)
     return out
 
@@ -427,9 +424,7 @@ async def complaint_import_preview(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    content = await read_upload(file)
     out, _ = complaint_import_svc.preview_import(db, content)
     return out
 
@@ -545,9 +540,7 @@ async def address_change_import_preview(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    content = await read_upload(file)
     out, _ = addr_import_svc.preview_import(db, content)
     return out
 
@@ -613,9 +606,7 @@ async def follow_up_import_preview(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    content = await read_upload(file)
     out, _ = follow_import_svc.preview_import(db, content)
     return out
 
