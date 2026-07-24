@@ -194,9 +194,10 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
     mutationFn: (vid: number) => activateSubImport(vid),
     onSuccess: (res) => {
       const s = res.data.postal_sync;
-      message.success(`已设为当前有效版本 · 汇入投递名册 ${s.created} 条${s.skipped_sent ? `（${s.skipped_sent} 条已发冻结跳过）` : ''}`);
+      message.success(`已设为当前有效版本 · 名册新增 ${s.created}、更新 ${s.updated}、归档 ${s.archived} 条`);
       qc.invalidateQueries({ queryKey: ['subBatch', batchId] });
       qc.invalidateQueries({ queryKey: ['subBatches'] });
+      qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
     },
     onError: (e) => message.error(errText(e)),
   });
@@ -219,6 +220,9 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
   const current = artifacts.filter((a) => !a.is_historical);
 
   if (!batch) return <Card loading />;
+  const effectiveUnitPrice = batch.unit_price != null
+    ? Number(batch.unit_price)
+    : (13 - batch.start_month) * 20;
 
   const renderVersion = (v: ImportVersion) => {
     const st = IMPORT_STATUS_META[v.status];
@@ -262,6 +266,9 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
           <Title level={5} style={{ margin: 0 }}>{batch.year}年{batch.start_month}月 订报批次</Title>
           <Tag color={BATCH_STATUS_META[batch.status].color}>{BATCH_STATUS_META[batch.status].label}</Tag>
           {batch.active_version_id && <Text type="secondary">当前有效：版本 #{batch.active_version_id}</Text>}
+          <Text type="secondary">
+            完整订期单价：¥{effectiveUnitPrice.toFixed(2)}{batch.unit_price == null ? '（默认 20 元/月）' : ''}
+          </Text>
         </Space>
         {isAdmin && (
           <Popconfirm title="基于当前有效版本生成全部文件？" disabled={!batch.active_version_id}

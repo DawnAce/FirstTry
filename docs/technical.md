@@ -512,6 +512,10 @@ FirstTry/
 
 **一级菜单「邮局管理」现有 3 个二级菜单**：①**投递名册**（`/post-delivery/deliveries`，纯台账/查询）②**邮局订报生成**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表/分送表/zip，给邮局的名单只来自这里）③**客服工单**（`/post-delivery/tickets`，投诉/改地址/回访三合一，按类型筛选）。「收款发票」已迁到「财务管理」，作为财务管理第三个 Tab「邮局收款」（见 §4.16 迁移说明）。
 
+订报文件采用“全部内存构建 → 全部落盘 → 单事务切换当前产物”流程；构建、落盘或数据库提交任一步失败时，上一套完整产物继续保持当前状态，本轮已写的半成品文件会清理，并单独记录一条失败生成任务。
+
+`subscription_batches.unit_price` 表示“每份完整订期单价”：显式配置时，版本金额、明细 Excel 公式和邮局汇总表统一使用 `份数 × unit_price`；未配置时才回退为 `份数 × (13−起始月) × 20`。
+
 > **重构说明（2026-07，PR#76/#77/#78）**：①**「月度起投明细」整层已删除**（`PostalDeliveryBatch`/`PostalDeliveryRow` 两表、`/api/postal/batches*` 端点、前端 BatchesTab 全部删除；迁移 `c3d5e7f9a1b3` 删表，删表前用 `backend/scripts/export_postal_snapshot.py` 导 json 归档）；投递名册删除**守卫也已移除**（可直接删，不再有 409）。②「收款发票」迁到财务管理（后端 `/api/postal/finance/*` → `/api/finance/postal-receipts/*`）。③原「投诉工单/改地址/回访」三个独立 tab 合并为**客服工单**——回访不再是独立菜单/tab，成为工单的一种类型。
 
 **邮局投递 = 一种投递方式，与中通 ZTO-MF 同级**（照 `shipping_details` 的成熟模型：投递记录，可挂订单/可独立）。数据来源于平台订单，但**邮局明细本身是投递记录、不是订单**——用户只对 CBJ/淘宝/中经报有赞 等平台有订单详情，其余平台只有投递数据；中通与邮局的明细里都可能出现「订单里没有的数据」。
@@ -524,12 +528,12 @@ FirstTry/
 
 **服务 / API**：`app/services/postal_{order_import_parser,delivery_import_service,delivery_service}.py`；`app/api/postal.py`（`/api/postal/deliveries`、`/import/preview|commit`）。`partners` 删除守卫检查 `PostalDelivery.distribution_unit_id`（在用则 409）。
 
-**统一客服工单（PR-E，迁移 `d4e6f8a0b2c4`）**：投诉 / 改地址 / 回访通过 SQLAlchemy 单表继承统一存入 `postal_tickets`，类型列为 `complaint/address/follow`，公共字段含 `postal_delivery_id/order_id/external_order_no/year`，类型专属字段保持可空。投诉处理、关联回访和应用地址留痕统一存入 `postal_ticket_events`。迁移保留投诉主键，重排改地址 / 回访主键；同编号回访设置 `parent_ticket_id` 并写入投诉时间线，独立回访仍作为工单展示。旧模型模块仅保留兼容导出。
+**统一客服工单（PR-E，迁移 `d4e6f8a0b2c4`）**：投诉 / 改地址 / 回访通过 SQLAlchemy 单表继承统一存入 `postal_tickets`，类型列为 `complaint/address/follow`，公共字段含 `postal_delivery_id/order_id/external_order_no/year`，类型专属字段保持可空。投诉处理、关联回访和应用地址留痕统一存入 `postal_ticket_events`。迁移保留投诉主键，重排改地址 / 回访主键；同编号回访设置 `parent_ticket_id` 并写入投诉时间线，独立回访仍作为工单展示。前端新建三类工单统一复用投递名册查询选择读者，支持年度编号、姓名、电话、地址检索，选择后自动提交唯一的年度+编号并带入快照。旧模型模块仅保留兼容导出。
 
 **投诉工单（P2）**：投诉 `编号`(去前导零) + `年度` 经 `postal_common.delivery_map` → `postal_delivery`（`postal_delivery_id` 可空 SET NULL；关联的投递记录挂了真实订单才继承 `order_id`；匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；状态为 open/in_progress/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。
 
 **改地址工单 + 回访（P3）**：均按 编号+年度 关联投递记录；历史独立表已由 PR-E 迁入 `postal_tickets`。
-- **改地址**：编号(去零) + `year(修改日期)` → `postal_delivery`；处理情况归一 `routed_label`（XX局）；**「应用新地址」** `apply_address_change` 把新姓名/电话/地址写回**投递记录**并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——若该读者挂了真实订单则同步当前 `FulfillmentTarget`（=同步履约订单），详情标注「已应用·已同步履约订单」或「已应用·仅名册」；未关联投递记录（`postal_delivery_id` 空）→ 400。
+- **改地址**：编号(去零) + `year(修改日期时间)` → `postal_delivery`；`change_date` 为 `DateTime`（迁移 `b7d9f1a3c5e8`；历史日期保留为当天 `00:00`），处理情况归一 `routed_label`（XX局）；**「应用新地址」** `apply_address_change` 把新姓名/电话/地址写回**投递记录**并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——若该读者挂了真实订单则同步当前 `FulfillmentTarget`（=同步履约订单），详情标注「已应用·已同步履约订单」或「已应用·仅名册」；未关联投递记录（`postal_delivery_id` 空）→ 400。应用后工单永久只读，更新/删除均以行锁复查并返回 409；再次更正必须新建工单，避免审计记录与已写入地址失配。
 - **回访**：把读者明细「按天开列」的回访列（`YYYYMMDD回访`）拍平成一行一条，列头解析日期；同样关联投递记录。
 - 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/`order_map`/`delivery_map`）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`；前端统一使用 `/api/postal/tickets*` 完成列表、详情、CRUD、应用、处理和导入。旧 `/complaints`、`/address-changes`、`/follow-ups` 路径仅作部署兼容。
 
@@ -1637,13 +1641,13 @@ draft ──confirm──> active ──void──> void
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/api/postal/deliveries` | **投递名册**：全部投递记录，筛选 `year`/`channel`/`distribution_unit_id`/`month`(起投月)/`search`(姓名·编号) + 分页 |
+| `GET` | `/api/postal/deliveries` | **投递名册**：全部投递记录，筛选 `year`/`channel`/`distribution_unit_id`/`month`(起投月)/`search`(年度编号·姓名·电话·地址·邮编·平台单号) + 分页；客服工单新建选择器复用此查询 |
 | `POST` | `/api/postal/import/preview` | 上传《邮局读者明细》.xlsx 预览 → 投递记录（不造订单）；计数 import/duplicate/unresolved |
 | `POST` | `/api/postal/import/commit` | 提交导入（建 `PostalDelivery`；`(year, delivery_no)` 去重幂等） |
 | `GET` | `/api/postal/tickets` | **客服工单统一查询**：从 `postal_tickets` 按 `type`/`year`/`status`/`applied`/`search` 做数据库筛选与分页；返回 `TicketOut` 和类型计数 `summary{complaint,address,follow}` |
 | `POST` | `/api/postal/tickets` | 按 body `type` 新增投诉 / 改地址 / 独立回访工单 |
-| `GET`/`PUT`/`DELETE` | `/api/postal/tickets/{id}` | 统一详情 / 编辑 / 删除；响应带类型判别字段 |
-| `POST` | `/api/postal/tickets/{id}/apply` | 应用改地址：写回投递记录，挂真实订单则同步当前 `FulfillmentTarget` |
+| `GET`/`PUT`/`DELETE` | `/api/postal/tickets/{id}` | 统一详情 / 编辑 / 删除；响应带类型判别字段；已应用改地址的 `PUT`/`DELETE` 返回 409；删除投诉会删除其时间线，但关联回访解除归属后恢复为独立工单 |
+| `POST` | `/api/postal/tickets/{id}/apply` | 应用改地址：写回投递记录；挂真实订单时精确同步已绑定 `FulfillmentTarget`，未绑定仅接受唯一当前邮局目标，多目标返回 409 |
 | `POST`/`DELETE` | `/api/postal/tickets/{id}/handlings[/{handling_id}]` | 新增 / 删除投诉处理时间线 |
 | `POST` | `/api/postal/tickets/import/{type}/preview` · `/commit` | 按类型导入投诉 / 改地址 / 回访；同编号回访并入投诉时间线 |
 
@@ -1663,7 +1667,7 @@ draft ──confirm──> active ──void──> void
 
 **关键点**：`import/commit` 返回 `{created, delivery_ids?, skipped_duplicates}`（投递记录导入用 `delivery_ids`，工单/发票用 `created`）。工单列表出参含 `postal_delivery_id`（前端据此显示「已关联读者 / 未匹配」）；改地址出参含 `applied_to_order`/`applied_by`/`applied_at`。删除被邮局投递引用的投递单位 `Partner` 会被 §partners 守卫拦（409，见 §3.17）。
 
-**投诉三态处理流程（PR#41，PR-E 后）**：投诉状态为 **open(待处理) / in_progress(处理中) / resolved(已解决)**；每次处理经 `POST /tickets/{id}/handlings` 追加一行到 **`postal_ticket_events`**（处理时间 / 处理人 / 处理过程 / 回访结果 / 本次处理后状态），`handling_count +1`，状态由最新处理驱动；删除处理记录会回退到剩余最新状态。迁移 `c7e9a1b3d5f2` 最初建立三态和旧处理子表，PR-E 迁移 `d4e6f8a0b2c4` 再将其归一到统一时间线。
+**投诉三态处理流程（PR#41，PR-E 后）**：投诉状态为 **open(待处理) / in_progress(处理中) / resolved(已解决)**；每次处理经 `POST /tickets/{id}/handlings` 追加一行到 **`postal_ticket_events`**（处理时间 / 处理人 / 处理过程 / 回访结果 / 本次处理后状态），`handling_count +1`，状态由最新处理驱动；删除处理记录会回退到剩余最新状态。删除投诉前会将关联回访的 `parent_ticket_id` 置空，因此投诉时间线随投诉删除，而源回访恢复为独立工单；外键也由迁移 `f6b8d0e2a4c7` 改为 `ON DELETE SET NULL`，避免数据库级联误删。迁移 `c7e9a1b3d5f2` 最初建立三态和旧处理子表，PR-E 迁移 `d4e6f8a0b2c4` 再将其归一到统一时间线。
 
 ### 4.17 全局搜索（顶栏快速跳转）
 

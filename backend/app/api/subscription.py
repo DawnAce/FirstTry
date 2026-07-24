@@ -110,9 +110,16 @@ def get_import_records(version_id: int, db: Session = Depends(get_db), _user: Us
 @router.post("/imports/{version_id}/activate", response_model=ActivateOut)
 def activate_import(version_id: int, db: Session = Depends(get_db), user: User = Depends(require_admin)):
     version = batch_svc.activate_version(db, version_id, operator_id=getattr(user, "id", None))
-    sync = getattr(version, "postal_sync", {"created": 0, "replaced": 0, "skipped_sent": 0})
+    sync = getattr(
+        version,
+        "postal_sync",
+        {"created": 0, "updated": 0, "archived": 0, "replaced": 0, "skipped_sent": 0},
+    )
     _log(db, table="subscription_import_versions", record_id=version.id, action="update", user=user,
-         name=f"设为有效 V{version.version_no} · 汇入名册 {sync.get('created', 0)} 条")
+         name=(
+             f"设为有效 V{version.version_no} · 名册新增 {sync.get('created', 0)} / "
+             f"更新 {sync.get('updated', 0)} / 归档 {sync.get('archived', 0)}"
+         ))
     return ActivateOut(version=version, postal_sync=sync)
 
 

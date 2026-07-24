@@ -70,13 +70,10 @@ import {
 } from '../api/postal';
 import type {
   AddrImportRow,
-  AddressChangePayload,
   ComplaintImportPreview,
   ComplaintImportRow,
-  ComplaintPayload,
   DeliveryPayload,
   FollowImportRow,
-  FollowUpPayload,
   PostalAddressChange,
   PostalComplaint,
   PostalComplaintHandling,
@@ -121,6 +118,48 @@ function errText(err: unknown): string {
 
 const toDay = (s?: string | null): Dayjs | null => (s ? dayjs(s) : null);
 const fromDay = (d?: Dayjs | null): string | null => (d ? d.format('YYYY-MM-DD') : null);
+const fromDateTime = (d?: Dayjs | null): string | null => (d ? d.format('YYYY-MM-DDTHH:mm:ss') : null);
+
+/** 新建工单时从投递名册选人；复用名册查询，不维护第二套“客户”数据。 */
+function ReaderLookup({ value, onChange, onSelectReader }: {
+  value?: number;
+  onChange?: (value: number) => void;
+  onSelectReader: (reader: PostalDelivery) => void;
+}) {
+  const [typed, setTyped] = useState('');
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(typed.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [typed]);
+  const q = useQuery({
+    queryKey: ['postalReaderLookup', search],
+    queryFn: () => listDeliveries({ search, page: 1, page_size: 20 }).then((r) => r.data.rows),
+    enabled: search.length > 0,
+    staleTime: 30_000,
+  });
+  const readers = q.data ?? [];
+  return (
+    <Select
+      value={value}
+      showSearch
+      filterOption={false}
+      loading={q.isFetching}
+      placeholder="输入编号、姓名、电话或地址"
+      onSearch={setTyped}
+      onChange={(id: number) => {
+        onChange?.(id);
+        const reader = readers.find((item) => item.id === id);
+        if (reader) onSelectReader(reader);
+      }}
+      notFoundContent={search ? (q.isFetching ? '搜索中…' : '未找到匹配读者') : '请输入检索内容'}
+      options={readers.map((reader) => ({
+        value: reader.id,
+        label: `${reader.year}-${reader.delivery_no}｜${reader.recipient_name}｜${reader.recipient_phone || '无电话'}｜${reader.recipient_address}`,
+      }))}
+    />
+  );
+}
 
 /** 工单「读者」列：编号+年度是否关联到投递记录。 */
 function readerTag(postalDeliveryId: number | null) {
@@ -523,7 +562,8 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
 
   const saveMut = useMutation({
     mutationFn: (v: any) => {
-      const body: ComplaintPayload = { ...v, complaint_date: fromDay(v.complaint_date) };
+      const body = { ...v, complaint_date: fromDay(v.complaint_date) };
+      delete body.postal_delivery_id;
       return editing ? updateComplaint(editing.id, body) : createComplaint(body);
     },
     onSuccess: () => {
@@ -539,9 +579,22 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
     <Modal title={editing ? '编辑投诉' : '新增投诉'} open={open} onCancel={onClose}
       onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={640} destroyOnClose>
       <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+        {!editing && (
+          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递名册选择读者' }]}
+            extra="可按年度编号（如 2026-6325）、姓名、电话或地址搜索">
+            <ReaderLookup onSelectReader={(reader) => form.setFieldsValue({
+              year: reader.year,
+              delivery_no: reader.delivery_no,
+              snap_name: reader.recipient_name,
+              snap_phone: reader.recipient_phone,
+              snap_address: reader.recipient_address,
+              routed_unit_id: reader.distribution_unit_id,
+            })} />
+          </Form.Item>
+        )}
         <Flex gap={12} wrap>
-          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
-          <Form.Item name="delivery_no" label="编号（关联读者）" style={{ width: 180 }}><Input placeholder="去零编号，如 680" /></Form.Item>
+          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber disabled={!editing} style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
+          <Form.Item name="delivery_no" label="编号" style={{ width: 180 }}><Input disabled={!editing} /></Form.Item>
           <Form.Item name="complaint_date" label="接诉日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
         </Flex>
         <Form.Item name="missing_issues" label="投诉情况"><Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} /></Form.Item>
@@ -550,12 +603,12 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
           <Form.Item name="routed_unit_id" label="投递单位" style={{ width: 180 }}><Select allowClear showSearch optionFilterProp="label" options={unitOpts} /></Form.Item>
         </Flex>
         <Flex gap={12} wrap>
-          <Form.Item name="snap_name" label="收报人（快照，留空自动带出）" style={{ width: 220 }}><Input /></Form.Item>
-          <Form.Item name="snap_phone" label="电话" style={{ width: 150 }}><Input /></Form.Item>
+          <Form.Item name="snap_name" label="收报人（名册快照）" style={{ width: 220 }}><Input disabled={!editing} /></Form.Item>
+          <Form.Item name="snap_phone" label="电话" style={{ width: 150 }}><Input disabled={!editing} /></Form.Item>
           <Form.Item name="first_handler" label="第一接诉人" style={{ width: 130 }}><Input /></Form.Item>
           <Form.Item name="status" label="状态" style={{ width: 130 }}><Select options={COMPLAINT_STATUS_OPTS} /></Form.Item>
         </Flex>
-        <Form.Item name="snap_address" label="地址（快照）"><Input /></Form.Item>
+        <Form.Item name="snap_address" label="地址（名册快照）"><Input disabled={!editing} /></Form.Item>
         <Form.Item name="notes" label="备注"><Input /></Form.Item>
       </Form>
     </Modal>
@@ -679,12 +732,13 @@ function AddressChangeFormModal({ open, editing, onClose }: {
   useEffect(() => {
     if (!open) return;
     if (editing) form.setFieldsValue({ ...editing, change_date: toDay(editing.change_date) });
-    else form.resetFields();
+    else { form.resetFields(); form.setFieldsValue({ change_date: dayjs() }); }
   }, [open, editing, form]);
 
   const saveMut = useMutation({
     mutationFn: (v: any) => {
-      const body: AddressChangePayload = { ...v, change_date: fromDay(v.change_date) };
+      const body = { ...v, change_date: fromDateTime(v.change_date) };
+      delete body.postal_delivery_id;
       return editing ? updateAddressChange(editing.id, body) : createAddressChange(body);
     },
     onSuccess: () => { message.success(editing ? '改地址已更新' : '改地址已新增'); qc.invalidateQueries({ queryKey: ['postalAddrChanges'] }); qc.invalidateQueries({ queryKey: ['postalTickets'] }); onClose(); },
@@ -695,13 +749,36 @@ function AddressChangeFormModal({ open, editing, onClose }: {
     <Modal title={editing ? '编辑改地址' : '新增改地址'} open={open} onCancel={onClose}
       onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={640} destroyOnClose>
       <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+        {!editing && (
+          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递名册选择读者' }]}
+            extra="可按年度编号（如 2026-6325）、姓名、电话或地址搜索；选中后自动带入原信息">
+            <ReaderLookup onSelectReader={(reader) => form.setFieldsValue({
+              year: reader.year,
+              delivery_no: reader.delivery_no,
+              old_name: reader.recipient_name,
+              old_phone: reader.recipient_phone,
+              old_address: reader.recipient_address,
+              old_copies: reader.copies,
+              original_start_month: reader.coverage_start_date ? dayjs(reader.coverage_start_date).format('MMDD') : null,
+            })} />
+          </Form.Item>
+        )}
         <Flex gap={12} wrap>
-          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
-          <Form.Item name="delivery_no" label="编号（关联读者）" style={{ width: 180 }}><Input placeholder="去零编号" /></Form.Item>
-          <Form.Item name="change_date" label="修改日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber disabled={!editing} style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
+          <Form.Item name="delivery_no" label="编号" style={{ width: 180 }}><Input disabled={!editing} /></Form.Item>
+          <Form.Item name="change_date" label="修改日期时间" style={{ width: 210 }}>
+            <DatePicker showTime={{ format: 'HH:mm' }} format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} />
+          </Form.Item>
         </Flex>
+        <Divider plain>原始信息（从投递名册带入）</Divider>
         <Flex gap={12} wrap>
-          <Form.Item name="old_name" label="原姓名" style={{ width: 150 }}><Input /></Form.Item>
+          <Form.Item name="old_name" label="原姓名" style={{ width: 150 }}><Input disabled={!editing} /></Form.Item>
+          <Form.Item name="old_phone" label="原电话" style={{ width: 160 }}><Input disabled={!editing} /></Form.Item>
+          <Form.Item name="old_copies" label="原份数" style={{ width: 110 }}><InputNumber disabled={!editing} style={{ width: '100%' }} /></Form.Item>
+        </Flex>
+        <Form.Item name="old_address" label="原地址"><Input disabled={!editing} /></Form.Item>
+        <Divider plain>修改后信息</Divider>
+        <Flex gap={12} wrap>
           <Form.Item name="new_name" label="新姓名" style={{ width: 150 }}><Input /></Form.Item>
           <Form.Item name="new_phone" label="新电话" style={{ width: 160 }}><Input /></Form.Item>
           <Form.Item name="new_copies" label="新份数" style={{ width: 110 }}><InputNumber style={{ width: '100%' }} min={0} /></Form.Item>
@@ -732,7 +809,8 @@ function FollowUpFormModal({ open, editing, onClose, onSaved }: {
 
   const saveMut = useMutation({
     mutationFn: (v: any) => {
-      const body: FollowUpPayload = { ...v, follow_up_date: fromDay(v.follow_up_date) };
+      const body = { ...v, follow_up_date: fromDay(v.follow_up_date) };
+      delete body.postal_delivery_id;
       return editing ? updateFollowUp(editing.id, body) : createFollowUp(body);
     },
     onSuccess: () => { message.success(editing ? '回访已更新' : '回访已新增'); qc.invalidateQueries({ queryKey: ['postalFollowUps'] }); qc.invalidateQueries({ queryKey: ['postalTickets'] }); onSaved?.(); onClose(); },
@@ -743,13 +821,23 @@ function FollowUpFormModal({ open, editing, onClose, onSaved }: {
     <Modal title={editing ? '编辑回访' : '新增回访'} open={open} onCancel={onClose}
       onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={560} destroyOnClose>
       <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+        {!editing && (
+          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递名册选择读者' }]}
+            extra="可按年度编号（如 2026-6325）、姓名、电话或地址搜索">
+            <ReaderLookup onSelectReader={(reader) => form.setFieldsValue({
+              year: reader.year,
+              delivery_no: reader.delivery_no,
+              snap_name: reader.recipient_name,
+            })} />
+          </Form.Item>
+        )}
         <Flex gap={12} wrap>
-          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
-          <Form.Item name="delivery_no" label="编号（关联读者）" style={{ width: 180 }}><Input placeholder="去零编号" /></Form.Item>
+          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber disabled={!editing} style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
+          <Form.Item name="delivery_no" label="编号" style={{ width: 180 }}><Input disabled={!editing} /></Form.Item>
           <Form.Item name="follow_up_date" label="回访日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
         </Flex>
         <Flex gap={12} wrap>
-          <Form.Item name="snap_name" label="收报人" style={{ width: 160 }}><Input /></Form.Item>
+          <Form.Item name="snap_name" label="收报人（名册快照）" style={{ width: 220 }}><Input disabled={!editing} /></Form.Item>
           <Form.Item name="batch_label" label="批次列头" style={{ width: 180 }}><Input placeholder="如 20240227回访" /></Form.Item>
         </Flex>
         <Form.Item name="result" label="回访结果"><Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} /></Form.Item>
@@ -801,7 +889,9 @@ function AddressDetailDrawer({ addressId, onEdit, onClose }: {
   const a = q.data;
   return (
     <Drawer title="改地址工单" width={560} open={open} onClose={onClose} destroyOnClose
-      extra={isAdmin && a && <Button icon={<EditOutlined />} onClick={() => onEdit(a)}>编辑</Button>}>
+      extra={isAdmin && a && (a.applied_to_order
+        ? <Text type="secondary">已应用 · 只读</Text>
+        : <Button icon={<EditOutlined />} onClick={() => onEdit(a)}>编辑</Button>)}>
       {!a ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <div className="diff-row" style={{ display: 'flex', gap: 12 }}>
@@ -817,8 +907,9 @@ function AddressDetailDrawer({ addressId, onEdit, onClose }: {
             </Card>
           </div>
           <Descriptions size="small" column={1} bordered items={[
+            { key: 'date', label: '修改时间', children: a.change_date ? dayjs(a.change_date).format('YYYY-MM-DD HH:mm') : '—' },
             { key: 'st', label: '起月日', children: `${a.original_start_month || '—'} → ${a.effective_start_month || '—'}` },
-            { key: 'h', label: '处理情况', children: <>{a.routed_label && <Tag>{a.routed_label}</Tag>}{a.handling || (a.routed_label ? '' : '—')}</> },
+            { key: 'h', label: '处理情况', children: a.handling || (a.routed_label ? <Tag>{a.routed_label}</Tag> : '—') },
             { key: 'r', label: '关联读者', children: readerTag(a.postal_delivery_id) },
             { key: 'no', label: '编号', children: a.external_order_no || '—' },
             { key: 'ap', label: '应用状态', children: a.applied_to_order
@@ -940,7 +1031,7 @@ function TicketsTab() {
 
   const cols: TableColumnsType<Ticket> = [
     { title: '类型', key: 'type', width: 84, render: (_: unknown, r) => <Tag color={TICKET_TYPE_META[r.type].color}>{TICKET_TYPE_META[r.type].label}</Tag> },
-    { title: '日期', dataIndex: 'ticket_date', width: 108, render: (v: string | null) => v || '—' },
+    { title: '日期', dataIndex: 'ticket_date', width: 148, render: (v: string | null, r) => v ? dayjs(v).format(r.type === 'address' ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD') : '—' },
     { title: '收报人', dataIndex: 'recipient_name', width: 100, render: (v: string | null) => v || '—' },
     { title: '编号', dataIndex: 'delivery_no', width: 90, render: (v: string | null) => v || '—' },
     { title: '摘要', dataIndex: 'summary', ellipsis: true, render: (v: string | null) => v || '—' },
@@ -948,17 +1039,30 @@ function TicketsTab() {
     { title: '处理次', dataIndex: 'handling_count', width: 68, align: 'right', render: (v: number | null) => v ?? '—' },
     { title: '读者', key: 'reader', width: 96, render: (_: unknown, r) => readerTag(r.postal_delivery_id) },
     {
-      title: '操作', key: 'act', width: isAdmin ? 170 : 80, render: (_: unknown, r: Ticket) => (
-        <Space size={0}>
-          <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => openDetail(r)}>{r.type === 'complaint' ? '处理' : '详情'}</Button>
-          {isAdmin && <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />}
-          {isAdmin && (
-            <Popconfirm title={`删除该${TICKET_TYPE_META[r.type].label}工单？`} okText="删除" okButtonProps={{ danger: true }} onConfirm={() => onDelete(r)}>
-              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+      title: '操作', key: 'act', width: isAdmin ? 170 : 80, render: (_: unknown, r: Ticket) => {
+        const isAppliedAddress = r.type === 'address' && r.applied_to_order === true;
+        return (
+          <Space size={0}>
+            <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => openDetail(r)}>{r.type === 'complaint' ? '处理' : '详情'}</Button>
+            {isAdmin && (isAppliedAddress ? (
+              <Text type="secondary" style={{ fontSize: 12, padding: '0 7px' }}>已锁定</Text>
+            ) : (
+              <>
+                <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+                <Popconfirm
+                  title={`删除该${TICKET_TYPE_META[r.type].label}工单？`}
+                  description={r.type === 'complaint' ? '关联回访不会删除，将恢复为独立回访工单。' : undefined}
+                  okText="删除"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => onDelete(r)}
+                >
+                  <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </>
+            ))}
+          </Space>
+        );
+      },
     },
   ];
 

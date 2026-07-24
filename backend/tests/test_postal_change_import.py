@@ -1,7 +1,7 @@
 """邮局改地址 + 回访导入 · 单元测试（重构后：关联投递记录；应用新地址写回记录）。"""
 
 import io
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import openpyxl
@@ -23,6 +23,7 @@ from app.models import (
     Publication,
     PublicationFormat,
     ShippingChannel,
+    TargetStatus,
 )
 from app.schemas.order import FulfillmentTargetIn, OrderCreate, OrderItemIn
 from app.services import postal_change_service as change_svc
@@ -51,10 +52,22 @@ def db():
         s.close()
 
 
-def _delivery(db, no, name, *, addr="旧地址1号", year=2024, order_id=None):
+def _delivery(
+    db,
+    no,
+    name,
+    *,
+    addr="旧地址1号",
+    year=2024,
+    order_id=None,
+    order_item_id=None,
+    fulfillment_target_id=None,
+):
     d = PostalDelivery(year=year, delivery_no=no, recipient_name=name,
                        recipient_address=addr, copies=1,
-                       coverage_start_date=date(year, 1, 1), order_id=order_id)
+                       coverage_start_date=date(year, 1, 1), order_id=order_id,
+                       order_item_id=order_item_id,
+                       fulfillment_target_id=fulfillment_target_id)
     db.add(d)
     db.flush()
     return d
@@ -75,6 +88,20 @@ def _real_order(db, ext, name, addr="旧地址1号"):
         )],
     )
     return create_imported_order(db, oc, order_code=f"C-{ext}")
+
+
+def _second_target(db, first, *, name="另一位收报人", addr="另一地址2号"):
+    target = FulfillmentTarget(
+        order_item_id=first.order_item_id,
+        allocation_id=first.allocation_id,
+        recipient_name=name,
+        recipient_address=addr,
+        quantity=1,
+        shipping_channel=ShippingChannel.post_office,
+    )
+    db.add(target)
+    db.flush()
+    return target
 
 
 # ---- 改地址 ----------------------------------------------------------------
@@ -115,6 +142,8 @@ def test_address_change_parse_link_commit(db):
 
     out, sid = addr_preview(db, _addr_wb(_ADDR_ROWS))
     assert addr_commit(db, sid)["created"] == 2
+    imported = db.query(PostalAddressChange).filter_by(external_order_no="2024-402").one()
+    assert imported.change_date == datetime(2024, 1, 3, 0, 0)
     # 幂等
     out2, _ = addr_preview(db, _addr_wb(_ADDR_ROWS))
     assert out2["counts"]["duplicate"] == 2
@@ -158,6 +187,108 @@ def test_apply_also_updates_linked_real_order(db):
     assert tgt.recipient_name == "肖老师"
     assert tgt.recipient_phone == "18616817895"
     assert tgt.recipient_address == "上海市浦东新区沪南路2199弄4号楼604"
+    delivery = db.query(PostalDelivery).one()
+    assert delivery.order_item_id == tgt.order_item_id
+    assert delivery.fulfillment_target_id == tgt.id
+
+
+def test_apply_updates_explicit_target_only_when_order_has_multiple_targets(db):
+    """显式绑定 fulfillment_target_id 时，只修改该目标，不碰同订单其他收报人。"""
+    order = _real_order(db, "PLAT-638", "赵旭", addr="上海市旧地址")
+    first = db.query(FulfillmentTarget).one()
+    second = _second_target(db, first)
+    delivery = _delivery(
+        db,
+        "638",
+        "赵旭",
+        addr="上海市旧地址",
+        order_id=order.id,
+        order_item_id=first.order_item_id,
+        fulfillment_target_id=first.id,
+    )
+    ac = PostalAddressChange(
+        year=2024,
+        external_order_no="2024-638",
+        postal_delivery_id=delivery.id,
+        order_id=order.id,
+        new_name="赵旭新",
+        new_address="上海市浦东新区新地址8号",
+    )
+    db.add(ac)
+    db.commit()
+
+    change_svc.apply_address_change(db, ac.id, operator_id=1)
+
+    db.refresh(first)
+    db.refresh(second)
+    assert first.recipient_name == "赵旭新"
+    assert first.recipient_address == "上海市浦东新区新地址8号"
+    assert second.recipient_name == "另一位收报人"
+    assert second.recipient_address == "另一地址2号"
+
+
+def test_apply_rejects_ambiguous_order_targets_without_writing(db):
+    """没有绑定目标且订单存在多个当前邮局目标时返回 409，名册和订单都不改。"""
+    order = _real_order(db, "PLAT-639", "赵旭", addr="上海市旧地址")
+    first = db.query(FulfillmentTarget).one()
+    second = _second_target(db, first)
+    delivery = _delivery(db, "639", "赵旭", addr="上海市旧地址", order_id=order.id)
+    ac = PostalAddressChange(
+        year=2024,
+        external_order_no="2024-639",
+        postal_delivery_id=delivery.id,
+        order_id=order.id,
+        new_name="不应写入",
+        new_address="不应写入的新地址",
+    )
+    db.add(ac)
+    db.commit()
+
+    with pytest.raises(HTTPException) as ei:
+        change_svc.apply_address_change(db, ac.id, operator_id=1)
+    assert ei.value.status_code == 409
+    assert "多个当前邮局履约目标" in ei.value.detail
+
+    db.refresh(delivery)
+    db.refresh(first)
+    db.refresh(second)
+    db.refresh(ac)
+    assert delivery.recipient_name == "赵旭"
+    assert delivery.recipient_address == "上海市旧地址"
+    assert first.recipient_name == "赵旭"
+    assert second.recipient_name == "另一位收报人"
+    assert ac.applied_to_order is False
+
+
+def test_apply_rejects_stale_explicit_target(db):
+    """显式绑定的目标已失效时不自动改到别的目标。"""
+    order = _real_order(db, "PLAT-640", "赵旭", addr="上海市旧地址")
+    target = db.query(FulfillmentTarget).one()
+    target.status = TargetStatus.suspended
+    delivery = _delivery(
+        db,
+        "640",
+        "赵旭",
+        addr="上海市旧地址",
+        order_id=order.id,
+        fulfillment_target_id=target.id,
+    )
+    ac = PostalAddressChange(
+        year=2024,
+        external_order_no="2024-640",
+        postal_delivery_id=delivery.id,
+        order_id=order.id,
+        new_address="不应写入的新地址",
+    )
+    db.add(ac)
+    db.commit()
+
+    with pytest.raises(HTTPException) as ei:
+        change_svc.apply_address_change(db, ac.id, operator_id=1)
+    assert ei.value.status_code == 409
+    assert "已失效或不属于该订单" in ei.value.detail
+    db.refresh(delivery)
+    assert delivery.recipient_address == "上海市旧地址"
 
 
 def test_apply_unmatched_is_rejected(db):

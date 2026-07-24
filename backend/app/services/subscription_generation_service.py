@@ -6,7 +6,8 @@
 3. 1-76《中国经营报》集订分送表~{Y}年{M}月起报~{地区}.xlsx（仅有订户地区；用邮局模板保留说明页/产品页）
 并打包 北京{yy}年{M}月订报明细.zip（邮局汇总 + 全部地区明细）。
 
-金额/汇总**复刻活公式**（明细 =M*N*20、汇总 SUMIF）；单价=N×20，N=13−起始月。
+金额/汇总**复刻活公式**（明细 = 份数 × 完整订期单价、汇总 SUMIF）；批次未配置
+完整订期单价时使用 N×20，N=13−起始月。
 版式：宋体11、标题/表头/合计加粗、A4+打印区域；无签名图片（签名为文字）。
 """
 
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     SubscriptionArtifactType,
     SubscriptionBatch,
+    SubscriptionBatchStatus,
     SubscriptionGenerationRun,
     SubscriptionImportStatus,
     SubscriptionOutputArtifact,
@@ -33,6 +35,7 @@ from app.models import (
     SubscriptionRunStatus,
 )
 from app.services import attachment_service
+from app.services import subscription_calc_service as calc
 from app.services import subscription_import_service as import_svc
 
 BASE_FONT = "宋体"
@@ -113,6 +116,7 @@ def _build_workbook(records: List[SubscriptionRecord], batch: SubscriptionBatch,
     last = count + 1  # 明细数据末行
     mm = f"{batch.start_month:02d}"
     regions = _region_order(records)
+    complete_term_unit_price = calc.resolve_complete_term_unit_price(N, batch.unit_price)
 
     wb = Workbook()
 
@@ -141,7 +145,12 @@ def _build_workbook(records: List[SubscriptionRecord], batch: SubscriptionBatch,
         _cell(det, i, 11, f"{mm}01", al=LC, nf=NF_TEXT)
         _cell(det, i, 12, "1231", al=RC, nf=NF_TEXT)
         _cell(det, i, 13, int(r.copies or 0), al=MC, nf=NF_COPIES)
-        _cell(det, i, 14, f"=M{i}*{N}*20", al=RC, nf=NF_YEN0)
+        amount_formula = (
+            f"=M{i}*{N}*20"
+            if batch.unit_price is None
+            else f"=M{i}*{complete_term_unit_price}"
+        )
+        _cell(det, i, 14, amount_formula, al=RC, nf=NF_YEN0)
         _cell(det, i, 15, r.source_channel or "", al=LC)
         _cell(det, i, 16, r.remittance_name or "", al=LC)
         _cell(det, i, 17, r.remittance_date or "", al=LC)
@@ -226,7 +235,8 @@ def _apply_apply_row_heights(ap) -> None:
 
 def _build_postal_summary(records: List[SubscriptionRecord], batch: SubscriptionBatch, N: int) -> bytes:
     mm = f"{batch.start_month:02d}"
-    unit = N * 20
+    unit = calc.resolve_complete_term_unit_price(N, batch.unit_price)
+    unit_number_format = NF_INT if batch.unit_price is None else NF_YEN2
     regions = _region_order(records)
     agg = {reg: {"count": 0, "copies": 0} for reg in regions}
     for r in records:
@@ -248,7 +258,7 @@ def _build_postal_summary(records: List[SubscriptionRecord], batch: Subscription
         _cell(ws, r, 4, region, al=CC)
         _cell(ws, r, 5, cnt, al=CC)
         _cell(ws, r, 6, cop, al=CC)
-        _cell(ws, r, 7, unit, al=CC, nf=NF_INT)
+        _cell(ws, r, 7, unit, al=CC, nf=unit_number_format)
         _cell(ws, r, 8, cop * unit, al=CC, nf=NF_YEN2)
         r += 1
     if regions:
@@ -257,7 +267,7 @@ def _build_postal_summary(records: List[SubscriptionRecord], batch: Subscription
     _cell(ws, r, 1, "合计", font=FB, al=CC)
     _cell(ws, r, 5, sum(a["count"] for a in agg.values()), font=FB, al=CC)
     _cell(ws, r, 6, sum(a["copies"] for a in agg.values()), font=FB, al=CC)
-    _cell(ws, r, 7, None, font=FB, al=CC, nf=NF_INT)
+    _cell(ws, r, 7, None, font=FB, al=CC, nf=unit_number_format)
     _cell(ws, r, 8, sum(a["copies"] for a in agg.values()) * unit, font=FB, al=CC, nf=NF_YEN2)
     _box(ws, 1, r, 1, 8)
     if regions:
@@ -294,6 +304,43 @@ def _build_region_detail(region: str, recs: List[SubscriptionRecord], batch: Sub
 
 # --- 编排 -------------------------------------------------------------------
 
+def _persist_failed_run(
+    db: Session,
+    *,
+    batch_id: int,
+    version_id: int,
+    started_at: datetime,
+    error: Exception,
+) -> None:
+    """在独立事务中尽力留下失败记录，不让审计写入影响原始异常。"""
+    try:
+        db.rollback()
+        db.add(SubscriptionGenerationRun(
+            batch_id=batch_id,
+            version_id=version_id,
+            rule_version=RULE_VERSION,
+            template_version=TEMPLATE_VERSION,
+            status=SubscriptionRunStatus.failed,
+            started_at=started_at,
+            ended_at=datetime.now(),
+            error=str(error),
+        ))
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+
+
+def _delete_stored_files(stored_paths: List[str]) -> None:
+    for stored_path in stored_paths:
+        attachment_service.delete_file(stored_path)
+
+
+def _generation_error(exc: Exception):
+    from fastapi import HTTPException
+
+    return HTTPException(status_code=500, detail=f"生成失败：{exc}")
+
+
 def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int] = None) -> SubscriptionGenerationRun:
     from fastapi import HTTPException
 
@@ -310,37 +357,24 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
     make_date = batch.make_date or date.today()
     N = import_svc.months_for(batch.start_month)
     m = batch.start_month
-
-    run = SubscriptionGenerationRun(
-        batch_id=batch.id, version_id=version.id,
-        rule_version=RULE_VERSION, template_version=TEMPLATE_VERSION,
-        status=SubscriptionRunStatus.running, started_at=datetime.now(),
-    )
-    db.add(run)
-    db.flush()
-
-    db.query(SubscriptionOutputArtifact).filter(
-        SubscriptionOutputArtifact.batch_id == batch.id,
-        SubscriptionOutputArtifact.is_historical == False,  # noqa: E712
-    ).update({"is_historical": True}, synchronize_session=False)
-
+    batch_id = batch.id
+    version_id = version.id
+    started_at = datetime.now()
     category = f"subscription/{batch.year}-{m:02d}/gen"
-
-    def _store(atype, filename, content, region=None):
-        stored = attachment_service.store_file(category, filename, content)
-        db.add(SubscriptionOutputArtifact(
-            run_id=run.id, batch_id=batch.id, version_id=version.id,
-            artifact_type=atype, region_name=region, filename=filename,
-            stored_path=stored, sha256=attachment_service.sha256_hex(content),
-        ))
+    artifact_specs = []
 
     try:
         wb_bytes = _build_workbook(records, batch, N, make_date)
         wb_name = f"北京-{batch.year}年{m}月中国经营报订阅汇总+明细+申请.xlsx"
-        _store(SubscriptionArtifactType.workbook, wb_name, wb_bytes)
+        artifact_specs.append((SubscriptionArtifactType.workbook, wb_name, wb_bytes, None))
 
         ps_bytes = _build_postal_summary(records, batch, N)
-        _store(SubscriptionArtifactType.postal_summary, "北京局订报汇总表.xlsx", ps_bytes)
+        artifact_specs.append((
+            SubscriptionArtifactType.postal_summary,
+            "北京局订报汇总表.xlsx",
+            ps_bytes,
+            None,
+        ))
 
         by_region: dict = {}
         for r in records:
@@ -349,7 +383,7 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
         for region in _region_order(records):
             rd = _build_region_detail(region, by_region[region], batch)
             fname = f"1-76《中国经营报》集订分送表~{batch.year}年{m}月起报~{region}.xlsx"
-            _store(SubscriptionArtifactType.region_detail, fname, rd, region=region)
+            artifact_specs.append((SubscriptionArtifactType.region_detail, fname, rd, region))
             region_files.append((fname, rd))
 
         # ZIP 完整还原「输出」文件夹结构：顶层汇总+明细+申请，子目录「北京邮局订报数据」。
@@ -359,19 +393,90 @@ def generate(db: Session, batch: SubscriptionBatch, *, operator_id: Optional[int
             zf.writestr("北京邮局订报数据/北京局订报汇总表.xlsx", ps_bytes)
             for fname, content in region_files:
                 zf.writestr(f"北京邮局订报数据/{fname}", content)
-        _store(SubscriptionArtifactType.zip, f"北京-{batch.year}年{m}月中国经营报订报数据.zip", zbio.getvalue())
-
-        run.status = SubscriptionRunStatus.success
-        run.ended_at = datetime.now()
-        from app.models import SubscriptionBatchStatus
-        batch.status = SubscriptionBatchStatus.generated
+        artifact_specs.append((
+            SubscriptionArtifactType.zip,
+            f"北京-{batch.year}年{m}月中国经营报订报数据.zip",
+            zbio.getvalue(),
+            None,
+        ))
     except Exception as exc:  # noqa: BLE001
-        run.status = SubscriptionRunStatus.failed
-        run.ended_at = datetime.now()
-        run.error = str(exc)
-        db.commit()
-        raise HTTPException(status_code=500, detail=f"生成失败：{exc}")
+        _persist_failed_run(
+            db,
+            batch_id=batch_id,
+            version_id=version_id,
+            started_at=started_at,
+            error=exc,
+        )
+        raise _generation_error(exc) from exc
 
-    db.commit()
+    # 所有字节先构建完成，再落盘；任何一次写文件失败都会清理本轮已写文件。
+    stored_artifacts = []
+    try:
+        for atype, filename, content, region in artifact_specs:
+            stored_path = attachment_service.store_file(category, filename, content)
+            stored_artifacts.append((atype, filename, content, region, stored_path))
+    except Exception as exc:  # noqa: BLE001
+        _delete_stored_files([item[4] for item in stored_artifacts])
+        _persist_failed_run(
+            db,
+            batch_id=batch_id,
+            version_id=version_id,
+            started_at=started_at,
+            error=exc,
+        )
+        raise _generation_error(exc) from exc
+
+    # 文件全部就绪后才在一个数据库事务里切换「当前产物」。提交失败则旧产物状态自动回滚。
+    try:
+        locked_batch = (
+            db.query(SubscriptionBatch)
+            .filter(SubscriptionBatch.id == batch_id)
+            .with_for_update()
+            .one()
+        )
+        if locked_batch.active_version_id != version_id:
+            raise RuntimeError("生成期间当前有效版本已变化，请基于新版本重新生成")
+        run = SubscriptionGenerationRun(
+            batch_id=batch_id,
+            version_id=version_id,
+            rule_version=RULE_VERSION,
+            template_version=TEMPLATE_VERSION,
+            status=SubscriptionRunStatus.success,
+            started_at=started_at,
+            ended_at=datetime.now(),
+        )
+        db.add(run)
+        db.flush()
+
+        db.query(SubscriptionOutputArtifact).filter(
+            SubscriptionOutputArtifact.batch_id == batch_id,
+            SubscriptionOutputArtifact.is_historical == False,  # noqa: E712
+        ).update({"is_historical": True}, synchronize_session=False)
+
+        for atype, filename, content, region, stored_path in stored_artifacts:
+            db.add(SubscriptionOutputArtifact(
+                run_id=run.id,
+                batch_id=batch_id,
+                version_id=version_id,
+                artifact_type=atype,
+                region_name=region,
+                filename=filename,
+                stored_path=stored_path,
+                sha256=attachment_service.sha256_hex(content),
+            ))
+        locked_batch.status = SubscriptionBatchStatus.generated
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        _delete_stored_files([item[4] for item in stored_artifacts])
+        _persist_failed_run(
+            db,
+            batch_id=batch_id,
+            version_id=version_id,
+            started_at=started_at,
+            error=exc,
+        )
+        raise _generation_error(exc) from exc
+
     db.refresh(run)
     return run

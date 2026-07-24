@@ -7,7 +7,7 @@ from datetime import date
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -26,7 +26,7 @@ def _deliveries_query(
     month: Optional[int] = None,
     search: Optional[str] = None,
 ):
-    q = db.query(PostalDelivery)
+    q = db.query(PostalDelivery).filter(PostalDelivery.is_archived.is_(False))
     if year:
         q = q.filter(PostalDelivery.year == year)
     if channel and channel.strip():
@@ -43,10 +43,24 @@ def _deliveries_query(
         )
     if search and search.strip():
         s = search.strip()
-        q = q.filter(or_(
+        matches = [
             PostalDelivery.recipient_name.contains(s),
             PostalDelivery.delivery_no.contains(s),
-        ))
+            PostalDelivery.recipient_phone.contains(s),
+            PostalDelivery.recipient_address.contains(s),
+            PostalDelivery.recipient_postal_code.contains(s),
+            PostalDelivery.external_order_no.contains(s),
+        ]
+        if s.isdigit():
+            matches.append(PostalDelivery.delivery_no == pc.norm_no(s))
+        year_text, separator, number_text = s.replace("－", "-").partition("-")
+        number = pc.norm_no(number_text) if separator else None
+        if len(year_text) == 4 and year_text.isdigit() and number:
+            matches.append(and_(
+                PostalDelivery.year == int(year_text),
+                PostalDelivery.delivery_no == number,
+            ))
+        q = q.filter(or_(*matches))
     return q
 
 

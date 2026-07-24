@@ -15,7 +15,12 @@ from sqlalchemy.pool import StaticPool
 from app.auth import get_current_user, require_admin
 from app.database import Base, get_db
 from app.main import app
-from app.models import Partner, PartnerType
+from app.models import (
+    Partner,
+    PartnerType,
+    PostalComplaintHandlingRecord,
+    PostalFollowUp,
+)
 
 
 @pytest.fixture
@@ -108,6 +113,21 @@ def test_delivery_crud(client):
     assert client.get("/api/postal/deliveries?year=2026").json()["total"] == 0
 
 
+def test_delivery_search_matches_all_reader_identity_fields(client):
+    created = client.post("/api/postal/deliveries", json={
+        "year": 2026,
+        "delivery_no": "006325",
+        "recipient_name": "关联查找读者",
+        "recipient_phone": "13812345678",
+        "recipient_address": "北京市海淀区唯一检索地址",
+    }).json()
+
+    for search in ("2026-6325", "006325", "关联查找", "13812345678", "唯一检索地址"):
+        body = client.get("/api/postal/deliveries", params={"search": search}).json()
+        assert body["total"] == 1
+        assert body["rows"][0]["id"] == created["id"]
+
+
 def test_delivery_delete(client):
     r = client.post("/api/postal/deliveries", json={
         "year": 2026, "delivery_no": "701", "recipient_name": "王五",
@@ -193,7 +213,7 @@ def test_address_change_crud(client):
         "year": 2026, "delivery_no": "900", "recipient_name": "孙八", "recipient_address": "广州市天河区",
     })
     r = client.post("/api/postal/address-changes", json={
-        "year": 2026, "delivery_no": "900", "change_date": "2026-03-15",
+        "year": 2026, "delivery_no": "900", "change_date": "2026-03-15T14:35:00",
         "new_name": "孙八", "new_address": "广州市越秀区新地址", "handling": "转广东局微信",
     })
     assert r.status_code == 201, r.text
@@ -201,12 +221,56 @@ def test_address_change_crud(client):
     assert ac["postal_delivery_id"] is not None
     assert ac["routed_label"] == "广东局"
     assert ac["applied_to_order"] is False
+    assert ac["change_date"] == "2026-03-15T14:35:00"
     aid = ac["id"]
+
+    ticket = client.get("/api/postal/tickets?type=address&year=2026").json()["rows"][0]
+    assert ticket["ticket_date"] == "2026-03-15T14:35:00"
 
     u = client.put(f"/api/postal/address-changes/{aid}", json={"new_phone": "13700000000"})
     assert u.status_code == 200
     assert u.json()["new_phone"] == "13700000000"
     assert client.delete(f"/api/postal/address-changes/{aid}").status_code == 204
+
+
+def test_applied_address_change_cannot_be_edited_or_deleted(client):
+    client.post("/api/postal/deliveries", json={
+        "year": 2026,
+        "delivery_no": "901",
+        "recipient_name": "锁定前姓名",
+        "recipient_address": "北京市旧地址",
+    })
+    created = client.post("/api/postal/tickets", json={
+        "type": "address",
+        "year": 2026,
+        "delivery_no": "901",
+        "change_date": "2026-03-16",
+        "new_name": "锁定后姓名",
+        "new_address": "北京市新地址",
+    })
+    assert created.status_code == 201, created.text
+    change_id = created.json()["id"]
+    assert client.post(f"/api/postal/tickets/{change_id}/apply").status_code == 200
+
+    unified_update = client.put(f"/api/postal/tickets/{change_id}", json={
+        "type": "address",
+        "new_address": "不应写入的地址",
+    })
+    assert unified_update.status_code == 409
+    assert "如需更正请新建改地址工单" in unified_update.json()["detail"]
+
+    legacy_update = client.put(
+        f"/api/postal/address-changes/{change_id}",
+        json={"new_name": "不应写入的姓名"},
+    )
+    assert legacy_update.status_code == 409
+    assert client.delete(f"/api/postal/tickets/{change_id}").status_code == 409
+    assert client.delete(f"/api/postal/address-changes/{change_id}").status_code == 409
+
+    saved = client.get(f"/api/postal/tickets/{change_id}").json()
+    assert saved["applied_to_order"] is True
+    assert saved["new_name"] == "锁定后姓名"
+    assert saved["new_address"] == "北京市新地址"
 
 
 def test_follow_up_crud(client):
@@ -319,6 +383,58 @@ def test_unified_ticket_crud_merges_follow_up_into_complaint_timeline(client):
     assert client.delete(f"/api/postal/tickets/{follow_id}").status_code == 204
     detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
     assert all(h["event_type"] != "follow_up" for h in detail["handlings"])
+
+
+def test_deleting_complaint_restores_linked_follow_up_as_independent_ticket(client):
+    complaint = client.post("/api/postal/tickets", json={
+        "type": "complaint",
+        "year": 2026,
+        "delivery_no": "0903",
+        "complaint_date": "2026-07-20",
+        "snap_name": "保留回访读者",
+        "missing_issues": "少报一期",
+    })
+    assert complaint.status_code == 201, complaint.text
+    complaint_id = complaint.json()["id"]
+
+    follow = client.post("/api/postal/tickets", json={
+        "type": "follow",
+        "year": 2026,
+        "delivery_no": "0903",
+        "follow_up_date": "2026-07-22",
+        "batch_label": "投诉后回访",
+        "result": "读者确认已收到",
+        "snap_name": "保留回访读者",
+    })
+    assert follow.status_code == 201, follow.text
+    follow_id = follow.json()["id"]
+
+    detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
+    follow_event = next(h for h in detail["handlings"] if h["event_type"] == "follow_up")
+    event_id = follow_event["id"]
+
+    assert client.delete(f"/api/postal/tickets/{complaint_id}").status_code == 204
+    assert client.get(f"/api/postal/tickets/{complaint_id}").status_code == 404
+    assert client.get(f"/api/postal/tickets/{follow_id}").status_code == 200
+
+    independent = client.get("/api/postal/tickets?type=follow&year=2026").json()
+    assert independent["total"] == 1
+    assert independent["summary"] == {"complaint": 0, "address": 0, "follow": 1}
+    assert independent["rows"][0]["id"] == follow_id
+
+    db_override = app.dependency_overrides[get_db]()
+    db = next(db_override)
+    try:
+        saved_follow = db.query(PostalFollowUp).filter(PostalFollowUp.id == follow_id).one()
+        assert saved_follow.parent_ticket_id is None
+        assert (
+            db.query(PostalComplaintHandlingRecord)
+            .filter(PostalComplaintHandlingRecord.id == event_id)
+            .first()
+            is None
+        )
+    finally:
+        db_override.close()
 
 
 def test_finance_crud_net(client):

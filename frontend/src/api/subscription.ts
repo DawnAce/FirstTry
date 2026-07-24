@@ -153,7 +153,13 @@ export function getSubImportRecords(versionId: number): Promise<AxiosResponse<Su
 
 export interface ActivateResult {
   version: ImportVersion;
-  postal_sync: { created: number; replaced: number; skipped_sent: number };
+  postal_sync: {
+    created: number;
+    updated: number;
+    archived: number;
+    replaced: number;
+    skipped_sent: number;
+  };
 }
 
 export function activateSubImport(versionId: number): Promise<AxiosResponse<ActivateResult>> {

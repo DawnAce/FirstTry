@@ -12,10 +12,12 @@ from app.database import Base
 from app.models import (
     Partner,
     PartnerType,
+    PostalAddressChange,
     PostalDelivery,
     PostalDeliverySourceType,
 )
 from app.services import attachment_service as att
+from app.services import postal_delivery_service as delivery_svc
 from app.services import subscription_import_service as imp
 from app.services import subscription_postal_sync_service as sync_svc
 from app.services import subscription_service as bs
@@ -96,14 +98,34 @@ def test_activate_syncs_into_postal_delivery(db):
 
 def test_reactivate_replaces_no_duplicates(db):
     batch, _ = _activate_batch(db, [("张三", "13800138000", "北京市朝阳区建国路1号")])
+    original = (
+        db.query(PostalDelivery)
+        .filter(PostalDelivery.subscription_batch_id == batch.id)
+        .one()
+    )
+    original_id = original.id
+    original_no = original.delivery_no
     # 重导新版并再激活
     v2 = imp.create_version(db, batch, [("A", "a2.xlsx", _source_a([
         ("张三", "13800138000", "北京市朝阳区建国路1号"),
         ("王五", "13712345678", "广东省深圳市南山区科技路5号"),
     ]))], operator_id=None)
     ver2 = bs.activate_version(db, v2.id, operator_id=1)
-    assert ver2.postal_sync["replaced"] == 1 and ver2.postal_sync["created"] == 2
-    assert db.query(PostalDelivery).filter(PostalDelivery.subscription_batch_id == batch.id).count() == 2
+    assert ver2.postal_sync == {
+        "created": 1,
+        "updated": 1,
+        "archived": 0,
+        "replaced": 1,
+        "skipped_sent": 0,
+    }
+    assert (
+        db.query(PostalDelivery)
+        .filter(PostalDelivery.subscription_batch_id == batch.id)
+        .count()
+        == 2
+    )
+    synced = db.query(PostalDelivery).filter(PostalDelivery.recipient_name == "张三").one()
+    assert (synced.id, synced.delivery_no) == (original_id, original_no)
 
 
 def test_delivery_no_sequences_after_existing(db):
@@ -116,14 +138,42 @@ def test_delivery_no_sequences_after_existing(db):
     assert int(p.delivery_no) == 701  # max(700)+1
 
 
-def test_reactivate_fully_replaces_no_freeze(db):
-    """月度批次冻结层已移除：再激活整批替换，不再保留任何旧记录。"""
+def test_reactivate_archives_removed_delivery_and_preserves_ticket_link(db):
+    """新版移除订户时保留旧投递记录，避免关联工单被 SET NULL。"""
     batch, _ = _activate_batch(db, [("张三", "13800138000", "北京市朝阳区建国路1号")])
-    v2 = imp.create_version(db, batch, [("A", "a2.xlsx", _source_a([("赵六", "13500000000", "北京市海淀区中关村1号")]))], operator_id=None)
+    old = (
+        db.query(PostalDelivery)
+        .filter(PostalDelivery.subscription_batch_id == batch.id)
+        .one()
+    )
+    ticket = PostalAddressChange(
+        year=2026,
+        external_order_no=f"2026-{old.delivery_no}",
+        postal_delivery_id=old.id,
+        new_address="北京市西城区新地址1号",
+    )
+    db.add(ticket)
+    db.commit()
+
+    v2 = imp.create_version(
+        db,
+        batch,
+        [("A", "a2.xlsx", _source_a([
+            ("赵六", "13500000000", "北京市海淀区中关村1号")
+        ]))],
+        operator_id=None,
+    )
     ver2 = bs.activate_version(db, v2.id, operator_id=1)
-    assert ver2.postal_sync["skipped_sent"] == 0
-    names = {p.recipient_name for p in db.query(PostalDelivery).filter(PostalDelivery.subscription_batch_id == batch.id)}
-    assert names == {"赵六"}  # 张三 被整批替换掉
+    assert ver2.postal_sync["archived"] == 1
+
+    db.expire_all()
+    archived = db.get(PostalDelivery, old.id)
+    assert archived is not None and archived.is_archived is True
+    assert db.get(PostalAddressChange, ticket.id).postal_delivery_id == old.id
+
+    active, total = delivery_svc.list_deliveries(db)
+    assert total == 1
+    assert [row.recipient_name for row in active] == ["赵六"]
 
 
 # --- 历史导入「新值优先」 ---------------------------------------------------

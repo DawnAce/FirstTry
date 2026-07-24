@@ -7,6 +7,7 @@
 import io
 import os
 import glob
+from decimal import Decimal
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -17,7 +18,9 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base
 from app.models import (
     SubscriptionBatchStatus,
+    SubscriptionGenerationRun,
     SubscriptionImportStatus,
+    SubscriptionOutputArtifact,
     SubscriptionRunStatus,
 )
 from app.services import attachment_service as att
@@ -71,9 +74,9 @@ def _source_b_csv(rows):
     return ("﻿" + "\n".join(lines)).encode("utf-8")
 
 
-def _batch(db, year=2026, month=8):
+def _batch(db, year=2026, month=8, unit_price=None):
     return batch_svc.create_batch(db, {"year": year, "start_month": month, "make_date": None,
-                                       "unit_price": None, "notes": None}, operator_id=None)
+                                       "unit_price": unit_price, "notes": None}, operator_id=None)
 
 
 # --- 合成流水测试（CI 常驻） -------------------------------------------------
@@ -108,6 +111,36 @@ def test_month_multiplier_july(db):
     assert v.summary_json["total_amount"] == "120.00"                 # 1×6×20
 
 
+def test_custom_complete_term_unit_price_applies_to_records_and_outputs(db):
+    a = _source_a([
+        ("甲", "13000000001", "北京市西城区月坛北街1号", "100037"),
+    ])
+    batch = _batch(db, unit_price=Decimal("95.50"))
+    version = import_svc.create_version(
+        db, batch, [("A", "a.xlsx", a)], operator_id=None
+    )
+    assert version.records[0].amount == Decimal("95.50")
+    assert version.summary_json["total_amount"] == "95.50"
+
+    batch_svc.activate_version(db, version.id)
+    run = gen_svc.generate(db, batch, operator_id=None)
+    workbook_artifact = next(
+        artifact for artifact in run.artifacts
+        if artifact.artifact_type.value == "workbook"
+    )
+    detail = load_workbook(att.resolve_path(workbook_artifact.stored_path))["北京-明细"]
+    assert detail.cell(row=2, column=14).value == "=M2*95.50"
+
+    summary_artifact = next(
+        artifact for artifact in run.artifacts
+        if artifact.artifact_type.value == "postal_summary"
+    )
+    summary = load_workbook(att.resolve_path(summary_artifact.stored_path))["汇总"]
+    assert summary.cell(row=2, column=7).value == 95.5
+    assert summary.cell(row=2, column=8).value == 95.5
+    assert summary.cell(row=2, column=7).number_format == gen_svc.NF_YEN2
+
+
 def test_generate_matches_structure(db):
     a = _source_a([
         ("张三", "13800138000", "北京市朝阳区建国路1号", "100000"),
@@ -134,6 +167,68 @@ def test_generate_matches_structure(db):
     sw = load_workbook(att.resolve_path(ps.stored_path))["汇总"]
     # 表头
     assert [c.value for c in sw[1]] == ["代码", "报刊名称", "订期", "省份", "条数", "份数", "单价", "款额"]
+
+
+def test_generation_failure_keeps_previous_artifacts_current_and_cleans_partial_files(
+    db, monkeypatch
+):
+    """新一轮落盘中途失败时，旧产物仍是当前版本，本轮半成品文件被清理。"""
+    a = _source_a([
+        ("张三", "13800138000", "北京市朝阳区建国路1号", "100000"),
+    ])
+    batch = _batch(db)
+    version = import_svc.create_version(
+        db, batch, [("A", "a.xlsx", a)], operator_id=None
+    )
+    batch_svc.activate_version(db, version.id)
+    successful_run = gen_svc.generate(db, batch, operator_id=None)
+    old_artifacts = list(successful_run.artifacts)
+    old_ids = {artifact.id for artifact in old_artifacts}
+    old_paths = [att.resolve_path(artifact.stored_path) for artifact in old_artifacts]
+
+    original_store = att.store_file
+    attempted_paths = []
+    call_count = 0
+
+    def fail_on_second_store(category, filename, content):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise OSError("模拟第二个产物落盘失败")
+        stored_path = original_store(category, filename, content)
+        attempted_paths.append(att.resolve_path(stored_path))
+        return stored_path
+
+    monkeypatch.setattr(att, "store_file", fail_on_second_store)
+
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        gen_svc.generate(db, batch, operator_id=None)
+    assert "模拟第二个产物落盘失败" in exc_info.value.detail
+
+    db.expire_all()
+    current = (
+        db.query(SubscriptionOutputArtifact)
+        .filter(
+            SubscriptionOutputArtifact.batch_id == batch.id,
+            SubscriptionOutputArtifact.is_historical.is_(False),
+        )
+        .all()
+    )
+    assert {artifact.id for artifact in current} == old_ids
+    assert all(path.exists() for path in old_paths)
+    assert attempted_paths and all(not path.exists() for path in attempted_paths)
+
+    failed_run = (
+        db.query(SubscriptionGenerationRun)
+        .filter(SubscriptionGenerationRun.status == SubscriptionRunStatus.failed)
+        .one()
+    )
+    assert failed_run.artifacts == []
+    assert "模拟第二个产物落盘失败" in failed_run.error
+    db.refresh(batch)
+    assert batch.status == SubscriptionBatchStatus.generated
 
 
 def test_duplicate_blocks(db):

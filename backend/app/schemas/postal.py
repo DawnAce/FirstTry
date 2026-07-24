@@ -23,7 +23,7 @@ class TicketOut(BaseModel):
     recipient_name: Optional[str] = None
     postal_delivery_id: Optional[int] = None
     order_id: Optional[int] = None
-    ticket_date: Optional[date] = None
+    ticket_date: Optional[Union[datetime, date]] = None
     summary: Optional[str] = None
     status: Optional[str] = None     # 投诉三态；改地址 applied/pending/unmatched；回访 None
     handling_count: Optional[int] = None
@@ -125,7 +125,7 @@ class AddressChangeOut(BaseModel):
     postal_delivery_id: Optional[int] = None
     order_id: Optional[int] = None
     external_order_no: Optional[str] = None
-    change_date: Optional[date] = None
+    change_date: Optional[datetime] = None
     old_name: Optional[str] = None
     old_phone: Optional[str] = None
     old_address: Optional[str] = None
@@ -332,7 +332,7 @@ class ComplaintDetailOut(BaseModel):
 class AddressChangeCreateIn(BaseModel):
     year: Optional[int] = Field(default=None, ge=2000, le=2100)
     delivery_no: Optional[str] = None          # 与 year 一起关联投递记录
-    change_date: Optional[date] = None
+    change_date: Optional[datetime] = None
     old_name: Optional[str] = None
     old_phone: Optional[str] = None
     old_address: Optional[str] = None
@@ -350,7 +350,7 @@ class AddressChangeCreateIn(BaseModel):
 class AddressChangeUpdateIn(BaseModel):
     year: Optional[int] = Field(default=None, ge=2000, le=2100)
     delivery_no: Optional[str] = None
-    change_date: Optional[date] = None
+    change_date: Optional[datetime] = None
     old_name: Optional[str] = None
     old_phone: Optional[str] = None
     old_address: Optional[str] = None
