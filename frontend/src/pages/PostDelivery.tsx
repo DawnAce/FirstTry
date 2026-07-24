@@ -111,6 +111,12 @@ const COMPLAINT_STATUS_OPTS = [
 const POSTAL_CHANNELS = ['CBJ+小程序', '中经报有赞', '淘宝发行部', '对公转账'];
 const YEAR_OPTS = [2024, 2025, 2026].map((y) => ({ label: `${y}年`, value: y }));
 const MONTH_OPTS = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1} 月`, value: i + 1 }));
+const POSTAL_SOURCE_META: Record<string, { label: string; color: string }> = {
+  subscription_generated: { label: '订报生成', color: 'green' },
+  historical_import: { label: '名册导入', color: 'default' },
+  manual: { label: '手工', color: 'gold' },
+  order_generated: { label: '订单生成', color: 'blue' },
+};
 
 function errText(err: unknown): string {
   return (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '操作失败';
@@ -315,6 +321,7 @@ function DeliveriesTab() {
   const [importOpen, setImportOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PostalDelivery | null>(null);
+  const [detail, setDetail] = useState<PostalDelivery | null>(null);
   const PAGE_SIZE = 50;
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
@@ -336,80 +343,79 @@ function DeliveriesTab() {
   });
 
   const cols: TableColumnsType<PostalDelivery> = [
-    { title: '编号', dataIndex: 'delivery_no', width: 100, render: (v: string, r) => <Text style={{ fontVariantNumeric: 'tabular-nums' }}>{r.year}-{v}</Text> },
-    { title: '收报人', dataIndex: 'recipient_name', width: 100 },
-    { title: '省/市/区 · 详细地址', key: 'addr', width: 320, render: (_: unknown, r) => (
-      <Space direction="vertical" size={0} style={{ maxWidth: 300 }}>
-        <Text>{[r.recipient_province, r.recipient_city, r.recipient_district].filter(Boolean).join(' ') || '—'}</Text>
-        <Text type="secondary" style={{ fontSize: 12 }} ellipsis>{r.recipient_address}{r.recipient_phone ? ` · ${r.recipient_phone}` : ''}</Text>
+    { title: '读者', key: 'reader', width: 150, render: (_: unknown, r) => (
+      <Space direction="vertical" size={0}>
+        <Text strong>{r.recipient_name}</Text>
+        <Text type="secondary" className="postal-cell-secondary">{r.year}-{r.delivery_no}</Text>
       </Space>
     ) },
-    { title: '份数', dataIndex: 'copies', width: 64, align: 'right' },
-    { title: '起止月', key: 'coverage', width: 160, render: (_: unknown, r) => <Text type="secondary" style={{ fontSize: 12 }}>{r.coverage_start_date}~{r.coverage_end_date}</Text> },
-    { title: '投递单位', dataIndex: 'distribution_unit_name', width: 150, render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : <Text type="secondary">—(未填)</Text>) },
-    { title: '渠道', dataIndex: 'source_channel', width: 120, render: (v: string | null) => v || '—' },
-    { title: '来源', dataIndex: 'source_type', width: 96, render: (v: PostalDelivery['source_type']) => {
-      const meta: Record<string, { label: string; color: string }> = {
-        subscription_generated: { label: '订报生成', color: 'green' },
-        historical_import: { label: '名册导入', color: 'default' },
-        manual: { label: '手工', color: 'gold' },
-        order_generated: { label: '订单生成', color: 'blue' },
-      };
-      const m = v ? meta[v] : undefined;
-      return m ? <Tag color={m.color}>{m.label}</Tag> : '—';
-    } },
-    ...(isAdmin ? [{
-      title: '操作', key: 'act', width: 90, render: (_: unknown, r: PostalDelivery) => (
-        <Space size={0}>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditing(r); setFormOpen(true); }} />
-          <Popconfirm title="删除该投递记录？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => deleteMut.mutate(r.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    } as TableColumnsType<PostalDelivery>[number]] : []),
+    { title: '地址', key: 'addr', render: (_: unknown, r) => (
+      <Space direction="vertical" size={0} style={{ maxWidth: 380 }}>
+        <Text strong>{[r.recipient_province, r.recipient_city, r.recipient_district].filter(Boolean).join(' · ') || '—'}</Text>
+        <Text type="secondary" className="postal-cell-secondary" ellipsis>{r.recipient_address}</Text>
+      </Space>
+    ) },
+    { title: '订阅', key: 'coverage', width: 150, render: (_: unknown, r) => (
+      <Space direction="vertical" size={0}>
+        <Text>{r.copies} 份</Text>
+        <Text type="secondary" className="postal-cell-secondary">
+          {r.coverage_start_date ? dayjs(r.coverage_start_date).format('YYYY.MM') : '—'}—{r.coverage_end_date ? dayjs(r.coverage_end_date).format('YYYY.MM') : '—'}
+        </Text>
+      </Space>
+    ) },
+    { title: '渠道 / 投递单位', key: 'fulfillment', width: 190, render: (_: unknown, r) => (
+      <Space direction="vertical" size={0}>
+        <Text>{r.source_channel || '—'}</Text>
+        <Text type="secondary" className="postal-cell-secondary">{r.distribution_unit_name || '待补投递单位'}</Text>
+      </Space>
+    ) },
+    { title: '操作', key: 'act', width: 72, align: 'right', render: (_: unknown, r) => (
+      <Button type="link" size="small" onClick={() => setDetail(r)}>查看</Button>
+    ) },
   ];
-
-  const renderDeliveryExpand = (r: PostalDelivery) => (
-    <div className="postal-expand">
-      <div><div className="k">电话</div><div className="v">{r.recipient_phone || '—'}</div></div>
-      <div><div className="k">邮编</div><div className="v">{r.recipient_postal_code || '—'}</div></div>
-      <div><div className="k">产品</div><div className="v">{r.product || '—'}</div></div>
-      <div><div className="k">金额</div><div className="v">{r.amount ? `¥${r.amount}` : '—'}</div></div>
-      <div><div className="k">业务员</div><div className="v">{r.salesperson || '—'}</div></div>
-      <div><div className="k">汇款名</div><div className="v">{r.remittance_name || '—'}</div></div>
-      <div><div className="k">平台订单号</div><div className="v">{r.external_order_no || '—'}</div></div>
-    </div>
-  );
 
   return (
     <>
-      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
-        <Text type="secondary">邮局记录不进「订单列表 / 客户管理」，这里是它们完整名册的家（可搜可筛可导出）。每条 = 一条投递记录（≠订单）。</Text>
+      <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
+        <div>
+          <Title level={3} className="postal-page-title">投递名册</Title>
+          <Text type="secondary">投递记录 {(q.data?.total ?? 0).toLocaleString()} 条</Text>
+        </div>
         <Space>
-          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增投递记录</Button>}
-          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入邮局明细</Button>
+          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入</Button>
+          {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增记录</Button>}
         </Space>
       </Flex>
-      <Flex wrap gap={8} style={{ marginBottom: 12 }}>
+      <Flex className="postal-toolbar" wrap gap={8}>
+        <Input.Search allowClear placeholder="搜索姓名、编号或地址" style={{ width: 300 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); if (v == null) setMonth(undefined); setPage(1); }} options={YEAR_OPTS} />
-        <Select allowClear placeholder="起投月" style={{ width: 110 }} value={month} disabled={year == null} onChange={(v) => { setMonth(v); setPage(1); }} options={MONTH_OPTS} />
         <Select allowClear placeholder="渠道" style={{ width: 150 }} value={channel} onChange={(v) => { setChannel(v); setPage(1); }} options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
-        <Select allowClear showSearch optionFilterProp="label" placeholder="投递单位" style={{ width: 160 }} value={unitId} onChange={(v) => { setUnitId(v); setPage(1); }} options={unitOpts} />
-        <Input.Search allowClear placeholder="搜索 姓名 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
+        <Dropdown trigger={['click']} dropdownRender={() => (
+          <Card size="small">
+            <Space direction="vertical">
+              <Select allowClear placeholder="起投月" style={{ width: 180 }} value={month} disabled={year == null} onChange={(v) => { setMonth(v); setPage(1); }} options={MONTH_OPTS} />
+              <Select allowClear showSearch optionFilterProp="label" placeholder="投递单位" style={{ width: 180 }} value={unitId} onChange={(v) => { setUnitId(v); setPage(1); }} options={unitOpts} />
+            </Space>
+          </Card>
+        )}>
+          <Button>更多筛选{month != null || unitId != null ? ' · 已选' : ''}</Button>
+        </Dropdown>
       </Flex>
-      <Card styles={{ body: { padding: 0 } }}>
+      <Card className="postal-table-card" styles={{ body: { padding: 0 } }}>
         <div className="postal-summary">
-          共 <b>{q.data?.total ?? 0}</b> 条投递记录 <span className="sep">·</span> 合计 <b>{(q.data?.summary.total_copies ?? 0).toLocaleString()}</b> 份 <span className="sep">·</span> <b>{q.data?.summary.unit_count ?? 0}</b> 家投递单位
+          合计 <b>{(q.data?.summary.total_copies ?? 0).toLocaleString()}</b> 份 <span className="sep">·</span> <b>{q.data?.summary.unit_count ?? 0}</b> 家投递单位
           {(q.data?.summary.missing_unit_count ?? 0) > 0 && <><span className="sep">·</span> <span className="warn"><b>{q.data?.summary.missing_unit_count}</b> 条未填单位</span></>}
         </div>
         <Table<PostalDelivery> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small"
-          expandable={{ expandedRowRender: renderDeliveryExpand }}
-          scroll={{ x: 1180 }}
+          scroll={{ x: 900 }}
           pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条投递记录`, showSizeChanger: false }} />
       </Card>
       <ReaderImportModal open={importOpen} onClose={() => setImportOpen(false)} />
-      <DeliveryFormModal open={formOpen} editing={editing} unitOpts={unitOpts} onClose={() => { setFormOpen(false); setEditing(null); }} />
+      <DeliveryDetailDrawer record={detail} isAdmin={isAdmin} deleting={deleteMut.isPending}
+        onClose={() => setDetail(null)}
+        onEdit={(record) => { setDetail(null); setEditing(record); setFormOpen(true); }}
+        onDelete={(record) => deleteMut.mutate(record.id, { onSuccess: () => setDetail(null) })} />
+      <DeliveryFormDrawer open={formOpen} editing={editing} unitOpts={unitOpts} onClose={() => { setFormOpen(false); setEditing(null); }} />
     </>
   );
 }
@@ -468,7 +474,7 @@ function SimpleImportModal<T extends object>(props: {
 type UnitOpt = { label: string; value: number };
 
 /** 投递记录 · 新增 / 编辑 */
-function DeliveryFormModal({ open, editing, unitOpts, onClose }: {
+function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
   open: boolean; editing: PostalDelivery | null; unitOpts: UnitOpt[]; onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -507,8 +513,13 @@ function DeliveryFormModal({ open, editing, unitOpts, onClose }: {
   });
 
   return (
-    <Modal title={editing ? '编辑投递记录' : '新增投递记录'} open={open} onCancel={onClose}
-      onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={760} destroyOnClose>
+    <Drawer title={editing ? '编辑投递记录' : '新增投递记录'} open={open} onClose={onClose}
+      width={720} destroyOnClose footer={(
+        <Flex justify="flex-end" gap={8}>
+          <Button onClick={onClose}>取消</Button>
+          <Button type="primary" loading={saveMut.isPending} onClick={() => form.submit()}>保存</Button>
+        </Flex>
+      )}>
       <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
         <Flex gap={12} wrap>
           <Form.Item name="year" label="年度" rules={[{ required: true, message: '必填' }]} style={{ width: 120 }}>
@@ -544,7 +555,63 @@ function DeliveryFormModal({ open, editing, unitOpts, onClose }: {
         </Flex>
         <Form.Item name="external_order_no" label="平台订单号（可选）"><Input /></Form.Item>
       </Form>
-    </Modal>
+    </Drawer>
+  );
+}
+
+function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDelete }: {
+  record: PostalDelivery | null;
+  isAdmin: boolean;
+  deleting: boolean;
+  onClose: () => void;
+  onEdit: (record: PostalDelivery) => void;
+  onDelete: (record: PostalDelivery) => void;
+}) {
+  const source = record?.source_type ? POSTAL_SOURCE_META[record.source_type] : null;
+  return (
+    <Drawer title="投递记录详情" open={record != null} onClose={onClose} width={560} destroyOnClose
+      extra={isAdmin && record ? <Button icon={<EditOutlined />} onClick={() => onEdit(record)}>编辑记录</Button> : null}
+      footer={isAdmin && record ? (
+        <Flex justify="space-between" align="center">
+          <Popconfirm title="删除该投递记录？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => onDelete(record)}>
+            <Button danger icon={<DeleteOutlined />} loading={deleting}>删除记录</Button>
+          </Popconfirm>
+          <Button onClick={onClose}>返回列表</Button>
+        </Flex>
+      ) : null}>
+      {record && (
+        <Space direction="vertical" size={20} style={{ width: '100%' }}>
+          <Flex gap={12} align="center">
+            <div className="postal-reader-avatar">{record.recipient_name.slice(0, 1)}</div>
+            <div>
+              <Title level={5} style={{ margin: 0 }}>{record.recipient_name}</Title>
+              <Text type="secondary">{record.year}-{record.delivery_no}{record.recipient_phone ? ` · ${record.recipient_phone}` : ''}</Text>
+            </div>
+          </Flex>
+          <div>
+            <Title level={5}>投递信息</Title>
+            <Descriptions size="small" column={1} bordered items={[
+              { key: 'address', label: '详细地址', children: [record.recipient_province, record.recipient_city, record.recipient_district, record.recipient_address].filter(Boolean).join(' ') || '—' },
+              { key: 'postal', label: '邮编', children: record.recipient_postal_code || '—' },
+              { key: 'coverage', label: '订阅范围', children: `${record.coverage_start_date || '—'} 至 ${record.coverage_end_date || '—'} · ${record.copies}份` },
+              { key: 'product', label: '产品', children: record.product || '—' },
+              { key: 'channel', label: '渠道', children: record.source_channel || '—' },
+              { key: 'unit', label: '投递单位', children: record.distribution_unit_name || '待补投递单位' },
+              { key: 'source', label: '来源', children: source ? <Tag color={source.color}>{source.label}</Tag> : '—' },
+            ]} />
+          </div>
+          <div>
+            <Title level={5}>业务信息</Title>
+            <Descriptions size="small" column={1} bordered items={[
+              { key: 'amount', label: '金额', children: record.amount != null ? `¥${record.amount}` : '—' },
+              { key: 'sales', label: '业务员', children: record.salesperson || '—' },
+              { key: 'remit', label: '汇款名', children: record.remittance_name || '—' },
+              { key: 'order', label: '平台订单', children: record.external_order_no || (record.order_id ? `订单 #${record.order_id}` : '未关联') },
+            ]} />
+          </div>
+        </Space>
+      )}
+    </Drawer>
   );
 }
 
@@ -1030,14 +1097,22 @@ function TicketsTab() {
   };
 
   const cols: TableColumnsType<Ticket> = [
-    { title: '类型', key: 'type', width: 84, render: (_: unknown, r) => <Tag color={TICKET_TYPE_META[r.type].color}>{TICKET_TYPE_META[r.type].label}</Tag> },
-    { title: '日期', dataIndex: 'ticket_date', width: 148, render: (v: string | null, r) => v ? dayjs(v).format(r.type === 'address' ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD') : '—' },
-    { title: '收报人', dataIndex: 'recipient_name', width: 100, render: (v: string | null) => v || '—' },
-    { title: '编号', dataIndex: 'delivery_no', width: 90, render: (v: string | null) => v || '—' },
-    { title: '摘要', dataIndex: 'summary', ellipsis: true, render: (v: string | null) => v || '—' },
+    { title: '读者 / 类型', key: 'reader', width: 180, render: (_: unknown, r) => (
+      <Space direction="vertical" size={0}>
+        <Text strong>{r.recipient_name || '—'}</Text>
+        <Text type="secondary" className="postal-cell-secondary">{TICKET_TYPE_META[r.type].label}{r.delivery_no ? ` · ${r.delivery_no}` : ''}</Text>
+      </Space>
+    ) },
+    { title: '内容', dataIndex: 'summary', ellipsis: true, render: (v: string | null, r) => (
+      <Space direction="vertical" size={0} style={{ maxWidth: 520 }}>
+        <Text ellipsis>{v || '—'}</Text>
+        <Text type="secondary" className="postal-cell-secondary">
+          {r.postal_delivery_id ? '已关联投递名册' : '未关联投递名册'}{r.handling_count != null ? ` · 已处理 ${r.handling_count} 次` : ''}
+        </Text>
+      </Space>
+    ) },
+    { title: '时间', dataIndex: 'ticket_date', width: 148, render: (v: string | null, r) => v ? dayjs(v).format(r.type === 'address' ? 'MM月DD日 HH:mm' : 'YYYY-MM-DD') : '—' },
     { title: '状态', key: 'status', width: 100, render: (_: unknown, r) => ticketStatusTag(r) },
-    { title: '处理次', dataIndex: 'handling_count', width: 68, align: 'right', render: (v: number | null) => v ?? '—' },
-    { title: '读者', key: 'reader', width: 96, render: (_: unknown, r) => readerTag(r.postal_delivery_id) },
     {
       title: '操作', key: 'act', width: isAdmin ? 170 : 80, render: (_: unknown, r: Ticket) => {
         const isAppliedAddress = r.type === 'address' && r.applied_to_order === true;
@@ -1076,13 +1151,19 @@ function TicketsTab() {
 
   return (
     <>
-      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
-        <Radio.Group
-          optionType="button" buttonStyle="solid" options={typeOptions}
-          value={type ?? 'all'}
-          onChange={(e) => { const v = e.target.value; setType(v === 'all' ? undefined : v); setStatus(undefined); setApplied(undefined); setPage(1); }}
-        />
+      <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
+        <div>
+          <Title level={3} className="postal-page-title">客服工单</Title>
+          <Text type="secondary">共 {data?.total ?? 0} 条工单</Text>
+        </div>
         <Space wrap>
+          <Dropdown menu={{ items: [
+            { key: 'complaint', label: '导入投诉', onClick: () => setImportType('complaint') },
+            { key: 'address', label: '导入改地址', onClick: () => setImportType('address') },
+            { key: 'follow', label: '导入回访', onClick: () => setImportType('follow') },
+          ] }}>
+            <Button icon={<UploadOutlined />}>导入</Button>
+          </Dropdown>
           {isAdmin && (
             <Dropdown menu={{ items: [
               { key: 'complaint', label: '新增投诉', onClick: () => setComplaintForm({ open: true, editing: null }) },
@@ -1092,17 +1173,16 @@ function TicketsTab() {
               <Button type="primary" icon={<PlusOutlined />}>新建工单</Button>
             </Dropdown>
           )}
-          <Dropdown menu={{ items: [
-            { key: 'complaint', label: '导入投诉', onClick: () => setImportType('complaint') },
-            { key: 'address', label: '导入改地址', onClick: () => setImportType('address') },
-            { key: 'follow', label: '导入回访', onClick: () => setImportType('follow') },
-          ] }}>
-            <Button icon={<UploadOutlined />}>导入</Button>
-          </Dropdown>
         </Space>
       </Flex>
 
-      <Flex wrap gap={8} style={{ marginBottom: 12 }}>
+      <Flex className="postal-toolbar" wrap gap={8}>
+        <Radio.Group
+          optionType="button" buttonStyle="solid" options={typeOptions}
+          value={type ?? 'all'}
+          onChange={(e) => { const v = e.target.value; setType(v === 'all' ? undefined : v); setStatus(undefined); setApplied(undefined); setPage(1); }}
+        />
+        <Input.Search allowClear placeholder="搜索读者或编号" style={{ width: 240 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
         {type === 'complaint' && (
           <>
@@ -1113,10 +1193,9 @@ function TicketsTab() {
           <Select allowClear placeholder="应用状态" style={{ width: 130 }} value={applied} onChange={(v) => { setApplied(v); setPage(1); }}
             options={[{ label: '已应用', value: true }, { label: '未应用', value: false }]} />
         )}
-        <Input.Search allowClear placeholder="搜索 收报人 / 编号" style={{ width: 220 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
       </Flex>
 
-      <Card styles={{ body: { padding: 0 } }}>
+      <Card className="postal-table-card" styles={{ body: { padding: 0 } }}>
         <Table<Ticket>
           rowKey={(r) => `${r.type}-${r.id}`}
           columns={cols}
@@ -1179,10 +1258,5 @@ export default function PostDelivery() {
   const { tab } = useParams<{ tab: string }>();
   const current = POST_TABS.find((t) => t.key === tab) ?? POST_TABS[0];
   const Content = current.component;
-  return (
-    <div>
-      <Title level={3} style={{ marginTop: 0 }}>邮局管理 · {current.label}</Title>
-      <Content />
-    </div>
-  );
+  return <Content />;
 }

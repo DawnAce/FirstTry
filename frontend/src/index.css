@@ -1460,6 +1460,70 @@ body {
 }
 
 /* ===== Postal delivery (邮局投递) ===== */
+.postal-page-head {
+  margin-bottom: 16px;
+}
+
+.postal-page-title.ant-typography {
+  margin: 0 0 2px;
+}
+
+.postal-toolbar {
+  margin-bottom: 12px;
+}
+
+.postal-cell-secondary {
+  font-size: 12px;
+}
+
+.postal-reader-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  color: #fff;
+  background: var(--color-accent);
+  font-weight: 600;
+}
+
+.subscription-steps {
+  max-width: 760px;
+  margin: 8px 0 4px;
+}
+
+.subscription-upload.ant-upload-wrapper {
+  flex: 1 1 320px;
+  min-width: 280px;
+}
+
+.subscription-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.subscription-metrics .ant-typography {
+  margin: 4px 0 0;
+}
+
+.subscription-success {
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.subscription-success > .anticon {
+  color: var(--color-success);
+  font-size: 48px;
+}
+
+@media (max-width: 900px) {
+  .subscription-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
 .postal-summary {
   display: flex;
   align-items: center;
