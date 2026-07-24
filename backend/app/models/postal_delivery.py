@@ -14,6 +14,7 @@
 import enum
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -80,6 +81,9 @@ class PostalDelivery(Base):
         nullable=True,
         index=True,
     )
+    # 订报版本切换时不物理删除旧记录：保留稳定 id，避免工单关联被 SET NULL。
+    # 归档记录不进入当前投递名册，也不参与新工单的自动关联。
+    is_archived = Column(Boolean, default=False, server_default="0", nullable=False, index=True)
     source_type = Column(
         SAEnum(PostalDeliverySourceType, name="postaldeliverysourcetype"),
         default=PostalDeliverySourceType.historical_import,

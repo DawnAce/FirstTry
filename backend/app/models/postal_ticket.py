@@ -90,7 +90,7 @@ class PostalTicket(Base):
     snap_postal_code = Column(String(20), nullable=True)
 
     # 改地址字段。
-    change_date = Column(Date, nullable=True)
+    change_date = Column(DateTime, nullable=True)
     old_name = Column(String(128), nullable=True)
     old_phone = Column(String(64), nullable=True)
     old_address = Column(Text, nullable=True)
@@ -111,7 +111,7 @@ class PostalTicket(Base):
     result = Column(Text, nullable=True)
     parent_ticket_id = Column(
         Integer,
-        ForeignKey("postal_tickets.id", ondelete="CASCADE"),
+        ForeignKey("postal_tickets.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

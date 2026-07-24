@@ -5,7 +5,7 @@
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
@@ -46,7 +46,9 @@ class AddrImportPreview:
 
 
 def _key(external, cdate, new_addr):
-    return (external or "", cdate or "", new_addr or "")
+    # 导入表只有日期；数据库升级为 DateTime 后仍按“当天”判重。
+    date_text = cdate.isoformat() if isinstance(cdate, (date, datetime)) else (cdate or "")
+    return (external or "", date_text[:10], new_addr or "")
 
 
 def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
@@ -159,7 +161,7 @@ def commit_import(db: Session, session_id: str, operator_id: Optional[int] = Non
             continue
         if d["external_order_no"]:
             existing.add(key)
-        d["change_date"] = date.fromisoformat(d["change_date"]) if d["change_date"] else None
+        d["change_date"] = datetime.fromisoformat(d["change_date"]) if d["change_date"] else None
         db.add(PostalAddressChange(**d))
         created += 1
     db.commit()

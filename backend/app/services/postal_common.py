@@ -83,7 +83,7 @@ def delivery_map(db: Session) -> dict:
             PostalDelivery.year,
             PostalDelivery.delivery_no,
             PostalDelivery.order_id,
-        ).all()
+        ).filter(PostalDelivery.is_archived.is_(False)).all()
     }
 
 
@@ -102,7 +102,11 @@ def link_delivery(db: Session, year, delivery_no_raw) -> tuple:
     external = f"{year}-{no}"
     row = (
         db.query(PostalDelivery.id, PostalDelivery.order_id)
-        .filter(PostalDelivery.year == year, PostalDelivery.delivery_no == no)
+        .filter(
+            PostalDelivery.year == year,
+            PostalDelivery.delivery_no == no,
+            PostalDelivery.is_archived.is_(False),
+        )
         .first()
     )
     if row:

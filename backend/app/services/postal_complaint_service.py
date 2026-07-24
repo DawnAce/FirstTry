@@ -11,6 +11,7 @@ from app.models import (
     PostalComplaintHandlingRecord,
     PostalComplaintStatus,
     PostalDelivery,
+    PostalFollowUp,
     PostalTicketEventType,
 )
 from app.services import postal_common as pc
@@ -174,7 +175,16 @@ def delete_complaint(db: Session, complaint_id: int) -> None:
     rec = db.query(PostalComplaint).filter(PostalComplaint.id == complaint_id).first()
     if rec is None:
         raise HTTPException(status_code=404, detail=f"投诉工单 {complaint_id} 不存在")
-    db.delete(rec)  # 处理记录经 relationship / FK CASCADE 一并删除
+    linked_follow_ups = (
+        db.query(PostalFollowUp)
+        .filter(PostalFollowUp.parent_ticket_id == complaint_id)
+        .all()
+    )
+    for follow_up in linked_follow_ups:
+        follow_up.parent_ticket_id = None
+    # 先解除源回访归属，投诉时间线仍随投诉删除；回访随后恢复为独立工单。
+    db.flush()
+    db.delete(rec)
     db.commit()
 
 

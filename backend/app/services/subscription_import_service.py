@@ -116,7 +116,7 @@ def create_version(
     provs = _cpca_split([r.address or "" for r in merged])
     records: List[SubscriptionRecord] = []
     for row, (prov, city, dist) in zip(merged, provs):
-        amount = calc.compute_amount(row.copies, N)
+        amount = calc.compute_amount(row.copies, N, batch.unit_price)
         records.append(SubscriptionRecord(
             version_id=version.id,
             name=row.name or "(未填写)", phone=row.phone or None,

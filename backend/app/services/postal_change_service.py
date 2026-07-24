@@ -17,6 +17,7 @@ from app.models import (
     PostalDelivery,
     PostalFollowUp,
     PostalTicketEventType,
+    ShippingChannel,
     TargetStatus,
 )
 from app.services.address_service import normalize_address
@@ -34,8 +35,8 @@ def _addr_query(
     if year:
         q = q.filter(or_(
             PostalAddressChange.external_order_no.like(f"{year}-%"),
-            and_(PostalAddressChange.change_date >= date(year, 1, 1),
-                 PostalAddressChange.change_date < date(year + 1, 1, 1)),
+            and_(PostalAddressChange.change_date >= datetime(year, 1, 1),
+                 PostalAddressChange.change_date < datetime(year + 1, 1, 1)),
         ))
     if applied is not None:
         q = q.filter(PostalAddressChange.applied_to_order.is_(applied))
@@ -180,17 +181,49 @@ def sync_follow_up_timeline(
     event.handled_at = handled_at
 
 
-def _current_target(db: Session, order_id: int) -> Optional[FulfillmentTarget]:
-    return (
+def _current_targets_query(db: Session, delivery: PostalDelivery):
+    q = (
         db.query(FulfillmentTarget)
         .join(OrderItem, FulfillmentTarget.order_item_id == OrderItem.id)
         .join(FulfillmentAllocation, FulfillmentTarget.allocation_id == FulfillmentAllocation.id)
-        .filter(OrderItem.order_id == order_id)
+        .filter(OrderItem.order_id == delivery.order_id)
         .filter(FulfillmentTarget.status == TargetStatus.active)
+        .filter(FulfillmentTarget.shipping_channel == ShippingChannel.post_office)
         .filter(FulfillmentAllocation.effective_until_issue.is_(None))
-        .order_by(FulfillmentTarget.id)
-        .first()
     )
+    if delivery.order_item_id:
+        q = q.filter(OrderItem.id == delivery.order_item_id)
+    return q
+
+
+def _resolve_current_target(db: Session, delivery: PostalDelivery) -> FulfillmentTarget:
+    """精确定位邮局履约目标；没有显式绑定时只接受唯一候选，绝不按 id 猜测。"""
+    q = _current_targets_query(db, delivery)
+    if delivery.fulfillment_target_id:
+        target = q.filter(FulfillmentTarget.id == delivery.fulfillment_target_id).first()
+        if target is None:
+            raise HTTPException(
+                status_code=409,
+                detail="投递记录绑定的履约目标已失效或不属于该订单，请先重新关联后再应用",
+            )
+        return target
+
+    candidates = q.order_by(FulfillmentTarget.id).limit(2).all()
+    if not candidates:
+        raise HTTPException(
+            status_code=409,
+            detail="关联订单没有可用的当前邮局履约目标，请先检查订单履约信息",
+        )
+    if len(candidates) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="关联订单有多个当前邮局履约目标，无法确定收件人；请先为投递记录绑定履约目标",
+        )
+    target = candidates[0]
+    # 唯一候选只推断一次并固化，下次应用不再重新猜测。
+    delivery.order_item_id = target.order_item_id
+    delivery.fulfillment_target_id = target.id
+    return target
 
 
 def apply_address_change(db: Session, change_id: int, operator_id: Optional[int] = None) -> PostalAddressChange:
@@ -223,6 +256,9 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
     if rec is None:
         raise HTTPException(status_code=400, detail="关联的投递记录不存在")
 
+    # 有真实订单时必须先精确确定目标；歧义或失效在写任何地址字段前阻断。
+    target = _resolve_current_target(db, rec) if rec.order_id else None
+
     # 写回投递记录（下一版月度明细即用新地址）。
     if ac.new_name:
         rec.recipient_name = ac.new_name
@@ -241,15 +277,13 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
         rec.copies = ac.new_copies
 
     # 投递记录挂了真实订单 → 一并更新订单当前收报人。
-    if rec.order_id:
-        target = _current_target(db, rec.order_id)
-        if target is not None:
-            if ac.new_name:
-                target.recipient_name = ac.new_name
-            if ac.new_phone:
-                target.recipient_phone = ac.new_phone
-            if ac.new_address:
-                target.recipient_address = ac.new_address
+    if target is not None:
+        if ac.new_name:
+            target.recipient_name = ac.new_name
+        if ac.new_phone:
+            target.recipient_phone = ac.new_phone
+        if ac.new_address:
+            target.recipient_address = ac.new_address
 
     ac.applied_to_order = True
     ac.applied_by = operator_id
@@ -260,7 +294,7 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
         handled_at=ac.applied_at,
         handled_by=operator_id,
         action="应用新地址",
-        follow_result="已同步履约订单" if rec.order_id else "仅更新投递名册",
+        follow_result="已同步履约订单" if target is not None else "仅更新投递名册",
     ))
     db.commit()
     db.refresh(ac)
@@ -292,9 +326,19 @@ def create_address_change(db: Session, payload: dict, operator_id: Optional[int]
 
 
 def update_address_change(db: Session, change_id: int, patch: dict) -> PostalAddressChange:
-    rec = db.query(PostalAddressChange).filter(PostalAddressChange.id == change_id).first()
+    rec = (
+        db.query(PostalAddressChange)
+        .filter(PostalAddressChange.id == change_id)
+        .with_for_update()
+        .first()
+    )
     if rec is None:
         raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+    if rec.applied_to_order:
+        raise HTTPException(
+            status_code=409,
+            detail="该改地址已应用，不能再编辑；如需更正请新建改地址工单",
+        )
     patch = dict(patch)
     relink = "delivery_no" in patch
     year_present = "year" in patch
@@ -317,9 +361,19 @@ def update_address_change(db: Session, change_id: int, patch: dict) -> PostalAdd
 
 
 def delete_address_change(db: Session, change_id: int) -> None:
-    rec = db.query(PostalAddressChange).filter(PostalAddressChange.id == change_id).first()
+    rec = (
+        db.query(PostalAddressChange)
+        .filter(PostalAddressChange.id == change_id)
+        .with_for_update()
+        .first()
+    )
     if rec is None:
         raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+    if rec.applied_to_order:
+        raise HTTPException(
+            status_code=409,
+            detail="该改地址已应用，不能删除；如需更正请新建改地址工单",
+        )
     db.delete(rec)
     db.commit()
 

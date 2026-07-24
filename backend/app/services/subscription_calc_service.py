@@ -1,6 +1,6 @@
 """邮局订报数据生成模块 · 金额与汇总计算（文档 §6）。
 
-金额 = 份数 × 订阅月数 × 每份每月单价（缺省 20 元）；数值、非文本。
+金额 = 份数 × 每份完整订期单价；未配置完整订期单价时按「月数 × 20 元」计算。
 条数 = 有效明细行数；份数 = Σ 份数；金额 = Σ 金额。
 """
 
@@ -10,11 +10,24 @@ from typing import Iterable, List
 DEFAULT_PRICE_PER_COPY_MONTH = Decimal("20")
 
 
-def compute_amount(copies, months, price_per_copy_month: Decimal = DEFAULT_PRICE_PER_COPY_MONTH) -> Decimal:
-    """份数 × 月数 × 单价 → 两位小数 Decimal。缺份数/月数按 0 计。"""
+def resolve_complete_term_unit_price(
+    months,
+    configured_unit_price=None,
+) -> Decimal:
+    """返回每份完整订期价格；显式配置（包括 0）优先，否则按月数 × 20。"""
+    if configured_unit_price is not None:
+        price = Decimal(str(configured_unit_price))
+    else:
+        month_count = Decimal(int(months)) if months else Decimal(0)
+        price = month_count * DEFAULT_PRICE_PER_COPY_MONTH
+    return price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def compute_amount(copies, months, configured_unit_price=None) -> Decimal:
+    """份数 × 完整订期单价 → 两位小数 Decimal；缺份数按 0 计。"""
     c = Decimal(int(copies)) if copies else Decimal(0)
-    m = Decimal(int(months)) if months else Decimal(0)
-    return (c * m * price_per_copy_month).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    unit_price = resolve_complete_term_unit_price(months, configured_unit_price)
+    return (c * unit_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def summarize(records: Iterable) -> dict:
