@@ -7,6 +7,7 @@ import io
 from urllib.parse import quote
 
 from app.database import get_db
+from app.upload import read_upload
 from app.schemas.history_import import (
     HistoryImportCommitIn,
     HistoryImportCommitOut,
@@ -53,8 +54,8 @@ async def preview_import(
     db: Session = Depends(get_db),
 ):
     """Parse and validate both Excel files; return a preview without persisting anything."""
-    report_bytes = await report_file.read()
-    shipping_bytes = await shipping_file.read()
+    report_bytes = await read_upload(report_file, label="报数文件")
+    shipping_bytes = await read_upload(shipping_file, label="发货文件")
     return preview_history_import(db, report_bytes, shipping_bytes)
 
 

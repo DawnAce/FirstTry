@@ -18,12 +18,11 @@ from app.database import get_db
 from app.models import ChannelSettlement, Contract, ContractStatus, Partner, User
 from app.schemas.contract import ContractCreate, ContractOut, ContractUpdate
 from app.services import attachment_service
+from app.upload import read_upload
 
 router = APIRouter(prefix="/api/contracts", tags=["contracts"])
 
 ATTACHMENT_CATEGORY = "contracts"
-MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-MAX_ATTACHMENT_MB = MAX_ATTACHMENT_BYTES // (1024 * 1024)
 ALLOWED_SUFFIXES = {".pdf", ".jpg", ".jpeg", ".png"}
 EXPIRING_WINDOW_DAYS = 30
 
@@ -189,13 +188,7 @@ async def upload_attachment(
             status_code=400, detail="仅支持 PDF / JPG / PNG 扫描件"
         )
 
-    content = await file.read(MAX_ATTACHMENT_BYTES + 1)
-    if len(content) > MAX_ATTACHMENT_BYTES:
-        raise HTTPException(
-            status_code=400, detail=f"附件不能超过 {MAX_ATTACHMENT_MB} MB"
-        )
-    if not content:
-        raise HTTPException(status_code=400, detail="上传文件为空")
+    content = await read_upload(file, label="附件")
 
     old_path = contract.attachment_path
     stored_path = attachment_service.store_file(ATTACHMENT_CATEGORY, filename, content)

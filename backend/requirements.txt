@@ -1,10 +1,10 @@
-fastapi==0.115.0
+fastapi==0.139.2
 uvicorn[standard]==0.30.0
 sqlalchemy==2.0.35
 pymysql==1.1.1
-cryptography==43.0.0
+cryptography==49.0.0
 bcrypt==4.2.0
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.5.0
 alembic==1.13.2
 python-dotenv==1.0.1
 openpyxl==3.1.5
@@ -12,7 +12,7 @@ pandas==2.2.2
 xlrd==2.0.1
 pydantic==2.9.0
 pydantic-settings==2.5.0
-python-multipart==0.0.9
+python-multipart==0.0.32
 cpca>=0.5.5
 setuptools<81
-pypdf==4.3.1
+pypdf==6.14.2
