@@ -1498,6 +1498,10 @@ body {
   min-width: 280px;
 }
 
+.subscription-list-item.ant-list-item {
+  padding-inline: 16px !important;
+}
+
 .subscription-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
