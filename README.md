@@ -32,6 +32,7 @@ MYSQL_PORT=3306
 MYSQL_USER=your_user
 MYSQL_PASSWORD=your_password
 MYSQL_DATABASE=your_database
+JWT_SECRET=replace_with_a_random_value_of_at_least_32_characters
 ```
 
 ### 3. 后端启动
@@ -56,14 +57,18 @@ npm run dev
 ```
 
 ### 5. 登录系统
-访问 `http://localhost:5173`，使用默认管理员账户登录：
-- **用户名**：`admin`
-- **密码**：`admin123`
+系统不再提供默认密码。首次部署或需要轮换密码时，在 `backend` 目录执行：
+
+```bash
+python -m scripts.set_admin_password admin
+```
+
+按提示设置至少 12 位的新密码，然后访问 `http://localhost:5173` 登录。
 
 ### 6. 初始化数据
 管理员登录后调用种子数据接口：
 ```powershell
-$token = (Invoke-RestMethod -Method Post http://localhost:8000/api/auth/login -ContentType "application/json" -Body (@{username="admin";password="admin123"} | ConvertTo-Json)).access_token
+$token = (Invoke-RestMethod -Method Post http://localhost:8000/api/auth/login -ContentType "application/json" -Body (@{username="admin";password="<你的管理员密码>"} | ConvertTo-Json)).access_token
 Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{Authorization="Bearer $token"}
 ```
 

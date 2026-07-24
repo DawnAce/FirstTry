@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from urllib.parse import quote_plus
@@ -10,6 +11,8 @@ class Settings(BaseSettings):
     MYSQL_USER: str
     MYSQL_PASSWORD: str
     MYSQL_DATABASE: str
+    JWT_SECRET: str = Field(min_length=32)
+    ACCESS_TOKEN_EXPIRE_HOURS: int = Field(default=12, ge=1, le=24)
 
     @property
     def DATABASE_URL(self) -> str:
