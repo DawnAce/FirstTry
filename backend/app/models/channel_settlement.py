@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SAEnum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -40,15 +41,15 @@ class ChannelSettlement(Base):
         Integer,
         ForeignKey("partners.id"),
         nullable=False,
-        index=True,
+        index=False,
     )
     contract_id = Column(
         Integer,
         ForeignKey("contracts.id"),
         nullable=True,
-        index=True,
+        index=False,
     )
-    period = Column(String(32), nullable=True, index=True)  # 结算周期，如 2026-Q1 / 2026-05
+    period = Column(String(32), nullable=True)  # 结算周期，如 2026-Q1 / 2026-05
     amount_due = Column(Numeric(12, 2), nullable=True)        # 应结
     paid_amount = Column(Numeric(12, 2), nullable=True)       # 已打款
     paid_date = Column(Date, nullable=True)                   # 打款日
@@ -59,7 +60,7 @@ class ChannelSettlement(Base):
         SAEnum(SettlementStatus),
         default=SettlementStatus.pending,
         nullable=False,
-        index=True,
+        index=False,
     )
     attachment_filename = Column(String(255), nullable=True)
     attachment_path = Column(String(500), nullable=True)
@@ -75,3 +76,10 @@ class ChannelSettlement(Base):
 
     partner = relationship("Partner")
     contract = relationship("Contract")
+
+    __table_args__ = (
+        Index("ix_settlements_partner_id", "partner_id"),
+        Index("ix_settlements_contract_id", "contract_id"),
+        Index("ix_settlements_period", "period"),
+        Index("ix_settlements_status", "status"),
+    )

@@ -447,7 +447,7 @@ export default function OrderImport() {
         )}
         {drawerMode === 'detail' && detailRow && (
           <Space direction="vertical" style={{ width: '100%' }}>
-            <Text><b>收件人：</b>{detailRow.recipient_name}　<b>付款：</b>¥{detailRow.paid_amount}</Text>
+            <Text><b>收件人：</b>{detailRow.recipient_name}{' '}<b>付款：</b>¥{detailRow.paid_amount}</Text>
             <Text><b>平台状态：</b>{detailRow.status_raw} → {detailRow.commercial_status ?? '-'}</Text>
             <Text><b>结果：</b>{DECISION_META[detailRow.decision].label}{detailRow.reason ? `（${detailRow.reason}）` : ''}</Text>
             {detailRow.delivery_overridden_to_zto && <Tag color="orange">投递已改中通，请核对</Tag>}

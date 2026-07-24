@@ -11,3 +11,4 @@ class AlembicSchemaCoverageTests(unittest.TestCase):
         self.assertIn("'issue_audit_snapshots'", migration_text)
         self.assertIn("ForeignKeyConstraint(['issue_id'], ['issues.id']", migration_text)
         self.assertIn("snapshot_type", migration_text)
+        self.assertIn('"fk_ft_replaced_by_target_id"', migration_text)

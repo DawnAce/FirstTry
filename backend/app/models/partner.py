@@ -8,6 +8,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.sql import func
 
@@ -34,7 +35,7 @@ class Partner(Base):
     __tablename__ = "partners"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(128), nullable=False, unique=True, index=True)
+    name = Column(String(128), nullable=False)
     partner_type = Column(
         SAEnum(PartnerType),
         nullable=False,
@@ -53,3 +54,5 @@ class Partner(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+    __table_args__ = (UniqueConstraint("name", name="uq_partners_name"),)

@@ -278,7 +278,7 @@ export default function ScheduleImport() {
       row.page_count ?? '',
       row.is_suspended ? '休刊' : '出版',
     ].join(','));
-    const csv = `﻿${[header, ...lines].join('\n')}`;
+    const csv = `\uFEFF${[header, ...lines].join('\n')}`;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -306,7 +306,7 @@ export default function ScheduleImport() {
       '4. 单个文件大小不超过 20MB。',
       '5. 上传后系统仅生成预览，需人工核对并点「确认保存」后才写入正式期刊表。',
     ].join('\n');
-    const blob = new Blob([`﻿${text}`], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([`\uFEFF${text}`], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
