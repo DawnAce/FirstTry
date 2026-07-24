@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Button, Card, DatePicker, Drawer, Empty, Flex, Form, InputNumber, List, Modal,
-  Popconfirm, Space, Table, Tag, Typography, Upload, message,
+  Button, Card, Collapse, DatePicker, Drawer, Empty, Flex, Form, InputNumber, List, Modal,
+  Popconfirm, Select, Space, Steps, Table, Tag, Typography, Upload, message,
 } from 'antd';
 import {
-  DownloadOutlined, FileAddOutlined, InboxOutlined, ThunderboltOutlined, UploadOutlined,
+  ArrowLeftOutlined, CheckCircleOutlined, DownloadOutlined, FileAddOutlined, InboxOutlined,
+  ThunderboltOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
@@ -15,7 +16,7 @@ import {
   getSubBatch, getSubImportIssues, getSubImportRecords, listSubArtifacts, listSubBatches,
 } from '../api/subscription';
 import type {
-  Artifact, BatchStatus, ImportStatus, ImportVersion, IssueLevel, SubBatch, SubRecord, ValidationIssue,
+  Artifact, BatchStatus, ImportStatus, ImportVersion, IssueLevel, SubRecord, ValidationIssue,
 } from '../api/subscription';
 
 const { Title, Text } = Typography;
@@ -41,6 +42,13 @@ const ISSUE_META: Record<IssueLevel, { label: string; color: string }> = {
   block: { label: '阻断', color: 'red' },
   warn: { label: '警告', color: 'orange' },
   info: { label: '提示', color: 'blue' },
+};
+
+const ARTIFACT_LABEL: Record<string, string> = {
+  workbook: '汇总 + 明细 + 申请',
+  postal_summary: '北京局订报汇总表',
+  region_detail: '地区集订分送表',
+  zip: '完整压缩包',
 };
 
 function errText(err: unknown): string {
@@ -88,46 +96,6 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
         </Flex>
       </Form>
     </Modal>
-  );
-}
-
-/** 上传两份来源文件 → 新版本 */
-function ImportUpload({ batchId }: { batchId: number }) {
-  const qc = useQueryClient();
-  const [fileA, setFileA] = useState<File | null>(null);
-  const [fileB, setFileB] = useState<File | null>(null);
-  const mut = useMutation({
-    mutationFn: () => createSubImport(batchId, fileA as File, fileB),
-    onSuccess: (res) => {
-      const v = res.data;
-      const st = IMPORT_STATUS_META[v.status];
-      message.success(`已建版本 V${v.version_no}（${st.label}）`);
-      setFileA(null); setFileB(null);
-      qc.invalidateQueries({ queryKey: ['subBatch', batchId] });
-      qc.invalidateQueries({ queryKey: ['subBatches'] });
-    },
-    onError: (e) => message.error(errText(e)),
-  });
-  return (
-    <Space direction="vertical" style={{ width: '100%' }}>
-      <Flex gap={12} wrap>
-        <Upload.Dragger style={{ width: 320 }} maxCount={1} accept=".xlsx,.xls,.csv"
-          beforeUpload={(f) => { setFileA(f); return false; }} onRemove={() => setFileA(null)}
-          fileList={fileA ? [{ uid: 'a', name: fileA.name } as UploadFile] : []}>
-          <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-          <p className="ant-upload-text">来源A · 订阅明细（.xlsx/.xls）</p>
-        </Upload.Dragger>
-        <Upload.Dragger style={{ width: 320 }} maxCount={1} accept=".xlsx,.csv"
-          beforeUpload={(f) => { setFileB(f); return false; }} onRemove={() => setFileB(null)}
-          fileList={fileB ? [{ uid: 'b', name: fileB.name } as UploadFile] : []}>
-          <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-          <p className="ant-upload-text">来源B · 读者统计（.xlsx/.csv，可选）</p>
-          <p className="ant-upload-hint">CSV 需 UTF-8/带 BOM</p>
-        </Upload.Dragger>
-      </Flex>
-      <Button type="primary" icon={<UploadOutlined />} disabled={!fileA} loading={mut.isPending}
-        onClick={() => mut.mutate()}>上传并解析（生成新版本）</Button>
-    </Space>
   );
 }
 
@@ -186,17 +154,36 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
   const qc = useQueryClient();
   const [issuesFor, setIssuesFor] = useState<number | null>(null);
   const [recordsFor, setRecordsFor] = useState<number | null>(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [fileA, setFileA] = useState<File | null>(null);
+  const [fileB, setFileB] = useState<File | null>(null);
+  const [draftVersion, setDraftVersion] = useState<ImportVersion | null>(null);
+  const [activated, setActivated] = useState(false);
+  const [generationDone, setGenerationDone] = useState(false);
 
   const batchQ = useQuery({ queryKey: ['subBatch', batchId], queryFn: () => getSubBatch(batchId).then((r) => r.data) });
   const artifactsQ = useQuery({ queryKey: ['subArtifacts', batchId], queryFn: () => listSubArtifacts(batchId).then((r) => r.data) });
 
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['subBatch', batchId] });
+    qc.invalidateQueries({ queryKey: ['subBatches'] });
+  };
+  const uploadMut = useMutation({
+    mutationFn: () => createSubImport(batchId, fileA as File, fileB),
+    onSuccess: (res) => {
+      setDraftVersion(res.data);
+      message.success(`已创建待确认版本 V${res.data.version_no}`);
+      refresh();
+    },
+    onError: (e) => message.error(errText(e)),
+  });
   const activateMut = useMutation({
     mutationFn: (vid: number) => activateSubImport(vid),
     onSuccess: (res) => {
       const s = res.data.postal_sync;
       message.success(`已设为当前有效版本 · 名册新增 ${s.created}、更新 ${s.updated}、归档 ${s.archived} 条`);
-      qc.invalidateQueries({ queryKey: ['subBatch', batchId] });
-      qc.invalidateQueries({ queryKey: ['subBatches'] });
+      if (draftVersion?.id === res.data.version.id) setActivated(true);
+      refresh();
       qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
     },
     onError: (e) => message.error(errText(e)),
@@ -205,8 +192,9 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
     mutationFn: () => generateSubBatch(batchId),
     onSuccess: (res) => {
       message.success(`生成完成，共 ${res.data.artifacts.length} 个文件`);
+      setGenerationDone(true);
       qc.invalidateQueries({ queryKey: ['subArtifacts', batchId] });
-      qc.invalidateQueries({ queryKey: ['subBatch', batchId] });
+      refresh();
     },
     onError: (e) => message.error(errText(e)),
   });
@@ -220,6 +208,8 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
   const current = artifacts.filter((a) => !a.is_historical);
 
   if (!batch) return <Card loading />;
+  const activeVersion = versions.find((v) => v.id === batch.active_version_id) ?? null;
+  const activeSummary = activeVersion?.summary_json as Record<string, unknown> | null;
   const effectiveUnitPrice = batch.unit_price != null
     ? Number(batch.unit_price)
     : (13 - batch.start_month) * 20;
@@ -229,6 +219,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
     const s = v.summary_json as Record<string, unknown> | null;
     return (
       <List.Item
+        style={{ paddingInline: 16 }}
         actions={[
           <Button key="r" type="link" size="small" onClick={() => setRecordsFor(v.id)}>查看明细</Button>,
           <Button key="i" type="link" size="small" onClick={() => setIssuesFor(v.id)}>校验问题</Button>,
@@ -255,34 +246,152 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
     );
   };
 
-  const ARTIFACT_LABEL: Record<string, string> = {
-    workbook: '汇总+明细+申请', postal_summary: '北京局订报汇总表', region_detail: '地区集订分送表', zip: '打包 ZIP',
-  };
+  const artifactRow = (a: Artifact) => (
+    <List.Item style={{ paddingInline: 16 }} actions={[
+      <Button key="d" type="link" size="small" icon={<DownloadOutlined />}
+        onClick={() => downloadSubArtifact(a.id, a.filename).catch(() => message.error('下载失败'))}>下载</Button>,
+    ]}>
+      <List.Item.Meta
+        title={<Space>{ARTIFACT_LABEL[a.artifact_type] ?? a.artifact_type}{a.region_name && <Tag>{a.region_name}</Tag>}</Space>}
+        description={<Text type="secondary" className="postal-cell-secondary">{a.filename}</Text>}
+      />
+    </List.Item>
+  );
+
+  if (workspaceOpen) {
+    const summary = (draftVersion?.summary_json ?? {}) as Record<string, unknown>;
+    const blockCount = Number(summary.issue_block ?? 0);
+    const warnCount = Number(summary.issue_warn ?? 0);
+    const canActivate = draftVersion?.status === 'validation_passed' && blockCount === 0;
+    const compareRows = [
+      { key: 'count', label: '记录', old: activeSummary?.total_count, next: summary.total_count },
+      { key: 'copies', label: '份数', old: activeSummary?.total_copies, next: summary.total_copies },
+      { key: 'amount', label: '金额', old: activeSummary?.total_amount, next: summary.total_amount },
+      { key: 'region', label: '地区', old: activeSummary?.region_count, next: summary.region_count },
+    ];
+    return (
+      <>
+        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => setWorkspaceOpen(false)}>返回 {batch.year}年{batch.start_month}月批次</Button>
+        <Title level={3} style={{ margin: '12px 0 2px' }}>创建新版本 V{draftVersion?.version_no ?? ((versions[0]?.version_no ?? 0) + 1)}</Title>
+        <Text type="secondary">当前有效版本 V{activeVersion?.version_no ?? '—'} 保持不变，确认后才会切换。</Text>
+        <Steps className="subscription-steps" current={draftVersion ? (activated ? 2 : 1) : 0} items={[
+          { title: '上传来源' },
+          { title: '校验与对比' },
+          { title: '设为有效' },
+        ]} />
+
+        {!draftVersion && (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Flex gap={12} wrap>
+              <Upload.Dragger className="subscription-upload" maxCount={1} accept=".xlsx,.xls,.csv"
+                beforeUpload={(f) => { setFileA(f); return false; }} onRemove={() => setFileA(null)}
+                fileList={fileA ? [{ uid: 'a', name: fileA.name } as UploadFile] : []}>
+                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                <p className="ant-upload-text">来源 A · 订阅明细</p>
+                <p className="ant-upload-hint">.xlsx / .xls，必填</p>
+              </Upload.Dragger>
+              <Upload.Dragger className="subscription-upload" maxCount={1} accept=".xlsx,.csv"
+                beforeUpload={(f) => { setFileB(f); return false; }} onRemove={() => setFileB(null)}
+                fileList={fileB ? [{ uid: 'b', name: fileB.name } as UploadFile] : []}>
+                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                <p className="ant-upload-text">来源 B · 读者统计（可选）</p>
+                <p className="ant-upload-hint">CSV 需 UTF-8 / 带 BOM</p>
+              </Upload.Dragger>
+            </Flex>
+            <Flex justify="flex-end" gap={8}>
+              <Button onClick={() => setWorkspaceOpen(false)}>取消</Button>
+              <Button type="primary" icon={<UploadOutlined />} disabled={!fileA} loading={uploadMut.isPending}
+                onClick={() => uploadMut.mutate()}>上传并校验</Button>
+            </Flex>
+          </Space>
+        )}
+
+        {draftVersion && !activated && (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <div className="subscription-metrics">
+              <Card size="small"><Text type="secondary">解析记录</Text><Title level={4}>{String(summary.total_count ?? 0)} 条</Title><Text type="secondary">共 {String(summary.total_copies ?? 0)} 份</Text></Card>
+              <Card size="small"><Text type="secondary">阻断问题</Text><Title level={4}>{blockCount}</Title><Text type="secondary">{blockCount ? '修正后重新上传' : '可以继续'}</Text></Card>
+              <Card size="small"><Text type="secondary">提醒</Text><Title level={4}>{warnCount}</Title><Text type="secondary">不阻断版本切换</Text></Card>
+            </div>
+            <Card size="small" title={`与当前 V${activeVersion?.version_no ?? '—'} 对比`} styles={{ body: { padding: 0 } }}>
+              <Table rowKey="key" size="small" pagination={false} dataSource={compareRows} columns={[
+                { title: '指标', dataIndex: 'label' },
+                { title: '当前版本', dataIndex: 'old', render: (v) => v ?? '—' },
+                { title: `V${draftVersion.version_no}`, dataIndex: 'next', render: (v) => v ?? '—' },
+              ]} />
+            </Card>
+            <Card size="small" title="来源文件" styles={{ body: { padding: 0 } }}>
+              <List size="small" dataSource={draftVersion.source_files} renderItem={(f) => (
+                <List.Item><Text>{f.file_role} · {f.original_filename}</Text></List.Item>
+              )} />
+            </Card>
+            <Flex justify="space-between" wrap gap={8}>
+              <Space>
+                <Button onClick={() => setRecordsFor(draftVersion.id)}>查看明细</Button>
+                <Button onClick={() => setIssuesFor(draftVersion.id)}>校验问题{blockCount + warnCount ? ` (${blockCount + warnCount})` : ''}</Button>
+              </Space>
+              <Space>
+                <Button onClick={() => { setDraftVersion(null); setFileA(null); setFileB(null); }}>重新选择文件</Button>
+                <Popconfirm title={`设 V${draftVersion.version_no} 为当前有效版本？`} description="旧有效版本会保留在版本历史中。" onConfirm={() => activateMut.mutate(draftVersion.id)}>
+                  <Button type="primary" disabled={!canActivate} loading={activateMut.isPending}>设为有效版本</Button>
+                </Popconfirm>
+              </Space>
+            </Flex>
+          </Space>
+        )}
+
+        {draftVersion && activated && (
+          <div className="subscription-success">
+            <CheckCircleOutlined />
+            <Title level={3}>V{draftVersion.version_no} 已设为当前有效版本</Title>
+            <Text type="secondary">旧版本已保留，投递名册同步完成。</Text>
+            <Flex justify="center" gap={8} style={{ marginTop: 20 }}>
+              <Button onClick={() => setWorkspaceOpen(false)}>查看版本记录</Button>
+              <Button type="primary" icon={<ThunderboltOutlined />} loading={genMut.isPending}
+                onClick={() => genMut.mutate()}>{generationDone ? '重新生成文件' : '生成订报文件'}</Button>
+            </Flex>
+          </div>
+        )}
+        <IssuesDrawer versionId={issuesFor} open={issuesFor != null} onClose={() => setIssuesFor(null)} />
+        <RecordsDrawer versionId={recordsFor} open={recordsFor != null} onClose={() => setRecordsFor(null)} />
+      </>
+    );
+  }
+
+  const regionArtifacts = current.filter((a) => a.artifact_type === 'region_detail');
+  const mainArtifacts = current.filter((a) => a.artifact_type !== 'region_detail');
+  const workflowStep = current.length ? 2 : (activeVersion ? 1 : 0);
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Flex justify="space-between" align="center" wrap gap={8}>
-        <Space size={16} wrap>
-          <Title level={5} style={{ margin: 0 }}>{batch.year}年{batch.start_month}月 订报批次</Title>
-          <Tag color={BATCH_STATUS_META[batch.status].color}>{BATCH_STATUS_META[batch.status].label}</Tag>
-          {batch.active_version_id && <Text type="secondary">当前有效：版本 #{batch.active_version_id}</Text>}
-          <Text type="secondary">
-            完整订期单价：¥{effectiveUnitPrice.toFixed(2)}{batch.unit_price == null ? '（默认 20 元/月）' : ''}
-          </Text>
-        </Space>
+        <div>
+          <Space wrap>
+            <Title level={4} style={{ margin: 0 }}>{batch.year}年{batch.start_month}月订报批次</Title>
+            <Tag color={BATCH_STATUS_META[batch.status].color}>{BATCH_STATUS_META[batch.status].label}</Tag>
+          </Space>
+          <Text type="secondary">当前有效 V{activeVersion?.version_no ?? '—'} · 完整订期单价 ¥{effectiveUnitPrice.toFixed(2)}{batch.unit_price == null ? '（默认 20 元/月）' : ''}</Text>
+        </div>
         {isAdmin && (
-          <Popconfirm title="基于当前有效版本生成全部文件？" disabled={!batch.active_version_id}
-            onConfirm={() => genMut.mutate()}>
-            <Button type="primary" icon={<ThunderboltOutlined />} loading={genMut.isPending}
-              disabled={!batch.active_version_id}>生成订报文件</Button>
-          </Popconfirm>
+          <Space>
+            <Button icon={<UploadOutlined />} onClick={() => { setWorkspaceOpen(true); setDraftVersion(null); setActivated(false); setGenerationDone(false); }}>重新上传来源</Button>
+            <Popconfirm title="基于当前有效版本生成全部文件？" disabled={!batch.active_version_id} onConfirm={() => genMut.mutate()}>
+              <Button type="primary" icon={<ThunderboltOutlined />} loading={genMut.isPending} disabled={!batch.active_version_id}>生成订报文件</Button>
+            </Popconfirm>
+          </Space>
         )}
       </Flex>
 
-      {isAdmin && (
-        <Card size="small" title="上传来源文件（生成新版本）">
-          <ImportUpload batchId={batchId} />
-        </Card>
+      <Steps className="subscription-steps" current={workflowStep} items={[
+        { title: '上传来源' }, { title: '设为有效' }, { title: '下载文件' },
+      ]} />
+
+      {activeSummary && (
+        <div className="subscription-metrics">
+          <Card size="small"><Text type="secondary">订阅记录</Text><Title level={4}>{String(activeSummary.total_count ?? 0)} 条</Title><Text type="secondary">共 {String(activeSummary.total_copies ?? 0)} 份</Text></Card>
+          <Card size="small"><Text type="secondary">订报金额</Text><Title level={4}>¥{String(activeSummary.total_amount ?? 0)}</Title><Text type="secondary">当前有效版本</Text></Card>
+          <Card size="small"><Text type="secondary">地区文件</Text><Title level={4}>{String(activeSummary.region_count ?? 0)} 份</Title><Text type="secondary">{current.length ? '已生成' : '等待生成'}</Text></Card>
+        </div>
       )}
 
       <Card size="small" title="版本历史（不可变流水）" styles={{ body: { padding: 0 } }}>
@@ -291,20 +400,17 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
           : <List<ImportVersion> dataSource={versions} renderItem={renderVersion} />}
       </Card>
 
-      <Card size="small" title="生成产物" styles={{ body: { padding: 0 } }} loading={artifactsQ.isLoading}>
+      <Card size="small" title="生成文件" styles={{ body: { padding: 0 } }} loading={artifactsQ.isLoading}>
         {current.length === 0
           ? <Empty style={{ padding: 24 }} description="尚无产物，设为有效后点「生成订报文件」" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          : <List<Artifact> dataSource={current} renderItem={(a) => (
-              <List.Item actions={[
-                <Button key="d" type="link" size="small" icon={<DownloadOutlined />}
-                  onClick={() => downloadSubArtifact(a.id, a.filename).catch(() => message.error('下载失败'))}>下载</Button>,
-              ]}>
-                <List.Item.Meta
-                  title={<Space><Tag>{ARTIFACT_LABEL[a.artifact_type] ?? a.artifact_type}</Tag>{a.region_name || ''}</Space>}
-                  description={<Text type="secondary" style={{ fontSize: 12 }}>{a.filename}</Text>}
-                />
-              </List.Item>
-            )} />}
+          : <>
+              <List<Artifact> dataSource={mainArtifacts} renderItem={artifactRow} />
+              {regionArtifacts.length > 0 && <Collapse ghost items={[{
+                key: 'regions',
+                label: `地区集订分送表（${regionArtifacts.length} 个地区）`,
+                children: <List<Artifact> dataSource={regionArtifacts} renderItem={artifactRow} />,
+              }]} />}
+            </>}
       </Card>
 
       <IssuesDrawer versionId={issuesFor} open={issuesFor != null} onClose={() => setIssuesFor(null)} />
@@ -324,33 +430,22 @@ export default function SubscriptionGeneration() {
 
   return (
     <div>
-      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
-        <Title level={3} style={{ marginTop: 0, marginBottom: 0 }}>邮局管理 · 邮局订报生成</Title>
-        {isAdmin && <Button type="primary" icon={<FileAddOutlined />} onClick={() => setCreateOpen(true)}>新建批次</Button>}
-      </Flex>
-      <Text type="secondary">上传两份来源文件（订阅明细 + 读者统计），系统解析 / 校验 / 计算 / 生成邮局订报文件；每次重导形成不可变版本流水，旧版不覆盖。</Text>
-
-      <Flex gap={16} align="start" style={{ marginTop: 12 }}>
-        <Card size="small" title="订报批次" style={{ width: 240, flex: '0 0 240px' }} styles={{ body: { padding: 0 } }} loading={batchesQ.isLoading}>
-          {batches.length === 0
-            ? <Empty style={{ padding: 24 }} description="暂无批次" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            : <List<SubBatch> dataSource={batches} renderItem={(b) => {
-                const meta = BATCH_STATUS_META[b.status];
-                const active = b.id === activeId;
-                return (
-                  <List.Item onClick={() => setSelectedId(b.id)} style={{ cursor: 'pointer', padding: '10px 14px', background: active ? '#e6f4ff' : undefined, boxShadow: active ? 'inset 3px 0 0 #1677ff' : undefined }}>
-                    <Flex justify="space-between" align="center" style={{ width: '100%' }}>
-                      <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>{b.year}-{String(b.start_month).padStart(2, '0')}</Text>
-                      <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
-                    </Flex>
-                  </List.Item>
-                );
-              }} />}
-        </Card>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {activeId == null ? <Empty description="选择或新建一个订报批次" /> : <BatchDetailPanel batchId={activeId} />}
+      <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
+        <div>
+          <Title level={3} className="postal-page-title">邮局订报生成</Title>
+          <Text type="secondary">上传来源、校验版本并生成邮局订报文件；旧版本始终保留。</Text>
         </div>
+        <Space>
+          <Select value={activeId} onChange={setSelectedId} placeholder="选择批次" style={{ width: 150 }}
+            options={batches.map((b) => ({ label: `${b.year}-${String(b.start_month).padStart(2, '0')}`, value: b.id }))} />
+          {isAdmin && <Button type="primary" icon={<FileAddOutlined />} onClick={() => setCreateOpen(true)}>新建批次</Button>}
+        </Space>
       </Flex>
+      <div style={{ marginTop: 12 }}>
+        {batchesQ.isLoading ? <Card loading /> : activeId == null
+          ? <Empty description="选择或新建一个订报批次" />
+          : <BatchDetailPanel key={activeId} batchId={activeId} />}
+      </div>
 
       <BatchCreateModal open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
