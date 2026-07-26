@@ -56,7 +56,7 @@ jobs:
         run: python -m pytest -q
 
   frontend:
-    name: 前端检查 (lint + test + build)
+    name: 前端类型检查 (tsc)
     runs-on: ubuntu-latest
     defaults:
       run:
