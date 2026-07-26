@@ -12,6 +12,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -73,7 +74,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    order_code = Column(String(64), unique=True, nullable=True, index=True)
+    order_code = Column(String(64), nullable=True, index=True)
     external_order_no = Column(String(128), nullable=True, index=True)
     order_date = Column(Date, nullable=False)
     entry_method = Column(SAEnum(OrderEntryMethod), nullable=False)
@@ -153,6 +154,7 @@ class Order(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("order_code", name="uq_orders_order_code"),
         Index("ix_orders_source_status_date", "entry_method", "status", "order_date"),
         Index("ix_orders_payer", "payer_name"),
     )

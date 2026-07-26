@@ -65,7 +65,8 @@ export default function ProductCatalog() {
     mutationFn: async (values: ProductFormValues) => {
       const payload = buildProductPayload(values);
       if (editing) {
-        const { code: _code, ...rest } = payload;
+        const rest: Partial<typeof payload> = { ...payload };
+        delete rest.code;
         return updateProduct(editing.id, rest);
       }
       return createProduct(payload);
