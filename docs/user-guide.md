@@ -39,6 +39,8 @@ MYSQL_DATABASE=newspaper_system
 
 ### 1.3 启动后端服务
 
+Windows 开发环境推荐直接在项目根目录运行 `.\dev.ps1`：脚本会同步启动后端（`http://localhost:8000`）和前端（`http://localhost:5173`），并自动迁移数据库、检查前端依赖。以下步骤用于需要分别启动服务的场景。
+
 ```bash
 # 进入后端目录
 cd backend
@@ -1029,6 +1031,8 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 1. 确认后端运行在 `http://localhost:8000`
 2. 检查 `backend/app/main.py` 中的 CORS 配置
 3. 确认前端 API 请求地址正确（`frontend/src/api/` 目录下的文件）
+4. Windows 下优先在项目根目录运行 `.\dev.ps1`；脚本发现 Vite 缺失时会自动执行 `npm ci`
+5. 如果 npm 报 `EPERM`，先关闭仍在使用 `node_modules` 的 Vite / Storybook，再重新运行脚本
 
 ### 7.3 导出 Excel 失败
 

@@ -89,7 +89,7 @@ Invoke-RestMethod -Method Post http://localhost:8000/api/admin/seed -Headers @{A
 | Windows CMD | `dev.bat` |
 | macOS / Linux | `./dev.sh` |
 
-> `dev.ps1` / `dev.sh` 启动前会自动跑一次 `alembic upgrade head`（dev 下失败不阻断启动，仅告警）；拉了新代码后无需再手动迁移。
+> `dev.ps1` / `dev.sh` 启动前会自动跑一次 `alembic upgrade head`（dev 下失败不阻断启动，仅告警）；拉了新代码后无需再手动迁移。Windows 下 `dev.ps1` 还会检查 Vite 是否完整，缺失时自动执行 `npm ci`；若 npm 报 `EPERM`，请先关闭占用 `node_modules` 的 Vite / Storybook 后重试。
 
 ### 多账号 GitHub 切换（可选）
 
