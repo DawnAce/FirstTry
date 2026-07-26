@@ -1,4 +1,4 @@
-# 中国经营报 · 印数管理系统 - 本地开发一键启动
+﻿# 中国经营报 · 印数管理系统 - 本地开发一键启动
 # 用法: 在项目根目录运行 .\dev.ps1
 
 $ErrorActionPreference = "Stop"
@@ -14,11 +14,15 @@ if (-not (Test-Path "$ROOT\backend\venv\Scripts\activate.ps1")) {
     pip install -r "$ROOT\backend\requirements.txt" -q
 } 
 
-# 检查 node_modules
-if (-not (Test-Path "$ROOT\frontend\node_modules")) {
+# 检查 Vite 可执行文件；目录存在不代表 npm ci 已完整结束。
+if (-not (Test-Path "$ROOT\frontend\node_modules\.bin\vite.cmd")) {
     Write-Host "⚙️  安装前端依赖..." -ForegroundColor Yellow
     Push-Location "$ROOT\frontend"
-    npm install
+    npm ci --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) {
+        Pop-Location
+        throw "前端依赖安装失败，请关闭仍在运行的 Vite/Storybook 后重试。"
+    }
     Pop-Location
 }
 
