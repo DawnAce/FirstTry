@@ -39,6 +39,8 @@ def _dump_database(path: Path, mysqldump: str) -> None:
         f"--user={settings.MYSQL_USER}",
         "--single-transaction",
         "--quick",
+        "--skip-lock-tables",
+        "--set-gtid-purged=OFF",
         "--routines",
         "--events",
         "--triggers",
