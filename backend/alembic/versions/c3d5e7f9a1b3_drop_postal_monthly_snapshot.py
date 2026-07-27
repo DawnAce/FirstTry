@@ -1,7 +1,7 @@
 """drop postal monthly-snapshot layer (batches + rows)
 
 邮局管理重构 PR-B：删除「月度起投明细 / 月度快照 / 起投批次」层。
-给邮局的名单只来自「邮局订报生成」，快照属重复劳动，整层移除。
+给邮局的名单只来自「订报转投」，快照属重复劳动，整层移除。
 
 ⚠️ 生产执行前：先用 scripts/export_postal_snapshot.py 导出
 postal_delivery_batches / postal_delivery_rows 为 json 归档。

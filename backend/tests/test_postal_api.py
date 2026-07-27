@@ -107,7 +107,7 @@ def test_full_flow(client):
     assert resp.status_code == 200, resp.text
     assert resp.json()["created"] == 3
 
-    # 3) 投递名册可查到导入的 3 条
+    # 3) 投递明细可查到导入的 3 条
     resp = client.get("/api/postal/deliveries")
     assert resp.status_code == 200
     assert resp.json()["total"] == 3

@@ -8,7 +8,7 @@
   没有平台订单号，多数记录独立（你不负责的平台就是纯投递数据），将来有平台订单号且对得上
   才挂真实订单。与中通一样「可挂单 / 可独立」。
 
-投递名册为纯台账；给邮局的名单由「邮局订报生成」产出（原月度起投明细/快照层已移除）。
+投递明细为纯台账；给邮局的名单由「订报转投」产出（原月度起投明细/快照层已移除）。
 """
 
 import enum
@@ -38,7 +38,7 @@ class PostalDeliverySourceType(str, enum.Enum):
     * ``historical_import`` —— 导入《邮局读者明细》（默认）。
     * ``order_generated``   —— 将来：从真实平台订单同步生成。
     * ``manual``            —— 页面手工新增。
-    * ``subscription_generated`` —— 由「邮局订报生成」版本设为有效时汇入。
+    * ``subscription_generated`` —— 由「订报转投」版本设为有效时汇入。
     """
 
     historical_import = "historical_import"
@@ -74,7 +74,7 @@ class PostalDelivery(Base):
         nullable=True,
     )
     external_order_no = Column(String(128), nullable=True, index=True)  # 平台订单号（将来补齐）
-    # 由哪个「邮局订报生成」批次汇入（用于幂等替换；SET NULL 保留记录）。多数为空。
+    # 由哪个「订报转投」批次汇入（用于幂等替换；SET NULL 保留记录）。多数为空。
     subscription_batch_id = Column(
         Integer,
         ForeignKey("subscription_batches.id", ondelete="SET NULL"),
@@ -82,7 +82,7 @@ class PostalDelivery(Base):
         index=True,
     )
     # 订报版本切换时不物理删除旧记录：保留稳定 id，避免工单关联被 SET NULL。
-    # 归档记录不进入当前投递名册，也不参与新工单的自动关联。
+    # 归档记录不进入当前投递明细，也不参与新工单的自动关联。
     is_archived = Column(Boolean, default=False, server_default="0", nullable=False, index=True)
     source_type = Column(
         SAEnum(PostalDeliverySourceType, name="postaldeliverysourcetype"),

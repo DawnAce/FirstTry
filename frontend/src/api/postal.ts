@@ -1,7 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
 
-// --- 投递名册（全部投递记录） ---------------------------------------------
+// --- 投递明细（全部投递记录） ---------------------------------------------
 
 export interface PostalDelivery {
   id: number;
@@ -259,7 +259,7 @@ export function commitFollowUpImport(sessionId: string): Promise<AxiosResponse<P
   return api.post('/postal/tickets/import/follow/commit', { session_id: sessionId });
 }
 
-// --- 客服工单（投诉 / 改地址 / 回访 统一列表） ------------------------------
+// --- 邮局工单（投诉 / 改地址 / 回访 统一列表） ------------------------------
 
 export type TicketType = 'complaint' | 'address' | 'follow';
 
@@ -300,7 +300,7 @@ export function listTickets(f: {
 // 手工 CRUD（新增 / 编辑 / 删除）+ 投诉三态处理流程
 // =====================================================================
 
-// --- 投递名册 ---
+// --- 投递明细 ---
 export interface DeliveryPayload {
   year: number;
   delivery_no: string;

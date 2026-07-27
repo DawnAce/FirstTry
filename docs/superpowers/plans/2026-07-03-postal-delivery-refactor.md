@@ -16,9 +16,9 @@
 2. **P1 导入重写** `postal_delivery_import_service`：读者明细 → `PostalDelivery`（不造订单）；`(year, delivery_no=编号去零)` 去重；产品认不出留原文；复用现有 parser + 会话握手。删旧 `postal_import_service`。
 3. **批次归批**：`postal_batch_service` 从 `PostalDelivery` 按 `coverage_start_date∈[月1,次月1)` 归批冻结，`postal_delivery_rows` 溯源 `postal_delivery_id`；省市区优先读记录、都空 `normalize_address` 兜底。
 4. **工单挂投递记录**：`postal_common.delivery_map` 按 编号+年度 关联；投诉/改地址/回访继承 `postal_delivery_id`（挂真实订单才继承 `order_id`）；改地址**「应用新地址」**写回投递记录（挂订单则连带更新订单 target）、未匹配 400；改地址跨年靠表头括注声明的读者年度挂对。
-5. **API + 名册**：切 import 端点到新服务；新增 `GET /api/postal/deliveries`（投递名册）+ schema `DeliveryOut`/工单 `postal_delivery_id`；`partners` 删除守卫加 `PostalDelivery.distribution_unit_id` 检查。
+5. **API + 名册**：切 import 端点到新服务；新增 `GET /api/postal/deliveries`（投递明细）+ schema `DeliveryOut`/工单 `postal_delivery_id`；`partners` 删除守卫加 `PostalDelivery.distribution_unit_id` 检查。
 6. **测试**：反向断言 `test_postal_delivery_not_in_customer_view`（邮局记录不进客户聚合）；批次/工单测试改断言 `postal_delivery_id`；新增跨年改地址、份数改0、名册筛选等。
-7. **前端 100% 复刻效果图**：`PostDelivery.tsx` + `api/postal.ts` —— 新增「📇 投递名册」tab；批次→「📦 月度起投明细」；术语 邮局订单→投递记录；工单「读者」列「已关联读者/未匹配」；改地址「回流」→「应用新地址」。
+7. **前端 100% 复刻效果图**：`PostDelivery.tsx` + `api/postal.ts` —— 新增「📇 投递明细」tab；批次→「📦 月度起投明细」；术语 邮局订单→投递记录；工单「读者」列「已关联读者/未匹配」；改地址「回流」→「应用新地址」。
 8. **评审 + 文档 + 合并**：对抗式评审（5 维度 + 逐个证伪，11 候选→8 确认）修 6：备注冻结丢失、份数改0被跳过、金额溢出500、预览/入库金额一致、改地址跨年关联。更新 technical/user-guide/spec；提交 PR #39 → CI（新建 `.github/workflows/ci.yml`）绿 → main 分支保护 → 合并。
 
 ## 验证

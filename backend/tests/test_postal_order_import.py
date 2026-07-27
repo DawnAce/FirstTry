@@ -254,7 +254,7 @@ def test_postal_delivery_not_in_customer_view(db):
 
 
 def test_list_deliveries_filters(db):
-    """投递名册列表：年度 / 起投月 / 渠道 / 搜索 筛选。"""
+    """投递明细列表：年度 / 起投月 / 渠道 / 搜索 筛选。"""
     from app.services.postal_delivery_service import list_deliveries
 
     _seed_units(db, "北京集订分送", "山东集订分送")

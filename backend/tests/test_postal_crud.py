@@ -81,7 +81,7 @@ def test_delivery_summary(client):
     assert s["missing_unit_count"] == 1
 
 
-# --- 投递名册 --------------------------------------------------------
+# --- 投递明细 --------------------------------------------------------
 
 def test_delivery_crud(client):
     unit = _unit_id(client)

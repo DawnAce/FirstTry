@@ -1,4 +1,4 @@
-"""邮局投递 REST API（导入 + 投递名册 + 工单）。
+"""邮局投递 REST API（导入 + 投递明细 + 工单）。
 
 挂 ``/api/postal``（auth 在 main.py include 时统一注入）。读对所有登录用户开放；
 写（导入提交 / 新增 / 编辑 / 删除）要求 ``require_admin``。
@@ -52,7 +52,7 @@ from app.services import postal_ticket_service as ticket_svc
 router = APIRouter(prefix="/api/postal", tags=["postal"])
 
 
-# --- 客服工单（投诉 / 改地址 / 回访 统一列表） --------------------------------
+# --- 邮局工单（投诉 / 改地址 / 回访 统一列表） --------------------------------
 
 @router.get("/tickets", response_model=TicketListOut)
 def list_tickets(
@@ -126,7 +126,7 @@ def _ticket_record_out(db: Session, rec):
     return {"type": type_value, **out.model_dump()}
 
 
-# --- 客服工单统一导入 / 详情 / 写入 ----------------------------------------
+# --- 邮局工单统一导入 / 详情 / 写入 ----------------------------------------
 
 @router.post("/tickets/import/{ticket_type}/preview")
 async def ticket_import_preview(
@@ -317,7 +317,7 @@ def import_commit(
     return import_svc.commit_import(db, body.session_id, operator_id=getattr(user, "id", None))
 
 
-# --- 投递名册（全部投递记录） -------------------------------------------------
+# --- 投递明细（全部投递记录） -------------------------------------------------
 
 @router.get("/deliveries", response_model=DeliveryListOut)
 def list_deliveries(
