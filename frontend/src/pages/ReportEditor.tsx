@@ -426,7 +426,7 @@ export default function ReportEditor() {
     const inputSize = opts?.size === 'mini' || opts?.size === 'default' ? undefined : opts?.size;
     if (isConfirmed) {
       return (
-        <span style={{ fontSize: opts?.size === 'large' ? 16 : 14, fontWeight: 500, color: '#1d1d1f' }}>
+        <span style={{ fontSize: opts?.size === 'large' ? 16 : 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
           {entry.value.toLocaleString()} 份
         </span>
       );
@@ -451,13 +451,13 @@ export default function ReportEditor() {
       <tr
         key={entry.id}
         style={{
-          borderBottom: '1px solid #f0f0f0',
-          background: entry.is_variable ? 'rgba(0,113,227,0.02)' : 'transparent',
+          borderBottom: '1px solid var(--color-divider)',
+          background: entry.is_variable ? 'var(--color-accent-soft)' : 'transparent',
         }}
       >
         <td colSpan={2} style={{ padding: '8px 16px' }}>
           <Space size="small">
-            <span style={{ fontSize: 14, color: isExtra ? '#424245' : '#1d1d1f' }}>
+            <span style={{ fontSize: 14, color: isExtra ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)' }}>
               {entry.sub_category}
             </span>
             {entry.is_variable && !isExtra && <Tag color="blue">变动</Tag>}
@@ -483,21 +483,21 @@ export default function ReportEditor() {
           style={{ borderRadius: 8 }}
         />
         <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1d1d1f' }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)' }}>
             {formatIssueReportTitle(issue)}
           </h2>
           <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ fontSize: 13, color: '#86868b' }}>
+            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
               人民日报印厂 · 出版日期 {issue.publish_date}
             </span>
-            <span style={{ fontSize: 13, color: '#86868b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               {issue.planned_page_count != null && (
-                <span>计划 <span style={{ color: '#1d1d1f', fontWeight: 500 }}>{issue.planned_page_count}</span> 版</span>
+                <span>计划 <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{issue.planned_page_count}</span> 版</span>
               )}
               {issue.planned_page_count != null && <span>·</span>}
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                 实际{isConfirmed ? (
-                  <span style={{ color: '#1d1d1f', fontWeight: 500 }}> {issue.page_count ?? 24} </span>
+                  <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}> {issue.page_count ?? 24} </span>
                 ) : (
                   <InputNumber
                     size="small"
@@ -557,7 +557,7 @@ export default function ReportEditor() {
           ) : (
             <>
               {/* Auto-save status indicator */}
-              <span style={{ fontSize: 13, color: saveStatus === 'error' ? '#f53f3f' : '#86868b' }}>
+              <span style={{ fontSize: 13, color: saveStatus === 'error' ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
                 {saveStatus === 'saving' && '⏳ 保存中...'}
                 {saveStatus === 'saved' && '✅ 已自动保存'}
                 {saveStatus === 'error' && '❌ 保存失败，请重试'}
@@ -629,17 +629,17 @@ export default function ReportEditor() {
             </Space>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-            <div style={{ padding: 12, borderRadius: 12, background: '#fafafa' }}>
-              <div style={{ fontSize: 13, color: '#86868b', marginBottom: 6 }}>确认时快照</div>
-              <div style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 1.8 }}>
+            <div style={{ padding: 12, borderRadius: 12, background: 'var(--color-bg-subtle)' }}>
+              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6 }}>确认时快照</div>
+              <div style={{ fontSize: 14, color: 'var(--color-text-primary)', lineHeight: 1.8 }}>
                 <div>报数中通：{confirmationSummary.confirmed_report_total.toLocaleString()} 份</div>
                 <div>发货明细：{confirmationSummary.confirmed_shipping_total.toLocaleString()} 份</div>
                 <div>差值：{confirmationSummary.confirmed_delta.toLocaleString()} 份</div>
               </div>
             </div>
-            <div style={{ padding: 12, borderRadius: 12, background: '#fafafa' }}>
-              <div style={{ fontSize: 13, color: '#86868b', marginBottom: 6 }}>当前中通明细</div>
-              <div style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 1.8 }}>
+            <div style={{ padding: 12, borderRadius: 12, background: 'var(--color-bg-subtle)' }}>
+              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6 }}>当前中通明细</div>
+              <div style={{ fontSize: 14, color: 'var(--color-text-primary)', lineHeight: 1.8 }}>
                 <div>当前发货明细：{confirmationSummary.current_shipping_total.toLocaleString()} 份</div>
                 <div>相对报数差值：{confirmationSummary.current_delta.toLocaleString()} 份</div>
                 <div>{confirmationSummary.has_shipping_drift ? '当前数量已偏离确认快照' : '当前数量与确认快照一致'}</div>
@@ -651,26 +651,26 @@ export default function ReportEditor() {
 
       {/* Prominent 临时加印 at top */}
       {tempEntry && (
-        <Card style={{ marginBottom: 20, border: '2px dashed #ff7d00' }}>
+        <Card style={{ marginBottom: 20, border: '2px dashed var(--color-warning)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Space size="small">
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#1d1d1f' }}>临时加印</span>
+              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>临时加印</span>
               <Tag color="orange">变动</Tag>
             </Space>
             {renderValue(tempEntry, { width: 160, size: 'large' })}
           </div>
           {/* Allocation: 自留分发 vs 北京快递 */}
           {tempEntry.value > 0 && tempSelfEntry && (
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0', display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: '#86868b' }}>分配：</span>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-divider)', display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>分配：</span>
               <Space size="small" style={{ alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: '#424245' }}>自留分发</span>
+                <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>自留分发</span>
                 {tempDetails.length > 0 ? (
-                  <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
                     {tempDetails.reduce((s, d) => s + d.self_quantity, 0).toLocaleString()} 份
                   </span>
                 ) : isConfirmed ? (
-                  <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>{tempSelfEntry.value.toLocaleString()} 份</span>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>{tempSelfEntry.value.toLocaleString()} 份</span>
                 ) : (
                   <InputNumber
                     value={tempSelfEntry.value}
@@ -685,8 +685,8 @@ export default function ReportEditor() {
                 )}
               </Space>
               <Space size="small" style={{ alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: '#424245' }}>北京快递</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: '#1d1d1f' }}>
+                <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>北京快递</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
                   {tempDetails.length > 0
                     ? (tempDetails.reduce((s, d) => s + d.quantity, 0) - tempDetails.reduce((s, d) => s + d.self_quantity, 0)).toLocaleString()
                     : tempExpressValue.toLocaleString()
@@ -698,9 +698,9 @@ export default function ReportEditor() {
 
           {/* 归属明细 detail table */}
           {tempEntry.value > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-divider)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#424245' }}>归属明细</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-tertiary)' }}>归属明细</span>
                 {!isConfirmed && (
                   <Button
                     size="small"
@@ -714,19 +714,19 @@ export default function ReportEditor() {
               {tempDetails.length > 0 && (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
-                    <tr style={{ background: '#fafafa', borderBottom: '1px solid #e8e8e8' }}>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: '#86868b' }}>部门</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#86868b' }}>份数</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#86868b' }}>自留</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: '#86868b' }}>快递</th>
+                    <tr style={{ background: 'var(--color-bg-subtle)', borderBottom: '1px solid var(--color-border)' }}>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--color-text-secondary)' }}>部门</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: 'var(--color-text-secondary)' }}>份数</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: 'var(--color-text-secondary)' }}>自留</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: 'var(--color-text-secondary)' }}>快递</th>
                       {!isConfirmed && (
-                        <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 500, color: '#86868b', width: 40 }}>操作</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 500, color: 'var(--color-text-secondary)', width: 40 }}>操作</th>
                       )}
                     </tr>
                   </thead>
                   <tbody>
                     {tempDetails.map((detail, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--color-divider)' }}>
                         <td style={{ padding: '6px 8px' }}>
                           {isConfirmed ? (
                             <span>{detail.department === '其他' ? (detail.custom_name || '其他') : detail.department}</span>
@@ -780,7 +780,7 @@ export default function ReportEditor() {
                             />
                           )}
                         </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', color: '#86868b' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--color-text-secondary)' }}>
                           {detail.quantity - detail.self_quantity}
                         </td>
                         {!isConfirmed && (
@@ -800,7 +800,7 @@ export default function ReportEditor() {
                 </table>
               )}
               {tempDetails.length === 0 && !isConfirmed && (
-                <span style={{ fontSize: 12, color: '#86868b' }}>暂无明细，点击"添加"按钮录入归属信息</span>
+                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>暂无明细，点击"添加"按钮录入归属信息</span>
               )}
             </div>
           )}
@@ -811,14 +811,14 @@ export default function ReportEditor() {
       <Card style={{ padding: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#fafafa', borderBottom: '1px solid #e5e5e5' }}>
-              <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 13, color: '#86868b', fontWeight: 500 }}>
+            <tr style={{ background: 'var(--color-bg-subtle)', borderBottom: '1px solid var(--color-border)' }}>
+              <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500 }}>
                 类别
               </th>
-              <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 13, color: '#86868b', fontWeight: 500 }}>
+              <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500 }}>
                 项目
               </th>
-              <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 13, color: '#86868b', fontWeight: 500, width: 180 }}>
+              <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500, width: 180 }}>
                 份数
               </th>
             </tr>
@@ -854,21 +854,21 @@ export default function ReportEditor() {
                     {/* Group header with auto-calculated total */}
                     <tr
                       key={`${group.label}-header`}
-                      style={{ background: 'rgba(0,113,227,0.04)', borderBottom: '1px solid #e8e8e8' }}
+                      style={{ background: 'var(--color-accent-soft)', borderBottom: '1px solid var(--color-border)' }}
                     >
                       <td colSpan={2} style={{ padding: '10px 16px' }}>
                         <Space size="small">
-                          <span style={{ fontSize: 14, fontWeight: 600, color: '#1d1d1f' }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                             {group.label}
                           </span>
                           <Tag color="blue">变动</Tag>
-                          <span style={{ fontSize: 12, color: '#86868b' }}>
+                          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
                             (自动合计)
                           </span>
                         </Space>
                       </td>
                       <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: '#0071e3' }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-accent)' }}>
                           {groupTotal} 份
                         </span>
                       </td>
@@ -878,13 +878,13 @@ export default function ReportEditor() {
                       <tr
                         key={entry.id}
                         style={{
-                          borderBottom: '1px solid #f0f0f0',
-                          background: 'rgba(0,113,227,0.01)',
+                          borderBottom: '1px solid var(--color-divider)',
+                          background: 'var(--color-accent-soft)',
                         }}
                       >
                         <td colSpan={2} style={{ padding: '6px 16px 6px 32px' }}>
                           <Space size="small">
-                            <span style={{ fontSize: 13, color: '#424245' }}>
+                            <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>
                               ├ {entry.sub_category.replace(group.prefix, '')}
                             </span>
                             {entry.is_variable && <Tag color="blue">变动</Tag>}
@@ -902,10 +902,10 @@ export default function ReportEditor() {
               return (
                 <tbody key={category}>
                   {/* Category header */}
-                  <tr style={{ background: '#f5f5f7', borderBottom: '1px solid #e5e5e5' }}>
+                  <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)' }}>
                     <td
                       colSpan={3}
-                      style={{ padding: '10px 16px', fontWeight: 700, fontSize: 14, color: '#1d1d1f' }}
+                      style={{ padding: '10px 16px', fontWeight: 700, fontSize: 14, color: 'var(--color-text-primary)' }}
                     >
                       社用报
                     </td>
@@ -919,10 +919,10 @@ export default function ReportEditor() {
                   {/* Extra/加印 section */}
                   {extraItems.length > 0 && (
                     <>
-                      <tr style={{ background: '#fafafa', borderTop: '1px solid #e5e5e5' }}>
+                      <tr style={{ background: 'var(--color-bg-subtle)', borderTop: '1px solid var(--color-border)' }}>
                         <td
                           colSpan={3}
-                          style={{ padding: '6px 16px', fontSize: 12, color: '#86868b', fontWeight: 500 }}
+                          style={{ padding: '6px 16px', fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500 }}
                         >
                           加印项
                         </td>
@@ -931,11 +931,11 @@ export default function ReportEditor() {
                     </>
                   )}
                   {/* Subtotal */}
-                  <tr style={{ borderBottom: '2px solid #e5e5e5', background: '#fafafa' }}>
-                    <td colSpan={2} style={{ padding: '8px 16px', fontWeight: 600, fontSize: 13, color: '#424245' }}>
+                  <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                    <td colSpan={2} style={{ padding: '8px 16px', fontWeight: 600, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
                       社用报小计
                     </td>
-                    <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 600, fontSize: 14, color: '#1d1d1f' }}>
+                    <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
                       {subtotal.toLocaleString()} 份
                     </td>
                   </tr>
@@ -949,10 +949,10 @@ export default function ReportEditor() {
               return (
                 <tbody key={category}>
                   <tr style={{
-                    borderBottom: '2px solid #e5e5e5',
-                    background: entry.is_variable ? 'rgba(0,113,227,0.02)' : 'transparent',
+                    borderBottom: '2px solid var(--color-border)',
+                    background: entry.is_variable ? 'var(--color-accent-soft)' : 'transparent',
                   }}>
-                    <td colSpan={2} style={{ padding: '10px 16px', fontWeight: 600, fontSize: 14, color: '#1d1d1f' }}>
+                    <td colSpan={2} style={{ padding: '10px 16px', fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
                       <Space size="small">
                         {categoryLabels[category]}
                         {entry.is_variable && <Tag color="blue">变动</Tag>}
@@ -975,8 +975,8 @@ export default function ReportEditor() {
                   <tr
                     key={entry.id}
                     style={{
-                      borderBottom: '1px solid #f0f0f0',
-                      background: entry.is_variable ? 'rgba(0,113,227,0.02)' : 'transparent',
+                      borderBottom: '1px solid var(--color-divider)',
+                      background: entry.is_variable ? 'var(--color-accent-soft)' : 'transparent',
                     }}
                   >
                     {idx === 0 && (
@@ -986,10 +986,10 @@ export default function ReportEditor() {
                           padding: '10px 16px',
                           fontWeight: 600,
                           fontSize: 14,
-                          color: '#1d1d1f',
+                          color: 'var(--color-text-primary)',
                           verticalAlign: 'middle',
-                          borderRight: '1px solid #f0f0f0',
-                          background: '#fafafa',
+                          borderRight: '1px solid var(--color-divider)',
+                          background: 'var(--color-bg-subtle)',
                         }}
                       >
                         {categoryLabels[category]}
@@ -1007,11 +1007,11 @@ export default function ReportEditor() {
                     </td>
                   </tr>
                 ))}
-                <tr style={{ borderBottom: '2px solid #e5e5e5', background: '#fafafa' }}>
-                  <td colSpan={2} style={{ padding: '8px 16px', fontWeight: 600, fontSize: 13, color: '#424245' }}>
+                <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                  <td colSpan={2} style={{ padding: '8px 16px', fontWeight: 600, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
                     {categoryLabels[category]}小计
                   </td>
-                  <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 600, fontSize: 14, color: '#1d1d1f' }}>
+                  <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
                     {subtotal.toLocaleString()} 份
                   </td>
                 </tr>
@@ -1021,11 +1021,11 @@ export default function ReportEditor() {
 
           {/* Grand total */}
           <tfoot>
-            <tr style={{ background: '#1d1d1f' }}>
-              <td colSpan={2} style={{ padding: '12px 16px', fontWeight: 700, fontSize: 15, color: '#fff' }}>
+            <tr style={{ background: 'var(--color-text-primary)' }}>
+              <td colSpan={2} style={{ padding: '12px 16px', fontWeight: 700, fontSize: 15, color: 'var(--color-card)' }}>
                 总印数
               </td>
-              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontSize: 16, color: '#fff' }}>
+              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontSize: 16, color: 'var(--color-card)' }}>
                 {calculateTotal().toLocaleString()} 份
               </td>
             </tr>
@@ -1036,7 +1036,7 @@ export default function ReportEditor() {
       {/* Revision History */}
       {revisions && revisions.length > 0 && (
         <Card style={{ marginTop: 24 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: '#1d1d1f' }}>
+          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: 'var(--color-text-primary)' }}>
             变更历史（共 {revisions.length} 次作废）
           </h3>
           <Timeline>
@@ -1044,9 +1044,9 @@ export default function ReportEditor() {
               <Timeline.Item key={rev.id} label={rev.revoked_at?.replace('T', ' ').slice(0, 16)}>
                 <div style={{ fontSize: 13 }}>
                   <strong>第 {rev.revision_number} 次作废</strong>
-                  <span style={{ color: '#86868b', marginLeft: 8 }}>操作人：{rev.operator}</span>
+                  <span style={{ color: 'var(--color-text-secondary)', marginLeft: 8 }}>操作人：{rev.operator}</span>
                   {rev.reason && (
-                    <div style={{ color: '#86868b', marginTop: 4 }}>原因：{rev.reason}</div>
+                    <div style={{ color: 'var(--color-text-secondary)', marginTop: 4 }}>原因：{rev.reason}</div>
                   )}
                 </div>
               </Timeline.Item>
@@ -1066,7 +1066,7 @@ export default function ReportEditor() {
         cancelText="取消"
         okButtonProps={{ danger: true }}
       >
-        <p style={{ marginBottom: 12, color: '#424245' }}>
+        <p style={{ marginBottom: 12, color: 'var(--color-text-tertiary)' }}>
           作废后该期报数将恢复为可编辑状态，此操作将被记录。
         </p>
         <Input.TextArea

@@ -242,7 +242,7 @@ export default function IssueDispatch() {
                 <Statistic
                   title="待排"
                   value={report.missing.length}
-                  valueStyle={report.missing.length ? { color: '#fa8c16' } : undefined}
+                  valueStyle={report.missing.length ? { color: 'var(--color-warning)' } : undefined}
                 />
               </Col>
               <Col span={4}>
@@ -252,7 +252,7 @@ export default function IssueDispatch() {
                 <Statistic
                   title="冲突"
                   value={report.conflict.length}
-                  valueStyle={report.conflict.length ? { color: '#cf1322' } : undefined}
+                  valueStyle={report.conflict.length ? { color: 'var(--color-danger)' } : undefined}
                 />
               </Col>
               <Col span={4}>
@@ -290,8 +290,8 @@ export default function IssueDispatch() {
                     value={recon.shortfall_quantity}
                     valueStyle={
                       recon.shortfall_quantity
-                        ? { color: '#cf1322' }
-                        : { color: '#3f8600' }
+                        ? { color: 'var(--color-danger)' }
+                        : { color: 'var(--color-success-text)' }
                     }
                   />
                 </Col>

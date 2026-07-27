@@ -48,33 +48,33 @@ export default function LogisticsOverview() {
 
   const statCards: { icon: ReactNode; bg: string; label: string; value: ReactNode; suffix?: string; sub: string; valueColor?: string }[] = [
     {
-      icon: <CheckCircleOutlined style={{ fontSize: 22, color: '#52c41a' }} />,
-      bg: 'rgba(82, 196, 26, 0.08)',
+      icon: <CheckCircleOutlined style={{ fontSize: 22, color: 'var(--color-success)' }} />,
+      bg: 'var(--color-success-soft)',
       label: '已上传期数',
       value: kpi.uploaded,
       suffix: '期',
       sub: pct(kpi.uploaded),
     },
     {
-      icon: <ClockCircleOutlined style={{ fontSize: 22, color: '#faad14' }} />,
-      bg: 'rgba(250, 173, 20, 0.08)',
+      icon: <ClockCircleOutlined style={{ fontSize: 22, color: 'var(--color-warning)' }} />,
+      bg: 'var(--color-warning-soft)',
       label: '待上传期数',
       value: pendingFamily,
       suffix: '期',
       sub: pct(pendingFamily),
     },
     {
-      icon: <WarningOutlined style={{ fontSize: 22, color: '#cf1322' }} />,
-      bg: 'rgba(207, 19, 34, 0.08)',
+      icon: <WarningOutlined style={{ fontSize: 22, color: 'var(--color-danger)' }} />,
+      bg: 'var(--color-danger-soft)',
       label: '异常期数',
       value: kpi.exception,
       suffix: '期',
       sub: pct(kpi.exception),
-      valueColor: kpi.exception > 0 ? '#cf1322' : undefined,
+      valueColor: kpi.exception > 0 ? 'var(--color-danger)' : undefined,
     },
     {
-      icon: <CalendarOutlined style={{ fontSize: 22, color: '#722ed1' }} />,
-      bg: 'rgba(114, 46, 209, 0.08)',
+      icon: <CalendarOutlined style={{ fontSize: 22, color: 'var(--color-purple)' }} />,
+      bg: 'var(--color-purple-soft)',
       label: '本月最新更新',
       value: latest ? dayjs(latest.last_updated_at).format('YYYY-MM-DD') : '—',
       suffix: '',
@@ -83,9 +83,9 @@ export default function LogisticsOverview() {
   ];
 
   const reminderItems = [
-    { label: '尚未上传发货明细', desc: '需补录发货明细', count: extras?.reminders.no_shipping_count ?? 0, color: '#fa8c16' },
-    { label: '报数与发货差异', desc: '报数与发货明细不一致', count: extras?.reminders.delta_diff_count ?? 0, color: '#cf1322' },
-    { label: '草稿未确认', desc: '草稿数据待确认提交', count: extras?.reminders.draft_unconfirmed_count ?? 0, color: '#722ed1' },
+    { label: '尚未上传发货明细', desc: '需补录发货明细', count: extras?.reminders.no_shipping_count ?? 0, color: 'var(--color-warning)' },
+    { label: '报数与发货差异', desc: '报数与发货明细不一致', count: extras?.reminders.delta_diff_count ?? 0, color: 'var(--color-danger)' },
+    { label: '草稿未确认', desc: '草稿数据待确认提交', count: extras?.reminders.draft_unconfirmed_count ?? 0, color: 'var(--color-purple)' },
   ];
 
   const recent = (extras?.recent_issues ?? []).slice(0, 5);
@@ -106,8 +106,8 @@ export default function LogisticsOverview() {
         key={row.issue_number}
         onClick={clickable ? () => goDetail(row) : undefined}
         style={{
-          cursor: clickable ? 'pointer' : 'default', border: '1px solid var(--color-border, #eee)', borderRadius: 10,
-          padding: '10px 12px', minWidth: 0, flex: '1 1 0', background: '#fff',
+          cursor: clickable ? 'pointer' : 'default', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-input)',
+          padding: '10px 12px', minWidth: 0, flex: '1 1 0', background: 'var(--color-card)',
         }}
       >
         <div style={{ fontWeight: 600, fontSize: 13 }}>第 {row.issue_number} 期</div>
@@ -161,13 +161,13 @@ export default function LogisticsOverview() {
               </div>
             }
           >
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#5a5a62', marginBottom: 8 }}>最近期数</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>最近期数</div>
             {recent.length > 0 ? (
               <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 10, marginBottom: 16 }}>{recent.map(renderPeriodCard)}</div>
             ) : (
               <div style={{ color: 'var(--color-text-secondary)', fontSize: 13, marginBottom: 16 }}>暂无已开期数</div>
             )}
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#5a5a62', marginBottom: 8 }}>后续期数</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>后续期数</div>
             {upcoming.length > 0 ? (
               <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 10 }}>{upcoming.map(renderPeriodCard)}</div>
             ) : (
@@ -217,7 +217,7 @@ export default function LogisticsOverview() {
             </div>
             <div className="dashboard-quick-links">
               <div className="dashboard-quick-link" onClick={() => navigate('/logistics/issues')}>
-                <div className="dashboard-quick-link-icon" style={{ background: 'rgba(0, 113, 227, 0.08)' }}>
+                <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-accent-soft)' }}>
                   <UnorderedListOutlined style={{ color: 'var(--color-accent)' }} />
                 </div>
                 <div className="dashboard-quick-link-text">
@@ -227,8 +227,8 @@ export default function LogisticsOverview() {
                 <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12 }} />
               </div>
               <div className="dashboard-quick-link" onClick={() => navigate('/analytics')}>
-                <div className="dashboard-quick-link-icon" style={{ background: 'rgba(82, 196, 26, 0.08)' }}>
-                  <BarChartOutlined style={{ color: '#52c41a' }} />
+                <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-success-soft)' }}>
+                  <BarChartOutlined style={{ color: 'var(--color-success)' }} />
                 </div>
                 <div className="dashboard-quick-link-text">
                   <div className="dashboard-quick-link-name">数据报表</div>
@@ -237,8 +237,8 @@ export default function LogisticsOverview() {
                 <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12 }} />
               </div>
               <div className="dashboard-quick-link" onClick={() => navigate('/')}>
-                <div className="dashboard-quick-link-icon" style={{ background: 'rgba(114, 46, 209, 0.08)' }}>
-                  <FileTextOutlined style={{ color: '#722ed1' }} />
+                <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-purple-soft)' }}>
+                  <FileTextOutlined style={{ color: 'var(--color-purple)' }} />
                 </div>
                 <div className="dashboard-quick-link-text">
                   <div className="dashboard-quick-link-name">印数报数</div>

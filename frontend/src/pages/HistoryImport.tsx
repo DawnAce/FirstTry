@@ -173,7 +173,7 @@ export default function HistoryImport() {
       <h1 style={{
         fontSize: 28,
         fontWeight: 700,
-        color: '#1d1d1f',
+        color: 'var(--color-text-primary)',
         margin: '0 0 32px 0',
         letterSpacing: '-0.02em',
       }}>
@@ -182,7 +182,7 @@ export default function HistoryImport() {
 
       {/* Step 1: Download templates */}
       <Card style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 14 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 14 }}>
           第一步：下载模板
         </div>
         <Space>
@@ -197,7 +197,7 @@ export default function HistoryImport() {
 
       {/* Step 2: Upload files */}
       <Card style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 14 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 14 }}>
           第二步：上传填写好的文件
         </div>
         <div className="history-import-upload-grid">
@@ -238,7 +238,7 @@ export default function HistoryImport() {
       {/* Step 3: Preview & commit */}
       {preview && (
         <Card style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f', marginBottom: 14 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 14 }}>
             第三步：确认导入内容
           </div>
 
@@ -248,42 +248,42 @@ export default function HistoryImport() {
             gap: 16,
             marginBottom: 20,
             padding: '16px 20px',
-            background: '#f5f5f7',
-            borderRadius: 10,
+            background: 'var(--color-bg)',
+            borderRadius: 'var(--radius-card)',
           }}>
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>期号</Text>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#1d1d1f' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                 第 {preview.issue_number} 期
               </div>
             </div>
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>出版日期</Text>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                 {preview.publish_date}
               </div>
             </div>
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>版数</Text>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#1d1d1f' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                 {preview.page_count} 版
               </div>
             </div>
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>报数条目</Text>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#1d1d1f' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                 {preview.report_entry_count}
               </div>
             </div>
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>临时加印</Text>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#1d1d1f' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                 {preview.temp_detail_count}
               </div>
             </div>
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>发货明细</Text>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#1d1d1f' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                 {preview.shipping_detail_count}
               </div>
             </div>

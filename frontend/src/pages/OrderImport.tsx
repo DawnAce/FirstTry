@@ -379,7 +379,7 @@ export default function OrderImport() {
             <Card
               size="small"
               title={`⚠ 待确认商品（${unresolvedSummary.length} 种，共 ${counts.unresolved ?? 0} 单）— 加入商品库后自动重新识别`}
-              style={{ marginBottom: 16, borderColor: '#ffccc7' }}
+              style={{ marginBottom: 16, borderColor: 'var(--color-danger)' }}
             >
               <Space direction="vertical" style={{ width: '100%' }}>
                 {unresolvedSummary.map((u) => (

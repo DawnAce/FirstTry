@@ -383,15 +383,15 @@ export default function LogisticsIssueDetail() {
   }[] = [
     {
       icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'rgba(0, 113, 227, 0.08)',
+      bg: 'var(--color-accent-soft)',
       label: '报数 · 中通合计',
       value: check ? check.report_zt_total.toLocaleString() : '—',
       suffix: check ? '份' : '',
       sub: '报数编辑页「中通物流公司」合计',
     },
     {
-      icon: <InboxOutlined style={{ fontSize: 21, color: '#13c2c2' }} />,
-      bg: 'rgba(19, 194, 194, 0.10)',
+      icon: <InboxOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
+      bg: 'var(--color-accent-soft)',
       label: '发货明细 · 合计',
       value: check ? check.shipping_total.toLocaleString() : currentShippingTotal.toLocaleString(),
       suffix: '份',
@@ -400,10 +400,12 @@ export default function LogisticsIssueDetail() {
     {
       icon: check
         ? (check.is_match
-          ? <CheckCircleOutlined style={{ fontSize: 21, color: '#389e0d' }} />
-          : <CloseCircleOutlined style={{ fontSize: 21, color: '#cf1322' }} />)
-        : <CheckCircleOutlined style={{ fontSize: 21, color: '#86868b' }} />,
-      bg: check ? (check.is_match ? 'rgba(82,196,26,.14)' : 'rgba(255,77,79,.12)') : 'rgba(0,0,0,.05)',
+          ? <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success-text)' }} />
+          : <CloseCircleOutlined style={{ fontSize: 21, color: 'var(--color-danger)' }} />)
+        : <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-text-secondary)' }} />,
+      bg: check
+        ? (check.is_match ? 'var(--color-success-soft)' : 'var(--color-danger-soft)')
+        : 'var(--color-divider)',
       label: '对账 · 差值（报数−发货）',
       value: check ? (check.is_match ? '一致' : `差 ${Math.abs(check.delta).toLocaleString()} 份`) : '—',
       suffix: '',
@@ -412,44 +414,46 @@ export default function LogisticsIssueDetail() {
           ? '报数与发货明细一致'
           : `报数 ${check.report_zt_total.toLocaleString()} / 发货 ${check.shipping_total.toLocaleString()}`)
         : '暂无报数校验',
-      valueColor: check ? (check.is_match ? '#389e0d' : '#cf1322') : undefined,
+      valueColor: check
+        ? (check.is_match ? 'var(--color-success-text)' : 'var(--color-danger)')
+        : undefined,
     },
     {
       icon: anomalyRows.length === 0
-        ? <CheckCircleOutlined style={{ fontSize: 21, color: '#389e0d' }} />
-        : <CloseCircleOutlined style={{ fontSize: 21, color: '#cf1322' }} />,
-      bg: anomalyRows.length === 0 ? 'rgba(82,196,26,.10)' : 'rgba(255,77,79,.10)',
+        ? <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success-text)' }} />
+        : <CloseCircleOutlined style={{ fontSize: 21, color: 'var(--color-danger)' }} />,
+      bg: anomalyRows.length === 0 ? 'var(--color-success-soft)' : 'var(--color-danger-soft)',
       label: '异常状态',
       value: anomalyRows.length.toLocaleString(),
       suffix: '条',
       sub: anomalyRows.length === 0 ? '当前无异常记录' : '人工修改 / 孤立明细',
-      valueColor: anomalyRows.length === 0 ? undefined : '#cf1322',
+      valueColor: anomalyRows.length === 0 ? undefined : 'var(--color-danger)',
     },
   ];
 
   // ---- 本期处理状态 3 卡 ----
   const processCards = [
     {
-      icon: <CloudUploadOutlined style={{ fontSize: 24, color: uploaded ? '#0071e3' : '#86868b' }} />,
+      icon: <CloudUploadOutlined style={{ fontSize: 24, color: uploaded ? 'var(--color-accent)' : 'var(--color-text-secondary)' }} />,
       title: '是否已上传',
       state: uploaded ? '已上传' : '未上传',
-      stateColor: uploaded ? '#0071e3' : '#86868b',
+      stateColor: uploaded ? 'var(--color-accent)' : 'var(--color-text-secondary)',
       desc: uploaded ? `发货明细已录入 ${allDetails.length} 条` : '尚未上传发货明细',
     },
     {
       icon: isException
-        ? <CloseCircleOutlined style={{ fontSize: 24, color: '#fa8c16' }} />
-        : <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />,
+        ? <CloseCircleOutlined style={{ fontSize: 24, color: 'var(--color-warning)' }} />
+        : <CheckCircleOutlined style={{ fontSize: 24, color: 'var(--color-success)' }} />,
       title: '是否有异常',
       state: isException ? '有异常' : '暂无异常',
-      stateColor: isException ? '#fa8c16' : '#52c41a',
+      stateColor: isException ? 'var(--color-warning)' : 'var(--color-success)',
       desc: isException ? '存在差异 / 确认后变更 / 孤立明细' : '当前未发现异常报告',
     },
     {
-      icon: <SafetyCertificateOutlined style={{ fontSize: 24, color: isConfirmed ? '#52c41a' : '#86868b' }} />,
+      icon: <SafetyCertificateOutlined style={{ fontSize: 24, color: isConfirmed ? 'var(--color-success)' : 'var(--color-text-secondary)' }} />,
       title: '是否已确认',
       state: isConfirmed ? '已确认' : '未确认',
-      stateColor: isConfirmed ? '#52c41a' : '#86868b',
+      stateColor: isConfirmed ? 'var(--color-success)' : 'var(--color-text-secondary)',
       desc: isConfirmed ? '发货数据已确认并锁定' : '确认后本期将计入统计',
     },
   ];
@@ -513,7 +517,7 @@ export default function LogisticsIssueDetail() {
       key: 'status',
       width: 84,
       render: (v: string) => (
-        <span><span className="zto-status-dot" style={{ background: v === '正常' ? '#52c41a' : '#ff4d4f' }} />{v || '—'}</span>
+        <span><span className="zto-status-dot" style={{ background: v === '正常' ? 'var(--color-success)' : 'var(--color-danger)' }} />{v || '—'}</span>
       ),
     },
     {
@@ -523,7 +527,7 @@ export default function LogisticsIssueDetail() {
       render: (_: unknown, record: ShippingDetail) => (
         <Space size="small">
           <Tooltip title="编辑">
-            <Button type="text" size="small" icon={<EditOutlined style={{ color: '#1677ff' }} />} onClick={() => handleEdit(record)} />
+            <Button type="text" size="small" icon={<EditOutlined style={{ color: 'var(--color-accent)' }} />} onClick={() => handleEdit(record)} />
           </Tooltip>
           <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
             <Tooltip title="删除">
@@ -585,12 +589,12 @@ export default function LogisticsIssueDetail() {
 
       {/* 标题 + 状态 */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1d1d1f', margin: 0, letterSpacing: '-0.02em' }}>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0, letterSpacing: '-0.02em' }}>
           快递管理 · ZTO-MF
         </h2>
         {currentIssue && (
           <>
-            <span style={{ fontSize: 15, color: '#5a5a62' }}>
+            <span style={{ fontSize: 15, color: 'var(--color-text-tertiary)' }}>
               第 {currentIssue.issue_number} 期（{dayjs(currentIssue.publish_date).format('YYYY-MM-DD')}）
             </span>
             <Tag color={issueStatusColor[currentIssue.status] || 'default'} style={{ marginInlineEnd: 0, fontWeight: 500 }}>
@@ -646,16 +650,16 @@ export default function LogisticsIssueDetail() {
             <Card style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
                 <span style={{ fontSize: 15, fontWeight: 600 }}>当期中通校验状态</span>
-                <span style={{ color: '#86868b', fontSize: 13 }}>当前页合计 {currentShippingTotal.toLocaleString()} 份</span>
+                <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>当前页合计 {currentShippingTotal.toLocaleString()} 份</span>
               </div>
               <div className="zto-check-grid">
                 <div className={`zto-check-result ${confirmationSummary.current_is_match ? 'ok' : 'bad'}`}>
                   <div className="zto-check-title">当前校验结果</div>
                   <div className="zto-check-hero">
                     {confirmationSummary.current_is_match
-                      ? <CheckCircleFilled style={{ fontSize: 34, color: '#52c41a' }} />
-                      : <CloseCircleFilled style={{ fontSize: 34, color: '#ff4d4f' }} />}
-                    <span className="zto-check-hero-text" style={{ color: confirmationSummary.current_is_match ? '#389e0d' : '#cf1322' }}>
+                      ? <CheckCircleFilled style={{ fontSize: 34, color: 'var(--color-success)' }} />
+                      : <CloseCircleFilled style={{ fontSize: 34, color: 'var(--color-danger)' }} />}
+                    <span className="zto-check-hero-text" style={{ color: confirmationSummary.current_is_match ? 'var(--color-success-text)' : 'var(--color-danger)' }}>
                       {confirmationSummary.current_is_match ? '当前一致' : '当前不一致'}
                     </span>
                   </div>
@@ -671,7 +675,7 @@ export default function LogisticsIssueDetail() {
                     <div className="zto-check-rows">
                       <div><span>确认时发货明细</span><b>{confirmationSummary.confirmed_shipping_total.toLocaleString()} 份</b></div>
                       <div><span>当前发货明细</span><b>{confirmationSummary.current_shipping_total.toLocaleString()} 份</b></div>
-                      <div><span>与确认时差值</span><b style={{ color: (confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total) !== 0 ? '#d46b08' : undefined }}>{(confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total).toLocaleString()} 份</b></div>
+                      <div><span>与确认时差值</span><b style={{ color: (confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total) !== 0 ? 'var(--color-warning-text)' : undefined }}>{(confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total).toLocaleString()} 份</b></div>
                     </div>
                     <div className="zto-check-changes">
                       {confirmationSummary.has_shipping_drift && <Tag color="orange" style={{ marginInlineEnd: 0 }}>确认后明细已变更</Tag>}
@@ -699,7 +703,7 @@ export default function LogisticsIssueDetail() {
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
                   <div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: '#1d1d1f' }}>当前期数尚未上传发货明细</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>当前期数尚未上传发货明细</div>
                     <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>
                       请新建记录，完成后系统将自动计算发货与报数差异。
                     </div>
@@ -829,10 +833,10 @@ export default function LogisticsIssueDetail() {
                     <span style={{
                       width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      background: step.done ? 'rgba(82,196,26,.12)' : 'rgba(0,0,0,.05)',
-                      color: step.done ? '#52c41a' : '#86868b', fontSize: 12,
+                      background: step.done ? 'var(--color-success-soft)' : 'var(--color-divider)',
+                      color: step.done ? 'var(--color-success)' : 'var(--color-text-secondary)', fontSize: 12,
                     }}>{idx + 1}</span>
-                    <span style={{ color: step.done ? '#1d1d1f' : '#5a5a62' }}>{step.label}</span>
+                    <span style={{ color: step.done ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}>{step.label}</span>
                   </span>
                   <Tag color={step.done ? 'success' : 'default'} style={{ marginInlineEnd: 0 }}>
                     {step.done ? '已完成' : '待处理'}
@@ -971,9 +975,9 @@ export default function LogisticsIssueDetail() {
         width={480}
       >
         {logsLoading ? (
-          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>加载中...</div>
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>加载中...</div>
         ) : operationLogs.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无操作日志</div>
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>暂无操作日志</div>
         ) : (
           <Timeline
             items={operationLogs.map((log: OperationLog) => {
@@ -986,18 +990,18 @@ export default function LogisticsIssueDetail() {
                     <div style={{ marginBottom: 4 }}>
                       <Tag color={actionColors[log.action]}>{actionLabels[log.action] || log.action}</Tag>
                       <span style={{ fontWeight: 500 }}>{log.username || '系统'}</span>
-                      <span style={{ color: '#999', marginLeft: 8, fontSize: 12 }}>
+                      <span style={{ color: 'var(--color-text-secondary)', marginLeft: 8, fontSize: 12 }}>
                         {dayjs(log.created_at).format('YYYY-MM-DD HH:mm:ss')}
                       </span>
                     </div>
                     {log.action === 'update' && log.changes && (
-                      <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>
+                      <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
                         {Object.entries(log.changes).map(([field, val]) => {
                           const v = val as { old: any; new: any };
                           return (
                             <div key={field} style={{ marginBottom: 2 }}>
-                              <span style={{ color: '#888' }}>{fieldLabels[field] || field}：</span>
-                              <span style={{ textDecoration: 'line-through', color: '#999' }}>{v.old ?? '空'}</span>
+                              <span style={{ color: 'var(--color-text-secondary)' }}>{fieldLabels[field] || field}：</span>
+                              <span style={{ textDecoration: 'line-through', color: 'var(--color-text-secondary)' }}>{v.old ?? '空'}</span>
                               {' → '}
                               <span style={{ fontWeight: 500 }}>{v.new ?? '空'}</span>
                             </div>
@@ -1006,19 +1010,19 @@ export default function LogisticsIssueDetail() {
                       </div>
                     )}
                     {log.action === 'create' && log.changes && (
-                      <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>
+                      <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
                         {Object.entries(log.changes)
                           .filter(([, v]) => v != null && v !== '' && v !== 0)
                           .map(([field, v]) => (
                             <div key={field} style={{ marginBottom: 2 }}>
-                              <span style={{ color: '#888' }}>{fieldLabels[field] || field}：</span>
+                              <span style={{ color: 'var(--color-text-secondary)' }}>{fieldLabels[field] || field}：</span>
                               <span>{String(v)}</span>
                             </div>
                           ))}
                       </div>
                     )}
                     {log.action === 'delete' && (
-                      <div style={{ fontSize: 13, color: '#999', marginTop: 4 }}>记录已删除</div>
+                      <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>记录已删除</div>
                     )}
                   </div>
                 ),

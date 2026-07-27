@@ -40,14 +40,14 @@ function StatusTag({ status }: { status: PeriodStatus }) {
 // 对账差值列（镜像单期页对账卡）：未传→—，一致→绿，少发→红「差N」，多发→红「多N」。
 function renderDelta(row: PeriodRow) {
   if (row.detail_count === 0) {
-    return <span style={{ color: '#86868b' }}>—</span>;
+    return <span style={{ color: 'var(--color-text-secondary)' }}>—</span>;
   }
   if (row.delta === 0) {
-    return <span style={{ color: '#389e0d' }}>一致</span>;
+    return <span style={{ color: 'var(--color-success-text)' }}>一致</span>;
   }
   const magnitude = Math.abs(row.delta).toLocaleString();
   return (
-    <span style={{ color: '#cf1322', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+    <span style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
       {row.delta > 0 ? `差 ${magnitude} 份` : `多 ${magnitude} 份`}
     </span>
   );
@@ -109,7 +109,7 @@ export default function LogisticsIssues() {
   const statCards = [
     {
       icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'rgba(0, 113, 227, 0.08)',
+      bg: 'var(--color-accent-soft)',
       label: '全部期数',
       value: counts.all,
       suffix: '期',
@@ -117,38 +117,38 @@ export default function LogisticsIssues() {
       filter: 'all',
     },
     {
-      icon: <CheckCircleOutlined style={{ fontSize: 21, color: '#52c41a' }} />,
-      bg: 'rgba(82, 196, 26, 0.08)',
+      icon: <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success)' }} />,
+      bg: 'var(--color-success-soft)',
       label: '已上传',
       value: counts.已上传,
       suffix: '期',
       sub: '明细已录入',
-      subColor: '#52c41a',
+      subColor: 'var(--color-success)',
       filter: '已上传',
     },
     {
-      icon: <ClockCircleOutlined style={{ fontSize: 21, color: '#fa8c16' }} />,
-      bg: 'rgba(250, 173, 20, 0.08)',
+      icon: <ClockCircleOutlined style={{ fontSize: 21, color: 'var(--color-warning)' }} />,
+      bg: 'var(--color-warning-soft)',
       label: '待上传',
       value: counts.待上传,
       suffix: '期',
       sub: '● 含未创建，点此筛选',
-      subColor: '#fa8c16',
+      subColor: 'var(--color-warning)',
       filter: '待上传',
     },
     {
-      icon: <WarningOutlined style={{ fontSize: 21, color: '#cf1322' }} />,
-      bg: 'rgba(207, 19, 34, 0.08)',
+      icon: <WarningOutlined style={{ fontSize: 21, color: 'var(--color-danger)' }} />,
+      bg: 'var(--color-danger-soft)',
       label: '异常',
       value: counts.异常,
       suffix: '期',
       sub: '● 差值≠0，点此排查',
-      subColor: '#cf1322',
+      subColor: 'var(--color-danger)',
       filter: '异常',
     },
     {
-      icon: <EditOutlined style={{ fontSize: 21, color: '#722ed1' }} />,
-      bg: 'rgba(114, 46, 209, 0.08)',
+      icon: <EditOutlined style={{ fontSize: 21, color: 'var(--color-purple)' }} />,
+      bg: 'var(--color-purple-soft)',
       label: '草稿',
       value: counts.草稿,
       suffix: '期',
@@ -191,7 +191,7 @@ export default function LogisticsIssues() {
       align: 'right',
       render: (_, r) =>
         r.issue_id == null ? (
-          <span style={{ color: '#86868b' }}>—</span>
+          <span style={{ color: 'var(--color-text-secondary)' }}>—</span>
         ) : (
           <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{r.report_zt_total.toLocaleString()}</span>
         ),
@@ -204,7 +204,7 @@ export default function LogisticsIssues() {
         r.detail_count > 0 ? (
           <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{r.shipping_total.toLocaleString()}</span>
         ) : (
-          <span style={{ color: '#86868b' }}>—</span>
+          <span style={{ color: 'var(--color-text-secondary)' }}>—</span>
         ),
     },
     {
@@ -217,13 +217,13 @@ export default function LogisticsIssues() {
     {
       title: '异常说明',
       dataIndex: 'exception_note',
-      render: (_, r) => <span style={{ color: '#5a5a62' }}>{r.exception_note}</span>,
+      render: (_, r) => <span style={{ color: 'var(--color-text-tertiary)' }}>{r.exception_note}</span>,
     },
     {
       title: '最后更新时间',
       dataIndex: 'last_updated_at',
       render: (_, r) => (
-        <span style={{ whiteSpace: 'nowrap', color: '#5a5a62' }}>
+        <span style={{ whiteSpace: 'nowrap', color: 'var(--color-text-tertiary)' }}>
           {r.last_updated_at ? dayjs(r.last_updated_at).format('YYYY-MM-DD HH:mm') : '—'}
         </span>
       ),
@@ -272,7 +272,7 @@ export default function LogisticsIssues() {
           style={{
             fontSize: 24,
             fontWeight: 700,
-            color: '#1d1d1f',
+            color: 'var(--color-text-primary)',
             margin: 0,
             letterSpacing: '-0.02em',
             display: 'flex',

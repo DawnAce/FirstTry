@@ -1010,9 +1010,9 @@ export default function OrderEditor() {
           left: 0,
           right: 0,
           padding: '12px 24px',
-          background: 'var(--color-bg, #fff)',
-          borderTop: '1px solid var(--color-border, #f0f0f0)',
-          boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.04)',
+          background: 'var(--color-card)',
+          borderTop: '1px solid var(--color-border)',
+          boxShadow: '0 -2px 8px var(--color-divider)',
           zIndex: 10,
           textAlign: 'right',
         }}
@@ -1199,7 +1199,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
   return (
     <Card
       size="small"
-      style={{ marginBottom: 12, background: 'var(--color-bg-subtle, #fafafa)' }}
+      style={{ marginBottom: 12, background: 'var(--color-bg-subtle)' }}
       title={`明细 ${index + 1}`}
       extra={
         <Button

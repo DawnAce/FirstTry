@@ -197,13 +197,13 @@ export default function ShippingPreview() {
         <Button
           icon={<ArrowLeftOutlined />}
           onClick={() => navigate('/')}
-          style={{ borderRadius: 8 }}
+          style={{ borderRadius: 'var(--radius-button)' }}
         />
         <h2 style={{
           margin: 0,
           fontSize: 24,
           fontWeight: 700,
-          color: '#1d1d1f',
+          color: 'var(--color-text-primary)',
           letterSpacing: '-0.02em',
         }}>
           第 {issue?.issue_number} 期 — 发货明细
@@ -217,18 +217,18 @@ export default function ShippingPreview() {
         gap: 32,
         marginBottom: 24,
         padding: '16px 24px',
-        background: '#fff',
-        borderRadius: 12,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
+        background: 'var(--color-card)',
+        borderRadius: 'var(--radius-card)',
+        boxShadow: 'var(--shadow-card)',
       }}>
         <div>
-          <div style={{ fontSize: 12, color: '#86868b', fontWeight: 500, marginBottom: 2 }}>收件人</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#1d1d1f' }}>{getTotalRecipients()}</div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500, marginBottom: 2 }}>收件人</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)' }}>{getTotalRecipients()}</div>
         </div>
-        <div style={{ width: 1, height: 36, background: 'rgba(0,0,0,0.06)' }} />
+        <div style={{ width: 1, height: 36, background: 'var(--color-divider)' }} />
         <div>
-          <div style={{ fontSize: 12, color: '#86868b', fontWeight: 500, marginBottom: 2 }}>总份数</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#1d1d1f' }}>{getTotalCopies()}</div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500, marginBottom: 2 }}>总份数</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)' }}>{getTotalCopies()}</div>
         </div>
         <div style={{ flex: 1 }} />
         <Space>

@@ -433,7 +433,7 @@ export default function OrderDetail() {
             <Statistic
               title="订单总金额"
               value={formatCurrency(order.total_amount)}
-              valueStyle={{ fontSize: 18, color: 'var(--color-accent, #1677ff)' }}
+              valueStyle={{ fontSize: 18, color: 'var(--color-accent)' }}
             />
           </Col>
         </Row>
@@ -866,7 +866,7 @@ function ProgressPanel({ item }: { item: OrderItemOut }) {
   return (
     <Card
       size="small"
-      style={{ background: 'var(--color-bg-subtle, #f6f8fa)' }}
+      style={{ background: 'var(--color-bg-subtle)' }}
       title={
         <Text type="secondary" style={{ fontSize: 12 }}>
           履约进度
@@ -905,11 +905,11 @@ function ProgressPanel({ item }: { item: OrderItemOut }) {
               fontSize: 18,
               color:
                 driftColor(driftValue) === 'error'
-                  ? '#cf1322'
+                  ? 'var(--color-danger)'
                   : driftColor(driftValue) === 'warning'
-                  ? '#fa8c16'
+                  ? 'var(--color-warning)'
                   : driftColor(driftValue) === 'success'
-                  ? '#3f8600'
+                  ? 'var(--color-success-text)'
                   : undefined,
             }}
           />
@@ -930,7 +930,9 @@ function ProgressPanel({ item }: { item: OrderItemOut }) {
             valueStyle={{
               fontSize: 18,
               color:
-                progress.synced_count - progress.shipped_count > 0 ? '#fa8c16' : '#3f8600',
+                progress.synced_count - progress.shipped_count > 0
+                  ? 'var(--color-warning)'
+                  : 'var(--color-success-text)',
             }}
           />
         </Col>
@@ -1355,7 +1357,7 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
             <Statistic
               title="冲突"
               value={summary.conflicts}
-              valueStyle={hasConflicts ? { color: '#cf1322' } : undefined}
+              valueStyle={hasConflicts ? { color: 'var(--color-danger)' } : undefined}
             />
           </Col>
         </Row>
@@ -1546,7 +1548,7 @@ function EventCard({ event }: { event: OrderEventOut }) {
                   style={{
                     margin: 0,
                     padding: 8,
-                    background: 'var(--color-bg-subtle, #f6f8fa)',
+                    background: 'var(--color-bg-subtle)',
                     fontSize: 12,
                     borderRadius: 4,
                     overflow: 'auto',
