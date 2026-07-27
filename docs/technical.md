@@ -1909,7 +1909,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - `frontend/src/theme.tsx` 是 Ant Design token 与 CSS variables 的唯一主题入口；生产应用和 Storybook 均通过 `DesignSystemProvider` 使用同一套配置。
 - 普通 DOM/CSS 使用 `var(--color-*)` 等语义变量；Canvas/ECharts 等不能直接消费 CSS 的渲染器通过 `theme.useToken()` 取得当前主题色。
 - Storybook 顶部工具栏可统一切换亮/暗主题、舒适/紧凑密度和圆润/克制圆角。新增或迁移业务页面时应补代表性 Story，并检查这些全局组合。
-- 复杂详情页和图表中的历史内联色值按页面逐步迁移，避免一次性替换破坏图表或状态语义。
+- 历史业务页面已按普通页、复杂详情页、图表页三类完成迁移；`frontend/src/pages` 不再保留直接色值，新页面继续复用上述语义变量或当前 Ant Design token。
 
 ### 8.5 安全性
 - **JWT 认证**：所有业务路由均通过 `get_current_user` 依赖强制认证
