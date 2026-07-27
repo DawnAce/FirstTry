@@ -629,6 +629,12 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
     else { form.resetFields(); form.setFieldsValue({ status: 'open' }); }
   }, [open, editing, form]);
 
+  const year = Form.useWatch<number>('year', form) ?? editing?.year;
+  const deliveryNo = Form.useWatch<string>('delivery_no', form) ?? editing?.external_order_no;
+  const displayDeliveryNo = year && deliveryNo?.startsWith(`${year}-`) ? deliveryNo.slice(`${year}-`.length) : deliveryNo;
+  const sourcePlatform = Form.useWatch<string>('source_platform', form) ?? editing?.source_platform;
+  const status = Form.useWatch<PostalComplaintStatus>('status', form) ?? editing?.status ?? 'open';
+
   const saveMut = useMutation({
     mutationFn: (v: any) => {
       const body = { ...v, complaint_date: fromDay(v.complaint_date) };
@@ -646,45 +652,105 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
   });
 
   return (
-    <Modal title={editing ? '编辑投诉' : '新增投诉'} open={open} onCancel={onClose}
-      onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={640} destroyOnClose>
-      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+    <Modal
+      title={(
+        <div className="complaint-form-title">
+          <span className="complaint-form-title-icon" aria-hidden>📬</span>
+          <div className="complaint-form-title-copy">
+            <strong>{editing ? '编辑投诉' : '新增投诉'}</strong>
+            <div className="complaint-form-meta">
+              <span>{year ? `${year} 年度` : '待选择年度'}</span>
+              <i>·</i>
+              <span>{displayDeliveryNo ? `编号 ${displayDeliveryNo}` : '待关联读者'}</span>
+              {sourcePlatform && <><i>·</i><span className="complaint-form-platform">来源平台：{sourcePlatform}</span></>}
+            </div>
+          </div>
+          <span className={`complaint-form-status status-${status}`}>{COMPLAINT_STATUS_META[status].label}</span>
+        </div>
+      )}
+      open={open}
+      onCancel={onClose}
+      width={780}
+      centered
+      destroyOnClose
+      className="complaint-form-modal"
+      rootClassName="complaint-form-modal-root"
+      footer={(
+        <div className="complaint-form-footer">
+          <span className="complaint-form-save-tip"><b>✓</b>修改内容会同步到投诉记录</span>
+          <Button onClick={onClose}>取消</Button>
+          <Button type="primary" loading={saveMut.isPending} onClick={() => form.submit()}>
+            {editing ? '保存修改' : '创建投诉'}
+          </Button>
+        </div>
+      )}
+    >
+      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)} className="complaint-form">
+        <Form.Item name="year" hidden><InputNumber /></Form.Item>
+        <Form.Item name="delivery_no" hidden><Input /></Form.Item>
+        <Form.Item name="source_platform" hidden><Input /></Form.Item>
         {!editing && (
-          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递明细选择读者' }]}
-            extra="可按年度编号（如 2026-6325）、姓名、电话或地址搜索">
-            <ReaderLookup onSelectReader={(reader) => form.setFieldsValue({
-              year: reader.year,
-              delivery_no: reader.delivery_no,
-              snap_name: reader.recipient_name,
-              snap_phone: reader.recipient_phone,
-              snap_address: reader.recipient_address,
-              routed_unit_id: reader.distribution_unit_id,
-              source_platform: reader.source_channel,
-            })} />
-          </Form.Item>
+          <section className="complaint-form-section complaint-form-reader">
+            <h3><span aria-hidden>🔗</span>关联读者</h3>
+            <Form.Item name="postal_delivery_id" label="检索读者" rules={[{ required: true, message: '请先从投递明细选择读者' }]}
+              extra="可按年度编号（如 2026-6325）、姓名、电话或地址搜索">
+              <ReaderLookup onSelectReader={(reader) => form.setFieldsValue({
+                year: reader.year,
+                delivery_no: reader.delivery_no,
+                snap_name: reader.recipient_name,
+                snap_phone: reader.recipient_phone,
+                snap_address: reader.recipient_address,
+                routed_unit_id: reader.distribution_unit_id,
+                source_platform: reader.source_channel,
+              })} />
+            </Form.Item>
+          </section>
         )}
-        <Flex gap={12} wrap>
-          <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber disabled={!editing} style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
-          <Form.Item name="delivery_no" label="编号" style={{ width: 180 }}><Input disabled={!editing} /></Form.Item>
-          <Form.Item name="complaint_date" label="接诉日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
-          <Form.Item name="complaint_source" label="投诉来源" rules={[{ required: true, message: '请选择投诉来源' }]} style={{ width: 160 }}>
-            <Select options={COMPLAINT_SOURCE_OPTS} />
-          </Form.Item>
-        </Flex>
-        <Form.Item name="missing_issues" label="投诉情况"><Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} /></Form.Item>
-        <Flex gap={12} wrap>
-          <Form.Item name="handling" label="处理情况（自动归一渠道单位）" style={{ flex: 1, minWidth: 240 }}><Input placeholder="如 转北京11185" /></Form.Item>
-          <Form.Item name="routed_unit_id" label="投递单位" style={{ width: 180 }}><Select allowClear showSearch optionFilterProp="label" options={unitOpts} /></Form.Item>
-        </Flex>
-        <Flex gap={12} wrap>
-          <Form.Item name="snap_name" label="收报人（名册快照）" style={{ width: 220 }}><Input disabled={!editing} /></Form.Item>
-          <Form.Item name="snap_phone" label="电话" style={{ width: 150 }}><Input disabled={!editing} /></Form.Item>
-          <Form.Item name="first_handler" label="第一接诉人" style={{ width: 130 }}><Input /></Form.Item>
-          <Form.Item name="status" label="状态" style={{ width: 130 }}><Select options={COMPLAINT_STATUS_OPTS} /></Form.Item>
-          <Form.Item name="source_platform" label="来源平台" style={{ width: 180 }}><Input disabled placeholder="由订单/读者资料带出" /></Form.Item>
-        </Flex>
-        <Form.Item name="snap_address" label="地址（名册快照）"><Input disabled={!editing} /></Form.Item>
-        <Form.Item name="notes" label="备注"><Input /></Form.Item>
+
+        <section className="complaint-form-section">
+          <h3><span aria-hidden>📣</span>投诉信息</h3>
+          <div className="complaint-form-grid complaint-form-grid-three">
+            <Form.Item name="complaint_date" label="接诉日期"><DatePicker /></Form.Item>
+            <Form.Item name="complaint_source" label="投诉来源" rules={[{ required: true, message: '请选择投诉来源' }]}>
+              <Select options={COMPLAINT_SOURCE_OPTS} />
+            </Form.Item>
+            <Form.Item name="status" label="状态"><Select options={COMPLAINT_STATUS_OPTS} /></Form.Item>
+            <Form.Item name="missing_issues" label="投诉情况" className="complaint-form-wide">
+              <Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} />
+            </Form.Item>
+          </div>
+        </section>
+
+        <div className="complaint-form-columns">
+          <section className="complaint-form-section">
+            <h3><span aria-hidden>👤</span>联系人信息</h3>
+            <div className="complaint-form-contact-grid">
+              <Form.Item name="snap_name" label="收报人（名册快照）"><Input disabled={!editing} /></Form.Item>
+              <Form.Item name="snap_phone" label="电话"><Input disabled={!editing} /></Form.Item>
+              <Form.Item name="snap_address" label="地址（名册快照）" className="complaint-form-wide">
+                <Input.TextArea autoSize={{ minRows: 1, maxRows: 2 }} disabled={!editing} />
+              </Form.Item>
+            </div>
+            <div className="complaint-form-source-note">
+              <span aria-hidden>🔗</span>
+              <span>资料来自 <b>{year && displayDeliveryNo ? `${year}-${displayDeliveryNo}` : '所选读者'}</b> 的关联读者名册，编辑后保留为投诉快照</span>
+            </div>
+          </section>
+
+          <section className="complaint-form-section">
+            <h3><span aria-hidden>📮</span>处理信息</h3>
+            <div className="complaint-form-grid complaint-form-processing-grid">
+              <Form.Item name="handling" label="处理情况（自动归一渠道单位）" className="complaint-form-wide">
+                <Input placeholder="如 转北京11185" />
+              </Form.Item>
+              <Form.Item name="routed_unit_id" label="投递单位">
+                <Select allowClear showSearch optionFilterProp="label" options={unitOpts} />
+              </Form.Item>
+              <Form.Item name="first_handler" label="第一接诉人"><Input placeholder="姓名" /></Form.Item>
+              <Form.Item name="notes" label="备注" className="complaint-form-wide"><Input placeholder="补充说明（选填）" /></Form.Item>
+            </div>
+          </section>
+        </div>
       </Form>
     </Modal>
   );
