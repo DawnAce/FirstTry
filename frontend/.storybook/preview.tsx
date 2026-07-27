@@ -1,11 +1,15 @@
 import type { Preview, Decorator } from '@storybook/react-vite'
-import { ConfigProvider, App as AntApp, theme } from 'antd'
-import zhCN from 'antd/locale/zh_CN'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { initialize, mswLoader } from 'msw-storybook-addon'
 import { AuthContext } from '../src/contexts/AuthContext'
+import {
+  DesignSystemProvider,
+  type UiDensity,
+  type UiMode,
+  type UiRoundness,
+} from '../src/theme'
 // 加载项目全局样式：设计 token（--color-accent 等）与自定义样式，让组件与生产一致。
 import '../src/index.css'
 
@@ -13,8 +17,6 @@ dayjs.locale('zh-cn')
 
 // 启动 MSW；未被 story 显式 mock 的请求一律放行（不报错）。
 initialize({ onUnhandledRequest: 'bypass' })
-
-const { defaultAlgorithm, darkAlgorithm } = theme
 
 // 单例 QueryClient：retry:false 让 loading / error 状态确定，beforeEach 清缓存避免 story 间串味。
 const queryClient = new QueryClient({
@@ -28,20 +30,21 @@ const queryClient = new QueryClient({
   },
 })
 
-// antd：ConfigProvider(中文) + App（别名 AntApp，避免和项目 ./App 路由根重名）+ 亮暗主题
+// 生产与 Storybook 共用同一个主题入口；工具栏切换会同时更新 Ant Design 与 CSS variables。
 const withAntd: Decorator = (Story, context) => {
-  const isDark = context.globals.theme === 'dark'
+  const mode: UiMode = context.globals.theme === 'dark' ? 'dark' : 'light'
+  const density = context.globals.density as UiDensity
+  const roundness = context.globals.roundness as UiRoundness
+  const fullscreen = context.parameters.layout === 'fullscreen'
   return (
-    <ConfigProvider
-      locale={zhCN}
-      theme={{ algorithm: isDark ? darkAlgorithm : defaultAlgorithm }}
-    >
-      <AntApp>
-        <div style={{ padding: 24, minHeight: '100vh', background: isDark ? '#141414' : '#fff' }}>
-          <Story />
-        </div>
-      </AntApp>
-    </ConfigProvider>
+    <DesignSystemProvider mode={mode} density={density} roundness={roundness}>
+      <div
+        className="storybook-canvas"
+        style={{ padding: fullscreen ? 0 : 'var(--space-page-y) var(--space-page-x)' }}
+      >
+        <Story />
+      </div>
+    </DesignSystemProvider>
   )
 }
 
@@ -86,6 +89,32 @@ const preview: Preview = {
         items: [
           { value: 'light', icon: 'sun', title: '亮色' },
           { value: 'dark', icon: 'moon', title: '暗色' },
+        ],
+        dynamicTitle: true,
+      },
+    },
+    density: {
+      description: '界面密度',
+      defaultValue: 'comfortable',
+      toolbar: {
+        title: '密度',
+        icon: 'component',
+        items: [
+          { value: 'comfortable', title: '舒适' },
+          { value: 'compact', title: '紧凑' },
+        ],
+        dynamicTitle: true,
+      },
+    },
+    roundness: {
+      description: '全局圆角',
+      defaultValue: 'rounded',
+      toolbar: {
+        title: '圆角',
+        icon: 'button',
+        items: [
+          { value: 'rounded', title: '圆润' },
+          { value: 'subtle', title: '克制' },
         ],
         dynamicTitle: true,
       },
