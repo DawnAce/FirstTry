@@ -1,4 +1,4 @@
-"""邮局订报生成 → 投递名册(PostalDelivery) 汇入（方向 B）。
+"""订报转投 → 投递明细(PostalDelivery) 汇入（方向 B）。
 
 版本「设为有效」时，把该版有效明细写进 PostalDelivery，成为该月起投名单的真源。
 

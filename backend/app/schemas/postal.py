@@ -15,7 +15,7 @@ class PostalCommitIn(BaseModel):
 
 
 class TicketOut(BaseModel):
-    """统一客服工单行（投诉 / 改地址 / 回访 归一，仅用于列表呈现）。"""
+    """统一邮局工单行（投诉 / 改地址 / 回访 归一，仅用于列表呈现）。"""
     type: str                       # complaint | address | follow
     id: int
     year: Optional[int] = None
@@ -219,7 +219,7 @@ class FinanceListOut(BaseModel):
 # =====================================================================
 
 
-# --- 投递名册 ---------------------------------------------------------
+# --- 投递明细 ---------------------------------------------------------
 class DeliveryCreateIn(BaseModel):
     year: int = Field(ge=2000, le=2100)
     delivery_no: str = Field(min_length=1)
@@ -421,7 +421,7 @@ class FinanceUpdateIn(BaseModel):
     notes: Optional[str] = None
 
 
-# --- 统一客服工单写入契约 --------------------------------------------
+# --- 统一邮局工单写入契约 --------------------------------------------
 
 class ComplaintTicketWriteIn(ComplaintUpdateIn):
     type: Literal["complaint"]

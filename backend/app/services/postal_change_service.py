@@ -294,7 +294,7 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
         handled_at=ac.applied_at,
         handled_by=operator_id,
         action="应用新地址",
-        follow_result="已同步履约订单" if target is not None else "仅更新投递名册",
+        follow_result="已同步履约订单" if target is not None else "仅更新投递明细",
     ))
     db.commit()
     db.refresh(ac)

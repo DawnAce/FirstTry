@@ -112,7 +112,7 @@ const POSTAL_CHANNELS = ['CBJ+小程序', '中经报有赞', '淘宝发行部', 
 const YEAR_OPTS = [2024, 2025, 2026].map((y) => ({ label: `${y}年`, value: y }));
 const MONTH_OPTS = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1} 月`, value: i + 1 }));
 const POSTAL_SOURCE_META: Record<string, { label: string; color: string }> = {
-  subscription_generated: { label: '订报生成', color: 'green' },
+  subscription_generated: { label: '订报转投', color: 'green' },
   historical_import: { label: '名册导入', color: 'default' },
   manual: { label: '手工', color: 'gold' },
   order_generated: { label: '订单生成', color: 'blue' },
@@ -126,7 +126,7 @@ const toDay = (s?: string | null): Dayjs | null => (s ? dayjs(s) : null);
 const fromDay = (d?: Dayjs | null): string | null => (d ? d.format('YYYY-MM-DD') : null);
 const fromDateTime = (d?: Dayjs | null): string | null => (d ? d.format('YYYY-MM-DDTHH:mm:ss') : null);
 
-/** 新建工单时从投递名册选人；复用名册查询，不维护第二套“客户”数据。 */
+/** 新建工单时从投递明细选人；复用名册查询，不维护第二套“客户”数据。 */
 function ReaderLookup({ value, onChange, onSelectReader }: {
   value?: number;
   onChange?: (value: number) => void;
@@ -310,7 +310,7 @@ function ComplaintImportModal({ open, onClose }: { open: boolean; onClose: () =>
   );
 }
 
-/** Tab：投递名册（全部投递记录） */
+/** Tab：投递明细（全部投递记录） */
 function DeliveriesTab() {
   const [year, setYear] = useState<number | undefined>();
   const [month, setMonth] = useState<number | undefined>();
@@ -378,7 +378,7 @@ function DeliveriesTab() {
     <>
       <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
         <div>
-          <Title level={3} className="postal-page-title">投递名册</Title>
+          <Title level={3} className="postal-page-title">投递明细</Title>
           <Text type="secondary">投递记录 {(q.data?.total ?? 0).toLocaleString()} 条</Text>
         </div>
         <Space>
@@ -647,7 +647,7 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
       onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={640} destroyOnClose>
       <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
         {!editing && (
-          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递名册选择读者' }]}
+          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递明细选择读者' }]}
             extra="可按年度编号（如 2026-6325）、姓名、电话或地址搜索">
             <ReaderLookup onSelectReader={(reader) => form.setFieldsValue({
               year: reader.year,
@@ -817,7 +817,7 @@ function AddressChangeFormModal({ open, editing, onClose }: {
       onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={640} destroyOnClose>
       <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
         {!editing && (
-          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递名册选择读者' }]}
+          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递明细选择读者' }]}
             extra="可按年度编号（如 2026-6325）、姓名、电话或地址搜索；选中后自动带入原信息">
             <ReaderLookup onSelectReader={(reader) => form.setFieldsValue({
               year: reader.year,
@@ -837,7 +837,7 @@ function AddressChangeFormModal({ open, editing, onClose }: {
             <DatePicker showTime={{ format: 'HH:mm' }} format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} />
           </Form.Item>
         </Flex>
-        <Divider plain>原始信息（从投递名册带入）</Divider>
+        <Divider plain>原始信息（从投递明细带入）</Divider>
         <Flex gap={12} wrap>
           <Form.Item name="old_name" label="原姓名" style={{ width: 150 }}><Input disabled={!editing} /></Form.Item>
           <Form.Item name="old_phone" label="原电话" style={{ width: 160 }}><Input disabled={!editing} /></Form.Item>
@@ -889,7 +889,7 @@ function FollowUpFormModal({ open, editing, onClose, onSaved }: {
       onOk={() => form.submit()} okText="保存" confirmLoading={saveMut.isPending} width={560} destroyOnClose>
       <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
         {!editing && (
-          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递名册选择读者' }]}
+          <Form.Item name="postal_delivery_id" label="关联读者" rules={[{ required: true, message: '请先从投递明细选择读者' }]}
             extra="可按年度编号（如 2026-6325）、姓名、电话或地址搜索">
             <ReaderLookup onSelectReader={(reader) => form.setFieldsValue({
               year: reader.year,
@@ -987,7 +987,7 @@ function AddressDetailDrawer({ addressId, onEdit, onClose }: {
             <Popconfirm
               title="应用新地址？"
               description={a.postal_delivery_id
-                ? '把新地址写回投递名册' + (a.order_id ? '，并同步该读者在履约的订单。' : '（该读者未挂订单，仅更新名册）。')
+                ? '把新地址写回投递明细' + (a.order_id ? '，并同步该读者在履约的订单。' : '（该读者未挂订单，仅更新名册）。')
                 : '该工单未关联投递记录，无法应用（请先导入读者名册）。'}
               okText="应用" onConfirm={() => applyMut.mutate()} disabled={!a.postal_delivery_id}
             >
@@ -1030,7 +1030,7 @@ function FollowDetailDrawer({ followId, onEdit, onClose }: {
   );
 }
 
-/** Tab：客服工单（投诉 / 改地址 / 回访 统一） */
+/** Tab：邮局工单（投诉 / 改地址 / 回访 统一） */
 function TicketsTab() {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
@@ -1107,7 +1107,7 @@ function TicketsTab() {
       <Space direction="vertical" size={0} style={{ maxWidth: 520 }}>
         <Text ellipsis>{v || '—'}</Text>
         <Text type="secondary" className="postal-cell-secondary">
-          {r.postal_delivery_id ? '已关联投递名册' : '未关联投递名册'}{r.handling_count != null ? ` · 已处理 ${r.handling_count} 次` : ''}
+          {r.postal_delivery_id ? '已关联投递明细' : '未关联投递明细'}{r.handling_count != null ? ` · 已处理 ${r.handling_count} 次` : ''}
         </Text>
       </Space>
     ) },
@@ -1153,7 +1153,7 @@ function TicketsTab() {
     <>
       <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
         <div>
-          <Title level={3} className="postal-page-title">客服工单</Title>
+          <Title level={3} className="postal-page-title">邮局工单</Title>
           <Text type="secondary">共 {data?.total ?? 0} 条工单</Text>
         </div>
         <Space wrap>
@@ -1250,8 +1250,8 @@ function TicketsTab() {
 }
 
 const POST_TABS = [
-  { key: 'deliveries', label: '投递名册', component: DeliveriesTab },
-  { key: 'tickets', label: '客服工单', component: TicketsTab },
+  { key: 'deliveries', label: '投递明细', component: DeliveriesTab },
+  { key: 'tickets', label: '邮局工单', component: TicketsTab },
 ] as const;
 
 export default function PostDelivery() {

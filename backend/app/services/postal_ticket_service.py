@@ -1,4 +1,4 @@
-"""邮局客服工单统一查询与类型分发。"""
+"""邮局工单统一查询与类型分发。"""
 
 from datetime import date
 from typing import List, Optional, Tuple
@@ -123,7 +123,7 @@ def _base_query(
 def get_ticket(db: Session, ticket_id: int) -> PostalTicket:
     rec = db.query(PostalTicket).filter(PostalTicket.id == ticket_id).first()
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"客服工单 {ticket_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"邮局工单 {ticket_id} 不存在")
     return rec
 
 

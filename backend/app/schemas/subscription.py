@@ -118,7 +118,7 @@ class ImportStatusOut(BaseModel):
 
 
 class ActivateOut(BaseModel):
-    """设为有效的结果 + 汇入投递名册的计数。"""
+    """设为有效的结果 + 汇入投递明细的计数。"""
 
     version: ImportVersionOut
     postal_sync: dict  # {created, replaced, skipped_sent}

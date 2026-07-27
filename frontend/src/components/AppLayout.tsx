@@ -55,9 +55,9 @@ const menuItems: MenuProps['items'] = [
     icon: <InboxOutlined />,
     label: '邮局管理',
     children: [
-      { key: '/post-delivery/deliveries', label: '投递名册' },
-      { key: '/post-delivery/subscription', label: '邮局订报生成' },
-      { key: '/post-delivery/tickets', label: '客服工单' },
+      { key: '/post-delivery/deliveries', label: '投递明细' },
+      { key: '/post-delivery/subscription', label: '订报转投' },
+      { key: '/post-delivery/tickets', label: '邮局工单' },
     ],
   },
   {

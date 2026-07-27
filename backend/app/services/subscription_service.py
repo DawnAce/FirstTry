@@ -71,7 +71,7 @@ def next_version_no(db: Session, batch_id: int) -> int:
 
 
 def activate_version(db: Session, version_id: int, operator_id: Optional[int] = None) -> SubscriptionImportVersion:
-    """把校验通过的版本设为当前有效；旧 active 版本置 superseded；同事务汇入投递名册。"""
+    """把校验通过的版本设为当前有效；旧 active 版本置 superseded；同事务汇入投递明细。"""
     version = get_version(db, version_id)
     if version.status not in (SubscriptionImportStatus.validation_passed, SubscriptionImportStatus.active):
         raise HTTPException(status_code=409, detail="仅校验通过的版本可设为当前有效")
@@ -87,7 +87,7 @@ def activate_version(db: Session, version_id: int, operator_id: Optional[int] = 
     if batch.status in (SubscriptionBatchStatus.draft, SubscriptionBatchStatus.pending_validation):
         batch.status = SubscriptionBatchStatus.ready
 
-    # 汇入投递名册（方向 B：订报生成为唯一真源）。
+    # 汇入投递明细（方向 B：订报转投为唯一真源）。
     from app.services import subscription_postal_sync_service as sync_svc
     sync_result = sync_svc.sync_version_to_postal(db, version, operator_id=operator_id)
 

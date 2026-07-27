@@ -344,7 +344,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
           <div className="subscription-success">
             <CheckCircleOutlined />
             <Title level={3}>V{draftVersion.version_no} 已设为当前有效版本</Title>
-            <Text type="secondary">旧版本已保留，投递名册同步完成。</Text>
+            <Text type="secondary">旧版本已保留，投递明细同步完成。</Text>
             <Flex justify="center" gap={8} style={{ marginTop: 20 }}>
               <Button onClick={() => setWorkspaceOpen(false)}>查看版本记录</Button>
               <Button type="primary" icon={<ThunderboltOutlined />} loading={genMut.isPending}
@@ -432,7 +432,7 @@ export default function SubscriptionGeneration() {
     <div>
       <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
         <div>
-          <Title level={3} className="postal-page-title">邮局订报生成</Title>
+          <Title level={3} className="postal-page-title">订报转投</Title>
           <Text type="secondary">上传来源、校验版本并生成邮局订报文件；旧版本始终保留。</Text>
         </div>
         <Space>

@@ -118,9 +118,9 @@
   <nav class="side">
     <div class="logo">📮 发行管理系统</div>
     <div class="grp">邮局管理  <span style="color:#52c41a">（7→3）</span></div>
-    <a data-page="roster" class="active" onclick="go('roster',this)">📋 投递名册</a>
-    <a data-page="subgen" onclick="go('subgen',this)">🧾 邮局订报生成</a>
-    <a data-page="tickets" onclick="go('tickets',this)">🎫 客服工单 <span class="badge">合并3项</span></a>
+    <a data-page="roster" class="active" onclick="go('roster',this)">📋 投递明细</a>
+    <a data-page="subgen" onclick="go('subgen',this)">🧾 订报转投</a>
+    <a data-page="tickets" onclick="go('tickets',this)">🎫 邮局工单 <span class="badge">合并3项</span></a>
     <div class="grp">财务管理</div>
     <a data-page="finance" onclick="go('finance',this)">💰 邮局收款发票 <span class="badge new">迁入</span></a>
     <a style="opacity:.5">📑 发票 · 渠道结算 …</a>
@@ -133,19 +133,19 @@
   <!-- MAIN -->
   <div class="main">
 
-    <!-- ============ 投递名册 ============ -->
+    <!-- ============ 投递明细 ============ -->
     <section id="roster">
-      <div class="crumb">邮局管理 / <b>投递名册</b></div>
-      <h1>投递名册</h1>
-      <div class="sub">纯台账 / 查询视图：记录“谁在被投递”，供客服工单挂靠。<b>不再生成任何名单</b>——给邮局的文件统一由「邮局订报生成」产出。</div>
+      <div class="crumb">邮局管理 / <b>投递明细</b></div>
+      <h1>投递明细</h1>
+      <div class="sub">纯台账 / 查询视图：记录“谁在被投递”，供邮局工单挂靠。<b>不再生成任何名单</b>——给邮局的文件统一由「订报转投」产出。</div>
 
-      <div class="note">🗑️ <b>删除层（已定）</b>：原【月度起投明细】/月度快照/批次冻结 <b>整层删除</b>。经确认，<b>给邮局的名单永远只来自「邮局订报生成」</b>；名册回归纯台账，只做记录与查询，不生成任何交邮局的名单。</div>
+      <div class="note">🗑️ <b>删除层（已定）</b>：原【月度起投明细】/月度快照/批次冻结 <b>整层删除</b>。经确认，<b>给邮局的名单永远只来自「订报转投」</b>；名册回归纯台账，只做记录与查询，不生成任何交邮局的名单。</div>
 
       <div class="stats">
         <div class="stat"><div class="n">1,284</div><div class="l">投递记录总数</div></div>
         <div class="stat"><div class="n">96</div><div class="l">本月起投</div></div>
         <div class="stat"><div class="n">7</div><div class="l">投递单位</div></div>
-        <div class="stat"><div class="n">312</div><div class="l">关联客服工单</div></div>
+        <div class="stat"><div class="n">312</div><div class="l">关联邮局工单</div></div>
       </div>
 
       <div class="card">
@@ -162,7 +162,7 @@
         <table>
           <thead><tr><th>编号</th><th>收报人</th><th>地址</th><th>份数</th><th>起投月</th><th>投递单位</th><th>来源</th><th>关联工单</th></tr></thead>
           <tbody>
-            <tr><td>B0231</td><td>张为民</td><td>北京朝阳区…</td><td>1</td><td>2026-07</td><td>朝阳分局</td><td><span class="tag blue">订报生成</span></td><td><span class="tag red">投诉·处理中</span></td></tr>
+            <tr><td>B0231</td><td>张为民</td><td>北京朝阳区…</td><td>1</td><td>2026-07</td><td>朝阳分局</td><td><span class="tag blue">订报转投</span></td><td><span class="tag red">投诉·处理中</span></td></tr>
             <tr><td>B0232</td><td>李慧</td><td>北京海淀区…</td><td>2</td><td>2026-07</td><td>海淀分局</td><td><span class="tag grey">名册导入</span></td><td><span class="tag purple">改地址·待应用</span></td></tr>
             <tr><td>B0233</td><td>王强</td><td>北京西城区…</td><td>1</td><td>2026-08</td><td>西城分局</td><td><span class="tag purple">订单生成</span></td><td>—</td></tr>
             <tr><td>B0234</td><td>赵敏</td><td>北京东城区…</td><td>1</td><td>2026-07</td><td>东城分局</td><td><span class="tag green">手工</span></td><td>—</td></tr>
@@ -171,10 +171,10 @@
       </div>
     </section>
 
-    <!-- ============ 订报生成 ============ -->
+    <!-- ============ 订报转投 ============ -->
     <section id="subgen" class="hide">
-      <div class="crumb">邮局管理 / <b>邮局订报生成</b></div>
-      <h1>邮局订报生成</h1>
+      <div class="crumb">邮局管理 / <b>订报转投</b></div>
+      <h1>订报转投</h1>
       <div class="sub">保留为独立菜单——它是一条重流程（上传两份源文件→解析→校验→生成产物→汇入名册），交互重、独立入口更好找。</div>
 
       <div class="card">
@@ -184,7 +184,7 @@
           <div class="s done"><span class="dot">2</span><div>解析</div></div>
           <div class="s done"><span class="dot">3</span><div>校验</div></div>
           <div class="s cur"><span class="dot">4</span><div>生成产物</div></div>
-          <div class="s"><span class="dot">5</span><div>汇入投递名册</div></div>
+          <div class="s"><span class="dot">5</span><div>汇入投递明细</div></div>
         </div>
         <div class="callout">校验结果：<span class="tag green">通过 312</span> &nbsp; <span class="tag orange">警告 4</span> &nbsp; <span class="tag red">阻断 0</span></div>
         <div class="row" style="margin-top:12px">
@@ -198,14 +198,14 @@
             <div class="kv"><span class="k">V1</span><span class="tag grey">已被取代</span></div>
           </div>
         </div>
-        <button class="btn" style="margin-top:12px">设为有效版本 → 汇入投递名册</button>
+        <button class="btn" style="margin-top:12px">设为有效版本 → 汇入投递明细</button>
       </div>
     </section>
 
-    <!-- ============ 客服工单（核心重构） ============ -->
+    <!-- ============ 邮局工单（核心重构） ============ -->
     <section id="tickets" class="hide">
-      <div class="crumb">邮局管理 / <b>客服工单</b></div>
-      <h1>客服工单</h1>
+      <div class="crumb">邮局管理 / <b>邮局工单</b></div>
+      <h1>邮局工单</h1>
       <div class="sub">原【投诉工单】【改地址】【回访】三个菜单合并为一个「工单」，用<b>类型</b>区分；回访不再是菜单，降级为工单时间线里的一条处理记录。</div>
 
       <div class="note">🎯 <b>参考成熟系统（Zendesk / Salesforce Case / 有赞客服）</b>：核心对象只有“工单”，靠 <b>类型</b> 维度区分；回访 = 工单下的一次跟进活动，不单独建表建菜单。</div>

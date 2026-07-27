@@ -1,6 +1,6 @@
 """postal_delivery: link to subscription batch + subscription_generated source
 
-订报生成汇入投递名册：给 postal_delivery 加 subscription_batch_id（幂等替换用），
+订报转投汇入投递明细：给 postal_delivery 加 subscription_batch_id（幂等替换用），
 并给 source_type 枚举加 subscription_generated。纯加列/扩枚举，向后兼容。
 
 Revision ID: b2c4d6e8f0a2

@@ -126,7 +126,7 @@
         <ul>
           <li>邮局每行 = 一条 <b>投递记录</b>（与中通同级）</li>
           <li>邮局记录<b>不进「订单列表 / 客户管理」</b>——营收/客户不再被污染</li>
-          <li>新增 <b>「投递名册」页签</b>——完整名册的家（可搜可筛）</li>
+          <li>新增 <b>「投递明细」页签</b>——完整名册的家（可搜可筛）</li>
           <li>工单叫 <b>已关联读者 / 未匹配</b>；改址叫 <b>应用新地址</b></li>
         </ul>
       </div>
@@ -142,7 +142,7 @@
   <input class="tabin" type="radio" name="t" id="t6">
 
   <div class="tabnav">
-    <label for="t1">📇 投递名册 <span class="n">新</span></label>
+    <label for="t1">📇 投递明细 <span class="n">新</span></label>
     <label for="t2">📦 月度起投明细</label>
     <label for="t3">📮 投诉工单 <span class="n">299</span></label>
     <label for="t4">✏️ 改地址 <span class="n">157</span></label>
@@ -152,10 +152,10 @@
 
   <div class="pages">
 
-    <!-- ===== TAB 1：投递名册 ===== -->
+    <!-- ===== TAB 1：投递明细 ===== -->
     <div class="tabpage" id="p1">
       <div class="card">
-        <h2>📇 投递名册 · 全部投递记录 <span class="tag t-cyan">新增页</span></h2>
+        <h2>📇 投递明细 · 全部投递记录 <span class="tag t-cyan">新增页</span></h2>
         <p class="desc">邮局记录不再进「订单列表」，这里就是它们完整名册的家——你手里那张完整 Excel 的全量在此可搜可筛。每条 = 一条投递记录（≠订单）。所有月度明细的并集 = 本名册。</p>
         <div class="toolbar">
           <div class="sub">2026 年度 · 共 <b>4316</b> 条投递记录</div>
@@ -270,7 +270,7 @@
             <tr><td colspan="9" class="sub" style="text-align:center;background:#fafafa">… 其余 296 条 · 分页</td></tr>
           </tbody>
         </table>
-        <div class="legend"><span class="tag t-cyan">已关联读者</span> = 编号+年度在投递名册里找到了对应读者（可点进去看地址/投递单位）。<span class="tag t-gray">未匹配</span> = 名册里没这条编号（可能是更早年份、或还没导入的名册）。系统<b>自动</b>判，不用手动。</div>
+        <div class="legend"><span class="tag t-cyan">已关联读者</span> = 编号+年度在投递明细里找到了对应读者（可点进去看地址/投递单位）。<span class="tag t-gray">未匹配</span> = 名册里没这条编号（可能是更早年份、或还没导入的名册）。系统<b>自动</b>判，不用手动。</div>
       </div>
     </div>
 
@@ -392,7 +392,7 @@
       <thead><tr><th>点</th><th>定的</th></tr></thead>
       <tbody>
         <tr><td>底层模型</td><td>邮局＝<b>投递方式</b>；每行＝<b>投递记录</b>（不造订单、不进订单列表/客户管理）</td></tr>
-        <tr><td>新增页</td><td><b>📇 投递名册</b>——完整名册的家（可搜可筛可导出）</td></tr>
+        <tr><td>新增页</td><td><b>📇 投递明细</b>——完整名册的家（可搜可筛可导出）</td></tr>
         <tr><td>叫法</td><td>批次→<b>月度起投明细</b>；挂投递记录→<b>已关联读者/未匹配</b>；回流→<b>应用新地址</b></td></tr>
         <tr><td>订单号精确挂单 + 财务工作台</td><td><b>后续</b>（先做电商订单导入这个前提）</td></tr>
         <tr><td>UI</td><td>真页面 <b>100% 照此效果图</b> 做</td></tr>
