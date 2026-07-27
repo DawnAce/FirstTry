@@ -86,6 +86,7 @@ export function commitPostalImport(sessionId: string): Promise<AxiosResponse<Pos
 // --- 投诉工单 (P2) ---------------------------------------------------------
 
 export type PostalComplaintStatus = 'open' | 'in_progress' | 'resolved';
+export type PostalComplaintSource = '客服中心' | '发行电话接入' | '同事反馈';
 
 export interface PostalComplaint {
   id: number;
@@ -93,6 +94,8 @@ export interface PostalComplaint {
   order_id: number | null;
   external_order_no: string | null;
   complaint_date: string | null;
+  complaint_source: PostalComplaintSource | null;
+  source_platform: string | null;
   year: number | null;
   missing_issues: string | null;
   handling: string | null;
@@ -337,6 +340,7 @@ export interface ComplaintPayload {
   year?: number | null;
   delivery_no?: string | null;
   complaint_date?: string | null;
+  complaint_source?: PostalComplaintSource | null;
   missing_issues?: string | null;
   handling?: string | null;
   routed_unit_id?: number | null;

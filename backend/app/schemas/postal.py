@@ -88,6 +88,8 @@ class ComplaintOut(BaseModel):
     order_id: Optional[int] = None
     external_order_no: Optional[str] = None
     complaint_date: Optional[date] = None
+    complaint_source: Optional[Literal["客服中心", "发行电话接入", "同事反馈"]] = None
+    source_platform: Optional[str] = None
     year: Optional[int] = None
     missing_issues: Optional[str] = None
     handling: Optional[str] = None
@@ -273,6 +275,7 @@ class ComplaintCreateIn(BaseModel):
     year: Optional[int] = Field(default=None, ge=2000, le=2100)
     delivery_no: Optional[str] = None          # 与 year 一起关联投递记录（去零编号）
     complaint_date: Optional[date] = None
+    complaint_source: Optional[Literal["客服中心", "发行电话接入", "同事反馈"]] = None
     missing_issues: Optional[str] = None       # 投诉情况
     handling: Optional[str] = None             # 处理情况（原文，服务端归一出 routed_label）
     routed_unit_id: Optional[int] = None       # 投递渠道单位
@@ -289,6 +292,7 @@ class ComplaintUpdateIn(BaseModel):
     year: Optional[int] = Field(default=None, ge=2000, le=2100)
     delivery_no: Optional[str] = None
     complaint_date: Optional[date] = None
+    complaint_source: Optional[Literal["客服中心", "发行电话接入", "同事反馈"]] = None
     missing_issues: Optional[str] = None
     handling: Optional[str] = None
     routed_unit_id: Optional[int] = None

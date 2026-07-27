@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import Partner, PostalComplaintStatus, User
+from app.models import Order, Partner, PostalComplaintStatus, PostalDelivery, User
 from app.upload import read_upload
 from app.schemas.postal import (
     AddressChangeCreateIn,
@@ -90,6 +90,15 @@ def _delivery_out(db: Session, rec) -> DeliveryOut:
 def _complaint_out(db: Session, rec) -> ComplaintOut:
     out = ComplaintOut.model_validate(rec)
     out.routed_unit_name = _partner_name(db, rec.routed_unit_id)
+    platform = (
+        db.query(Order.source_platform).filter(Order.id == rec.order_id).scalar()
+        if rec.order_id else None
+    )
+    if not platform and rec.postal_delivery_id:
+        platform = db.query(PostalDelivery.source_channel).filter(
+            PostalDelivery.id == rec.postal_delivery_id
+        ).scalar()
+    out.source_platform = platform
     return out
 
 

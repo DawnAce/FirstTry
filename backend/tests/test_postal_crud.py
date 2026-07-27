@@ -4,6 +4,7 @@ In-memory SQLite + TestClient，覆盖 get_db / get_current_user / require_admin
 与 test_postal_api 同风格（模型 create_all，不跑迁移；三态枚举随 model 自动可用）。
 """
 
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -16,9 +17,12 @@ from app.auth import get_current_user, require_admin
 from app.database import Base, get_db
 from app.main import app
 from app.models import (
+    Order,
+    OrderEntryMethod,
     Partner,
     PartnerType,
     PostalComplaintHandlingRecord,
+    PostalDelivery,
     PostalFollowUp,
 )
 
@@ -166,6 +170,71 @@ def test_complaint_crud_and_linking(client):
 
     assert client.delete(f"/api/postal/complaints/{cid}").status_code == 204
     assert client.get(f"/api/postal/complaints/{cid}").status_code == 404
+
+
+def test_complaint_source_and_platform(client):
+    delivery = client.post("/api/postal/deliveries", json={
+        "year": 2026,
+        "delivery_no": "801",
+        "recipient_name": "平台读者",
+        "recipient_address": "北京市",
+        "source_channel": "投递渠道",
+    }).json()
+
+    db_override = app.dependency_overrides[get_db]()
+    db = next(db_override)
+    try:
+        order = Order(
+            order_date=date(2026, 1, 1),
+            entry_method=OrderEntryMethod.manual,
+            source_platform="淘宝",
+            payer_name="平台读者",
+        )
+        db.add(order)
+        db.flush()
+        db.query(PostalDelivery).filter(PostalDelivery.id == delivery["id"]).update(
+            {"order_id": order.id}
+        )
+        db.commit()
+    finally:
+        db_override.close()
+
+    created = client.post("/api/postal/tickets", json={
+        "type": "complaint",
+        "year": 2026,
+        "delivery_no": "801",
+        "complaint_date": "2026-07-27",
+        "complaint_source": "客服中心",
+        "missing_issues": "未收到报纸",
+    })
+    assert created.status_code == 201, created.text
+    assert created.json()["complaint_source"] == "客服中心"
+
+    detail = client.get(f"/api/postal/tickets/{created.json()['id']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["complaint"]["source_platform"] == "淘宝"
+
+    fallback_delivery = client.post("/api/postal/deliveries", json={
+        "year": 2026,
+        "delivery_no": "802",
+        "recipient_name": "渠道读者",
+        "recipient_address": "上海市",
+        "source_channel": "微信小程序",
+    }).json()
+    fallback = client.post("/api/postal/tickets", json={
+        "type": "complaint",
+        "year": 2026,
+        "delivery_no": fallback_delivery["delivery_no"],
+        "complaint_source": "同事反馈",
+    }).json()
+    fallback_detail = client.get(f"/api/postal/tickets/{fallback['id']}").json()
+    assert fallback_detail["complaint"]["source_platform"] == "微信小程序"
+
+    invalid = client.post("/api/postal/tickets", json={
+        "type": "complaint",
+        "complaint_source": "其他",
+    })
+    assert invalid.status_code == 422
 
 
 def test_complaint_handling_workflow(client):
