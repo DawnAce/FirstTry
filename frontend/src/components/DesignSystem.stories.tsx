@@ -1,55 +1,92 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Button, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Input, Select, Space, Statistic, Table, Tag, Typography } from 'antd'
 import { DeleteOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
+import { designTokens } from '../theme'
 
 // 设计系统概览：把项目里复用的颜色 token、按钮与状态标签集中展示，
 // 方便设计师 / PM / 开发在一个地方浏览统一的视觉规范。
 const meta: Meta = {
   title: '设计系统/概览',
   parameters: {
-    layout: 'fullscreen',
-    options: { showPanel: false },
+    docs: {
+      description: {
+        component: '所有示例与业务页面共用同一套主题。可用顶部工具栏统一切换主题、密度和圆角。',
+      },
+    },
   },
 }
 export default meta
 type Story = StoryObj
 
-function Swatch({ name, value }: { name: string; value: string }) {
+function Swatch({ name, variable, fallback }: { name: string; variable: string; fallback: string }) {
   return (
-    <div style={{ width: 160 }}>
+    <div style={{ width: 180 }}>
       <div
         style={{
           height: 64,
-          borderRadius: 8,
-          background: value,
-          border: '1px solid rgba(0,0,0,0.06)',
+          borderRadius: 'var(--radius-input)',
+          background: `var(${variable})`,
+          border: '1px solid var(--color-border)',
         }}
       />
       <div style={{ marginTop: 8, fontWeight: 600 }}>{name}</div>
-      <div style={{ color: '#86868b', fontFamily: 'monospace', fontSize: 12 }}>{value}</div>
+      <div style={{ color: 'var(--color-text-secondary)', fontFamily: 'monospace', fontSize: 12 }}>
+        {variable} · {fallback}
+      </div>
     </div>
   )
 }
 
-// 颜色 token（取自 src/index.css 与业务里的语义色）
+// 颜色 token 来自 src/theme.tsx；Storybook 与生产入口都通过 DesignSystemProvider 使用它们。
 export const Colors: Story = {
   render: () => (
     <div>
-      <Typography.Title level={4}>品牌色</Typography.Title>
+      <Typography.Title level={4}>基础颜色</Typography.Title>
       <Space size={24} wrap>
-        <Swatch name="accent" value="#0071e3" />
-        <Swatch name="accent-hover" value="#0077ed" />
+        <Swatch name="品牌色" variable="--color-accent" fallback={designTokens.color.brand} />
+        <Swatch name="页面背景" variable="--color-bg" fallback={designTokens.color.background} />
+        <Swatch name="容器背景" variable="--color-card" fallback={designTokens.color.surface} />
+        <Swatch name="弱背景" variable="--color-bg-subtle" fallback={designTokens.color.subtle} />
+        <Swatch name="主文字" variable="--color-text-primary" fallback={designTokens.color.textPrimary} />
+        <Swatch name="次文字" variable="--color-text-secondary" fallback={designTokens.color.textSecondary} />
       </Space>
 
       <Typography.Title level={4} style={{ marginTop: 32 }}>
-        收件人类型语义色
+        语义色
       </Typography.Title>
       <Space size={24} wrap>
-        <Swatch name="对公 / blue" value="#1677ff" />
-        <Swatch name="读者 / green" value="#52c41a" />
-        <Swatch name="样报 / orange" value="#fa8c16" />
+        <Swatch name="成功" variable="--color-success" fallback={designTokens.color.success} />
+        <Swatch name="提醒" variable="--color-warning" fallback={designTokens.color.warning} />
+        <Swatch name="危险" variable="--color-danger" fallback={designTokens.color.danger} />
+        <Swatch name="辅助紫" variable="--color-purple" fallback={designTokens.color.purple} />
       </Space>
     </div>
+  ),
+}
+
+export const ThemeWorkbench: Story = {
+  render: () => (
+    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+      <div>
+        <Typography.Title level={2} style={{ marginBottom: 4 }}>发行系统 UI 工作台</Typography.Title>
+        <Typography.Text type="secondary">从顶部工具栏切换亮暗、密度和圆角，下面以及所有页面 Story 会同步变化。</Typography.Text>
+      </div>
+      <Space size="middle" wrap>
+        <Card><Statistic title="本期发行" value={128600} suffix="份" /></Card>
+        <Card><Statistic title="待处理" value={12} styles={{ content: { color: 'var(--color-warning)' } }} /></Card>
+        <Card><Statistic title="异常" value={3} styles={{ content: { color: 'var(--color-danger)' } }} /></Card>
+      </Space>
+      <Card title="常用控件">
+        <Space wrap>
+          <Input placeholder="输入关键词" style={{ width: 220 }} />
+          <Select defaultValue="all" style={{ width: 140 }} options={[{ value: 'all', label: '全部状态' }]} />
+          <Button type="primary">主要操作</Button>
+          <Button>次要操作</Button>
+          <Button danger>危险操作</Button>
+        </Space>
+      </Card>
+      <Alert showIcon type="info" title="信息提示" description="业务信息使用语义色，不再在页面里单独定义色值。" />
+    </Space>
   ),
 }
 

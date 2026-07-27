@@ -179,7 +179,7 @@ export default function AppLayout() {
           {/* Logo */}
           <div className="app-sider-logo">
             <div className="app-sider-logo-icon">
-              <BarChartOutlined style={{ fontSize: 20, color: '#fff' }} />
+              <BarChartOutlined style={{ fontSize: 20, color: 'var(--color-on-accent)' }} />
             </div>
             {!collapsed && (
               <div className="app-sider-logo-text">

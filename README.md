@@ -56,6 +56,14 @@ npm install
 npm run dev
 ```
 
+如需统一检查和调整 UI，可启动 Storybook：
+
+```bash
+npm run storybook
+```
+
+顶部工具栏可全局切换亮/暗主题、舒适/紧凑密度和圆润/克制圆角。提交前可运行 `npm run build-storybook` 构建静态站点，并用 `npm run test:stories` 验证 Story。
+
 ### 5. 登录系统
 系统不再提供默认密码。首次部署或需要轮换密码时，在 `backend` 目录执行：
 
