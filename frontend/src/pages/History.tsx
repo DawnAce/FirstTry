@@ -91,34 +91,34 @@ export default function History() {
   const statCards = [
     {
       icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'rgba(0, 113, 227, 0.08)',
+      bg: 'var(--color-accent-soft)',
       label: '总期数',
       value: statusCounts.all,
       suffix: '期',
       sub: '系统内已建报数',
     },
     {
-      icon: <CheckCircleOutlined style={{ fontSize: 21, color: '#52c41a' }} />,
-      bg: 'rgba(82, 196, 26, 0.08)',
+      icon: <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success)' }} />,
+      bg: 'var(--color-success-soft)',
       label: '已确认',
       value: statusCounts.confirmed,
       suffix: '期',
       sub: '已锁定可导出',
-      subColor: '#52c41a',
+      subColor: 'var(--color-success)',
     },
     {
-      icon: <ClockCircleOutlined style={{ fontSize: 21, color: '#fa8c16' }} />,
-      bg: 'rgba(250, 173, 20, 0.08)',
+      icon: <ClockCircleOutlined style={{ fontSize: 21, color: 'var(--color-warning)' }} />,
+      bg: 'var(--color-warning-soft)',
       label: '草稿待确认',
       value: statusCounts.draft,
       suffix: '期',
       sub: '● 需处理，点此筛选',
-      subColor: '#fa8c16',
+      subColor: 'var(--color-warning)',
       onClick: () => setFilterStatus('draft'),
     },
     {
-      icon: <BarChartOutlined style={{ fontSize: 21, color: '#722ed1' }} />,
-      bg: 'rgba(114, 46, 209, 0.08)',
+      icon: <BarChartOutlined style={{ fontSize: 21, color: 'var(--color-purple)' }} />,
+      bg: 'var(--color-purple-soft)',
       label: '本年累计印数',
       value: yearStats.total.toLocaleString(),
       suffix: '份',
@@ -172,7 +172,7 @@ export default function History() {
       title: '创建时间',
       dataIndex: 'created_at',
       render: (_, r) => (
-        <span style={{ whiteSpace: 'nowrap', color: '#5a5a62' }}>
+        <span style={{ whiteSpace: 'nowrap', color: 'var(--color-text-tertiary)' }}>
           {r.created_at ? `创建于 ${dayjs(r.created_at).format('MM-DD HH:mm')}` : '—'}
         </span>
       ),
@@ -228,7 +228,7 @@ export default function History() {
             style={{
               fontSize: 24,
               fontWeight: 700,
-              color: '#1d1d1f',
+              color: 'var(--color-text-primary)',
               margin: 0,
               letterSpacing: '-0.02em',
               display: 'flex',

@@ -155,7 +155,7 @@ export const shippingDetailDisplayColumns: TableColumnsType<ShippingDetail> = [
     key: 'deadline',
     width: 90,
     render: (v: string | null) => (!v || v === '-' || v === '长期')
-      ? <Tag style={{ backgroundColor: '#000', color: '#fff', borderRadius: 4, border: 'none' }}>长期</Tag>
+      ? <Tag color="default">长期</Tag>
       : v,
   },
   {
