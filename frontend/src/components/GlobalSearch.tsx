@@ -58,7 +58,7 @@ export default function GlobalSearch() {
       return [
         {
           label: (
-            <span style={{ fontSize: 12, color: '#999' }}>{TYPE_META[type].label}</span>
+            <Text type="secondary" style={{ fontSize: 12 }}>{TYPE_META[type].label}</Text>
           ),
           options: group.map((h) => {
             const value = `${h.type}:${h.id}`;
@@ -114,7 +114,7 @@ export default function GlobalSearch() {
       }}
       notFoundContent={debounced.length >= 1 ? (isFetching ? '搜索中…' : '无匹配') : null}
     >
-      <Input allowClear prefix={<SearchOutlined style={{ color: '#bbb' }} />} placeholder="搜索 订单/商品/期数" />
+      <Input allowClear prefix={<SearchOutlined />} placeholder="搜索 订单/商品/期数" />
     </AutoComplete>
   );
 }

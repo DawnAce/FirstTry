@@ -208,15 +208,15 @@ export default function Templates() {
   const statCards = [
     {
       icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'rgba(0, 113, 227, 0.08)',
+      bg: 'var(--color-accent-soft)',
       label: '模板项目',
       value: stats.total,
       suffix: '项',
       sub: '每期报数的行数',
     },
     {
-      icon: <AppstoreOutlined style={{ fontSize: 21, color: '#722ed1' }} />,
-      bg: 'rgba(114, 46, 209, 0.08)',
+      icon: <AppstoreOutlined style={{ fontSize: 21, color: 'var(--color-purple)' }} />,
+      bg: 'var(--color-purple-soft)',
       label: '类别',
       value: stats.categories,
       suffix: '类',
@@ -224,15 +224,15 @@ export default function Templates() {
     },
     {
       icon: <SyncOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'rgba(0, 113, 227, 0.08)',
+      bg: 'var(--color-accent-soft)',
       label: '变动项',
       value: stats.variable,
       suffix: '项',
       sub: `每期需重新填写（固定 ${stats.fixed} 项）`,
     },
     {
-      icon: <BarChartOutlined style={{ fontSize: 21, color: '#52c41a' }} />,
-      bg: 'rgba(82, 196, 26, 0.08)',
+      icon: <BarChartOutlined style={{ fontSize: 21, color: 'var(--color-success)' }} />,
+      bg: 'var(--color-success-soft)',
       label: '默认值合计',
       value: stats.defaultSum.toLocaleString(),
       suffix: '份',
@@ -248,7 +248,7 @@ export default function Templates() {
             style={{
               fontSize: 24,
               fontWeight: 700,
-              color: '#1d1d1f',
+              color: 'var(--color-text-primary)',
               margin: 0,
               letterSpacing: '-0.02em',
               display: 'flex',

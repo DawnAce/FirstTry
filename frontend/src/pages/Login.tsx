@@ -31,19 +31,19 @@ export default function Login() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'var(--color-bg, #f5f5f7)',
+      background: 'var(--color-bg)',
     }}>
       <div style={{
         width: 360,
         padding: 40,
-        background: '#fff',
-        borderRadius: 16,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+        background: 'var(--color-card)',
+        borderRadius: 'var(--radius-card)',
+        boxShadow: 'var(--shadow-card-hover)',
       }}>
-        <h2 style={{ textAlign: 'center', marginBottom: 8, color: '#1d1d1f' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: 8, color: 'var(--color-text-primary)' }}>
           印数管理系统
         </h2>
-        <p style={{ textAlign: 'center', color: '#86868b', marginBottom: 32, fontSize: 14 }}>
+        <p style={{ textAlign: 'center', color: 'var(--color-text-secondary)', marginBottom: 32, fontSize: 14 }}>
           中国经营报
         </p>
         <Form onFinish={handleSubmit} autoComplete="off" layout="vertical" style={{ width: '100%' }}>

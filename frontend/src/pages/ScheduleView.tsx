@@ -167,31 +167,31 @@ export default function ScheduleView() {
   const statCards: Array<{ icon: ReactNode; bg: string; label: string; value: ReactNode; suffix?: string; valueColor?: string }> = [
     {
       icon: <CalendarOutlined style={{ fontSize: 22, color: 'var(--color-accent)' }} />,
-      bg: 'rgba(0, 113, 227, 0.08)',
+      bg: 'var(--color-accent-soft)',
       label: '出版期数',
       value: yearSummary.published_count,
       suffix: '期',
     },
     {
-      icon: <CoffeeOutlined style={{ fontSize: 22, color: '#52c41a' }} />,
-      bg: 'rgba(82, 196, 26, 0.12)',
+      icon: <CoffeeOutlined style={{ fontSize: 22, color: 'var(--color-success)' }} />,
+      bg: 'var(--color-success-soft)',
       label: '休刊次数',
       value: yearSummary.suspended_count,
       suffix: '次',
     },
     {
-      icon: <ReadOutlined style={{ fontSize: 22, color: '#722ed1' }} />,
-      bg: 'rgba(114, 46, 209, 0.08)',
+      icon: <ReadOutlined style={{ fontSize: 22, color: 'var(--color-purple)' }} />,
+      bg: 'var(--color-purple-soft)',
       label: '期号范围',
       value: issueRange,
     },
     {
-      icon: <WarningOutlined style={{ fontSize: 22, color: '#fa8c16' }} />,
-      bg: 'rgba(250, 140, 22, 0.10)',
+      icon: <WarningOutlined style={{ fontSize: 22, color: 'var(--color-warning)' }} />,
+      bg: 'var(--color-warning-soft)',
       label: '异常版次',
       value: mismatchCount,
       suffix: '次',
-      valueColor: mismatchCount > 0 ? '#fa8c16' : undefined,
+      valueColor: mismatchCount > 0 ? 'var(--color-warning)' : undefined,
     },
   ];
 
