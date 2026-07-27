@@ -13,6 +13,7 @@ import {
   Table,
   Tooltip,
   Steps,
+  theme,
 } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
@@ -47,6 +48,7 @@ import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton
 export default function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { token } = theme.useToken();
   const [creating, setCreating] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<string | undefined>(undefined);
 
@@ -208,21 +210,21 @@ export default function Dashboard() {
   const statCards = [
     {
       icon: <FileTextOutlined style={{ fontSize: 22, color: 'var(--color-accent)' }} />,
-      bgColor: 'rgba(0, 113, 227, 0.08)',
+      bgColor: 'var(--color-accent-soft)',
       title: '已创建报数',
       value: stats.total,
       suffix: '期',
     },
     {
-      icon: <ClockCircleOutlined style={{ fontSize: 22, color: '#faad14' }} />,
-      bgColor: 'rgba(250, 173, 20, 0.08)',
+      icon: <ClockCircleOutlined style={{ fontSize: 22, color: 'var(--color-warning)' }} />,
+      bgColor: 'var(--color-warning-soft)',
       title: '待确认报数',
       value: stats.draft,
       suffix: '期',
     },
     {
-      icon: <BarChartOutlined style={{ fontSize: 22, color: '#52c41a' }} />,
-      bgColor: 'rgba(82, 196, 26, 0.08)',
+      icon: <BarChartOutlined style={{ fontSize: 22, color: 'var(--color-success)' }} />,
+      bgColor: 'var(--color-success-soft)',
       title: '本周印数',
       value: formatPrintTotal(weeklyStats.this_week_total),
       suffix: '份',
@@ -230,8 +232,8 @@ export default function Dashboard() {
       changeLabel: `较上周 ${weeklyStats.week_change >= 0 ? '↑' : '↓'} ${formatPrintTotal(Math.abs(weeklyStats.week_change))} 份`,
     },
     {
-      icon: <CalendarOutlined style={{ fontSize: 22, color: '#722ed1' }} />,
-      bgColor: 'rgba(114, 46, 209, 0.08)',
+      icon: <CalendarOutlined style={{ fontSize: 22, color: 'var(--color-purple)' }} />,
+      bgColor: 'var(--color-purple-soft)',
       title: '最近报数时间',
       value: latestReportTime ? dayjs(latestReportTime).format('YYYY-MM-DD HH:mm') : '-',
       suffix: '',
@@ -294,7 +296,7 @@ export default function Dashboard() {
                 style={{ cursor: creating ? 'wait' : 'pointer' }}
               >
                 <div className="dashboard-create-icon">
-                  <PlusOutlined style={{ fontSize: 24, color: '#fff' }} />
+                  <PlusOutlined style={{ fontSize: 24, color: 'var(--color-on-accent)' }} />
                 </div>
                 <div className="dashboard-create-text">
                   <div className="dashboard-create-title">
@@ -408,16 +410,16 @@ export default function Dashboard() {
                   xAxis: {
                     type: 'category',
                     data: trendData.map(d => d.name),
-                    axisLabel: { fontSize: 11, color: '#86868b' },
-                    axisLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
+                    axisLabel: { fontSize: 11, color: token.colorTextSecondary },
+                    axisLine: { lineStyle: { color: token.colorBorderSecondary } },
                     axisTick: { show: false },
                   },
                   yAxis: {
                     type: 'value',
-                    axisLabel: { fontSize: 11, color: '#86868b' },
+                    axisLabel: { fontSize: 11, color: token.colorTextSecondary },
                     axisLine: { show: false },
                     axisTick: { show: false },
-                    splitLine: { lineStyle: { type: 'dashed', color: 'rgba(0,0,0,0.06)' } },
+                    splitLine: { lineStyle: { type: 'dashed', color: token.colorBorderSecondary } },
                   },
                   tooltip: {
                     trigger: 'axis',
@@ -425,23 +427,25 @@ export default function Dashboard() {
                       const p = params[0];
                       return `${p.name}<br/>印数：<b>${p.value.toLocaleString()}</b> 份`;
                     },
-                    backgroundColor: '#fff',
+                    backgroundColor: token.colorBgElevated,
                     borderColor: 'transparent',
-                    textStyle: { fontSize: 13 },
-                    extraCssText: 'border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);',
+                    borderRadius: token.borderRadius,
+                    shadowBlur: 12,
+                    shadowColor: token.colorBorderSecondary,
+                    textStyle: { fontSize: 13, color: token.colorText },
                   },
                   series: [{
                     type: 'line',
                     data: trendData.map(d => d.value),
                     smooth: true,
                     symbolSize: 8,
-                    itemStyle: { color: '#0071e3' },
-                    lineStyle: { width: 2, color: '#0071e3' },
+                    itemStyle: { color: token.colorPrimary },
+                    lineStyle: { width: 2, color: token.colorPrimary },
                     label: {
                       show: true,
                       position: 'top',
                       fontSize: 11,
-                      color: '#1d1d1f',
+                      color: token.colorText,
                       fontWeight: 500,
                       formatter: (p: any) => p.value.toLocaleString(),
                     },
@@ -475,7 +479,7 @@ export default function Dashboard() {
                   className="dashboard-pending-item"
                   onClick={() => navigate(`/report/${issue.id}`)}
                 >
-                  <div className="dashboard-pending-dot" style={{ background: '#ff4d4f' }} />
+                  <div className="dashboard-pending-dot" style={{ background: 'var(--color-danger)' }} />
                   <div className="dashboard-pending-content">
                     <div className="dashboard-pending-name">第{issue.issue_number}期待确认</div>
                     <div className="dashboard-pending-desc">
@@ -513,8 +517,8 @@ export default function Dashboard() {
             </div>
             <div className="dashboard-quick-links">
               <div className="dashboard-quick-link" onClick={() => navigate('/history')}>
-                <div className="dashboard-quick-link-icon" style={{ background: 'rgba(82, 196, 26, 0.08)' }}>
-                  <FileTextOutlined style={{ color: '#52c41a' }} />
+                <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-success-soft)' }}>
+                  <FileTextOutlined style={{ color: 'var(--color-success)' }} />
                 </div>
                 <div className="dashboard-quick-link-text">
                   <div className="dashboard-quick-link-name">查看历史期数</div>
@@ -523,7 +527,7 @@ export default function Dashboard() {
                 <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12 }} />
               </div>
               <div className="dashboard-quick-link" onClick={() => navigate('/templates')}>
-                <div className="dashboard-quick-link-icon" style={{ background: 'rgba(0, 113, 227, 0.08)' }}>
+                <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-accent-soft)' }}>
                   <EditOutlined style={{ color: 'var(--color-accent)' }} />
                 </div>
                 <div className="dashboard-quick-link-text">
