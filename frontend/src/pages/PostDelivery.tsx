@@ -108,6 +108,8 @@ const COMPLAINT_STATUS_OPTS = [
   { label: '已解决', value: 'resolved' },
 ];
 
+const COMPLAINT_SOURCE_OPTS = ['客服中心', '发行电话接入', '同事反馈'].map((value) => ({ label: value, value }));
+
 const POSTAL_CHANNELS = ['CBJ+小程序', '中经报有赞', '淘宝发行部', '对公转账'];
 const YEAR_OPTS = [2024, 2025, 2026].map((y) => ({ label: `${y}年`, value: y }));
 const MONTH_OPTS = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1} 月`, value: i + 1 }));
@@ -631,6 +633,7 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
     mutationFn: (v: any) => {
       const body = { ...v, complaint_date: fromDay(v.complaint_date) };
       delete body.postal_delivery_id;
+      delete body.source_platform;
       return editing ? updateComplaint(editing.id, body) : createComplaint(body);
     },
     onSuccess: () => {
@@ -656,6 +659,7 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
               snap_phone: reader.recipient_phone,
               snap_address: reader.recipient_address,
               routed_unit_id: reader.distribution_unit_id,
+              source_platform: reader.source_channel,
             })} />
           </Form.Item>
         )}
@@ -663,6 +667,9 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
           <Form.Item name="year" label="年度" style={{ width: 120 }}><InputNumber disabled={!editing} style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
           <Form.Item name="delivery_no" label="编号" style={{ width: 180 }}><Input disabled={!editing} /></Form.Item>
           <Form.Item name="complaint_date" label="接诉日期" style={{ width: 160 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="complaint_source" label="投诉来源" rules={[{ required: true, message: '请选择投诉来源' }]} style={{ width: 160 }}>
+            <Select options={COMPLAINT_SOURCE_OPTS} />
+          </Form.Item>
         </Flex>
         <Form.Item name="missing_issues" label="投诉情况"><Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} /></Form.Item>
         <Flex gap={12} wrap>
@@ -674,6 +681,7 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
           <Form.Item name="snap_phone" label="电话" style={{ width: 150 }}><Input disabled={!editing} /></Form.Item>
           <Form.Item name="first_handler" label="第一接诉人" style={{ width: 130 }}><Input /></Form.Item>
           <Form.Item name="status" label="状态" style={{ width: 130 }}><Select options={COMPLAINT_STATUS_OPTS} /></Form.Item>
+          <Form.Item name="source_platform" label="来源平台" style={{ width: 180 }}><Input disabled placeholder="由订单/读者资料带出" /></Form.Item>
         </Flex>
         <Form.Item name="snap_address" label="地址（名册快照）"><Input disabled={!editing} /></Form.Item>
         <Form.Item name="notes" label="备注"><Input /></Form.Item>
@@ -682,7 +690,7 @@ function ComplaintFormModal({ open, editing, unitOpts, onClose }: {
   );
 }
 
-/** 投诉处理抽屉：三态时间线 + 登记处理 */
+/** 投诉详情抽屉：详情 + 三态时间线 + 登记处理 */
 function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number | null; onClose: () => void }) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
@@ -728,15 +736,24 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
   const c = detail?.complaint;
 
   return (<>
-    <Drawer title="投诉处理" width={560} open={open} onClose={onClose} destroyOnClose>
-      {!c ? <Empty description={detailQ.isLoading ? '加载中…' : '无数据'} /> : (
+    <Drawer title="投诉详情" width={640} open={open} onClose={onClose} destroyOnClose>
+      {!c ? <Empty description={detailQ.isLoading ? '加载中…' : (detailQ.isError ? errText(detailQ.error) : '无数据')} /> : (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Descriptions size="small" column={1} bordered items={[
             { key: 's', label: '状态', children: <Tag color={COMPLAINT_STATUS_META[c.status].color}>{COMPLAINT_STATUS_META[c.status].label}</Tag> },
+            { key: 'date', label: '接诉日期', children: c.complaint_date || '—' },
+            { key: 'source', label: '投诉来源', children: c.complaint_source || '—' },
+            { key: 'platform', label: '来源平台', children: c.source_platform || '—' },
             { key: 'n', label: '收报人', children: c.snap_name || '—' },
+            { key: 'phone', label: '电话', children: c.snap_phone || '—' },
+            { key: 'address', label: '地址', children: c.snap_address || '—' },
             { key: 'no', label: '编号', children: c.external_order_no || '—' },
             { key: 'm', label: '投诉情况', children: c.missing_issues || '—' },
+            { key: 'handling', label: '处理情况', children: c.handling || '—' },
+            { key: 'unit', label: '投递单位', children: c.routed_unit_name || c.routed_label || '—' },
+            { key: 'first', label: '第一接诉人', children: c.first_handler || '—' },
             { key: 'cnt', label: '处理次数', children: c.handling_count ?? 0 },
+            { key: 'notes', label: '备注', children: c.notes || '—' },
           ]} />
 
           {isAdmin && (
@@ -1118,7 +1135,7 @@ function TicketsTab() {
         const isAppliedAddress = r.type === 'address' && r.applied_to_order === true;
         return (
           <Space size={0}>
-            <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => openDetail(r)}>{r.type === 'complaint' ? '处理' : '详情'}</Button>
+            <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => openDetail(r)}>详情</Button>
             {isAdmin && (isAppliedAddress ? (
               <Text type="secondary" style={{ fontSize: 12, padding: '0 7px' }}>已锁定</Text>
             ) : (

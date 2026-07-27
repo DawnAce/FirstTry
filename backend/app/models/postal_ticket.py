@@ -68,6 +68,7 @@ class PostalTicket(Base):
 
     # 投诉字段。
     complaint_date = Column(Date, nullable=True)
+    complaint_source = Column(String(32), nullable=True)
     missing_issues = Column(Text, nullable=True)
     handling = Column(Text, nullable=True)
     routed_label = Column(String(64), nullable=True)

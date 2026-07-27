@@ -1651,7 +1651,7 @@ draft ──confirm──> active ──void──> void
 | `POST` | `/api/postal/import/commit` | 提交导入（建 `PostalDelivery`；`(year, delivery_no)` 去重幂等） |
 | `GET` | `/api/postal/tickets` | **邮局工单统一查询**：从 `postal_tickets` 按 `type`/`year`/`status`/`applied`/`search` 做数据库筛选与分页；返回 `TicketOut` 和类型计数 `summary{complaint,address,follow}` |
 | `POST` | `/api/postal/tickets` | 按 body `type` 新增投诉 / 改地址 / 独立回访工单 |
-| `GET`/`PUT`/`DELETE` | `/api/postal/tickets/{id}` | 统一详情 / 编辑 / 删除；响应带类型判别字段；已应用改地址的 `PUT`/`DELETE` 返回 409；删除投诉会删除其时间线，但关联回访解除归属后恢复为独立工单 |
+| `GET`/`PUT`/`DELETE` | `/api/postal/tickets/{id}` | 统一详情 / 编辑 / 删除；响应带类型判别字段；投诉详情含 `complaint_source` 与动态派生的 `source_platform`；已应用改地址的 `PUT`/`DELETE` 返回 409；删除投诉会删除其时间线，但关联回访解除归属后恢复为独立工单 |
 | `POST` | `/api/postal/tickets/{id}/apply` | 应用改地址：写回投递记录；挂真实订单时精确同步已绑定 `FulfillmentTarget`，未绑定仅接受唯一当前邮局目标，多目标返回 409 |
 | `POST`/`DELETE` | `/api/postal/tickets/{id}/handlings[/{handling_id}]` | 新增 / 删除投诉处理时间线 |
 | `POST` | `/api/postal/tickets/import/{type}/preview` · `/commit` | 按类型导入投诉 / 改地址 / 回访；同编号回访并入投诉时间线 |
@@ -1672,7 +1672,7 @@ draft ──confirm──> active ──void──> void
 
 **关键点**：`import/commit` 返回 `{created, delivery_ids?, skipped_duplicates}`（投递记录导入用 `delivery_ids`，工单/发票用 `created`）。工单列表出参含 `postal_delivery_id`（前端据此显示「已关联读者 / 未匹配」）；改地址出参含 `applied_to_order`/`applied_by`/`applied_at`。删除被邮局投递引用的投递单位 `Partner` 会被 §partners 守卫拦（409，见 §3.17）。
 
-**投诉三态处理流程（PR#41，PR-E 后）**：投诉状态为 **open(待处理) / in_progress(处理中) / resolved(已解决)**；每次处理经 `POST /tickets/{id}/handlings` 追加一行到 **`postal_ticket_events`**（处理时间 / 处理人 / 处理过程 / 回访结果 / 本次处理后状态），`handling_count +1`，状态由最新处理驱动；删除处理记录会回退到剩余最新状态。删除投诉前会将关联回访的 `parent_ticket_id` 置空，因此投诉时间线随投诉删除，而源回访恢复为独立工单；外键也由迁移 `f6b8d0e2a4c7` 改为 `ON DELETE SET NULL`，避免数据库级联误删。迁移 `c7e9a1b3d5f2` 最初建立三态和旧处理子表，PR-E 迁移 `d4e6f8a0b2c4` 再将其归一到统一时间线。
+**投诉详情与三态处理流程（PR#41，PR-E 后）**：`postal_tickets.complaint_source`（迁移 `d2f4a6c8e0b1`）仅接受 **客服中心 / 发行电话接入 / 同事反馈**；`ComplaintOut.source_platform` 不重复存储，详情查询优先读取关联 `Order.source_platform`，无订单平台时回退 `PostalDelivery.source_channel`。投诉状态为 **open(待处理) / in_progress(处理中) / resolved(已解决)**；每次处理经 `POST /tickets/{id}/handlings` 追加一行到 **`postal_ticket_events`**（处理时间 / 处理人 / 处理过程 / 回访结果 / 本次处理后状态），`handling_count +1`，状态由最新处理驱动；删除处理记录会回退到剩余最新状态。删除投诉前会将关联回访的 `parent_ticket_id` 置空，因此投诉时间线随投诉删除，而源回访恢复为独立工单；外键也由迁移 `f6b8d0e2a4c7` 改为 `ON DELETE SET NULL`，避免数据库级联误删。迁移 `c7e9a1b3d5f2` 最初建立三态和旧处理子表，PR-E 迁移 `d4e6f8a0b2c4` 再将其归一到统一时间线。
 
 ### 4.17 全局搜索（顶栏快速跳转）
 
