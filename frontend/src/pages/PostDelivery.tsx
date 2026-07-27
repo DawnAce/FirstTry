@@ -962,15 +962,15 @@ function AddressDetailDrawer({ addressId, onEdit, onClose }: {
       {!a ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <div className="diff-row" style={{ display: 'flex', gap: 12 }}>
-            <Card size="small" title="原" style={{ flex: 1, background: '#fafafa' }}>
+            <Card size="small" title="原" style={{ flex: 1, background: 'var(--color-bg-subtle)' }}>
               <div>{a.old_name || '—'}{a.old_phone ? ` / ${a.old_phone}` : ''}</div>
-              <div style={{ color: '#666' }}>{a.old_address || '—'}</div>
-              {a.old_copies != null && <div style={{ fontSize: 12, color: '#999' }}>份数 {a.old_copies}</div>}
+              <div style={{ color: 'var(--color-text-tertiary)' }}>{a.old_address || '—'}</div>
+              {a.old_copies != null && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>份数 {a.old_copies}</div>}
             </Card>
-            <Card size="small" title="新" style={{ flex: 1, background: '#f6ffed', borderColor: '#b7eb8f' }}>
+            <Card size="small" title="新" style={{ flex: 1, background: 'var(--color-success-soft)', borderColor: 'var(--color-success)' }}>
               <div>{a.new_name || '—'}{a.new_phone ? ` / ${a.new_phone}` : ''}</div>
-              <div style={{ color: '#237804' }}>{a.new_address || '—'}</div>
-              {a.new_copies != null && <div style={{ fontSize: 12, color: '#999' }}>份数 {a.new_copies}</div>}
+              <div style={{ color: 'var(--color-success-text)' }}>{a.new_address || '—'}</div>
+              {a.new_copies != null && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>份数 {a.new_copies}</div>}
             </Card>
           </div>
           <Descriptions size="small" column={1} bordered items={[

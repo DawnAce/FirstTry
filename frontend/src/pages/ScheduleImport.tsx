@@ -154,25 +154,25 @@ export default function ScheduleImport() {
   const landingStats: Array<{ icon: ReactNode; bg: string; label: string; value: ReactNode }> = [
     {
       icon: <CalendarOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'rgba(0,113,227,.08)',
+      bg: 'var(--color-accent-soft)',
       label: '当前年份',
       value: <>{year}<span className="dashboard-stat-suffix"> 年</span></>,
     },
     {
-      icon: <FileDoneOutlined style={{ fontSize: 21, color: '#52c41a' }} />,
-      bg: 'rgba(82,196,26,.12)',
+      icon: <FileDoneOutlined style={{ fontSize: 21, color: 'var(--color-success)' }} />,
+      bg: 'var(--color-success-soft)',
       label: '已保存期刊表',
       value: <>{committedCount}<span className="dashboard-stat-suffix"> 份</span></>,
     },
     {
-      icon: <CheckCircleFilled style={{ fontSize: 21, color: '#52c41a' }} />,
-      bg: 'rgba(82,196,26,.12)',
+      icon: <CheckCircleFilled style={{ fontSize: 21, color: 'var(--color-success)' }} />,
+      bg: 'var(--color-success-soft)',
       label: '最近导入状态',
       value: latestUpload ? renderStatus(latestUpload.status) : <span className="dashboard-stat-suffix">暂无</span>,
     },
     {
       icon: <ClockCircleOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'rgba(0,113,227,.08)',
+      bg: 'var(--color-accent-soft)',
       label: '最近更新时间',
       value: <span style={{ fontSize: 15 }}>{latestTime ? dayjs(latestTime).format('YYYY-MM-DD HH:mm') : '—'}</span>,
     },
@@ -391,10 +391,10 @@ export default function ScheduleImport() {
   const stepCurrent = committing ? 3 : preview ? 2 : previewing ? 1 : 0;
 
   const statCards: Array<{ icon: ReactNode; bg: string; label: string; value: number; suffix: string; valueColor?: string }> = [
-    { icon: <ProfileOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />, bg: 'rgba(0,113,227,.08)', label: '解析记录', value: counts.total, suffix: '行' },
-    { icon: <CheckCircleFilled style={{ fontSize: 21, color: '#52c41a' }} />, bg: 'rgba(82,196,26,.12)', label: '正常项', value: counts.normal, suffix: '项' },
-    { icon: <PauseCircleFilled style={{ fontSize: 21, color: '#8c8c94' }} />, bg: 'rgba(0,0,0,.05)', label: '休刊项', value: counts.rest, suffix: '项' },
-    { icon: <WarningOutlined style={{ fontSize: 21, color: '#fa8c16' }} />, bg: 'rgba(250,140,22,.10)', label: '异常 / 待确认', value: counts.pending, suffix: '项', valueColor: counts.pending > 0 ? '#fa8c16' : undefined },
+    { icon: <ProfileOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />, bg: 'var(--color-accent-soft)', label: '解析记录', value: counts.total, suffix: '行' },
+    { icon: <CheckCircleFilled style={{ fontSize: 21, color: 'var(--color-success)' }} />, bg: 'var(--color-success-soft)', label: '正常项', value: counts.normal, suffix: '项' },
+    { icon: <PauseCircleFilled style={{ fontSize: 21, color: 'var(--color-text-secondary)' }} />, bg: 'var(--color-bg-muted)', label: '休刊项', value: counts.rest, suffix: '项' },
+    { icon: <WarningOutlined style={{ fontSize: 21, color: 'var(--color-warning)' }} />, bg: 'var(--color-warning-soft)', label: '异常 / 待确认', value: counts.pending, suffix: '项', valueColor: counts.pending > 0 ? 'var(--color-warning)' : undefined },
   ];
 
   const previewColumns: TableProps<EditableScheduleDraftRow>['columns'] = [
