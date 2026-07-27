@@ -26,6 +26,11 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import { getIssue, updateIssue, deleteIssue } from '../api/issues';
+import {
+  downloadIssueReportExport,
+  getIssueReportExportFallbackFilename,
+  resolveDownloadFilename,
+} from '../api/exports';
 import type { ReportEntry, TempPrintDetail } from '../api/reports';
 import { getReport, updateReport, confirmReport, revokeReport, getRevisions, getTempPrintDetails, updateTempPrintDetails } from '../api/reports';
 import type { RevisionRecord } from '../api/reports';
@@ -362,9 +367,24 @@ export default function ReportEditor() {
     }
   };
 
-  const handleExport = () => {
-    if (!issueId) return;
-    window.open(`/api/issues/${issueId}/export/report`, '_blank');
+  const handleExport = async () => {
+    if (!issueId || !issue) return;
+    try {
+      const res = await downloadIssueReportExport(Number(issueId));
+      const contentDisposition = res.headers['content-disposition'];
+      const filename = resolveDownloadFilename(
+        typeof contentDisposition === 'string' ? contentDisposition : undefined,
+        getIssueReportExportFallbackFilename(issue),
+      );
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      message.error('导出失败');
+    }
   };
 
   const handleDeleteIssue = async () => {

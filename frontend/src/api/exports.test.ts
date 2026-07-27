@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import api from './client';
 import {
+  downloadIssueReportExport,
   downloadIssueShippingExport,
+  getIssueReportExportFallbackFilename,
   getIssueShippingExportFallbackFilename,
   getIssueShippingExportUrl,
   resolveDownloadFilename,
@@ -37,6 +39,24 @@ describe('downloadIssueShippingExport', () => {
   });
 });
 
+describe('downloadIssueReportExport', () => {
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset();
+  });
+
+  it('downloads through the authenticated api client as a blob', async () => {
+    const blob = new Blob(['xlsx']);
+    vi.mocked(api.get).mockResolvedValue({ data: blob });
+
+    const response = await downloadIssueReportExport(9);
+
+    expect(response.data).toBe(blob);
+    expect(api.get).toHaveBeenCalledWith('/issues/9/export/report', {
+      responseType: 'blob',
+    });
+  });
+});
+
 describe('resolveDownloadFilename', () => {
   it('uses RFC 5987 encoded filename from content-disposition when present', () => {
     const filename = '2026年4月27日《中国经营报》中通快递发货明细（2649）.xlsx';
@@ -58,5 +78,16 @@ describe('getIssueShippingExportFallbackFilename', () => {
         publish_date: '2026-04-27',
       }),
     ).toBe('2026年4月27日《中国经营报》中通快递发货明细（2649）.xlsx');
+  });
+});
+
+describe('getIssueReportExportFallbackFilename', () => {
+  it('matches the backend report filename when content-disposition is unavailable', () => {
+    expect(
+      getIssueReportExportFallbackFilename({
+        issue_number: 2653,
+        publish_date: '2026-05-25',
+      }),
+    ).toBe('2026年《中国经营报》（总第2653期）报数.xlsx');
   });
 });
