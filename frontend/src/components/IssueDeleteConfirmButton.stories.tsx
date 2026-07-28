@@ -3,7 +3,7 @@ import { expect, fn, within, waitFor } from 'storybook/test'
 import { IssueDeleteConfirmButton } from './IssueDeleteConfirmButton'
 
 const meta = {
-  title: '业务组件/IssueDeleteConfirmButton',
+  title: '设计系统/业务组件/删除期数确认',
   component: IssueDeleteConfirmButton,
   parameters: {
     docs: {
@@ -27,10 +27,11 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 // 默认：仅展示触发按钮（可手动点击体验弹窗各状态）
-export const Default: Story = {}
+export const Default: Story = { name: '默认' }
 
 // 自定义按钮文案
 export const CustomText: Story = {
+  name: '自定义文案',
   args: { buttonText: '删除整期' },
 }
 

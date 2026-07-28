@@ -11,7 +11,6 @@ import {
   message,
   Select,
   Table,
-  Tooltip,
   Steps,
   theme,
 } from 'antd';
@@ -28,15 +27,10 @@ import { CanvasRenderer } from 'echarts/renderers';
 echarts.use([ELineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 import {
   PlusOutlined,
-  EditOutlined,
-  FileTextOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
-  BarChartOutlined,
-  CalendarOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
-  InfoCircleOutlined,
   RightOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -44,6 +38,7 @@ import dayjs from 'dayjs';
 import { getDashboard, createIssue, deleteIssue } from '../api/issues';
 import type { Issue } from '../api/issues';
 import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton';
+import { MetricCard, PageHeader, StatusPill } from '../components/UiPrimitives';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -125,12 +120,12 @@ export default function Dashboard() {
 
   const getStatusTag = (status: Issue['status']) => {
     const statusMap = {
-      draft: { color: 'orange', icon: <ClockCircleOutlined />, text: '待确认' },
-      confirmed: { color: 'green', icon: <CheckCircleOutlined />, text: '已确认' },
-      exported: { color: 'blue', icon: <CheckCircleOutlined />, text: '已导出' },
+      draft: { icon: <ClockCircleOutlined />, text: '待确认', tone: 'warning' as const },
+      confirmed: { icon: <CheckCircleOutlined />, text: '已确认', tone: 'success' as const },
+      exported: { icon: <CheckCircleOutlined />, text: '已导出', tone: 'info' as const },
     };
-    const { color, icon, text } = statusMap[status];
-    return <Tag color={color} icon={icon}>{text}</Tag>;
+    const { icon, text, tone } = statusMap[status];
+    return <StatusPill tone={tone} icon={icon}>{text}</StatusPill>;
   };
 
   const formatPrintTotal = (value: number) => {
@@ -139,16 +134,18 @@ export default function Dashboard() {
 
   const columns: ColumnsType<Issue> = [
     {
-      title: '期数',
+      title: '期刊信息',
       dataIndex: 'issue_number',
       key: 'issue_number',
-      render: (num: number) => <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>第{num}期</span>,
-    },
-    {
-      title: '报数日期',
-      dataIndex: 'publish_date',
-      key: 'publish_date',
-      render: (date: string) => <span style={{ whiteSpace: 'nowrap' }}>{dayjs(date).format('YYYY-MM-DD')}</span>,
+      width: 190,
+      render: (num: number, record) => (
+        <div className="dashboard-issue-cell">
+          <span>
+            <strong>第{num}期</strong>
+            <small>{dayjs(record.publish_date).format('YYYY-MM-DD')} 报数</small>
+          </span>
+        </div>
+      ),
     },
     {
       title: '状态',
@@ -157,36 +154,45 @@ export default function Dashboard() {
       render: (status: Issue['status']) => getStatusTag(status),
     },
     {
-      title: '印数（份）',
+      title: '印数',
       dataIndex: 'print_total',
       key: 'print_total',
-      render: (val: number) => <span style={{ whiteSpace: 'nowrap' }}>{val ? formatPrintTotal(val) : '-'}</span>,
+      width: 120,
+      render: (val: number) => (
+        <span className="dashboard-print-total">
+          <strong>{val ? formatPrintTotal(val) : '-'}</strong>
+          {val ? <small>份</small> : null}
+        </span>
+      ),
     },
     {
-      title: '创建时间',
+      title: '更新信息',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (date: string) => <span style={{ whiteSpace: 'nowrap' }}>{date ? `创建于 ${dayjs(date).format('MM-DD HH:mm')}` : '-'}</span>,
-    },
-    {
-      title: '更新人',
-      key: 'updater',
-      render: () => '管理员',
+      width: 150,
+      render: (date: string) => (
+        <span className="dashboard-update-info">
+          <span>{date ? dayjs(date).format('MM-DD HH:mm') : '-'}</span>
+          <small>管理员创建</small>
+        </span>
+      ),
     },
     {
       title: '操作',
       key: 'actions',
+      width: 210,
+      align: 'right',
       render: (_: unknown, record: Issue) => (
-        <Space size="small" style={{ whiteSpace: 'nowrap' }}>
+        <Space size={4} className="dashboard-table-actions">
           <Button
-            type="link"
+            type={record.status === 'draft' ? 'primary' : 'default'}
             size="small"
             onClick={(e) => { e.stopPropagation(); navigate(`/report/${record.id}`); }}
           >
             {record.status === 'draft' ? '去确认' : '编辑'}
           </Button>
           <Button
-            type="link"
+            type="text"
             size="small"
             onClick={(e) => { e.stopPropagation(); navigate(`/logistics/issues/${record.id}`); }}
           >
@@ -196,7 +202,7 @@ export default function Dashboard() {
             issueNumber={record.issue_number}
             onConfirm={() => handleDeleteIssue(record)}
             buttonProps={{
-              type: 'link',
+              type: 'text',
               size: 'small',
               danger: true,
               onClick: (event) => event.stopPropagation(),
@@ -209,22 +215,22 @@ export default function Dashboard() {
 
   const statCards = [
     {
-      icon: <FileTextOutlined style={{ fontSize: 22, color: 'var(--color-accent)' }} />,
-      bgColor: 'var(--color-accent-soft)',
+      icon: <span aria-hidden>📝</span>,
+      tone: 'info' as const,
       title: '已创建报数',
       value: stats.total,
       suffix: '期',
     },
     {
-      icon: <ClockCircleOutlined style={{ fontSize: 22, color: 'var(--color-warning)' }} />,
-      bgColor: 'var(--color-warning-soft)',
+      icon: <span aria-hidden>⏳</span>,
+      tone: 'warning' as const,
       title: '待确认报数',
       value: stats.draft,
       suffix: '期',
     },
     {
-      icon: <BarChartOutlined style={{ fontSize: 22, color: 'var(--color-success)' }} />,
-      bgColor: 'var(--color-success-soft)',
+      icon: <span aria-hidden>📰</span>,
+      tone: 'success' as const,
       title: '本周印数',
       value: formatPrintTotal(weeklyStats.this_week_total),
       suffix: '份',
@@ -232,8 +238,8 @@ export default function Dashboard() {
       changeLabel: `较上周 ${weeklyStats.week_change >= 0 ? '↑' : '↓'} ${formatPrintTotal(Math.abs(weeklyStats.week_change))} 份`,
     },
     {
-      icon: <CalendarOutlined style={{ fontSize: 22, color: 'var(--color-purple)' }} />,
-      bgColor: 'var(--color-purple-soft)',
+      icon: <span aria-hidden>📅</span>,
+      tone: 'purple' as const,
       title: '最近报数时间',
       value: latestReportTime ? dayjs(latestReportTime).format('YYYY-MM-DD HH:mm') : '-',
       suffix: '',
@@ -244,42 +250,28 @@ export default function Dashboard() {
   return (
     <div className="dashboard-page">
       {/* Page Header */}
-      <div className="dashboard-header">
-        <h1 className="dashboard-title">
-          印数报数
-          <Tooltip title="管理每期报纸的印数报数、确认和导出">
-            <InfoCircleOutlined style={{ fontSize: 16, color: 'var(--color-text-secondary)', marginLeft: 8 }} />
-          </Tooltip>
-        </h1>
-      </div>
+      <PageHeader
+        title="印数管理"
+        description="管理每期报纸的印数报数、确认与导出"
+        actions={<StatusPill tone="info">报数工作台</StatusPill>}
+      />
 
       {/* Statistics Cards - Full Width */}
       <Row gutter={16} className="dashboard-stat-row">
         {statCards.map((card, idx) => (
-          <Col span={6} key={idx}>
-            <Card loading={loading} className="dashboard-stat-card" size="small">
-              <div className="dashboard-stat-card-inner">
-                <div className="dashboard-stat-icon" style={{ background: card.bgColor }}>
-                  {card.icon}
-                </div>
-                <div className="dashboard-stat-content">
-                  <div className="dashboard-stat-label">{card.title}</div>
-                  <div className="dashboard-stat-value">
-                    {card.value}
-                    {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
-                  </div>
-                  {card.changeLabel && (
-                    <div className={`dashboard-stat-change ${card.change && card.change >= 0 ? 'up' : 'down'}`}>
-                      {card.change && card.change >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                      {' '}{card.changeLabel}
-                    </div>
-                  )}
-                  {card.subText && (
-                    <div className="dashboard-stat-sub">{card.subText}</div>
-                  )}
-                </div>
-              </div>
-            </Card>
+          <Col xs={12} lg={6} key={idx}>
+            <MetricCard
+              loading={loading}
+              icon={card.icon}
+              tone={card.tone}
+              label={card.title}
+              value={card.value}
+              suffix={card.suffix}
+              note={card.changeLabel
+                ? <>{card.change && card.change >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />} {card.changeLabel}</>
+                : card.subText}
+              noteTone={card.changeLabel ? (card.change && card.change >= 0 ? 'success' : 'danger') : undefined}
+            />
           </Col>
         ))}
       </Row>
@@ -338,11 +330,13 @@ export default function Dashboard() {
           </div>
 
           {/* Workflow Steps */}
-          <Card size="small" style={{ marginBottom: 20 }} styles={{ body: { padding: 0 } }}>
+          <Card size="small" className="dashboard-section-card dashboard-workflow-card" style={{ marginBottom: 20 }} styles={{ body: { padding: 0 } }}>
             <div className="dashboard-workflow">
               <div className="dashboard-workflow-header">
-                <span className="dashboard-workflow-title">报数流程</span>
-                <span className="dashboard-workflow-desc">了解报数的标准流程</span>
+                <span>
+                  <strong className="dashboard-workflow-title">报数流程</strong>
+                  <small className="dashboard-workflow-desc">从创建期数到同步物流的标准流程</small>
+                </span>
               </div>
               <Steps
                 size="small"
@@ -360,9 +354,13 @@ export default function Dashboard() {
           {/* Recent Issues Table */}
           <Card
             size="small"
+            className="dashboard-section-card dashboard-recent-card"
             title={
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700, fontSize: 16 }}>近期印数</span>
+              <div className="dashboard-panel-heading">
+                <span className="dashboard-panel-heading-copy">
+                  <strong>近期印数</strong>
+                  <small>最近 5 期报数与处理状态</small>
+                </span>
                 <Button type="link" onClick={() => navigate('/history')}>
                   查看全部 <RightOutlined />
                 </Button>
@@ -370,13 +368,14 @@ export default function Dashboard() {
             }
           >
             <Table<Issue>
-              dataSource={recentIssues.slice(0, 4)}
+              dataSource={recentIssues.slice(0, 5)}
               columns={columns}
               rowKey="id"
               pagination={false}
               loading={loading}
               size="small"
-              tableLayout="auto"
+              tableLayout="fixed"
+              scroll={{ x: 760 }}
               onRow={(record) => ({
                 onClick: () => navigate(`/report/${record.id}`),
                 style: { cursor: 'pointer' },
@@ -387,18 +386,19 @@ export default function Dashboard() {
           {/* Trend Chart */}
           <Card
             size="small"
+            className="dashboard-section-card dashboard-trend-card"
             style={{ marginTop: 20 }}
             title={
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700, fontSize: 16 }}>
-                  近期印数趋势
-                  <Tooltip title="印数单位：份">
-                    <InfoCircleOutlined style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginLeft: 6 }} />
-                  </Tooltip>
-                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 400, marginLeft: 8 }}>
-                    印数单位：份
-                  </span>
+              <div className="dashboard-panel-heading">
+                <span className="dashboard-panel-heading-copy">
+                  <strong>
+                    近期印数趋势
+                  </strong>
+                  <small>
+                    最近 5 期变化
+                  </small>
                 </span>
+                <span className="dashboard-panel-unit">单位：份</span>
               </div>
             }
           >
@@ -416,6 +416,7 @@ export default function Dashboard() {
                   },
                   yAxis: {
                     type: 'value',
+                    min: 4000,
                     axisLabel: { fontSize: 11, color: token.colorTextSecondary },
                     axisLine: { show: false },
                     axisTick: { show: false },
@@ -466,7 +467,7 @@ export default function Dashboard() {
           <Card size="small" className="dashboard-sidebar-card" style={{ marginBottom: 16 }}>
             <div className="dashboard-sidebar-header">
               <span className="dashboard-sidebar-title">
-                ⚙️ 待处理事项
+                <span className="dashboard-mini-icon" aria-hidden>⚙️</span>待处理事项
               </span>
               <Tag color="red" style={{ borderRadius: 10, fontSize: 11 }}>
                 {stats.draft}
@@ -500,7 +501,7 @@ export default function Dashboard() {
           {/* Quick Tips */}
           <Card size="small" className="dashboard-sidebar-card" style={{ marginBottom: 16 }}>
             <div className="dashboard-sidebar-header">
-              <span className="dashboard-sidebar-title">💡 操作提示</span>
+              <span className="dashboard-sidebar-title"><span className="dashboard-mini-icon" aria-hidden>💡</span>操作提示</span>
             </div>
             <div className="dashboard-tips-list">
               <div className="dashboard-tip-item">1. 点击"一键创建"快速创建最新期数报数。</div>
@@ -513,13 +514,10 @@ export default function Dashboard() {
           {/* Quick Links */}
           <Card size="small" className="dashboard-sidebar-card">
             <div className="dashboard-sidebar-header">
-              <span className="dashboard-sidebar-title">🚀 快捷入口</span>
+              <span className="dashboard-sidebar-title"><span className="dashboard-mini-icon" aria-hidden>🚀</span>快捷入口</span>
             </div>
             <div className="dashboard-quick-links">
               <div className="dashboard-quick-link" onClick={() => navigate('/history')}>
-                <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-success-soft)' }}>
-                  <FileTextOutlined style={{ color: 'var(--color-success)' }} />
-                </div>
                 <div className="dashboard-quick-link-text">
                   <div className="dashboard-quick-link-name">查看历史期数</div>
                   <div className="dashboard-quick-link-desc">查看所有历史报数记录</div>
@@ -527,9 +525,6 @@ export default function Dashboard() {
                 <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12 }} />
               </div>
               <div className="dashboard-quick-link" onClick={() => navigate('/templates')}>
-                <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-accent-soft)' }}>
-                  <EditOutlined style={{ color: 'var(--color-accent)' }} />
-                </div>
                 <div className="dashboard-quick-link-text">
                   <div className="dashboard-quick-link-name">下载报数模板</div>
                   <div className="dashboard-quick-link-desc">获取最新报数模板文件</div>

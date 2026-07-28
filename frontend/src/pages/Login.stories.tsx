@@ -16,7 +16,7 @@ const loggedOutAuth = {
 }
 
 const meta = {
-  title: '页面/Login（登录）',
+  title: '页面/登录',
   component: Login,
   tags: ['ai-generated'],
   decorators: [withRouter],
@@ -40,10 +40,11 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 // 静态渲染：登录卡片（标题 + 用户名/密码输入 + 登录按钮）。
-export const Default: Story = {}
+export const Default: Story = { name: '默认' }
 
 // 交互：填入账号密码 → 点登录 → MSW 返回 token → setAuth 被调用（id 固定为 0，见 Login.tsx）。
 export const LoginSuccess: Story = {
+  name: '登录成功',
   parameters: {
     msw: {
       handlers: [
@@ -75,6 +76,7 @@ export const LoginSuccess: Story = {
 
 // 交互：服务端返回 401 → 页面 message.error 显示后端 detail，且 setAuth 不被调用。
 export const LoginFailure: Story = {
+  name: '登录失败',
   parameters: {
     msw: {
       handlers: [

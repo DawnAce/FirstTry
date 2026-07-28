@@ -21,8 +21,9 @@ import {
   publicationLabel,
   statusLabel,
 } from './orderUtils';
+import { PageHeader } from '../components/UiPrimitives';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const PAGE_SIZE = 20;
 
 function PublicationTags({ pubs }: { pubs: string[] }) {
@@ -173,13 +174,10 @@ export default function CustomerList() {
 
   return (
     <div>
-      <Title level={3}>客户管理</Title>
-      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-        当前「客户」即<Text strong>收报人</Text>
-        ：按 收件人姓名 + 电话 归并订单履约目标，统计其在订份数、涉及刊物与关联订单。
-        口径为「当前在订」——仅计生效订单的有效履约目标，排除草稿 / 作废 / 退款 /
-        取消、已暂停或已替换的目标。如后续有其他客户口径（如按付款方）需求可再扩展。
-      </Text>
+      <PageHeader
+        title="客户管理"
+        description="当前客户指收报人：按收件人姓名和电话归并，统计当前在订份数、刊物与关联订单。"
+      />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Input.Search

@@ -17,6 +17,7 @@ import type { Dayjs } from 'dayjs';
 import { getSchedule, getScheduleYears } from '../api/schedule';
 import type { ScheduleEntry } from '../api/schedule';
 import { formatIssueRange, groupScheduleRowsByMonth, summarizeScheduleRows } from './publicationScheduleUtils';
+import { MetricCard, PageHeader } from '../components/UiPrimitives';
 
 const { RangePicker } = DatePicker;
 
@@ -165,30 +166,30 @@ export default function ScheduleView() {
     return Array.from({ length: maxWeeks }, (_unused, index) => index);
   }, [filteredMonthGroups]);
 
-  const statCards: Array<{ icon: ReactNode; bg: string; label: string; value: ReactNode; suffix?: string; valueColor?: string }> = [
+  const statCards: Array<{ icon: ReactNode; tone: 'info' | 'success' | 'purple' | 'warning'; label: string; value: ReactNode; suffix?: string; valueColor?: string }> = [
     {
       icon: <CalendarOutlined style={{ fontSize: 22, color: 'var(--color-accent)' }} />,
-      bg: 'var(--color-accent-soft)',
+      tone: 'info',
       label: '出版期数',
       value: yearSummary.published_count,
       suffix: '期',
     },
     {
       icon: <CoffeeOutlined style={{ fontSize: 22, color: 'var(--color-success)' }} />,
-      bg: 'var(--color-success-soft)',
+      tone: 'success',
       label: '休刊次数',
       value: yearSummary.suspended_count,
       suffix: '次',
     },
     {
       icon: <ReadOutlined style={{ fontSize: 22, color: 'var(--color-purple)' }} />,
-      bg: 'var(--color-purple-soft)',
+      tone: 'purple',
       label: '期号范围',
       value: issueRange,
     },
     {
       icon: <WarningOutlined style={{ fontSize: 22, color: 'var(--color-warning)' }} />,
-      bg: 'var(--color-warning-soft)',
+      tone: 'warning',
       label: '异常版次',
       value: mismatchCount,
       suffix: '次',
@@ -217,12 +218,10 @@ export default function ScheduleView() {
 
   return (
     <div className="sched-page">
-      <div className="sched-head">
-        <div>
-          <h1 className="sched-title">期刊表</h1>
-          <p className="sched-sub">按年份查看出版安排、休刊情况与版数信息</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <PageHeader
+        title="期刊表"
+        description="按年份查看出版安排、休刊情况与版数信息"
+        actions={<>
           <Button type="primary" icon={<UploadOutlined />} href="/schedule/import">导入期刊表</Button>
           <Select
             value={year}
@@ -230,8 +229,8 @@ export default function ScheduleView() {
             onChange={handleYearChange}
             style={{ width: 140 }}
           />
-        </div>
-      </div>
+        </>}
+      />
 
       {scheduleQuery.isError && (
         <Alert type="error" showIcon style={{ marginBottom: 16 }} title="加载刊期表数据失败，请稍后重试" />
@@ -241,18 +240,14 @@ export default function ScheduleView() {
       <Row gutter={16} style={{ marginBottom: 16 }}>
         {statCards.map((card, idx) => (
           <Col xs={12} md={6} key={idx} style={{ display: 'flex' }}>
-            <Card className="dashboard-stat-card" size="small" style={{ flex: 1 }} loading={scheduleQuery.isLoading}>
-              <div className="dashboard-stat-card-inner" style={{ alignItems: 'center' }}>
-                <div className="dashboard-stat-icon" style={{ background: card.bg }}>{card.icon}</div>
-                <div className="dashboard-stat-content">
-                  <div className="dashboard-stat-label">{card.label}</div>
-                  <div className="dashboard-stat-value" style={card.valueColor ? { color: card.valueColor } : undefined}>
-                    {card.value}
-                    {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
-                  </div>
-                </div>
-              </div>
-            </Card>
+            <MetricCard
+              loading={scheduleQuery.isLoading}
+              icon={card.icon}
+              tone={card.tone}
+              label={card.label}
+              value={card.value}
+              suffix={card.suffix}
+            />
           </Col>
         ))}
       </Row>

@@ -124,6 +124,40 @@ export function createAntTheme(preferences: UiPreferences = {}): ThemeConfig {
       controlHeight: density === 'compact' ? 30 : 34,
       fontFamily: designTokens.fontFamily,
     },
+    components: {
+      Button: {
+        fontWeight: 600,
+        primaryShadow: 'none',
+        defaultShadow: 'none',
+        dangerShadow: 'none',
+      },
+      Card: {
+        headerFontSize: 15,
+        headerFontSizeSM: 14,
+        bodyPadding: density === 'compact' ? 16 : 20,
+        bodyPaddingSM: density === 'compact' ? 12 : 16,
+      },
+      Table: {
+        headerBg: colors.subtle,
+        headerColor: colors.textSecondary,
+        headerSplitColor: 'transparent',
+        cellPaddingBlock: density === 'compact' ? 8 : 12,
+        cellPaddingInline: density === 'compact' ? 10 : 14,
+      },
+      Tag: {
+        defaultBg: colors.subtle,
+        defaultColor: colors.textTertiary,
+      },
+      Input: {
+        activeShadow: `0 0 0 3px ${colors.brandRing}`,
+      },
+      Select: {
+        activeOutlineColor: colors.brandRing,
+      },
+      Modal: {
+        titleFontSize: 18,
+      },
+    },
   }
 }
 

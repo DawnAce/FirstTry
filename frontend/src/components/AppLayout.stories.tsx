@@ -16,7 +16,7 @@ const adminAuth = {
 // 它依赖 react-router（useNavigate/useLocation/Outlet）与 AuthContext，
 // 故 meta 里用 withRouter 注入路由、parameters.auth 注入假登录态。
 const meta = {
-  title: '业务组件/AppLayout（应用框架）',
+  title: '设计系统/业务框架/应用框架',
   component: AppLayout,
   tags: ['ai-generated'],
   decorators: [withRouter],
@@ -37,10 +37,11 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 // 已登录管理员：Sider logo「发行系统」、业务首页入口、Header 搜索/通知/帮助，用户名与「管理员」角色。
-export const LoggedIn: Story = {}
+export const LoggedIn: Story = { name: '管理员' }
 
 // 非管理员（操作员）：角色标签渲染为「操作员」。
 export const Operator: Story = {
+  name: '操作员',
   parameters: {
     auth: {
       ...adminAuth,
@@ -53,6 +54,7 @@ export const Operator: Story = {
 // 样式校验（全项目唯一 CssCheck）：断言 logo 标题解析出的 font-weight 为 700，
 // 证明共享 preview 真正加载了 src/index.css（.app-sider-logo-title 规则），而非仅渲染了无样式 DOM。
 export const CssCheck: Story = {
+  name: '样式检查',
   play: async ({ canvas }) => {
     const title = canvas.getByText('发行系统')
     // .app-sider-logo-title { font-weight: 700 } —— src/index.css

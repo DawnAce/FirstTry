@@ -1,12 +1,11 @@
 import { useState, useMemo } from 'react';
-import { Table, Button, Space, Card, Input, DatePicker, Segmented, Tooltip, Row, Col } from 'antd';
+import { Table, Button, Space, Card, Input, DatePicker, Segmented, Row, Col } from 'antd';
 import {
   EditOutlined,
   SendOutlined,
   DownloadOutlined,
   UploadOutlined,
   SearchOutlined,
-  InfoCircleOutlined,
   FileTextOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -19,25 +18,21 @@ import type { Issue } from '../api/issues';
 import type { TableColumnsType } from 'antd';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
+import { MetricCard, PageHeader, StatusPill } from '../components/UiPrimitives';
 
 const { RangePicker } = DatePicker;
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
-const statusMeta: Record<Issue['status'], { label: string; className: string }> = {
-  draft: { label: '草稿', className: 'history-status history-status--draft' },
-  confirmed: { label: '已确认', className: 'history-status history-status--confirmed' },
-  exported: { label: '已导出', className: 'history-status history-status--exported' },
+const statusMeta = {
+  draft: { label: '草稿', tone: 'warning' as const },
+  confirmed: { label: '已确认', tone: 'success' as const },
+  exported: { label: '已导出', tone: 'info' as const },
 };
 
 function StatusTag({ status }: { status: Issue['status'] }) {
   const meta = statusMeta[status];
-  return (
-    <span className={meta.className}>
-      <span className="history-status-dot" />
-      {meta.label}
-    </span>
-  );
+  return <StatusPill tone={meta.tone}>{meta.label}</StatusPill>;
 }
 
 export default function History() {
@@ -91,7 +86,7 @@ export default function History() {
   const statCards = [
     {
       icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'var(--color-accent-soft)',
+      tone: 'info' as const,
       label: '总期数',
       value: statusCounts.all,
       suffix: '期',
@@ -99,7 +94,7 @@ export default function History() {
     },
     {
       icon: <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success)' }} />,
-      bg: 'var(--color-success-soft)',
+      tone: 'success' as const,
       label: '已确认',
       value: statusCounts.confirmed,
       suffix: '期',
@@ -108,7 +103,7 @@ export default function History() {
     },
     {
       icon: <ClockCircleOutlined style={{ fontSize: 21, color: 'var(--color-warning)' }} />,
-      bg: 'var(--color-warning-soft)',
+      tone: 'warning' as const,
       label: '草稿待确认',
       value: statusCounts.draft,
       suffix: '期',
@@ -118,7 +113,7 @@ export default function History() {
     },
     {
       icon: <BarChartOutlined style={{ fontSize: 21, color: 'var(--color-purple)' }} />,
-      bg: 'var(--color-purple-soft)',
+      tone: 'purple' as const,
       label: '本年累计印数',
       value: yearStats.total.toLocaleString(),
       suffix: '份',
@@ -222,60 +217,26 @@ export default function History() {
 
   return (
     <div className="history-page">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <h2
-            style={{
-              fontSize: 24,
-              fontWeight: 700,
-              color: 'var(--color-text-primary)',
-              margin: 0,
-              letterSpacing: '-0.02em',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            历史印数期数
-            <Tooltip title="检索所有历史报数期数，直达 报数 / 中通明细 / 导出">
-              <InfoCircleOutlined style={{ fontSize: 15, color: 'var(--color-text-secondary)' }} />
-            </Tooltip>
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: '4px 0 0' }}>
-            检索所有历史报数期数，直达 报数 / 中通明细 / 导出。
-          </p>
-        </div>
-        <Button icon={<UploadOutlined />} onClick={() => navigate('/history-import')}>
-          导入往期
-        </Button>
-      </div>
+      <PageHeader
+        title="历史印数期数"
+        description="检索所有历史报数期数，直达报数、中通明细与导出。"
+        actions={<Button icon={<UploadOutlined />} onClick={() => navigate('/history-import')}>导入往期</Button>}
+      />
 
       <Row gutter={16} style={{ marginBottom: 20 }}>
         {statCards.map((card, idx) => (
           <Col xs={12} md={6} key={idx} style={{ display: 'flex' }}>
-            <Card
+            <MetricCard
               loading={loading}
-              className="dashboard-stat-card"
-              size="small"
-              style={{ flex: 1, cursor: card.onClick ? 'pointer' : 'default' }}
               onClick={card.onClick}
-            >
-              <div className="dashboard-stat-card-inner">
-                <div className="dashboard-stat-icon" style={{ background: card.bg }}>
-                  {card.icon}
-                </div>
-                <div className="dashboard-stat-content">
-                  <div className="dashboard-stat-label">{card.label}</div>
-                  <div className="dashboard-stat-value">
-                    {card.value}
-                    {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
-                  </div>
-                  <div className="dashboard-stat-sub" style={card.subColor ? { color: card.subColor } : undefined}>
-                    {card.sub}
-                  </div>
-                </div>
-              </div>
-            </Card>
+              icon={card.icon}
+              tone={card.tone}
+              label={card.label}
+              value={card.value}
+              suffix={card.suffix}
+              note={card.sub}
+              noteTone={card.subColor ? card.tone : undefined}
+            />
           </Col>
         ))}
       </Row>

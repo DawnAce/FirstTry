@@ -51,6 +51,7 @@ import {
 import type { ScheduleDraftRow, SchedulePreview, ScheduleUpload } from '../api/schedule';
 import { useAuth } from '../contexts/AuthContext';
 import { formatIssueRange, groupScheduleRowsByMonth, rowHasError } from './publicationScheduleUtils';
+import { PageHeader } from '../components/UiPrimitives';
 
 const DEFAULT_YEAR = 2026;
 const { Dragger } = Upload;
@@ -522,13 +523,11 @@ export default function ScheduleImport() {
 
   return (
     <div className="si-page">
-      <div className="si-head">
-        <div>
-          <h1 className="si-title">导入期刊表</h1>
-          <p className="si-sub">上传年度期刊 PDF，并在保存前进行人工确认与修正</p>
-        </div>
-        <Select value={year} options={yearOptions} onChange={handleYearChange} disabled={committing} style={{ width: 140 }} />
-      </div>
+      <PageHeader
+        title="导入期刊表"
+        description="上传年度期刊 PDF，并在保存前进行人工确认与修正"
+        actions={<Select value={year} options={yearOptions} onChange={handleYearChange} disabled={committing} style={{ width: 140 }} />}
+      />
 
       <Card className="si-steps-card" style={{ marginBottom: 16 }} styles={{ body: { padding: '18px 24px' } }}>
         <Steps

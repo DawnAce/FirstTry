@@ -11,7 +11,7 @@ const rows = [
 ]
 
 const meta = {
-  title: '页面/OrderList（订单列表）',
+  title: '页面/营销与交易/订单管理',
   component: OrderList,
   tags: ['ai-generated'],
   decorators: [withRouter],
@@ -31,6 +31,7 @@ type Story = StoryObj<typeof meta>
 
 // 有数据：表格渲染两行订单
 export const Loaded: Story = {
+  name: '已加载',
   parameters: {
     msw: { handlers: [http.get('/api/orders', () => HttpResponse.json({ rows, total: rows.length }))] },
   },
@@ -42,6 +43,7 @@ export const Loaded: Story = {
 
 // 空列表
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     msw: { handlers: [http.get('/api/orders', () => HttpResponse.json({ rows: [], total: 0 }))] },
   },
@@ -49,6 +51,7 @@ export const Empty: Story = {
 
 // 加载中
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     msw: {
       handlers: [

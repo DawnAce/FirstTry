@@ -13,7 +13,7 @@ const schedule = [
 ]
 
 const meta = {
-  title: '页面/ScheduleView（期刊表）',
+  title: '页面/发行计划/刊期表管理/期刊表',
   component: ScheduleView,
   tags: ['ai-generated'],
   parameters: {
@@ -31,6 +31,7 @@ type Story = StoryObj<typeof meta>
 
 // 有数据：含一条休刊行与一条实际/计划版面不一致的行
 export const Loaded: Story = {
+  name: '已加载',
   parameters: {
     msw: {
       handlers: [
@@ -43,6 +44,7 @@ export const Loaded: Story = {
 
 // 空：该年份无刊期，显示信息 Alert
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     msw: {
       handlers: [
@@ -55,6 +57,7 @@ export const Empty: Story = {
 
 // 加载失败：schedule 接口 500，retry:false 下确定性地渲染错误 Alert
 export const LoadError: Story = {
+  name: '加载失败',
   parameters: {
     msw: {
       handlers: [
@@ -70,6 +73,7 @@ export const LoadError: Story = {
 
 // 加载中
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     msw: {
       handlers: [

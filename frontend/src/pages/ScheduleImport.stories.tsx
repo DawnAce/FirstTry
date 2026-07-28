@@ -18,7 +18,7 @@ const adminAuth = {
 }
 
 const meta = {
-  title: '页面/ScheduleImport（导入期刊表）',
+  title: '页面/发行计划/刊期表管理/导入期刊表',
   component: ScheduleImport,
   tags: ['ai-generated'],
   parameters: {
@@ -36,6 +36,7 @@ type Story = StoryObj<typeof meta>
 
 // 管理员：显示上传卡片 + 上传记录表
 export const AdminLoaded: Story = {
+  name: '管理员已加载',
   parameters: {
     auth: adminAuth,
     msw: { handlers: [http.get('/api/schedule/uploads', () => HttpResponse.json(uploads))] },
@@ -44,6 +45,7 @@ export const AdminLoaded: Story = {
 
 // 非管理员（默认登出态）：上传卡片收起为警告 Alert
 export const NonAdmin: Story = {
+  name: '操作员只读',
   parameters: {
     msw: { handlers: [http.get('/api/schedule/uploads', () => HttpResponse.json([]))] },
   },
@@ -54,6 +56,7 @@ export const NonAdmin: Story = {
 
 // 管理员但无上传记录：表格空态
 export const UploadsEmpty: Story = {
+  name: '导入记录为空',
   parameters: {
     auth: adminAuth,
     msw: { handlers: [http.get('/api/schedule/uploads', () => HttpResponse.json([]))] },
@@ -62,6 +65,7 @@ export const UploadsEmpty: Story = {
 
 // 上传记录加载失败：错误 Alert（retry:false 确定性）
 export const UploadsError: Story = {
+  name: '导入记录失败',
   parameters: {
     auth: adminAuth,
     msw: { handlers: [http.get('/api/schedule/uploads', () => new HttpResponse(null, { status: 500 }))] },

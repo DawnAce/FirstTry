@@ -30,7 +30,7 @@ const records: ShippingRecord[] = [
 const issueHandler = http.get('/api/issues/1', () => HttpResponse.json(issue))
 
 const meta = {
-  title: '页面/ShippingPreview（发货明细）',
+  title: '归档页面/旧版发货明细（已由快递管理替代）',
   component: ShippingPreview,
   // 该页用 useParams 读 issueId、useNavigate 跳转，需要路由环境
   decorators: [withRouter],
@@ -55,6 +55,7 @@ type Story = StoryObj<typeof meta>
 
 // 有数据
 export const Loaded: Story = {
+  name: '已加载',
   parameters: {
     msw: {
       handlers: [
@@ -67,6 +68,7 @@ export const Loaded: Story = {
 
 // 空列表（已生成但无收件人）
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     msw: {
       handlers: [
@@ -79,6 +81,7 @@ export const Empty: Story = {
 
 // 加载中（shipping 接口一直不返回，页面显示 Spin）
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     msw: {
       handlers: [

@@ -81,6 +81,7 @@ FirstTry/
 │   │   │   └── auth.ts         # 认证 API
 │   │   ├── components/         # 通用组件
 │   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知、帮助、用户）+ 当前业务中心的 Emoji 上下文导航
+│   │   │   └── UiPrimitives.tsx # 页面标题、指标卡和状态标签等共享 UI 模式
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
 │   │   ├── businessPortalConfig.ts  # 五大业务中心、模块及路由归属配置
@@ -1911,6 +1912,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 
 #### 前端设计系统与 Storybook
 - `frontend/src/theme.tsx` 是 Ant Design token 与 CSS variables 的唯一主题入口；生产应用和 Storybook 均通过 `DesignSystemProvider` 使用同一套配置。
+- `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard` 和 `StatusPill`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。
 - 普通 DOM/CSS 使用 `var(--color-*)` 等语义变量；Canvas/ECharts 等不能直接消费 CSS 的渲染器通过 `theme.useToken()` 取得当前主题色。
 - 所有 Ant Design `Modal` 在 `frontend/src/index.css` 统一复用“邮局工单”弹窗的遮罩、容器、标题、表单和操作栏样式；新增弹窗直接使用 `Modal`，仅在业务布局确有差异时添加局部类名。
 - Storybook 顶部工具栏可统一切换亮/暗主题、舒适/紧凑密度和圆润/克制圆角。新增或迁移业务页面时应补代表性 Story，并检查这些全局组合。

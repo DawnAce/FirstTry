@@ -11,8 +11,9 @@ import {
 } from '../api/analytics';
 import type { CampaignSummaryRow, IssueSummaryRow, BsCirculationRow } from '../api/analytics';
 import { publicationLabel } from './orderUtils';
+import { PageHeader } from '../components/UiPrimitives';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export default function Analytics() {
   const [from, setFrom] = useState<Dayjs | null>(null);
@@ -85,7 +86,7 @@ export default function Analytics() {
 
   return (
     <div>
-      <Title level={3}>活动订单统计</Title>
+      <PageHeader title="活动订单统计" description="查看活动、期数、发行量与回款统计" />
       <Space style={{ marginBottom: 16 }} wrap>
         <Text>下单日期：</Text>
         <DatePicker value={from} onChange={setFrom} placeholder="起（可空）" allowClear />
