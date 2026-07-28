@@ -345,10 +345,10 @@ export default function ReportEditor() {
           title: '中通发货份数不一致',
           content: confirmData.warning,
           okText: '确定',
-          onOk: () => navigate('/'),
+          onOk: () => navigate('/print'),
         });
       } else {
-        navigate('/');
+        navigate('/print');
       }
     } catch (err: any) {
       const msg = err.response?.data?.detail;
@@ -394,7 +394,7 @@ export default function ReportEditor() {
       message.success(`第 ${issue?.issue_number} 期已删除`);
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
-      navigate('/');
+      navigate('/print');
     } catch (err: any) {
       message.error(err.response?.data?.detail || '删除失败');
     }
@@ -479,7 +479,7 @@ export default function ReportEditor() {
       <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
         <Button
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/print')}
           style={{ borderRadius: 8 }}
         />
         <div style={{ flex: 1 }}>

@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>发行系统 · 业务门户视觉稿</title>
+  <style>
+    :root {
+      --blue: #1677ff;
+      --blue-dark: #0958d9;
+      --blue-soft: #eaf3ff;
+      --bg: #f5f7fa;
+      --line: #e8ebf0;
+      --text: #172033;
+      --muted: #7a8496;
+      --white: #fff;
+      --shadow: 0 8px 28px rgba(31, 56, 88, .07);
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      min-width: 1040px;
+      color: var(--text);
+      background: var(--bg);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button { font: inherit; }
+    .app { display: flex; min-height: 100vh; }
+
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      display: flex;
+      width: 252px;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+      background: var(--white);
+      z-index: 2;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 84px;
+      padding: 0 24px;
+      border-bottom: 1px solid #f1f3f6;
+    }
+    .brand-mark {
+      display: grid;
+      width: 44px;
+      height: 44px;
+      place-items: center;
+      border-radius: 12px;
+      color: #fff;
+      background: linear-gradient(145deg, #1684ff, #0968dd);
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .brand strong { display: block; font-size: 18px; }
+    .brand small { color: var(--muted); font-size: 13px; }
+    .side-body { flex: 1; padding: 20px 14px; }
+    .side-caption {
+      padding: 9px 12px 7px;
+      color: #a1a9b7;
+      font-size: 12px;
+      letter-spacing: .08em;
+    }
+    .side-link, .back-link {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      gap: 11px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: #3b4555;
+      cursor: pointer;
+      padding: 12px 13px;
+      text-align: left;
+    }
+    .side-link:hover, .back-link:hover { background: #f5f8fc; }
+    .side-link.active { color: var(--blue-dark); background: var(--blue-soft); font-weight: 600; }
+    .side-icon { width: 22px; color: #697386; font-size: 17px; text-align: center; }
+    .side-link.active .side-icon { color: var(--blue); }
+    .back-link { margin-bottom: 13px; color: var(--blue-dark); }
+    .side-note {
+      margin: 18px 8px 0;
+      padding: 13px;
+      border: 1px dashed #cddff7;
+      border-radius: 10px;
+      color: #708096;
+      background: #f7fbff;
+      font-size: 12px;
+    }
+    .profile {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 18px 22px;
+      border-top: 1px solid var(--line);
+    }
+    .avatar { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 50%; color: #fff; background: var(--blue); }
+    .profile strong { display: block; }
+    .profile small { color: var(--muted); }
+
+    .shell { width: calc(100% - 252px); margin-left: 252px; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      height: 64px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 36px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.94);
+      backdrop-filter: blur(8px);
+    }
+    .crumb { color: var(--muted); }
+    .crumb b { color: #3b4555; font-weight: 500; }
+    .top-actions { display: flex; align-items: center; gap: 18px; color: var(--muted); }
+    .search { width: 220px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 9px; color: #a0a8b5; background: #fafbfc; }
+    main { max-width: 1380px; margin: auto; padding: 34px 38px 54px; }
+    .view[hidden] { display: none; }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 194px;
+      padding: 34px 38px;
+      border-radius: 18px;
+      color: #fff;
+      background: linear-gradient(118deg, #075ed0 0%, #1683f8 62%, #50a7ff 100%);
+      box-shadow: 0 12px 34px rgba(22,119,255,.18);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -55px;
+      bottom: -105px;
+      width: 330px;
+      height: 330px;
+      border: 48px solid rgba(255,255,255,.10);
+      border-radius: 50%;
+    }
+    .hero h1 { margin: 0 0 9px; font-size: 30px; letter-spacing: .02em; }
+    .hero p { max-width: 610px; margin: 0; color: rgba(255,255,255,.84); font-size: 15px; }
+    .hero-stats { display: flex; gap: 42px; margin-top: 25px; }
+    .hero-stat b { display: block; font-size: 23px; }
+    .hero-stat span { color: rgba(255,255,255,.72); font-size: 12px; }
+
+    .section-head { display: flex; align-items: end; justify-content: space-between; margin: 30px 0 16px; }
+    .section-head h2 { margin: 0 0 3px; font-size: 20px; }
+    .section-head p { margin: 0; color: var(--muted); }
+    .section-head small { color: var(--muted); }
+    .center-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .center-card {
+      position: relative;
+      min-height: 196px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--white);
+      box-shadow: 0 2px 12px rgba(30,50,80,.025);
+      cursor: pointer;
+      transition: .18s ease;
+    }
+    .center-card:hover { transform: translateY(-3px); border-color: #b8d5ff; box-shadow: var(--shadow); }
+    .center-card.recommended { border-color: #91caff; background: linear-gradient(150deg, #fff, #f5faff); }
+    .card-top { display: flex; align-items: center; gap: 13px; }
+    .module-icon {
+      display: grid;
+      width: 46px;
+      height: 46px;
+      place-items: center;
+      border-radius: 12px;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .card-title { font-size: 17px; font-weight: 700; }
+    .card-count { color: var(--muted); font-size: 12px; }
+    .tag { position: absolute; top: 18px; right: 18px; padding: 3px 9px; border-radius: 12px; color: var(--blue-dark); background: var(--blue-soft); font-size: 11px; }
+    .center-card p { min-height: 42px; margin: 17px 0 13px; color: #697386; }
+    .item-preview { color: #536074; font-size: 13px; }
+    .item-preview span + span::before { content: " · "; color: #b1b8c3; }
+    .enter { margin-top: 16px; color: var(--blue); font-weight: 600; }
+
+    .workbench { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; margin-top: 18px; }
+    .panel { padding: 20px 22px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+    .panel h3 { margin: 0 0 16px; font-size: 16px; }
+    .quick-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .quick { padding: 13px 10px; border-radius: 9px; color: #3f4b5e; background: #f7f9fc; text-align: center; }
+    .todo { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid #f0f2f5; }
+    .todo:first-of-type { border: 0; }
+    .todo b { color: #e56a20; font-size: 18px; }
+
+    .page-heading { margin-bottom: 22px; }
+    .page-heading h1 { margin: 0 0 6px; font-size: 28px; }
+    .page-heading p { margin: 0; color: var(--muted); font-size: 15px; }
+    .context-note { display: inline-flex; margin-top: 12px; padding: 5px 11px; border-radius: 16px; color: #2867ad; background: var(--blue-soft); font-size: 12px; }
+    .portal-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+    .portal-stat { padding: 17px 19px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    .portal-stat span, .portal-stat small { display: block; color: var(--muted); font-size: 12px; }
+    .portal-stat b { display: block; margin: 4px 0 2px; font-size: 23px; }
+    .overview-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .overview-card { padding: 20px 22px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+    .overview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .overview-head h3 { margin: 0; font-size: 16px; }
+    .demo-label { padding: 3px 8px; border-radius: 10px; color: var(--muted); background: #f3f5f8; font-size: 11px; }
+    .analysis-row { display: grid; grid-template-columns: 100px 1fr 54px; align-items: center; gap: 12px; margin: 12px 0; color: #586579; font-size: 13px; }
+    .bar-track { overflow: hidden; height: 8px; border-radius: 5px; background: #edf1f6; }
+    .bar-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #69aaf9, #1677ff); }
+    .analysis-row b { text-align: right; }
+    .guide-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid #f0f2f5; color: #536074; }
+    .guide-item:first-child { border-top: 0; }
+    .guide-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--blue); }
+    .flow { display: flex; align-items: center; margin-top: 16px; padding: 19px 22px; border: 1px solid #d9e9ff; border-radius: 14px; background: #f8fbff; }
+    .flow-step { flex: 1; text-align: center; }
+    .flow-step b { display: block; margin-bottom: 2px; }
+    .flow-step small { color: var(--muted); }
+    .flow-arrow { color: #8abaf4; font-size: 18px; }
+    .module-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+    .module-card { display: flex; align-items: center; gap: 15px; padding: 20px; border: 1px solid var(--line); border-radius: 13px; background: #fff; cursor: pointer; }
+    .module-card:hover { border-color: #91caff; box-shadow: var(--shadow); }
+    .mini-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: var(--blue-dark); background: var(--blue-soft); font-size: 19px; }
+    .module-card strong { display: block; margin-bottom: 3px; font-size: 16px; }
+    .module-card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .module-children { display: block; margin-top: 7px; color: #4e7199; font-size: 12px; }
+    .module-card i { margin-left: auto; color: #9aa4b3; font-style: normal; font-size: 20px; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+    .stat { padding: 17px 19px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .stat b { display: block; margin-top: 4px; font-size: 23px; }
+    .content-card { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+    .toolbar { display: flex; gap: 10px; padding: 17px 19px; border-bottom: 1px solid var(--line); }
+    .control { padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px; color: #667286; background: #fff; }
+    .primary { margin-left: auto; padding: 7px 14px; border: 0; border-radius: 8px; color: #fff; background: var(--blue); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 13px 18px; border-bottom: 1px solid #f0f2f5; text-align: left; }
+    th { color: #788397; background: #fafbfc; font-size: 12px; font-weight: 500; }
+    .status { padding: 3px 8px; border-radius: 10px; color: #1b8a52; background: #eaf8f0; font-size: 12px; }
+    .empty-placeholder { padding: 72px 20px; color: var(--muted); text-align: center; }
+    .empty-placeholder b { display: block; margin-bottom: 7px; color: #445064; font-size: 17px; }
+    footer { padding-top: 25px; color: #a0a8b4; font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">发</div>
+      <div><strong>发行系统</strong><small>中国经营报</small></div>
+    </div>
+    <div class="side-body" id="side-body"></div>
+    <div class="profile"><div class="avatar">管</div><div><strong>admin</strong><small>管理员</small></div></div>
+  </aside>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="crumb" id="crumb">业务首页</div>
+      <div class="top-actions"><div class="search">⌕ 搜索功能、订单或客户</div><span>帮助</span><span>消息</span></div>
+    </header>
+
+    <main>
+      <section class="view" id="home-view">
+        <div class="hero">
+          <h1>上午好，admin</h1>
+          <p>从业务中心进入工作场景。菜单按职责归类，订单产生的数据会在对应的履约环节继续处理。</p>
+          <div class="hero-stats">
+            <div class="hero-stat"><b>5</b><span>业务中心</span></div>
+            <div class="hero-stat"><b>12</b><span>业务功能</span></div>
+            <div class="hero-stat"><b>18</b><span>今日待办</span></div>
+          </div>
+        </div>
+
+        <div class="section-head"><div><h2>业务中心</h2><p>选择一个业务大类，进入该业务的专属工作区</p></div><small>按业务职责划分</small></div>
+        <div class="center-grid" id="center-grid"></div>
+
+        <div class="workbench">
+          <div class="panel"><h3>常用入口</h3><div class="quick-list"><div class="quick">订单查询</div><div class="quick">投递明细</div><div class="quick">邮局工单</div><div class="quick">财务对账</div></div></div>
+          <div class="panel"><h3>我的待办</h3><div class="todo"><span>待处理邮局工单</span><b>6</b></div><div class="todo"><span>待审核订单</span><b>12</b></div></div>
+        </div>
+      </section>
+
+      <section class="view" id="center-view" hidden>
+        <div class="page-heading"><h1 id="center-title"></h1><p id="center-description"></p><span class="context-note" id="context-note">左侧仅显示当前大类下的功能</span></div>
+        <div id="center-overview">
+          <div class="portal-metrics" id="portal-metrics"></div>
+          <div class="overview-grid">
+            <section class="overview-card">
+              <div class="overview-head"><h3 id="analysis-title"></h3><span class="demo-label">示例数据</span></div>
+              <div id="analysis-list"></div>
+            </section>
+            <section class="overview-card">
+              <div class="overview-head"><h3 id="guide-title">工作指引</h3><span class="demo-label">今日</span></div>
+              <div id="guide-list"></div>
+            </section>
+          </div>
+        </div>
+        <div class="flow" id="fulfilment-flow" hidden>
+          <div class="flow-step"><b>订单生效</b><small>订单管理</small></div><span class="flow-arrow">→</span>
+          <div class="flow-step"><b>履约分流</b><small>按订单渠道</small></div><span class="flow-arrow">→</span>
+          <div class="flow-step"><b>邮局管理 / 快递管理</b><small>两个同级履约模块</small></div><span class="flow-arrow">→</span>
+          <div class="flow-step"><b>投递完成</b><small>跟踪与异常处理</small></div>
+        </div>
+        <div class="flow" id="postal-flow" hidden>
+          <div class="flow-step"><b>订单生效</b><small>订单管理</small></div><span class="flow-arrow">→</span>
+          <div class="flow-step"><b>订报转投</b><small>生成邮局数据</small></div><span class="flow-arrow">→</span>
+          <div class="flow-step"><b>邮局交接</b><small>渠道投递</small></div><span class="flow-arrow">→</span>
+          <div class="flow-step"><b>投递明细</b><small>跟踪台账</small></div><span class="flow-arrow">→</span>
+          <div class="flow-step"><b>邮局工单</b><small>异常处理</small></div>
+        </div>
+        <div class="section-head"><div><h2 id="module-heading">功能模块</h2><p id="module-subtitle">选择具体功能开始工作</p></div></div>
+        <div class="module-grid" id="module-grid"></div>
+      </section>
+
+      <section class="view" id="detail-view" hidden>
+        <div class="page-heading"><h1 id="detail-title"></h1><p id="detail-description"></p></div>
+        <div id="detail-content"></div>
+      </section>
+      <footer>业务门户信息架构视觉稿 · 仅用于评估导航与分类，不改动现有系统</footer>
+    </main>
+  </div>
+</div>
+
+<script>
+  const centers = {
+    planning: {
+      icon: '计', color: '#7858d6', title: '发行计划', description: '管理出版节奏与印刷计划，为订单履约提供基础数据。',
+      metrics: [['本年度刊期','52 期','已出版 30 期'],['下期出版','08月03日','距今 6 天'],['待确认印数','2 期','需要处理'],['计划完成率','92%','本月']],
+      analysisTitle: '近四期计划完成情况', analysis: [['第27期','100%',100],['第28期','96%',96],['第29期','100%',100],['第30期','92%',92]],
+      guide: ['确认第31期最终印数','复核8月刊期安排','处理2条计划变更'],
+      items: [['印数管理','管理各期印刷数量与调整记录','🖨️'],['刊期表管理','维护出版日期、期号与发行安排','🗓️']]
+    },
+    fulfilment: {
+      icon: '履', color: '#1677ff', title: '发行履约', unit: '个业务模块', description: '负责订单生效后的渠道履约，统一组织邮局和快递两种履约方式。',
+      metrics: [['在履约订单','1,284','当前有效'],['本月待转投','86','邮局渠道'],['快递待发','12','等待出库'],['异常工单','6','需要处理']],
+      analysisTitle: '当前履约渠道分布', analysis: [['邮局投递','78%',78],['快递配送','22%',22],['履约及时率','97.6%',97.6]],
+      guide: ['完成8月邮局订报转投','处理6个异常投递工单','核对12个快递待发订单'],
+      items: [['邮局管理','管理邮局渠道的订报、投递与异常工单','📮','包含：投递明细 · 订报转投 · 邮局工单'],['快递管理','管理快递发货、批次与物流轨迹','🚚','独立履约渠道']]
+    },
+    commerce: {
+      icon: '销', color: '#15a06a', title: '营销与交易', description: '维护商品和客户，完成订单创建、查询与售后处理。',
+      metrics: [['本月订单','326 单','较上月 +12.8%'],['本月销售额','¥78.6万','完成目标 87%'],['新增客户','42','本月'],['待审核订单','12','需要处理']],
+      analysisTitle: '本月订单渠道分布', analysis: [['小程序','46%',46],['商学院 APP','31%',31],['淘宝','15%',15],['手工录入','8%',8]],
+      guide: ['审核12笔待确认订单','跟进8位高意向客户','检查2个即将下架商品'],
+      items: [['商品管理','维护可售商品及价格','🛍️'],['客户管理','统一维护客户与收件信息','👥'],['订单管理','管理订单全生命周期','🧾']]
+    },
+    finance: {
+      icon: '财', color: '#e8912d', title: '合同与财务', description: '统一管理业务合同、收付款、发票及渠道结算。',
+      metrics: [['执行中合同','24 份','3份本月到期'],['本月回款','¥62.4万','完成目标 82%'],['待开票','¥8.6万','17笔'],['待结算渠道','3 个','需要核对']],
+      analysisTitle: '本月资金处理进度', analysis: [['回款完成','82%',82],['开票完成','68%',68],['渠道结算','61%',61]],
+      guide: ['跟进3份即将到期合同','处理17笔待开票申请','完成3个渠道对账'],
+      items: [['合同管理','管理合同签订与执行','📄'],['财务管理','处理收款、开票与结算','💰']]
+    },
+    analytics: {
+      icon: '析', color: '#e04e73', title: '经营分析', description: '集中查看经营指标、业务趋势与管理报表。',
+      metrics: [['本月销售额','¥78.6万','同比 +12.8%'],['新增客户','42','同比 +8.2%'],['履约及时率','97.6%','目标 ≥ 97%'],['工单办结率','91%','较上月 +3%']],
+      analysisTitle: '近四月订单趋势', analysis: [['4月','238单',68],['5月','271单',78],['6月','289单',84],['7月','326单',94]],
+      guideTitle: '经营提示', guide: ['订单增长主要来自小程序渠道','邮局履约异常率较上月下降0.6%','合同回款进度低于目标3个百分点'],
+      items: [['经营仪表盘','查看核心指标与趋势','📊']]
+    }
+  };
+  const groups = {
+    postal: { title: '邮局管理', description: '管理邮局渠道下的订报数据生成、投递台账与异常工单。', items: [['投递明细','查询订单形成的邮局投递台账','📋'],['订报转投','生成并交接邮局订报数据','🔄'],['邮局工单','处理缺报、改址等邮局投递异常','🎫']] }
+  };
+  let currentCenter = null;
+  let currentGroup = null;
+  let currentItem = 0;
+  const views = [...document.querySelectorAll('.view')];
+
+  function showView(id) {
+    views.forEach(view => view.hidden = view.id !== id);
+    window.scrollTo(0, 0);
+  }
+
+  function renderHome() {
+    currentCenter = null;
+    currentGroup = null;
+    document.getElementById('crumb').textContent = '业务首页';
+    document.getElementById('side-body').innerHTML = '<button class="side-link active"><span class="side-icon">⌂</span>业务首页</button><div class="side-note">具体业务菜单已收进各业务中心，首页不再平铺全部功能。</div>';
+    showView('home-view');
+  }
+
+  function renderSidebar() {
+    const center = centers[currentCenter];
+    if (currentGroup) {
+      const group = groups[currentGroup];
+      document.getElementById('side-body').innerHTML = `
+        <button class="back-link" onclick="openCenter('${currentCenter}')">← 返回${center.title}</button>
+        <div class="side-caption">${group.title}</div>
+        ${group.items.map((item, i) => `<button class="side-link ${i === currentItem && !document.getElementById('detail-view').hidden ? 'active' : ''}" onclick="openDetail(${i})"><span class="side-icon">${item[2]}</span>${item[0]}</button>`).join('')}
+        <div class="side-note">这 3 个功能归属“邮局管理”；“快递管理”仍是它的同级模块。</div>`;
+      return;
+    }
+    document.getElementById('side-body').innerHTML = `
+      <button class="back-link" onclick="renderHome()">← 返回业务首页</button>
+      <div class="side-caption">${center.title}</div>
+      ${center.items.map((item, i) => `<button class="side-link ${i === currentItem && !document.getElementById('detail-view').hidden ? 'active' : ''}" onclick="openDetail(${i})"><span class="side-icon">${item[2]}</span>${item[0]}</button>`).join('')}
+      <div class="side-note">当前只显示“${center.title}”的 ${center.items.length} ${center.unit || '个功能'}，减少无关菜单干扰。</div>`;
+  }
+
+  function openCenter(key) {
+    currentCenter = key;
+    currentGroup = null;
+    currentItem = -1;
+    const center = centers[key];
+    document.getElementById('crumb').innerHTML = '<b>业务首页</b>　/　' + center.title;
+    document.getElementById('center-title').textContent = center.title;
+    document.getElementById('center-description').textContent = center.description;
+    document.getElementById('context-note').textContent = key === 'fulfilment' ? '邮局管理与快递管理保持同一级别' : '左侧仅显示当前大类下的功能';
+    document.getElementById('center-overview').hidden = false;
+    document.getElementById('portal-metrics').innerHTML = center.metrics.map(metric => `
+      <div class="portal-stat"><span>${metric[0]}</span><b>${metric[1]}</b><small>${metric[2]}</small></div>`).join('');
+    document.getElementById('analysis-title').textContent = center.analysisTitle;
+    document.getElementById('analysis-list').innerHTML = center.analysis.map(row => `
+      <div class="analysis-row"><span>${row[0]}</span><div class="bar-track"><div class="bar-fill" style="width:${row[2]}%"></div></div><b>${row[1]}</b></div>`).join('');
+    document.getElementById('guide-title').textContent = center.guideTitle || '工作指引';
+    document.getElementById('guide-list').innerHTML = center.guide.map(item => `<div class="guide-item"><span class="guide-dot"></span>${item}</div>`).join('');
+    document.getElementById('fulfilment-flow').hidden = key !== 'fulfilment';
+    document.getElementById('postal-flow').hidden = true;
+    document.getElementById('module-heading').textContent = key === 'fulfilment' ? '履约模块' : '功能模块';
+    document.getElementById('module-subtitle').textContent = key === 'fulfilment' ? '先选择履约渠道，再进入该渠道下的具体功能' : '选择具体功能开始工作';
+    document.getElementById('module-grid').innerHTML = center.items.map((item, i) => `
+      <article class="module-card" onclick="openDetail(${i})">
+        <span class="mini-icon">${item[2]}</span><div><strong>${item[0]}</strong><p>${item[1]}</p>${item[3] ? `<small class="module-children">${item[3]}</small>` : ''}</div><i>›</i>
+      </article>`).join('');
+    showView('center-view');
+    renderSidebar();
+  }
+
+  function openDetail(index) {
+    if (currentCenter === 'fulfilment' && !currentGroup && index === 0) {
+      openGroup('postal');
+      return;
+    }
+    currentItem = index;
+    const center = centers[currentCenter];
+    const group = currentGroup ? groups[currentGroup] : null;
+    const item = (group || center).items[index];
+    document.getElementById('crumb').innerHTML = `<b>业务首页</b>　/　<b>${center.title}</b>　/　${group ? `<b>${group.title}</b>　/　` : ''}${item[0]}`;
+    document.getElementById('detail-title').textContent = item[0];
+    document.getElementById('detail-description').textContent = item[1] + '。这里继续承载现有业务页面，功能本身无需因导航调整而重做。';
+    document.getElementById('detail-content').innerHTML = currentGroup === 'postal' && index === 0 ? `
+      <div class="stats"><div class="stat"><span>投递记录</span><b>1,284</b></div><div class="stat"><span>本月新增</span><b>96</b></div><div class="stat"><span>正常投递</span><b>1,246</b></div><div class="stat"><span>关联工单</span><b>38</b></div></div>
+      <div class="content-card"><div class="toolbar"><span class="control">年度：2026⌄</span><span class="control">渠道：全部⌄</span><span class="control">⌕ 姓名 / 订单号</span><button class="primary">导出明细</button></div>
+      <table><thead><tr><th>订单号</th><th>收报人</th><th>商品</th><th>投递渠道</th><th>起投月份</th><th>状态</th></tr></thead><tbody>
+      <tr><td>FX202607280031</td><td>张为民</td><td>中国经营报·年度订阅</td><td>邮局</td><td>2026-08</td><td><span class="status">正常</span></td></tr>
+      <tr><td>FX202607280026</td><td>李慧</td><td>商学院·年度订阅</td><td>邮局</td><td>2026-08</td><td><span class="status">正常</span></td></tr>
+      <tr><td>FX202607270118</td><td>王强</td><td>中国经营报·半年订阅</td><td>邮局</td><td>2026-07</td><td><span class="status">正常</span></td></tr>
+      </tbody></table></div>` : '<div class="content-card empty-placeholder"><b>原有功能页面区域</b>导航改造只改变入口和归类，这里仍然使用现在的业务页面。</div>';
+    showView('detail-view');
+    renderSidebar();
+  }
+
+  function openGroup(key) {
+    currentGroup = key;
+    currentItem = -1;
+    const center = centers[currentCenter];
+    const group = groups[key];
+    document.getElementById('crumb').innerHTML = `<b>业务首页</b>　/　<b>${center.title}</b>　/　${group.title}`;
+    document.getElementById('center-title').textContent = group.title;
+    document.getElementById('center-description').textContent = group.description;
+    document.getElementById('context-note').textContent = '左侧仅显示邮局管理下的子功能';
+    document.getElementById('center-overview').hidden = true;
+    document.getElementById('fulfilment-flow').hidden = true;
+    document.getElementById('postal-flow').hidden = false;
+    document.getElementById('module-heading').textContent = '邮局业务功能';
+    document.getElementById('module-subtitle').textContent = '投递明细、订报转投和邮局工单同属邮局管理';
+    document.getElementById('module-grid').innerHTML = group.items.map((item, i) => `
+      <article class="module-card" onclick="openDetail(${i})">
+        <span class="mini-icon">${item[2]}</span><div><strong>${item[0]}</strong><p>${item[1]}</p></div><i>›</i>
+      </article>`).join('');
+    showView('center-view');
+    renderSidebar();
+  }
+
+  document.getElementById('center-grid').innerHTML = Object.entries(centers).map(([key, center]) => `
+    <article class="center-card ${key === 'fulfilment' ? 'recommended' : ''}" onclick="openCenter('${key}')">
+      ${key === 'fulfilment' ? '<span class="tag">本次重点</span>' : ''}
+      <div class="card-top"><span class="module-icon" style="background:${center.color}">${center.icon}</span><div><div class="card-title">${center.title}</div><div class="card-count">${center.items.length} ${center.unit || '个功能'}</div></div></div>
+      <p>${center.description}</p><div class="item-preview">${center.items.map(item => `<span>${item[0]}</span>`).join('')}</div><div class="enter">进入业务中心 →</div>
+    </article>`).join('');
+
+  console.assert(centers.fulfilment.items.length === 2 && groups.postal.items.length === 3 && Object.values(centers).every(center => center.metrics.length === 4 && center.analysis.length && center.guide.length), '业务门户配置不完整');
+  renderHome();
+</script>
+</body>
+</html>
