@@ -8,6 +8,7 @@ import {
   ReloadOutlined,
   SearchOutlined,
   StopOutlined,
+  UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
@@ -221,12 +222,15 @@ export default function ScheduleView() {
           <h1 className="sched-title">期刊表</h1>
           <p className="sched-sub">按年份查看出版安排、休刊情况与版数信息</p>
         </div>
-        <Select
-          value={year}
-          options={yearOptions}
-          onChange={handleYearChange}
-          style={{ width: 140 }}
-        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button type="primary" icon={<UploadOutlined />} href="/schedule/import">导入期刊表</Button>
+          <Select
+            value={year}
+            options={yearOptions}
+            onChange={handleYearChange}
+            style={{ width: 140 }}
+          />
+        </div>
       </div>
 
       {scheduleQuery.isError && (
