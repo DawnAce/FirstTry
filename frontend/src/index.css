@@ -253,8 +253,154 @@ body {
 }
 
 /* ===== Modal ===== */
-.ant-modal-content {
-  border-radius: var(--radius-card) !important;
+.ant-modal-root .ant-modal-mask {
+  background: rgba(22, 31, 45, 0.55) !important;
+  backdrop-filter: blur(2px);
+}
+
+.ant-modal {
+  top: 24px;
+}
+
+.ant-modal .ant-modal-container,
+.ant-modal .ant-modal-content {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 18px !important;
+  background: #f7f9fc;
+  box-shadow: 0 28px 80px rgba(7, 17, 34, 0.3), 0 7px 22px rgba(7, 17, 34, 0.16);
+}
+
+.ant-modal .ant-modal-header {
+  margin: 0;
+  padding: 18px 22px;
+  border-bottom: 1px solid #e8edf3;
+  background: #fff;
+}
+
+.ant-modal .ant-modal-title {
+  margin-right: 34px;
+}
+
+.ant-modal:not(.complaint-form-modal) .ant-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 43px;
+  color: #182230;
+  font-size: 19px;
+  line-height: 1.3;
+}
+
+.ant-modal:not(.complaint-form-modal) .ant-modal-title::before {
+  content: '✦';
+  display: grid;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  flex: 0 0 43px;
+  border-radius: 12px;
+  color: #1677e8;
+  background: #eaf3ff;
+  font-size: 18px;
+}
+
+.ant-modal .ant-modal-close {
+  top: 24px;
+  right: 18px;
+  width: 32px;
+  height: 32px;
+  color: #7a8494;
+  border-radius: 9px;
+}
+
+.ant-modal .ant-modal-body {
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+  padding: 11px 22px 12px;
+}
+
+.ant-modal:not(.complaint-form-modal) .ant-modal-body > :is(.ant-form, .ant-space) {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px 15px 15px;
+  border: 1px solid #e5eaf1;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.ant-modal .ant-form-item-label > label {
+  height: auto;
+  color: #657184;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ant-modal .ant-input,
+.ant-modal .ant-input-number,
+.ant-modal .ant-picker,
+.ant-modal .ant-select-selector {
+  border-color: #dce3ec !important;
+  border-radius: 8px !important;
+  background: #fbfcfe !important;
+  box-shadow: none !important;
+}
+
+.ant-modal .ant-input:focus,
+.ant-modal .ant-input-focused,
+.ant-modal .ant-picker-focused,
+.ant-modal .ant-select-focused .ant-select-selector {
+  border-color: #4096ff !important;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1) !important;
+}
+
+.ant-modal .ant-modal-footer {
+  margin: 0;
+  padding: 14px 22px;
+  border-top: 1px solid #e6ebf2;
+  background: #fff;
+}
+
+.ant-modal .ant-modal-footer .ant-btn,
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn {
+  height: 38px;
+  padding-inline: 18px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ant-modal .ant-modal-footer .ant-btn-primary,
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-primary {
+  min-width: 100px;
+  border-color: #1677e8 !important;
+  background: linear-gradient(#2387ef, #0f70dc) !important;
+  box-shadow: 0 6px 14px rgba(22, 119, 232, 0.22) !important;
+}
+
+.ant-modal-confirm.ant-modal .ant-modal-body {
+  padding: 0;
+}
+
+.ant-modal-confirm .ant-modal-confirm-body {
+  margin: 11px 22px 12px;
+  padding: 14px 15px 15px;
+  border: 1px solid #e5eaf1;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.ant-modal-confirm .ant-modal-confirm-title {
+  color: #182230;
+  font-size: 19px;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns {
+  margin: 0;
+  padding: 14px 22px;
+  border-top: 1px solid #e6ebf2;
+  background: #fff;
 }
 
 /* ===== Drawer ===== */
@@ -2034,54 +2180,6 @@ body {
 }
 
 /* Complaint create/edit modal */
-.complaint-form-modal-root .ant-modal-mask {
-  background: rgba(22, 31, 45, 0.55) !important;
-  backdrop-filter: blur(2px);
-}
-
-.complaint-form-modal .ant-modal-container,
-.complaint-form-modal .ant-modal-content {
-  overflow: hidden;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  border-radius: 18px !important;
-  background: #f7f9fc;
-  box-shadow: 0 28px 80px rgba(7, 17, 34, 0.3), 0 7px 22px rgba(7, 17, 34, 0.16);
-}
-
-.complaint-form-modal .ant-modal-header {
-  margin: 0;
-  padding: 18px 22px;
-  border-bottom: 1px solid #e8edf3;
-  background: #fff;
-}
-
-.complaint-form-modal .ant-modal-title {
-  margin-right: 34px;
-}
-
-.complaint-form-modal .ant-modal-close {
-  top: 24px;
-  right: 18px;
-  width: 32px;
-  height: 32px;
-  color: #7a8494;
-  border-radius: 9px;
-}
-
-.complaint-form-modal .ant-modal-body {
-  max-height: calc(100vh - 190px);
-  overflow-y: auto;
-  padding: 11px 22px 12px;
-}
-
-.complaint-form-modal .ant-modal-footer {
-  margin: 0;
-  padding: 14px 22px;
-  border-top: 1px solid #e6ebf2;
-  background: #fff;
-}
-
 .complaint-form-title {
   display: flex;
   align-items: center;
@@ -2314,21 +2412,6 @@ body {
 .complaint-form-save-tip b {
   margin-right: 5px;
   color: #2f80ed;
-}
-
-.complaint-form-footer .ant-btn {
-  height: 38px;
-  padding-inline: 18px;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.complaint-form-footer .ant-btn-primary {
-  min-width: 100px;
-  border-color: #1677e8 !important;
-  background: linear-gradient(#2387ef, #0f70dc) !important;
-  box-shadow: 0 6px 14px rgba(22, 119, 232, 0.22) !important;
 }
 
 /* Recipient information change + follow-up modals reuse the complaint shell. */
