@@ -12,16 +12,16 @@
   --color-accent-soft: rgba(0, 113, 227, 0.08);
   --color-focus-ring: rgba(0, 113, 227, 0.16);
   --color-text-primary: #1d1d1f;
-  --color-text-secondary: #86868b;
+  --color-text-secondary: #6e6e73;
   --color-text-tertiary: #5a5a62;
   --color-border: rgba(0, 0, 0, 0.08);
   --color-divider: rgba(0, 0, 0, 0.05);
   --color-hover: rgba(0, 0, 0, 0.04);
   --color-success: #52c41a;
-  --color-success-text: #389e0d;
+  --color-success-text: #237804;
   --color-success-soft: #f6ffed;
   --color-warning: #fa8c16;
-  --color-warning-text: #d46b08;
+  --color-warning-text: #ad4e00;
   --color-warning-soft: #fff7e6;
   --color-danger: #cf1322;
   --color-danger-soft: #fff1f0;
@@ -1449,8 +1449,9 @@ body {
 
 .dashboard-backfill-title {
   font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: 700;
+  color: #293348;
+  line-height: 1.35;
   margin-bottom: 14px;
 }
 
@@ -1536,6 +1537,7 @@ body {
 .dashboard-panel-heading-copy strong {
   color: #293348;
   font-size: 15px;
+  font-weight: 700;
   line-height: 1.35;
 }
 
@@ -1677,9 +1679,10 @@ body {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #293348;
+  line-height: 1.35;
 }
 
 .dashboard-mini-icon {

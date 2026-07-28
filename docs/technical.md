@@ -1913,9 +1913,11 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 #### 前端设计系统与 Storybook
 - `frontend/src/theme.tsx` 是 Ant Design token 与 CSS variables 的唯一主题入口；生产应用和 Storybook 均通过 `DesignSystemProvider` 使用同一套配置。
 - `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard` 和 `StatusPill`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。
+- 印数管理各模块标题以“报数流程”为视觉基准，统一字号、字重、颜色和行高；次要文本及成功/警告状态文字使用主题中的高对比度语义色。
 - 普通 DOM/CSS 使用 `var(--color-*)` 等语义变量；Canvas/ECharts 等不能直接消费 CSS 的渲染器通过 `theme.useToken()` 取得当前主题色。
 - 所有 Ant Design `Modal` 在 `frontend/src/index.css` 统一复用“邮局工单”弹窗的遮罩、容器、标题、表单和操作栏样式；新增弹窗直接使用 `Modal`，仅在业务布局确有差异时添加局部类名。
 - Storybook 顶部工具栏可统一切换亮/暗主题、舒适/紧凑密度和圆润/克制圆角。新增或迁移业务页面时应补代表性 Story，并检查这些全局组合。
+- Storybook 的“页面”分类覆盖业务首页、发行履约和邮局管理门户，便于按实际导航层级检查入口页面。
 - 历史业务页面已按普通页、复杂详情页、图表页三类完成迁移；`frontend/src/pages` 不再保留直接色值，新页面继续复用上述语义变量或当前 Ant Design token。
 
 ### 8.5 安全性
