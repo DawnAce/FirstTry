@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Button, Col, Row, Space } from 'antd'
 import { CheckOutlined, ClockCircleOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons'
+import { expect, fn } from 'storybook/test'
 import { MetricCard, PageHeader, StatusPill } from './UiPrimitives'
+
+const onMetricClick = fn()
 
 const meta: Meta = {
   title: '设计系统/通用模式',
@@ -43,4 +46,16 @@ export const Statuses: Story = {
       <StatusPill tone="purple">已归档</StatusPill>
     </Space>
   ),
+}
+
+export const MetricInteraction: Story = {
+  name: '指标卡键盘交互',
+  render: () => <MetricCard label="待确认" value={3} suffix="期" tone="warning" onClick={onMetricClick} />,
+  play: async ({ canvas, userEvent }) => {
+    onMetricClick.mockClear()
+    const card = canvas.getByRole('button')
+    card.focus()
+    await userEvent.keyboard('{Enter}')
+    await expect(onMetricClick).toHaveBeenCalledOnce()
+  },
 }

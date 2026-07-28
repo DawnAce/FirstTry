@@ -69,6 +69,7 @@ import {
   updateDelivery,
   updateFollowUp,
 } from '../api/postal';
+import { PageHeader } from '../components/UiPrimitives';
 import type {
   AddrImportRow,
   ComplaintImportPreview,
@@ -391,16 +392,14 @@ function DeliveriesTab() {
 
   return (
     <>
-      <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
-        <div>
-          <Title level={3} className="postal-page-title">投递明细</Title>
-          <Text type="secondary">投递记录 {(q.data?.total ?? 0).toLocaleString()} 条</Text>
-        </div>
-        <Space>
+      <PageHeader
+        title="投递明细"
+        description={`投递记录 ${(q.data?.total ?? 0).toLocaleString()} 条`}
+        actions={<Space>
           <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入</Button>
           {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增记录</Button>}
-        </Space>
-      </Flex>
+        </Space>}
+      />
       <Flex className="postal-toolbar" wrap gap={8}>
         <Input.Search allowClear placeholder="搜索姓名、编号或地址" style={{ width: 300 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); if (v == null) setMonth(undefined); setPage(1); }} options={YEAR_OPTS} />
@@ -1501,12 +1500,10 @@ function TicketsTab() {
 
   return (
     <>
-      <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
-        <div>
-          <Title level={3} className="postal-page-title">邮局工单</Title>
-          <Text type="secondary">共 {data?.total ?? 0} 条工单</Text>
-        </div>
-        <Space wrap>
+      <PageHeader
+        title="邮局工单"
+        description={`共 ${data?.total ?? 0} 条工单`}
+        actions={<Space wrap>
           <Dropdown menu={{ items: [
             { key: 'complaint', label: '导入投诉', onClick: () => setImportType('complaint') },
             { key: 'address', label: '导入收件信息变更', onClick: () => setImportType('address') },
@@ -1523,8 +1520,8 @@ function TicketsTab() {
               <Button type="primary" icon={<PlusOutlined />}>新建工单</Button>
             </Dropdown>
           )}
-        </Space>
-      </Flex>
+        </Space>}
+      />
 
       <Flex className="postal-toolbar" wrap gap={8}>
         <Radio.Group
