@@ -71,7 +71,7 @@ def list_address_changes(
 def get_address_change(db: Session, change_id: int) -> PostalAddressChange:
     rec = db.query(PostalAddressChange).filter(PostalAddressChange.id == change_id).first()
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
     return rec
 
 
@@ -170,13 +170,13 @@ def sync_follow_up_timeline(
             source_ticket_id=rec.id,
             event_type=PostalTicketEventType.follow_up,
             handled_by=operator_id,
-            action=rec.batch_label or "回访",
+            action=rec.communication_content or rec.batch_label or "回访",
             follow_result=rec.result,
         )
         db.add(event)
     else:
         event.ticket_id = complaint.id
-        event.action = rec.batch_label or "回访"
+        event.action = rec.communication_content or rec.batch_label or "回访"
         event.follow_result = rec.result
     event.handled_at = handled_at
 
@@ -239,9 +239,9 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
         .first()
     )
     if ac is None:
-        raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
     if ac.applied_to_order:
-        raise HTTPException(status_code=409, detail="该改地址已应用，请勿重复")
+        raise HTTPException(status_code=409, detail="该收件信息变更已应用，请勿重复")
     if not ac.postal_delivery_id:
         raise HTTPException(
             status_code=400,
@@ -333,11 +333,11 @@ def update_address_change(db: Session, change_id: int, patch: dict) -> PostalAdd
         .first()
     )
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
     if rec.applied_to_order:
         raise HTTPException(
             status_code=409,
-            detail="该改地址已应用，不能再编辑；如需更正请新建改地址工单",
+            detail="该收件信息变更已应用，不能再编辑；如需更正请新建收件信息变更工单",
         )
     patch = dict(patch)
     relink = "delivery_no" in patch
@@ -368,11 +368,11 @@ def delete_address_change(db: Session, change_id: int) -> None:
         .first()
     )
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"改地址工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
     if rec.applied_to_order:
         raise HTTPException(
             status_code=409,
-            detail="该改地址已应用，不能删除；如需更正请新建改地址工单",
+            detail="该收件信息变更已应用，不能删除；如需更正请新建收件信息变更工单",
         )
     db.delete(rec)
     db.commit()

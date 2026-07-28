@@ -230,7 +230,9 @@ export interface PostalFollowUp {
   postal_delivery_id: number | null;
   order_id: number | null;
   external_order_no: string | null;
+  parent_ticket_id: number | null;
   follow_up_date: string | null;
+  communication_content: string | null;
   batch_label: string | null;
   result: string | null;
   snap_name: string | null;
@@ -425,6 +427,7 @@ export interface FollowUpPayload {
   year?: number | null;
   delivery_no?: string | null;
   follow_up_date?: string | null;
+  communication_content?: string | null;
   batch_label?: string | null;
   result?: string | null;
   snap_name?: string | null;

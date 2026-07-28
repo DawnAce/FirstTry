@@ -1827,6 +1827,209 @@ body {
   box-shadow: 0 6px 14px rgba(22, 119, 232, 0.22) !important;
 }
 
+/* Recipient information change + follow-up modals reuse the complaint shell. */
+.address-form-modal .ant-modal-header,
+.follow-form-modal .ant-modal-header {
+  padding: 14px 22px;
+}
+
+.address-form-modal .ant-modal-close,
+.follow-form-modal .ant-modal-close {
+  top: 20px;
+}
+
+.address-form-modal .ant-modal-body,
+.follow-form-modal .ant-modal-body {
+  padding: 8px 22px 9px;
+}
+
+.address-form-modal .ant-modal-footer,
+.follow-form-modal .ant-modal-footer {
+  padding: 11px 22px;
+}
+
+.address-form-modal .complaint-form-section,
+.follow-form-modal .complaint-form-section {
+  margin-bottom: 11px;
+  padding: 10px 15px 11px;
+}
+
+.address-form-modal .complaint-form-section h3,
+.follow-form-modal .complaint-form-section h3 {
+  margin-bottom: 10px;
+}
+
+.address-form-modal .complaint-form-source-note,
+.follow-form-modal .complaint-form-source-note {
+  margin-top: 9px;
+  padding: 7px 10px;
+}
+
+.address-form-modal .complaint-form-title-icon {
+  background: #f1edff;
+}
+
+.complaint-form-status.status-address {
+  color: #9a5c13;
+  background: #fff3df;
+}
+
+.address-form-schedule {
+  grid-template-columns: 2fr 1.05fr 0.75fr 0.75fr;
+}
+
+.address-form-compare {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+
+.address-form-compare::after {
+  content: '→';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #e1e7ef;
+  border-radius: 50%;
+  color: #7d8a9d;
+  background: #fff;
+  font-size: 14px;
+  transform: translate(-50%, -50%);
+}
+
+.address-form-card {
+  padding: 12px;
+  border: 1px solid #e4e8ee;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.address-form-card.after {
+  border-color: #d8cfff;
+  background: linear-gradient(145deg, #fbfaff, #f6f3ff);
+}
+
+.address-form-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #5e697a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.address-form-card-head strong {
+  padding: 3px 8px;
+  border-radius: var(--radius-tag);
+  color: #667184;
+  background: #e8edf3;
+  font-size: 11px;
+}
+
+.address-form-card.after .address-form-card-head {
+  color: #66519d;
+}
+
+.address-form-card.after .address-form-card-head strong {
+  color: #6547b9;
+  background: #e9e1ff;
+}
+
+.address-form-card .ant-input,
+.address-form-card .ant-input-number {
+  min-height: 34px !important;
+  background: rgba(255, 255, 255, 0.75) !important;
+}
+
+.address-form-person-grid {
+  display: grid;
+  grid-template-columns: 0.85fr 1.2fr 0.65fr;
+  gap: 8px;
+}
+
+.address-form-address {
+  margin-top: 9px !important;
+}
+
+.address-form-explain {
+  grid-template-columns: 1.5fr 1fr;
+}
+
+.address-form-explain-section,
+.follow-form-actions-section {
+  margin-bottom: 0;
+}
+
+.follow-form-link-grid {
+  grid-template-columns: 2fr 0.8fr;
+}
+
+.follow-form-communication-grid {
+  grid-template-columns: 1.3fr 1fr;
+}
+
+.follow-next-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.follow-next-action.ant-checkbox-wrapper {
+  align-items: center;
+  min-height: 62px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #dce6f2;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.follow-next-action .ant-checkbox-inner {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.follow-next-action.address .ant-checkbox-checked .ant-checkbox-inner {
+  border-color: #7557d9;
+  background: #7557d9;
+}
+
+.follow-next-action.complaint.selected {
+  border-color: #ffd4d8;
+  background: #fff8f8;
+}
+
+.follow-next-action.address.selected {
+  border-color: #dbd1ff;
+  background: #faf8ff;
+}
+
+.follow-next-action-copy {
+  display: block;
+}
+
+.follow-next-action-copy strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #293348;
+  font-size: 12px;
+}
+
+.follow-next-action-copy small {
+  display: block;
+  color: #7c8798;
+  font-size: 11px;
+  white-space: normal;
+}
+
 @media (max-width: 760px) {
   .complaint-form-columns,
   .complaint-form-grid-three {
@@ -1839,6 +2042,20 @@ body {
 
   .complaint-form-meta {
     flex-wrap: wrap;
+  }
+
+  .address-form-schedule,
+  .address-form-compare,
+  .address-form-person-grid,
+  .address-form-explain,
+  .follow-form-link-grid,
+  .follow-form-communication-grid,
+  .follow-next-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .address-form-compare::after {
+    display: none;
   }
 }
 

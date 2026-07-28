@@ -64,7 +64,7 @@ def _row(rec: PostalTicket) -> dict:
         applied_to_order = rec.applied_to_order
     else:
         name = rec.snap_name
-        summary = rec.result
+        summary = rec.communication_content or rec.result
         status = None
         handling_count = None
         applied_to_order = None

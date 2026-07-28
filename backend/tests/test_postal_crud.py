@@ -326,7 +326,7 @@ def test_applied_address_change_cannot_be_edited_or_deleted(client):
         "new_address": "不应写入的地址",
     })
     assert unified_update.status_code == 409
-    assert "如需更正请新建改地址工单" in unified_update.json()["detail"]
+    assert "如需更正请新建收件信息变更工单" in unified_update.json()["detail"]
 
     legacy_update = client.put(
         f"/api/postal/address-changes/{change_id}",
@@ -345,12 +345,20 @@ def test_applied_address_change_cannot_be_edited_or_deleted(client):
 def test_follow_up_crud(client):
     r = client.post("/api/postal/follow-ups", json={
         "year": 2026, "delivery_no": "123", "follow_up_date": "2026-03-20",
+        "communication_content": "询问近期投递情况",
         "result": "已回访", "snap_name": "周九",
     })
     assert r.status_code == 201, r.text
+    assert r.json()["communication_content"] == "询问近期投递情况"
+    ticket = client.get("/api/postal/tickets?type=follow&year=2026").json()["rows"][0]
+    assert ticket["summary"] == "询问近期投递情况"
     fid = r.json()["id"]
-    u = client.put(f"/api/postal/follow-ups/{fid}", json={"result": "拒接"})
+    u = client.put(f"/api/postal/follow-ups/{fid}", json={
+        "communication_content": "再次拨打电话",
+        "result": "拒接",
+    })
     assert u.status_code == 200
+    assert u.json()["communication_content"] == "再次拨打电话"
     assert u.json()["result"] == "拒接"
     assert client.delete(f"/api/postal/follow-ups/{fid}").status_code == 204
 
@@ -416,6 +424,7 @@ def test_unified_ticket_crud_merges_follow_up_into_complaint_timeline(client):
         "year": 2026,
         "delivery_no": "0901",
         "follow_up_date": "2026-07-22",
+        "communication_content": "询问少报是否已经补投",
         "batch_label": "20260722回访",
         "result": "读者确认已补投",
         "snap_name": "王五",
@@ -432,15 +441,18 @@ def test_unified_ticket_crud_merges_follow_up_into_complaint_timeline(client):
     detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
     follow_event = next(h for h in detail["handlings"] if h["event_type"] == "follow_up")
     assert follow_event["source_ticket_id"] == follow_id
+    assert follow_event["action"] == "询问少报是否已经补投"
     assert follow_event["follow_result"] == "读者确认已补投"
 
     updated = client.put(f"/api/postal/tickets/{follow_id}", json={
         "type": "follow",
+        "communication_content": "再次确认补投结果",
         "result": "读者确认问题已解决",
     })
     assert updated.status_code == 200, updated.text
     detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
     follow_event = next(h for h in detail["handlings"] if h["event_type"] == "follow_up")
+    assert follow_event["action"] == "再次确认补投结果"
     assert follow_event["follow_result"] == "读者确认问题已解决"
 
     wrong_type = client.put(f"/api/postal/tickets/{follow_id}", json={
@@ -452,6 +464,38 @@ def test_unified_ticket_crud_merges_follow_up_into_complaint_timeline(client):
     assert client.delete(f"/api/postal/tickets/{follow_id}").status_code == 204
     detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
     assert all(h["event_type"] != "follow_up" for h in detail["handlings"])
+
+
+def test_complaint_created_after_follow_up_absorbs_it_into_timeline(client):
+    follow = client.post("/api/postal/tickets", json={
+        "type": "follow",
+        "year": 2026,
+        "delivery_no": "0910",
+        "follow_up_date": "2026-07-28",
+        "communication_content": "客户反馈连续两期未收到报纸",
+        "result": "需要创建投诉工单",
+        "snap_name": "后建投诉读者",
+    })
+    assert follow.status_code == 201, follow.text
+    follow_id = follow.json()["id"]
+    assert client.get("/api/postal/tickets?type=follow&year=2026").json()["total"] == 1
+
+    complaint = client.post("/api/postal/tickets", json={
+        "type": "complaint",
+        "year": 2026,
+        "delivery_no": "0910",
+        "complaint_date": "2026-07-28",
+        "snap_name": "后建投诉读者",
+        "missing_issues": "客户反馈连续两期未收到报纸",
+    })
+    assert complaint.status_code == 201, complaint.text
+
+    assert client.get("/api/postal/tickets?type=follow&year=2026").json()["total"] == 0
+    detail = client.get(f"/api/postal/tickets/{complaint.json()['id']}").json()
+    follow_event = next(h for h in detail["handlings"] if h["event_type"] == "follow_up")
+    assert follow_event["source_ticket_id"] == follow_id
+    assert follow_event["action"] == "客户反馈连续两期未收到报纸"
+    assert follow_event["follow_result"] == "需要创建投诉工单"
 
 
 def test_deleting_complaint_restores_linked_follow_up_as_independent_ticket(client):

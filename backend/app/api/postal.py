@@ -258,7 +258,7 @@ def apply_ticket_address(
     rec = ticket_svc.get_ticket(db, ticket_id)
     type_value = rec.type.value if hasattr(rec.type, "value") else str(rec.type)
     if type_value != "address":
-        raise HTTPException(status_code=409, detail="只有改地址工单可以应用新地址")
+        raise HTTPException(status_code=409, detail="只有收件信息变更工单可以应用变更")
     return change_svc.apply_address_change(
         db, ticket_id, operator_id=getattr(user, "id", None)
     )

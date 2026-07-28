@@ -140,6 +140,23 @@ def create_complaint(db: Session, payload: dict, operator_id: Optional[int] = No
         **d,
     )
     db.add(rec)
+    db.flush()
+    if external:
+        # 回访可能先于投诉登记；补建投诉时把同编号的独立回访并入时间线。
+        from app.services import postal_change_service as change_svc
+
+        orphan_follow_ups = (
+            db.query(PostalFollowUp)
+            .filter(
+                PostalFollowUp.external_order_no == external,
+                PostalFollowUp.parent_ticket_id.is_(None),
+            )
+            .all()
+        )
+        for follow_up in orphan_follow_ups:
+            change_svc.sync_follow_up_timeline(
+                db, follow_up, operator_id=operator_id
+            )
     db.commit()
     db.refresh(rec)
     return rec
