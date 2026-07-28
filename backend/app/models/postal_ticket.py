@@ -108,6 +108,7 @@ class PostalTicket(Base):
 
     # 回访字段。
     follow_up_date = Column(Date, nullable=True)
+    communication_content = Column(Text, nullable=True)
     batch_label = Column(String(32), nullable=True)
     result = Column(Text, nullable=True)
     parent_ticket_id = Column(

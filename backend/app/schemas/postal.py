@@ -165,7 +165,9 @@ class FollowUpOut(BaseModel):
     postal_delivery_id: Optional[int] = None
     order_id: Optional[int] = None
     external_order_no: Optional[str] = None
+    parent_ticket_id: Optional[int] = None
     follow_up_date: Optional[date] = None
+    communication_content: Optional[str] = None
     batch_label: Optional[str] = None
     result: Optional[str] = None
     snap_name: Optional[str] = None
@@ -374,6 +376,7 @@ class FollowUpCreateIn(BaseModel):
     year: Optional[int] = Field(default=None, ge=2000, le=2100)
     delivery_no: Optional[str] = None          # 与 year 一起关联投递记录
     follow_up_date: Optional[date] = None
+    communication_content: Optional[str] = None
     batch_label: Optional[str] = None
     result: Optional[str] = None
     snap_name: Optional[str] = None
@@ -383,6 +386,7 @@ class FollowUpUpdateIn(BaseModel):
     year: Optional[int] = Field(default=None, ge=2000, le=2100)
     delivery_no: Optional[str] = None
     follow_up_date: Optional[date] = None
+    communication_content: Optional[str] = None
     batch_label: Optional[str] = None
     result: Optional[str] = None
     snap_name: Optional[str] = None

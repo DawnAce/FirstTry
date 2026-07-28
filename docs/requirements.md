@@ -318,22 +318,22 @@
 ## 5C. 邮局投递管理
 
 ### 5C.1 功能定位
-邮局投递与 ZTO-MF（中通）并列，是**一种投递方式**，但**按月**运作。邮局的数据是**投递记录层**（`PostalDelivery`），**不造订单、不进「订单管理 / 客户管理」**，避免与电商真实订单双算。一级菜单「邮局管理」下现有 **3 个二级菜单**：**投递明细**（`/post-delivery/deliveries`，纯台账 / 查询）、**订报转投**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表 / 分送表 / zip——的地方，给邮局的名单只来自这里）、**邮局工单**（`/post-delivery/tickets`，投诉 / 改地址 / 回访三合一）。前端 `pages/PostDelivery.tsx` 只有 2 个 Tab（投递明细 `DeliveriesTab` / 邮局工单 `TicketsTab`）。投递单位有则挂 `Partner(distribution)`、无则留空（不推断）。「收款发票」已从邮局管理迁至**财务管理**，作为其第 3 个 Tab「邮局收款」（页面 `pages/PostalReceipts.tsx`，接口 `/api/finance/postal-receipts/*`，前端 `api/finance.ts`）。
+邮局投递与 ZTO-MF（中通）并列，是**一种投递方式**，但**按月**运作。邮局的数据是**投递记录层**（`PostalDelivery`），**不造订单、不进「订单管理 / 客户管理」**，避免与电商真实订单双算。一级菜单「邮局管理」下现有 **3 个二级菜单**：**投递明细**（`/post-delivery/deliveries`，纯台账 / 查询）、**订报转投**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表 / 分送表 / zip——的地方，给邮局的名单只来自这里）、**邮局工单**（`/post-delivery/tickets`，投诉 / 收件信息变更 / 回访三合一）。前端 `pages/PostDelivery.tsx` 只有 2 个 Tab（投递明细 `DeliveriesTab` / 邮局工单 `TicketsTab`）。投递单位有则挂 `Partner(distribution)`、无则留空（不推断）。「收款发票」已从邮局管理迁至**财务管理**，作为其第 3 个 Tab「邮局收款」（页面 `pages/PostalReceipts.tsx`，接口 `/api/finance/postal-receipts/*`，前端 `api/finance.ts`）。
 
 ### 5C.2 源台账与手工维护
-投递明细、邮局工单、收款发票各源台账均支持 Excel 导入，并提供页面内「新增 / 编辑 / 删除」。邮局工单按投诉 / 改地址 / 回访类型使用不同导入模板，但物理上统一存入 `postal_tickets`。写操作需管理员权限。投递明细删除已无守卫，可直接删除（不再返回 409）。
+投递明细、邮局工单、收款发票各源台账均支持 Excel 导入，并提供页面内「新增 / 编辑 / 删除」。邮局工单按投诉 / 收件信息变更 / 回访类型使用不同导入模板（收件信息变更继续兼容历史《改地址》Excel），但物理上统一存入 `postal_tickets`。写操作需管理员权限。投递明细删除已无守卫，可直接删除（不再返回 409）。
 
 前端初代正式布局统一为“页面标题与主操作 → 筛选 → 概览 / 列表 → 右侧详情抽屉”：投递明细常驻列收敛为读者、地址、订阅、渠道 / 投递单位，查看与编辑均使用抽屉；邮局工单列表收敛为读者 / 类型、内容、时间、状态、操作。订报转投以批次选择器和三步进度展示主流程；“重新上传来源”进入页面内工作区，依次完成上传、校验 / 汇总对比、设为有效，旧版本在确认前保持有效且确认后继续保留。生成文件中的地区分送表按地区折叠展示。
 
-### 5C.3 邮局工单（投诉 / 改地址 / 回访三合一）
-投诉、改地址、回访三类工单合并为统一的「邮局工单」页，回访不再是独立菜单 / Tab，而是工单的一种类型，按类型筛选。
+### 5C.3 邮局工单（投诉 / 收件信息变更 / 回访三合一）
+投诉、收件信息变更（接口类型仍为 `address`，兼容历史《改地址》Excel）和回访三类工单合并为统一的「邮局工单」页，回访不再是独立菜单 / Tab，而是工单的一种类型，按类型筛选。
 
-统一接口 `GET /api/postal/tickets` 从 `postal_tickets` 查询三类工单并返回 `TicketOut`（`type` / `id` / `year` / `delivery_no` / `recipient_name` / `postal_delivery_id` / `order_id` / `ticket_date` / `summary` / `status` / `handling_count` / `applied_to_order`），支持 `type`（`complaint` | `address` | `follow`）/ `year` / `status`（投诉）/ `applied`（改地址）/ `search` 及数据库分页，另返回各类型计数 `summary{complaint, address, follow}`。详情与 CRUD 统一走 `/api/postal/tickets[/{id}]`，处理时间线走 `/tickets/{id}/handlings`，应用新地址走 `/tickets/{id}/apply`，三类导入走 `/tickets/import/{type}/preview|commit`。
+统一接口 `GET /api/postal/tickets` 从 `postal_tickets` 查询三类工单并返回 `TicketOut`（`type` / `id` / `year` / `delivery_no` / `recipient_name` / `postal_delivery_id` / `order_id` / `ticket_date` / `summary` / `status` / `handling_count` / `applied_to_order`），支持 `type`（`complaint` | `address` | `follow`）/ `year` / `status`（投诉）/ `applied`（收件信息变更）/ `search` 及数据库分页，另返回各类型计数 `summary{complaint, address, follow}`。详情与 CRUD 统一走 `/api/postal/tickets[/{id}]`，处理时间线走 `/tickets/{id}/handlings`，应用变更走 `/tickets/{id}/apply`，三类导入走 `/tickets/import/{type}/preview|commit`。
 
-前端（`TicketsTab`，`api/postal.ts` 的 `listTickets` 等）：类型分段筛选（全部 / 投诉 / 改地址 / 回访，带各类型计数）+ 统一列表（读者 / 类型 / 内容 / 时间 / 状态 / 操作）；差异化详情抽屉——
+前端（`TicketsTab`，`api/postal.ts` 的 `listTickets` 等）：类型分段筛选（全部 / 投诉 / 收件信息变更 / 回访，带各类型计数）+ 统一列表（读者 / 类型 / 内容 / 时间 / 状态 / 操作）；差异化详情抽屉——
 - **投诉**：真正的三态处理流程 `open`（待处理）/ `in_progress`（处理中）/ `resolved`（已解决），每次处理记入统一时间线表 `postal_ticket_events`（时间 / 处理人 / 处理过程 / 回访结果），处理次数每次 +1，状态由最新一次处理驱动，抽屉按时间线展示历次处理记录。
-- **改地址**：新旧地址对比 + 「应用新地址」。「应用」把新姓名 / 电话 / 地址写回投递明细；若该读者挂了真实订单，则同步当前 `FulfillmentTarget`（=同步履约订单）；详情标注「已应用·已同步履约订单」或「已应用·仅名册」。本系统无独立客户资料表，订单收报人真值在 `FulfillmentTarget`。
-- **回访**：展示回访结果；同编号已有投诉时并入该投诉的工单时间线，不再作为独立工单重复计数。
+- **收件信息变更**：变更前后姓名 / 电话 / 地址 / 份数对比 + 「应用变更」。「应用」把已填写的新信息写回投递明细；若该读者挂了真实订单，则同步当前 `FulfillmentTarget`（=同步履约订单）；详情标注「已应用·已同步履约订单」或「已应用·仅名册」。本系统无独立客户资料表，订单收报人真值在 `FulfillmentTarget`。
+- **回访**：手工登记明确区分「沟通内容」与「沟通结果」；旧 Excel 的「批次列头」仅保留导入兼容，不在手工表单展示。回访中发现投诉或收件信息变更时，可保存后继续创建一张或两张预填工单；同编号已有投诉时直接并入其时间线，不重复创建投诉工单。
 
 ### 5C.4 已下线：月度起投明细
 原「月度起投明细」整层已删除：`PostalDeliveryBatch` / `PostalDeliveryRow` 两表、`/api/postal/batches*` 端点、前端 `BatchesTab` 全部移除；`/api/postal/finance/*` 已迁至 `/api/finance/postal-receipts/*`。删表迁移为 alembic `c3d5e7f9a1b3`（drop `postal_delivery_batches` / `postal_delivery_rows`）；生产删表前先用 `backend/scripts/export_postal_snapshot.py` 导出 json 归档。相关 PR：#76（收款迁财务）/ #77（删月度快照）/ #78（合并邮局工单），均已合并 `main`。
