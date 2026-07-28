@@ -41,7 +41,7 @@ const meta = {
   decorators: [withRouter],
   parameters: {
     layout: 'fullscreen',
-    reactRouter: reactRouterParameters({ routing: { path: '/' } }),
+    reactRouter: reactRouterParameters({ routing: { path: '/print' } }),
     docs: {
       description: {
         component: '首页仪表盘：单个 GET /api/dashboard 驱动统计卡片、近期印数表、待处理事项与趋势图。演示 有数据 / 空 / 加载中 三态。',

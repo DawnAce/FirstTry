@@ -1,223 +1,97 @@
-import { useState, useEffect } from 'react';
 import { Layout, Menu, Badge, Avatar, Dropdown, Tooltip } from 'antd';
 import {
-  HomeOutlined,
-  BarChartOutlined,
   UserOutlined,
-  CalendarOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   BellOutlined,
   QuestionCircleOutlined,
   LogoutOutlined,
-  CarOutlined,
-  InboxOutlined,
-  FileTextOutlined,
-  TeamOutlined,
-  DollarOutlined,
-  ShoppingOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import GlobalSearch from './GlobalSearch';
+import {
+  findBusinessCenter,
+  findBusinessModule,
+  findPostalFunction,
+  isPostalContext,
+  postalFunctions,
+} from '../businessPortalConfig';
 import type { MenuProps } from 'antd';
 
 const { Sider, Content, Header } = Layout;
-
-const menuItems: MenuProps['items'] = [
-  {
-    key: '/dashboard',
-    icon: <HomeOutlined />,
-    label: '仪表盘',
-    disabled: true,
-  },
-  {
-    key: 'print-management',
-    icon: <BarChartOutlined />,
-    label: '印数管理',
-    children: [
-      { key: '/', label: '印数报数' },
-      { key: '/history', label: '历史期数' },
-      { key: '/templates', label: '报数模板' },
-    ],
-  },
-  {
-    key: 'logistics-management',
-    icon: <CarOutlined />,
-    label: '快递管理',
-    children: [
-      { key: '/recipients', label: 'ZTO-MF' },
-      { key: '/logistics/issues', label: '期数总览' },
-    ],
-  },
-  {
-    key: 'post-management',
-    icon: <InboxOutlined />,
-    label: '邮局管理',
-    children: [
-      { key: '/post-delivery/deliveries', label: '投递明细' },
-      { key: '/post-delivery/subscription', label: '订报转投' },
-      { key: '/post-delivery/tickets', label: '邮局工单' },
-    ],
-  },
-  {
-    key: 'schedule-management',
-    icon: <CalendarOutlined />,
-    label: '刊期表管理',
-    children: [
-      { key: '/schedule', label: '期刊表' },
-      { key: '/schedule/import', label: '导入期刊表' },
-    ],
-  },
-  {
-    key: 'order-management',
-    icon: <FileTextOutlined />,
-    label: '订单管理',
-    children: [
-      { key: '/orders', label: '订单列表' },
-      { key: '/orders/new', label: '新建订单' },
-      { key: '/orders/import', label: '电商导入' },
-      { key: '/orders/dispatch', label: '按期排发' },
-      { key: '/analytics', label: '活动订单统计' },
-    ],
-  },
-  {
-    key: '/products',
-    icon: <ShoppingOutlined />,
-    label: '商品管理',
-  },
-  {
-    key: '/customers',
-    icon: <TeamOutlined />,
-    label: '客户管理',
-  },
-  {
-    key: '/contracts',
-    icon: <FileTextOutlined />,
-    label: '合同管理',
-  },
-  {
-    key: '/finance',
-    icon: <DollarOutlined />,
-    label: '财务管理',
-  },
-];
 
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  const pathname = location.pathname;
+  const center = findBusinessCenter(pathname);
+  const module = findBusinessModule(center, pathname);
+  const postalContext = isPostalContext(pathname);
+  const postalFunction = findPostalFunction(pathname);
+  const isBusinessHome = pathname === '/';
+  const isCenterPortal = center?.path === pathname;
+  const isPostalPortal = pathname === '/business/fulfilment/postal';
 
-  const getSelectedKey = () => {
-    const path = location.pathname;
-    if (path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import')) return '/';
-    if (path.startsWith('/logistics/issues')) return '/logistics/issues';
-    if (path.startsWith('/recipients')) return '/recipients';
-    if (path.startsWith('/post-delivery')) return path;
-    if (path.startsWith('/history')) return '/history';
-    if (path === '/schedule/import') return '/schedule/import';
-    if (path.startsWith('/schedule')) return '/schedule';
-    if (path.startsWith('/templates')) return '/templates';
-    if (path === '/orders/new') return '/orders/new';
-    if (path === '/orders/import') return '/orders/import';
-    if (path === '/orders/dispatch') return '/orders/dispatch';
-    if (path.startsWith('/products')) return '/products';
-    if (path.startsWith('/analytics')) return '/analytics';
-    if (path.startsWith('/orders')) return '/orders';
-    return path;
-  };
+  const menuItems: MenuProps['items'] = isBusinessHome
+    ? [{ key: '/', icon: <span className="business-nav-emoji">🏠</span>, label: '业务首页' }]
+    : postalContext
+      ? postalFunctions.map((item) => ({ key: item.path, icon: <span className="business-nav-emoji">{item.icon}</span>, label: item.title }))
+      : center?.modules.map((item) => ({ key: item.path, icon: <span className="business-nav-emoji">{item.icon}</span>, label: item.title })) ?? [];
 
-  const getOpenKeys = () => {
-    const path = location.pathname;
-    if (path === '/' || path.startsWith('/report/') || path.startsWith('/shipping/') || path.startsWith('/history-import') || path.startsWith('/history') || path.startsWith('/templates')) {
-      return ['print-management'];
-    }
-    if (path.startsWith('/recipients') || path.startsWith('/logistics')) {
-      return ['logistics-management'];
-    }
-    if (path.startsWith('/post-delivery')) {
-      return ['post-management'];
-    }
-    if (path.startsWith('/schedule')) {
-      return ['schedule-management'];
-    }
-    if (path.startsWith('/orders') || path.startsWith('/analytics')) {
-      return ['order-management'];
-    }
-    return [];
-  };
+  const selectedKeys = isBusinessHome
+    ? ['/']
+    : postalContext
+      ? postalFunction ? [postalFunction.path] : []
+      : !isCenterPortal && module ? [module.path] : [];
 
-  // 受控展开：SPA 跨组导航后保证当前分组展开（否则高亮项藏在折叠组里）。
-  const [openKeys, setOpenKeys] = useState<string[]>(getOpenKeys());
-  useEffect(() => {
-    setOpenKeys((prev) => Array.from(new Set([...prev, ...getOpenKeys()])));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
+  const breadcrumbs: Array<{ label: string; path?: string }> = [{ label: '业务首页', path: isBusinessHome ? undefined : '/' }];
+  if (center) breadcrumbs.push({ label: center.title, path: isCenterPortal ? undefined : center.path });
+  if (postalContext) {
+    breadcrumbs.push({ label: '邮局管理', path: isPostalPortal ? undefined : '/business/fulfilment/postal' });
+    if (postalFunction) breadcrumbs.push({ label: postalFunction.title });
+  } else if (module && !isCenterPortal) {
+    breadcrumbs.push({ label: module.title });
+  }
 
-  const userMenuItems: MenuProps['items'] = [
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: '退出登录',
-      onClick: logout,
-    },
-  ];
+  const userMenuItems: MenuProps['items'] = [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: logout }];
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        trigger={null}
-        width={220}
-        collapsedWidth={64}
-        className="app-sider"
-      >
+      <Sider width={252} className="app-sider">
         <div className="app-sider-inner">
-          {/* Logo */}
-          <div className="app-sider-logo">
-            <div className="app-sider-logo-icon">
-              <BarChartOutlined style={{ fontSize: 20, color: 'var(--color-on-accent)' }} />
-            </div>
-            {!collapsed && (
-              <div className="app-sider-logo-text">
-                <span className="app-sider-logo-title">发行系统</span>
-                <span className="app-sider-logo-subtitle">中国经营报</span>
-              </div>
-            )}
-          </div>
+          <button className="app-sider-logo" onClick={() => navigate('/')} aria-label="返回业务首页">
+            <span className="app-sider-logo-icon">发</span>
+            <span className="app-sider-logo-text">
+              <span className="app-sider-logo-title">发行系统</span>
+              <span className="app-sider-logo-subtitle">中国经营报</span>
+            </span>
+          </button>
 
-          {/* Navigation menu */}
           <div className="app-sider-menu">
-            <Menu
-              mode="inline"
-              selectedKeys={[getSelectedKey()]}
-              openKeys={openKeys}
-              onOpenChange={(keys) => setOpenKeys(keys as string[])}
-              onClick={({ key }) => {
-                if (!key.startsWith('/dashboard')) {
-                  navigate(key);
-                }
-              }}
-              items={menuItems}
-            />
+            {!isBusinessHome && (
+              <button className="business-nav-back" onClick={() => navigate(postalContext ? '/business/fulfilment' : '/')}>
+                ← 返回{postalContext ? '发行履约' : '业务首页'}
+              </button>
+            )}
+            {center && <div className="business-nav-caption">{postalContext ? '邮局管理' : center.title}</div>}
+            <Menu mode="inline" selectedKeys={selectedKeys} onClick={({ key }) => navigate(key)} items={menuItems} />
+            <div className="business-nav-note">
+              {isBusinessHome
+                ? '具体业务菜单已收进各业务中心，首页不再平铺全部功能。'
+                : postalContext
+                  ? '投递明细、订报转投和邮局工单统一归属邮局管理。'
+                  : `当前只显示“${center?.title}”下的功能，减少无关菜单干扰。`}
+            </div>
           </div>
 
-          {/* User info at bottom */}
           <div className="app-sider-footer">
             <Dropdown menu={{ items: userMenuItems }} placement="topRight" trigger={['click']}>
               <div className="app-sider-user">
-                <Avatar size={32} icon={<UserOutlined />} style={{ background: 'var(--color-accent)', flexShrink: 0 }} />
-                {!collapsed && (
-                  <div className="app-sider-user-info">
-                    <span className="app-sider-user-name">{user?.username}</span>
-                    <span className="app-sider-user-role">
-                      {user?.role === 'admin' ? '管理员' : '操作员'}
-                    </span>
-                  </div>
-                )}
+                <Avatar size={38} icon={<UserOutlined />} style={{ background: 'var(--color-accent)', flexShrink: 0 }} />
+                <div className="app-sider-user-info">
+                  <span className="app-sider-user-name">{user?.username}</span>
+                  <span className="app-sider-user-role">{user?.role === 'admin' ? '管理员' : '操作员'}</span>
+                </div>
               </div>
             </Dropdown>
           </div>
@@ -225,49 +99,22 @@ export default function AppLayout() {
       </Sider>
 
       <Layout>
-        {/* Top navigation bar */}
         <Header className="app-header">
-          <div className="app-header-left">
-            <button
-              className="app-header-trigger"
-              onClick={() => setCollapsed(!collapsed)}
-              aria-label={collapsed ? '展开菜单' : '收起菜单'}
-            >
-              {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            </button>
-            <GlobalSearch />
-          </div>
-
+          <nav className="app-breadcrumb" aria-label="面包屑">
+            {breadcrumbs.map((item, index) => (
+              <span key={`${item.label}-${index}`}>
+                {index > 0 && <i>/</i>}
+                {item.path ? <button onClick={() => navigate(item.path!)}>{item.label}</button> : <b>{item.label}</b>}
+              </span>
+            ))}
+          </nav>
           <div className="app-header-right">
-            <Tooltip title="通知">
-              <Badge count={0} overflowCount={99}>
-                <button className="app-header-icon-btn" aria-label="通知">
-                  <BellOutlined />
-                </button>
-              </Badge>
-            </Tooltip>
-            <Tooltip title="帮助">
-              <button className="app-header-icon-btn" aria-label="帮助">
-                <QuestionCircleOutlined />
-              </button>
-            </Tooltip>
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
-              <div className="app-header-user">
-                <Avatar size={32} icon={<UserOutlined />} style={{ background: 'var(--color-accent)' }} />
-                <div className="app-header-user-text">
-                  <span className="app-header-user-name">{user?.username}</span>
-                  <span className="app-header-user-role">
-                    {user?.role === 'admin' ? '管理员' : '操作员'}
-                  </span>
-                </div>
-              </div>
-            </Dropdown>
+            <GlobalSearch />
+            <Tooltip title="帮助"><button className="app-header-icon-btn" aria-label="帮助"><QuestionCircleOutlined /></button></Tooltip>
+            <Tooltip title="通知"><Badge count={0} overflowCount={99}><button className="app-header-icon-btn" aria-label="通知"><BellOutlined /></button></Badge></Tooltip>
           </div>
         </Header>
-
-        <Content className="app-content">
-          <Outlet />
-        </Content>
+        <Content className="app-content"><Outlet /></Content>
       </Layout>
     </Layout>
   );

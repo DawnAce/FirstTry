@@ -233,7 +233,7 @@ export default function LogisticsIssues() {
       key: 'actions',
       render: (_, r) =>
         r.issue_id == null ? (
-          <Button size="small" type="link" onClick={(e) => { e.stopPropagation(); navigate('/'); }}>
+          <Button size="small" type="link" onClick={(e) => { e.stopPropagation(); navigate('/print'); }}>
             去创建
           </Button>
         ) : (
@@ -363,7 +363,7 @@ export default function LogisticsIssues() {
           }}
           onRow={(record) => ({
             onClick: () => {
-              if (record.issue_id == null) navigate('/');
+              if (record.issue_id == null) navigate('/print');
               else navigate(`/logistics/issues/${record.issue_id}`);
             },
             style: { cursor: 'pointer' },

@@ -80,22 +80,24 @@ FirstTry/
 │   │   ├── api/                # API 客户端
 │   │   │   └── auth.ts         # 认证 API
 │   │   ├── components/         # 通用组件
-│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知铃铛、帮助、用户头像）+ 可折叠侧边栏（Logo、印数管理/物流管理/刊期表管理/订单管理/商品管理/客户管理/合同管理/财务管理 等一级菜单；物流管理与订单管理为展开式子菜单）
+│   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知、帮助、用户）+ 当前业务中心的 Emoji 上下文导航
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
+│   │   ├── businessPortalConfig.ts  # 五大业务中心、模块及路由归属配置
 │   │   ├── pages/              # 页面组件
-│   │   │   ├── DashboardPage.tsx  # 印数报数仪表盘（/，侧边栏「印数报数」）— 统计卡片、一键创建/补录、报数流程、近期印数表、趋势图（ECharts）、待处理/快捷入口侧栏
-│   │   │   ├── History.tsx        # 历史期数页（/history，侧边栏「印数管理 > 历史期数」）
+│   │   │   ├── BusinessPortal.tsx # 业务首页、五大业务中心门户及邮局管理三级入口
+│   │   │   ├── DashboardPage.tsx  # 印数管理仪表盘（/print）— 统计卡片、一键创建/补录、报数流程、近期印数表、趋势图（ECharts）、待处理/快捷入口侧栏
+│   │   │   ├── History.tsx        # 历史期数页（/history，从印数管理页进入）
 │   │   │   ├── HistoryImport.tsx  # 往期导入页（/history-import，从历史印数期数页右上角「导入往期」按钮进入）
 │   │   │   ├── Login.tsx       # 登录页面
 │   │   │   ├── ScheduleView.tsx              # 期刊表页面（/schedule）
 │   │   │   ├── ScheduleImport.tsx            # 导入期刊表页面（/schedule/import）
 │   │   │   ├── Recipients.tsx     # 物流管理子菜单（/recipients「ZTO-MF」、/recipients?tab=recipients「收件人」两标签）
-│   │   │   ├── PostDelivery.tsx    # 邮局管理页（/post-delivery，一级菜单「邮局管理」）— 2 tab：投递明细 DeliveriesTab / 邮局工单 TicketsTab（投诉/收件信息变更/回访三合一，按类型筛选）；「订报转投」在 /post-delivery/subscription、「收款发票」已迁至财务管理（PostalReceipts.tsx）
-│   │   │   ├── ProductCatalog.tsx  # 商品管理页（/products，侧边栏一级菜单「商品管理」）
+│   │   │   ├── PostDelivery.tsx    # 邮局管理页（/post-delivery）— 投递明细 / 邮局工单；订报转投在 /post-delivery/subscription
+│   │   │   ├── ProductCatalog.tsx  # 商品管理页（/products，营销与交易门户入口）
 │   │   │   ├── ReportEditor.tsx
 │   │   │   ├── ShippingPreview.tsx
-│   │   │   └── Templates.tsx    # 报数模板页（/templates，侧边栏「印数管理 > 报数模板」）
+│   │   │   └── Templates.tsx    # 报数模板页（/templates，从印数管理页进入）
 │   │   ├── App.tsx
 │   │   ├── theme.tsx           # Ant Design token 与 CSS variables 的统一主题入口
 │   │   └── main.tsx
@@ -498,7 +500,7 @@ FirstTry/
 - **「最新一期」自动判期号**：导入时 `coverage_rule=latest_issue` 的单期行，按"付款时间 + `publication_schedule` + 周五约 22 点翻期"算出 `issue_number`（中国经营报周一出刊；某期在其出刊周一前的周五 22:00 起售，订单期号 = 付款时间落入的起售窗口对应的期）。`app/services/latest_issue_resolver.py`（`FLIP_WEEKDAY/FLIP_HOUR/BORDERLINE_HOURS` 可配）。翻期点 ±4h 内的临界单加 warning 标黄待核（仍自动判、正常导入）；覆盖期仍留空（单期不走 term_from_month）。
 - `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。
 
-**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品管理，独立一级侧边栏菜单）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
+**新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品管理，从「营销与交易」门户进入）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
 
 迁移（均已应用到生产）：
 - `b4d6f8a1c3e5`：补 `ordereventtype` 枚举遗漏的 `item_added/removed/modified`（修复 V1.2 在严格模式 MySQL 上的潜在崩溃）
@@ -513,7 +515,7 @@ FirstTry/
 
 ### 3.17 邮局管理（投递记录层 + 邮局工单）
 
-**一级菜单「邮局管理」现有 3 个二级菜单**：①**投递明细**（`/post-delivery/deliveries`，纯台账/查询）②**订报转投**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表/分送表/zip，给邮局的名单只来自这里）③**邮局工单**（`/post-delivery/tickets`，投诉/收件信息变更/回访三合一，按类型筛选）。「收款发票」已迁到「财务管理」，作为财务管理第三个 Tab「邮局收款」（见 §4.16 迁移说明）。
+「发行履约 → 邮局管理」现有 3 个三级入口：①**投递明细**（`/post-delivery/deliveries`，纯台账/查询）②**订报转投**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表/分送表/zip，给邮局的名单只来自这里）③**邮局工单**（`/post-delivery/tickets`，投诉/收件信息变更/回访三合一，按类型筛选）。「收款发票」已迁到「财务管理」，作为财务管理第三个 Tab「邮局收款」（见 §4.16 迁移说明）。
 
 **前端布局（2026-07 初代正式稿）**：`PostDelivery.tsx` 的投递明细和邮局工单共用统一的标题、操作、筛选和紧凑表格层级；投递记录详情和新增 / 编辑使用 Ant Design `Drawer`，避免离开列表上下文。`SubscriptionGeneration.tsx` 取消常驻左侧批次栏，改为顶部批次选择器；批次页按三步进度、摘要卡、不可变版本流水和折叠后的地区产物组织。“重新上传来源”是页面内三步工作区（上传 → 校验及与当前版本汇总对比 → 激活），只有最终确认使用 `Popconfirm`；明细和校验问题继续使用只读宽抽屉。
 
@@ -649,7 +651,7 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 
 ### 4.3 刊期查询
 
-前端提供两个刊期表管理页面，侧边栏入口为展开式「刊期表管理」子菜单：
+前端提供两个刊期表管理页面，从「业务首页 → 发行计划 → 刊期表管理」进入：
 
 - **期刊表**（`/schedule`，`ScheduleView.tsx`）：使用 `GET /api/schedule` 按年份展示出版期数、休刊次数、期号范围等概览统计，支持按月份、日期、期号、状态（正常/休刊）筛选，按月份分组展示刊期明细。数据通过 TanStack Query 以 `['schedule', year]` 缓存。年份下拉框的可选项由 `GET /api/schedule/years` 数据驱动（库内实际存在的年份 ∪ 近年窗口），因此任何已导入年份（含历史年）都能被选中，不会因写死年份范围而"看不到"。
 - **导入期刊表**（`/schedule/import`，`ScheduleImport.tsx`）：管理员上传年度刊期 PDF 并预览确认。使用 `GET /api/schedule/uploads` 展示上传记录。数据通过 TanStack Query 以 `['scheduleUploads', year]` 缓存。
@@ -1616,7 +1618,7 @@ draft ──confirm──> active ──void──> void
 
 ### 4.15 活动订单统计（Analytics）
 
-订单管理子模块下的「活动订单统计」页（前端 `/analytics`，`frontend/src/pages/Analytics.tsx`，侧边栏「订单管理 → 活动订单统计」）。后端文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`，均需 JWT 鉴权。
+「经营分析」门户下的「活动订单统计」页（前端 `/analytics`，`frontend/src/pages/Analytics.tsx`）。后端文件：`app/api/analytics.py`、`app/services/order_analytics_service.py`、`app/schemas/analytics.py`，均需 JWT 鉴权。
 
 两张表均可按**下单日期**区间筛选，且**只统计 active（已确认 / 已导入）订单**——草稿 / 待确认 / 作废一律不计；**商业状态为 `refunded` / `cancelled` 的订单整单排除**（手工单 `commercial_status` 为 NULL → 照常计入）。**按活动统计的实收为净额**：`total_paid = SUM(paid_amount − refunded_amount)`（部分退款按 `refunded_amount` 净额冲减），另出 `total_refunded` 列；折扣仍按 `折前原价 − 毛实付` 算（不被退款污染）。⚠️ **按份数的口径**（按期统计 / 商学院发行量）的退款净额**暂未做**——退款只冲减金额、份数仍按原覆盖期算，待后续。
 

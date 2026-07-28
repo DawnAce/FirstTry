@@ -24,6 +24,7 @@ import CustomerList from './pages/CustomerList';
 import ContractManagement from './pages/ContractManagement';
 import FinanceManagement from './pages/FinanceManagement';
 import Login from './pages/Login';
+import { BusinessHome, BusinessCenterPortal, PostalPortal } from './pages/BusinessPortal';
 import type { ReactNode } from 'react';
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -53,7 +54,10 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<BusinessHome />} />
+            <Route path="/business/:centerKey" element={<BusinessCenterPortal />} />
+            <Route path="/business/fulfilment/postal" element={<PostalPortal />} />
+            <Route path="/print" element={<Dashboard />} />
             <Route path="/report/:issueId" element={<ReportEditor />} />
             <Route path="/recipients" element={<WorkbenchOrRedirect />} />
             <Route path="/logistics/issues" element={<LogisticsIssues />} />

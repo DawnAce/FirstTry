@@ -137,7 +137,7 @@ export default function ShippingPreview() {
       message.success(`第 ${issue?.issue_number} 期已删除`);
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
-      navigate('/');
+      navigate('/print');
     } catch (error: any) {
       message.error(error.response?.data?.detail || '删除失败');
     }
@@ -196,7 +196,7 @@ export default function ShippingPreview() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
         <Button
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/print')}
           style={{ borderRadius: 'var(--radius-button)' }}
         />
         <h2 style={{

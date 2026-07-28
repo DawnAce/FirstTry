@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { withRouter, reactRouterParameters } from 'storybook-addon-remix-react-router'
-import { expect, waitFor } from 'storybook/test'
+import { expect } from 'storybook/test'
 import AppLayout from './AppLayout'
 
 // 已登录管理员的假登录态：AppLayout 读取 user（显示用户名/角色）与 logout。
@@ -12,7 +12,7 @@ const adminAuth = {
   logout: () => {},
 }
 
-// AppLayout 是所有已登录路由的外壳（Sider + Header + Outlet）。
+// AppLayout 是所有已登录路由的业务门户外壳（上下文 Sider + Header + Outlet）。
 // 它依赖 react-router（useNavigate/useLocation/Outlet）与 AuthContext，
 // 故 meta 里用 withRouter 注入路由、parameters.auth 注入假登录态。
 const meta = {
@@ -27,7 +27,7 @@ const meta = {
     docs: {
       description: {
         component:
-          '应用框架：左侧可折叠导航 Sider + 顶部 Header + 内容区 Outlet。依赖路由与登录态，故用 withRouter 注入路由、parameters.auth 注入假登录态。',
+          '应用框架：左侧上下文导航 Sider + 顶部 Header + 内容区 Outlet。依赖路由与登录态，故用 withRouter 注入路由、parameters.auth 注入假登录态。',
       },
     },
   },
@@ -36,7 +36,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// 已登录管理员：Sider logo「发行系统」、完整导航菜单、Header 搜索/通知/帮助，用户名与「管理员」角色。
+// 已登录管理员：Sider logo「发行系统」、业务首页入口、Header 搜索/通知/帮助，用户名与「管理员」角色。
 export const LoggedIn: Story = {}
 
 // 非管理员（操作员）：角色标签渲染为「操作员」。
@@ -47,19 +47,6 @@ export const Operator: Story = {
       user: { id: 2, username: '李操作', role: 'operator' },
       isAdmin: false,
     },
-  },
-}
-
-// 交互：点击 Header 折叠按钮收起 Sider —— 触发按钮的 aria-label 由「收起菜单」翻转为「展开菜单」，
-// 且 logo 标题「发行系统」随 !collapsed 条件渲染而隐藏。
-export const CollapseSider: Story = {
-  play: async ({ canvas, userEvent }) => {
-    await expect(canvas.getByText('发行系统')).toBeVisible()
-    await userEvent.click(canvas.getByRole('button', { name: '收起菜单' }))
-    await waitFor(() =>
-      expect(canvas.getByRole('button', { name: '展开菜单' })).toBeInTheDocument(),
-    )
-    expect(canvas.queryByText('发行系统')).toBeNull()
   },
 }
 

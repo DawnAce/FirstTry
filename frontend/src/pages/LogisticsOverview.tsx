@@ -236,7 +236,7 @@ export default function LogisticsOverview() {
                 </div>
                 <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12 }} />
               </div>
-              <div className="dashboard-quick-link" onClick={() => navigate('/')}>
+              <div className="dashboard-quick-link" onClick={() => navigate('/print')}>
                 <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-purple-soft)' }}>
                   <FileTextOutlined style={{ color: 'var(--color-purple)' }} />
                 </div>
