@@ -1,10 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Table, Button, Space, Card, Input, Select, Segmented, Tooltip, Row, Col, Tag } from 'antd';
+import { Table, Button, Space, Card, Input, Select, Segmented, Row, Col, Tag } from 'antd';
 import {
   SendOutlined,
   DownloadOutlined,
   SearchOutlined,
-  InfoCircleOutlined,
   FileTextOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -17,6 +16,7 @@ import { getPeriodsOverview } from '../api/logisticsOverview';
 import type { PeriodRow, PeriodStatus } from '../api/logisticsOverview';
 import type { TableColumnsType } from 'antd';
 import dayjs from 'dayjs';
+import { MetricCard, PageHeader } from '../components/UiPrimitives';
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -109,7 +109,7 @@ export default function LogisticsIssues() {
   const statCards = [
     {
       icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'var(--color-accent-soft)',
+      tone: 'info' as const,
       label: '全部期数',
       value: counts.all,
       suffix: '期',
@@ -118,7 +118,7 @@ export default function LogisticsIssues() {
     },
     {
       icon: <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success)' }} />,
-      bg: 'var(--color-success-soft)',
+      tone: 'success' as const,
       label: '已上传',
       value: counts.已上传,
       suffix: '期',
@@ -128,7 +128,7 @@ export default function LogisticsIssues() {
     },
     {
       icon: <ClockCircleOutlined style={{ fontSize: 21, color: 'var(--color-warning)' }} />,
-      bg: 'var(--color-warning-soft)',
+      tone: 'warning' as const,
       label: '待上传',
       value: counts.待上传,
       suffix: '期',
@@ -138,7 +138,7 @@ export default function LogisticsIssues() {
     },
     {
       icon: <WarningOutlined style={{ fontSize: 21, color: 'var(--color-danger)' }} />,
-      bg: 'var(--color-danger-soft)',
+      tone: 'danger' as const,
       label: '异常',
       value: counts.异常,
       suffix: '期',
@@ -148,7 +148,7 @@ export default function LogisticsIssues() {
     },
     {
       icon: <EditOutlined style={{ fontSize: 21, color: 'var(--color-purple)' }} />,
-      bg: 'var(--color-purple-soft)',
+      tone: 'purple' as const,
       label: '草稿',
       value: counts.草稿,
       suffix: '期',
@@ -267,55 +267,22 @@ export default function LogisticsIssues() {
 
   return (
     <div className="history-page">
-      <div style={{ marginBottom: 20 }}>
-        <h2
-          style={{
-            fontSize: 24,
-            fontWeight: 700,
-            color: 'var(--color-text-primary)',
-            margin: 0,
-            letterSpacing: '-0.02em',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          期数总览
-          <Tooltip title="按期纵览 报数 / 发货 / 对账差值 / 状态，直达单期明细">
-            <InfoCircleOutlined style={{ fontSize: 15, color: 'var(--color-text-secondary)' }} />
-          </Tooltip>
-        </h2>
-        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: '4px 0 0' }}>
-          查看所有期数上传进度与异常情况，进入单期处理具体发货数据。
-        </p>
-      </div>
+      <PageHeader title="期数总览" description="查看所有期数上传进度与异常情况，进入单期处理具体发货数据。" />
 
       <Row gutter={16} style={{ marginBottom: 20 }}>
         {statCards.map((card, idx) => (
           <Col flex="1" key={idx} style={{ display: 'flex', minWidth: 150 }}>
-            <Card
+            <MetricCard
               loading={loading}
-              className="dashboard-stat-card"
-              size="small"
-              style={{ flex: 1, cursor: 'pointer' }}
               onClick={() => setFilterStatus(card.filter)}
-            >
-              <div className="dashboard-stat-card-inner">
-                <div className="dashboard-stat-icon" style={{ background: card.bg }}>
-                  {card.icon}
-                </div>
-                <div className="dashboard-stat-content">
-                  <div className="dashboard-stat-label">{card.label}</div>
-                  <div className="dashboard-stat-value">
-                    {card.value}
-                    {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
-                  </div>
-                  <div className="dashboard-stat-sub" style={card.subColor ? { color: card.subColor } : undefined}>
-                    {card.sub}
-                  </div>
-                </div>
-              </div>
-            </Card>
+              icon={card.icon}
+              tone={card.tone}
+              label={card.label}
+              value={card.value}
+              suffix={card.suffix}
+              note={card.sub}
+              noteTone={card.subColor ? card.tone : undefined}
+            />
           </Col>
         ))}
       </Row>

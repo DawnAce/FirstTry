@@ -22,6 +22,7 @@ import {
   previewHistoryImport,
   commitHistoryImport,
 } from '../api/historyImport';
+import { PageHeader } from '../components/UiPrimitives';
 
 const { Text } = Typography;
 const { Dragger } = Upload;
@@ -170,15 +171,7 @@ export default function HistoryImport() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      <h1 style={{
-        fontSize: 28,
-        fontWeight: 700,
-        color: 'var(--color-text-primary)',
-        margin: '0 0 32px 0',
-        letterSpacing: '-0.02em',
-      }}>
-        往期印数导入
-      </h1>
+      <PageHeader title="往期印数导入" description="使用统一模板补录历史印数与中通发货数据" />
 
       {/* Step 1: Download templates */}
       <Card style={{ marginBottom: 24 }}>

@@ -18,6 +18,7 @@ import {
 import type {
   Artifact, BatchStatus, ImportStatus, ImportVersion, IssueLevel, SubRecord, ValidationIssue,
 } from '../api/subscription';
+import { PageHeader } from '../components/UiPrimitives';
 
 const { Title, Text } = Typography;
 
@@ -430,17 +431,15 @@ export default function SubscriptionGeneration() {
 
   return (
     <div>
-      <Flex className="postal-page-head" justify="space-between" align="flex-start" wrap gap={12}>
-        <div>
-          <Title level={3} className="postal-page-title">订报转投</Title>
-          <Text type="secondary">上传来源、校验版本并生成邮局订报文件；旧版本始终保留。</Text>
-        </div>
-        <Space>
+      <PageHeader
+        title="订报转投"
+        description="上传来源、校验版本并生成邮局订报文件；旧版本始终保留。"
+        actions={<Space>
           <Select value={activeId} onChange={setSelectedId} placeholder="选择批次" style={{ width: 150 }}
             options={batches.map((b) => ({ label: `${b.year}-${String(b.start_month).padStart(2, '0')}`, value: b.id }))} />
           {isAdmin && <Button type="primary" icon={<FileAddOutlined />} onClick={() => setCreateOpen(true)}>新建批次</Button>}
-        </Space>
-      </Flex>
+        </Space>}
+      />
       <div style={{ marginTop: 12 }}>
         {batchesQ.isLoading ? <Card loading /> : activeId == null
           ? <Empty description="选择或新建一个订报批次" />

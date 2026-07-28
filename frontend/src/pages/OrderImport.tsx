@@ -29,8 +29,9 @@ import { ProductFormFields, PUBLICATION_OPTIONS, buildProductPayload } from './P
 import type { ProductFormValues } from './ProductForm';
 import { deliveryMethodLabel, formatCoverage, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
 import EcommerceRules from './ecommerceRules';
+import { PageHeader } from '../components/UiPrimitives';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 type Mode = 'recent' | 'historical';
 
@@ -309,7 +310,7 @@ export default function OrderImport() {
 
   return (
     <div>
-      <Title level={3}>电商订单导入</Title>
+      <PageHeader title="电商订单导入" description="预览、校验并导入各平台订单" />
 
       <EcommerceRules />
 

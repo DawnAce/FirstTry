@@ -11,7 +11,6 @@ import {
   Space,
   Statistic,
   Table,
-  Typography,
   message,
 } from 'antd';
 import { ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
@@ -25,8 +24,7 @@ import {
 import type { IssueGapRow, ReconUnshippedRow } from '../api/orders';
 import { shipShippingDetail } from '../api/shippingDetails';
 import { getIssues } from '../api/issues';
-
-const { Title } = Typography;
+import { PageHeader } from '../components/UiPrimitives';
 
 const gapColumns: TableColumnsType<IssueGapRow> = [
   {
@@ -189,7 +187,7 @@ export default function IssueDispatch() {
 
   return (
     <div>
-      <Title level={3}>按期排发</Title>
+      <PageHeader title="按期排发" description="按刊期检查漏发、生成明细并完成排发" />
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space wrap>
           <Select<number>

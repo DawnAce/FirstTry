@@ -18,6 +18,7 @@ import { getWorkbenchOverview } from '../api/logisticsOverview';
 import type { PeriodRow, PeriodStatus } from '../api/logisticsOverview';
 import { getRecentOperationLogs } from '../api/operationLogs';
 import type { OperationLog } from '../api/operationLogs';
+import { MetricCard, PageHeader } from '../components/UiPrimitives';
 
 const statusTagColor: Record<PeriodStatus, string> = {
   已上传: 'green', 异常: 'red', 待上传: 'gold', 草稿: 'orange', 未创建: 'default',
@@ -46,10 +47,10 @@ export default function LogisticsOverview() {
     if (row.issue_id != null) navigate(`/logistics/issues/${row.issue_id}`);
   };
 
-  const statCards: { icon: ReactNode; bg: string; label: string; value: ReactNode; suffix?: string; sub: string; valueColor?: string }[] = [
+  const statCards: { icon: ReactNode; tone: 'success' | 'warning' | 'danger' | 'purple'; label: string; value: ReactNode; suffix?: string; sub: string }[] = [
     {
       icon: <CheckCircleOutlined style={{ fontSize: 22, color: 'var(--color-success)' }} />,
-      bg: 'var(--color-success-soft)',
+      tone: 'success',
       label: '已上传期数',
       value: kpi.uploaded,
       suffix: '期',
@@ -57,7 +58,7 @@ export default function LogisticsOverview() {
     },
     {
       icon: <ClockCircleOutlined style={{ fontSize: 22, color: 'var(--color-warning)' }} />,
-      bg: 'var(--color-warning-soft)',
+      tone: 'warning',
       label: '待上传期数',
       value: pendingFamily,
       suffix: '期',
@@ -65,16 +66,15 @@ export default function LogisticsOverview() {
     },
     {
       icon: <WarningOutlined style={{ fontSize: 22, color: 'var(--color-danger)' }} />,
-      bg: 'var(--color-danger-soft)',
+      tone: 'danger',
       label: '异常期数',
       value: kpi.exception,
       suffix: '期',
       sub: pct(kpi.exception),
-      valueColor: kpi.exception > 0 ? 'var(--color-danger)' : undefined,
     },
     {
       icon: <CalendarOutlined style={{ fontSize: 22, color: 'var(--color-purple)' }} />,
-      bg: 'var(--color-purple-soft)',
+      tone: 'purple',
       label: '本月最新更新',
       value: latest ? dayjs(latest.last_updated_at).format('YYYY-MM-DD') : '—',
       suffix: '',
@@ -121,29 +121,24 @@ export default function LogisticsOverview() {
 
   return (
     <div className="dashboard-page">
-      <div className="dashboard-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <h1 className="dashboard-title">物流工作台 · ZTO-MF</h1>
-        <Button type="primary" icon={<BarChartOutlined />} onClick={() => navigate('/logistics/issues')}>
-          查看期数总览
-        </Button>
-      </div>
+      <PageHeader
+        title="快递管理"
+        description="管理快递发货、批次与物流轨迹（ZTO-MF）"
+        actions={<Button type="primary" icon={<BarChartOutlined />} onClick={() => navigate('/logistics/issues')}>查看期数总览</Button>}
+      />
 
       <Row gutter={16} className="dashboard-stat-row">
         {statCards.map((card, idx) => (
           <Col xs={12} lg={6} key={idx}>
-            <Card loading={loading} className="dashboard-stat-card" size="small">
-              <div className="dashboard-stat-card-inner">
-                <div className="dashboard-stat-icon" style={{ background: card.bg }}>{card.icon}</div>
-                <div className="dashboard-stat-content">
-                  <div className="dashboard-stat-label">{card.label}</div>
-                  <div className="dashboard-stat-value" style={card.valueColor ? { color: card.valueColor } : undefined}>
-                    {card.value}
-                    {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
-                  </div>
-                  <div className="dashboard-stat-sub">{card.sub}</div>
-                </div>
-              </div>
-            </Card>
+            <MetricCard
+              loading={loading}
+              icon={card.icon}
+              tone={card.tone}
+              label={card.label}
+              value={card.value}
+              suffix={card.suffix}
+              note={card.sub}
+            />
           </Col>
         ))}
       </Row>
