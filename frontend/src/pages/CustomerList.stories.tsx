@@ -47,7 +47,7 @@ const detail = {
 }
 
 const meta = {
-  title: '页面/CustomerList（客户管理·收报人）',
+  title: '页面/营销与交易/客户管理',
   component: CustomerList,
   tags: ['ai-generated'],
   parameters: {
@@ -66,6 +66,7 @@ type Story = StoryObj<typeof meta>
 
 // 有数据：列表渲染收报人（姓名唯一，作为异步到达断言锚点）
 export const Loaded: Story = {
+  name: '已加载',
   parameters: {
     msw: {
       handlers: [http.get('/api/customers', () => HttpResponse.json(list))],
@@ -79,6 +80,7 @@ export const Loaded: Story = {
 // 交互：点击行打开抽屉，触发 GET /api/customers/detail 并渲染在订明细
 // （Drawer 在 document.body 的 portal 中；订单号是详情独有锚点）
 export const DetailDrawer: Story = {
+  name: '客户详情抽屉',
   parameters: {
     msw: {
       handlers: [
@@ -97,6 +99,7 @@ export const DetailDrawer: Story = {
 
 // 空：列表返回空行，展示中文空态文案
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     msw: {
       handlers: [
@@ -108,6 +111,7 @@ export const Empty: Story = {
 
 // 加载中：列表接口不返回，表格保持 loading
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     msw: {
       handlers: [

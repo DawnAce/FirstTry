@@ -28,7 +28,7 @@ const bs = {
 }
 
 const meta = {
-  title: '页面/Analytics（活动订单统计）',
+  title: '页面/经营分析/活动订单统计',
   component: Analytics,
   tags: ['ai-generated'],
   parameters: {
@@ -46,6 +46,7 @@ type Story = StoryObj<typeof meta>
 
 // 有数据
 export const Loaded: Story = {
+  name: '已加载',
   parameters: {
     msw: {
       handlers: [
@@ -59,6 +60,7 @@ export const Loaded: Story = {
 
 // 空：三表都返回空行，展示各自的中文空态文案
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     msw: {
       handlers: [
@@ -72,6 +74,7 @@ export const Empty: Story = {
 
 // 加载中：三个接口都不返回，三张表保持 loading
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     msw: {
       handlers: [

@@ -53,8 +53,9 @@ import type {
 import { listPartners, partnerQueryKeys } from '../api/contracts';
 import { useAuth } from '../contexts/AuthContext';
 import PostalReceiptsPanel from './PostalReceipts';
+import { PageHeader } from '../components/UiPrimitives';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 // 与后端 MAX_ATTACHMENT_BYTES 对齐，前端先行拦截超大文件。
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -571,7 +572,7 @@ export default function FinanceManagement() {
   const { isAdmin } = useAuth();
   return (
     <div>
-      <Title level={3}>财务管理</Title>
+      <PageHeader title="财务管理" description="处理收款、开票与渠道结算" />
       <Card size="small" style={{ marginBottom: 12 }}>
         <Text type="secondary">
           <Text strong>订单发票</Text>：跟踪每张订单是否已开票、退款是否需要冲红；

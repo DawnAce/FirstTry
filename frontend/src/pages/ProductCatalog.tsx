@@ -39,8 +39,9 @@ import {
   publicationLabel,
   subscriptionTermLabel,
 } from './orderUtils';
+import { PageHeader } from '../components/UiPrimitives';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export default function ProductCatalog() {
   const queryClient = useQueryClient();
@@ -224,14 +225,15 @@ export default function ProductCatalog() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>商品管理</Title>
-        <Space>
+      <PageHeader
+        title="商品管理"
+        description="维护可售商品、价格与电商识别规则"
+        actions={<Space>
           <Input.Search placeholder="搜索编码 / 名称" allowClear style={{ width: 220 }} value={search} onChange={(e) => setSearch(e.target.value)} onSearch={setSearch} />
           <Button icon={<ReloadOutlined />} onClick={() => productsQuery.refetch()} loading={productsQuery.isFetching}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增商品</Button>
-        </Space>
-      </div>
+        </Space>}
+      />
 
       <Card size="small" style={{ marginBottom: 12 }}>
         <Text type="secondary">

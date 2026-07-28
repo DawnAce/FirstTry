@@ -36,7 +36,7 @@ const issues = [
 ] as const
 
 const meta = {
-  title: '页面/History（历史期数）',
+  title: '页面/发行计划/印数管理/历史印数期数',
   component: History,
   decorators: [withRouter],
   parameters: {
@@ -52,6 +52,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Loaded: Story = {
+  name: '已加载',
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('第 2650 期')).toBeVisible()
     await expect(await canvas.findByText('第 2649 期')).toBeVisible()

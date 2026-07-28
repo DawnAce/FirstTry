@@ -11,7 +11,7 @@ const templates = [
 ]
 
 const meta = {
-  title: '页面/Templates（报数模板）',
+  title: '页面/发行计划/印数管理/报数模板',
   component: Templates,
   tags: ['ai-generated'],
   parameters: {
@@ -29,6 +29,7 @@ type Story = StoryObj<typeof meta>
 
 // 有数据
 export const Loaded: Story = {
+  name: '已加载',
   parameters: {
     msw: { handlers: [http.get('/api/templates', () => HttpResponse.json(templates))] },
   },
@@ -36,6 +37,7 @@ export const Loaded: Story = {
 
 // 空列表
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     msw: { handlers: [http.get('/api/templates', () => HttpResponse.json([]))] },
   },
@@ -43,6 +45,7 @@ export const Empty: Story = {
 
 // 加载中
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     msw: {
       handlers: [

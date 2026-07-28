@@ -24,7 +24,7 @@ const dataHandlers = [
 ]
 
 const meta = {
-  title: '页面/ContractManagement（合同管理）',
+  title: '页面/合同与财务/合同管理',
   component: ContractManagement,
   tags: ['ai-generated'],
   parameters: {
@@ -43,6 +43,7 @@ type Story = StoryObj<typeof meta>
 
 // 管理员视角：含新增/编辑/删除/上传
 export const Loaded: Story = {
+  name: '已加载',
   parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('2026 年度中通物流配送合作合同')).toBeVisible()
@@ -53,6 +54,7 @@ export const Loaded: Story = {
 
 // 操作员（只读）：无写操作按钮，可下载附件——把「按 isAdmin 显隐」锁进回归
 export const OperatorReadonly: Story = {
+  name: '操作员只读',
   parameters: { auth: operatorAuth, msw: { handlers: dataHandlers } },
   play: async ({ canvas }) => {
     await canvas.findByText('2026 年度中通物流配送合作合同') // 先确保数据已渲染
@@ -64,6 +66,7 @@ export const OperatorReadonly: Story = {
 
 // 空
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     auth: adminAuth,
     msw: {
@@ -77,6 +80,7 @@ export const Empty: Story = {
 
 // 交互：点击「新增合同」打开弹窗（portal 渲染在 document.body）
 export const CreateModal: Story = {
+  name: '新增合同弹窗',
   parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole('button', { name: /新增合同/ }))
@@ -88,6 +92,7 @@ export const CreateModal: Story = {
 
 // 加载中：列表接口不返回，表格保持 loading
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     auth: adminAuth,
     msw: {

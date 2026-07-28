@@ -52,8 +52,9 @@ import type {
   PartnerType,
 } from '../api/contracts';
 import { useAuth } from '../contexts/AuthContext';
+import { PageHeader } from '../components/UiPrimitives';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 // 与后端 MAX_ATTACHMENT_BYTES 对齐，前端先行拦截超大文件，省去整包上传再被 400。
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -545,7 +546,7 @@ export default function ContractManagement() {
   const { isAdmin } = useAuth();
   return (
     <div>
-      <Title level={3}>合同管理</Title>
+      <PageHeader title="合同管理" description="管理合作渠道、合同签订与执行归档" />
       <Card size="small" style={{ marginBottom: 12 }}>
         <Text type="secondary">
           登记与归档<Text strong>上游物流 / 发行 / 零售渠道</Text>（中通、北京市报刊发行局、北京报刊零售局、成都邮征天下、广州日报等）的年度合同：合同信息 + 扫描件归档。合同挂在「合作渠道」下；

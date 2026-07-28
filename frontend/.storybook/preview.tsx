@@ -121,6 +121,17 @@ const preview: Preview = {
     },
   },
   parameters: {
+    options: {
+      storySort: {
+        order: [
+          '设计系统',
+          ['基础规范', '通用模式', '业务组件', '业务框架'],
+          '页面',
+          ['发行计划', '发行履约', '营销与交易', '合同与财务', '经营分析', '登录'],
+          '归档页面',
+        ],
+      },
+    },
     controls: {
       matchers: {
         color: /(background|color)$/i,

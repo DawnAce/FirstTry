@@ -10,6 +10,7 @@ const dashboardData = {
     { id: 10, issue_number: 2651, year_issue_index: 17, year_issue_label: '2026年第17期', publish_date: '2026-05-05', page_count: 16, planned_page_count: 16, status: 'confirmed', notes: null, created_at: '2026-05-05T08:00:00Z', updated_at: '2026-05-06T09:30:00Z', print_total: 128500 },
     { id: 9, issue_number: 2650, year_issue_index: 16, year_issue_label: '2026年第16期', publish_date: '2026-04-28', page_count: 16, planned_page_count: 16, status: 'exported', notes: null, created_at: '2026-04-28T08:00:00Z', updated_at: '2026-04-29T09:30:00Z', print_total: 130200 },
     { id: 8, issue_number: 2649, year_issue_index: 15, year_issue_label: '2026年第15期', publish_date: '2026-04-21', page_count: 16, planned_page_count: 16, status: 'exported', notes: null, created_at: '2026-04-21T08:00:00Z', updated_at: '2026-04-22T09:30:00Z', print_total: 127800 },
+    { id: 7, issue_number: 2648, year_issue_index: 14, year_issue_label: '2026年第14期', publish_date: '2026-04-14', page_count: 16, planned_page_count: 16, status: 'exported', notes: null, created_at: '2026-04-14T08:00:00Z', updated_at: '2026-04-15T09:30:00Z', print_total: 129100 },
   ],
   stats: { total: 42, draft: 1 },
   weekly_stats: { this_week_total: 132000, last_week_total: 128500, week_change: 3500 },
@@ -35,7 +36,7 @@ const emptyDashboard = {
 }
 
 const meta = {
-  title: '页面/Dashboard（首页仪表盘）',
+  title: '页面/发行计划/印数管理',
   component: Dashboard,
   tags: ['ai-generated'],
   decorators: [withRouter],
@@ -55,6 +56,7 @@ type Story = StoryObj<typeof meta>
 
 // 有数据
 export const Loaded: Story = {
+  name: '已加载',
   parameters: {
     msw: { handlers: [http.get('/api/dashboard', () => HttpResponse.json(dashboardData))] },
   },
@@ -62,6 +64,7 @@ export const Loaded: Story = {
 
 // 全新系统：无期数、无待处理、无趋势数据
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     msw: { handlers: [http.get('/api/dashboard', () => HttpResponse.json(emptyDashboard))] },
   },
@@ -69,6 +72,7 @@ export const Empty: Story = {
 
 // 加载中：接口不返回，卡片与表格保持 loading
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     msw: {
       handlers: [

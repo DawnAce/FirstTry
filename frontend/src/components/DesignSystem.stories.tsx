@@ -6,7 +6,7 @@ import { designTokens } from '../theme'
 // 设计系统概览：把项目里复用的颜色 token、按钮与状态标签集中展示，
 // 方便设计师 / PM / 开发在一个地方浏览统一的视觉规范。
 const meta: Meta = {
-  title: '设计系统/概览',
+  title: '设计系统/基础规范',
   parameters: {
     docs: {
       description: {
@@ -39,6 +39,7 @@ function Swatch({ name, variable, fallback }: { name: string; variable: string; 
 
 // 颜色 token 来自 src/theme.tsx；Storybook 与生产入口都通过 DesignSystemProvider 使用它们。
 export const Colors: Story = {
+  name: '颜色',
   render: () => (
     <div>
       <Typography.Title level={4}>基础颜色</Typography.Title>
@@ -65,6 +66,7 @@ export const Colors: Story = {
 }
 
 export const ThemeWorkbench: Story = {
+  name: '主题工作台',
   render: () => (
     <Space orientation="vertical" size="large" style={{ width: '100%' }}>
       <div>
@@ -92,6 +94,7 @@ export const ThemeWorkbench: Story = {
 
 // 按钮：项目里常见的几种用法
 export const Buttons: Story = {
+  name: '按钮',
   render: () => (
     <Space size={16} wrap>
       <Button type="primary" icon={<ReloadOutlined />}>
@@ -111,6 +114,7 @@ export const Buttons: Story = {
 
 // 状态标签：发货明细里按收件人类型着色
 export const StatusTags: Story = {
+  name: '标签',
   render: () => (
     <Space size={12} wrap>
       <Tag color="blue">对公</Tag>
@@ -122,6 +126,7 @@ export const StatusTags: Story = {
 
 // 一个最小的表格示例，展示中文 locale 下的分页文案等
 export const SampleTable: Story = {
+  name: '表格',
   render: () => (
     <Table
       size="middle"

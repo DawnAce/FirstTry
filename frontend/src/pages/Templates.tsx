@@ -1,6 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
 import {
-  Card,
   Row,
   Col,
   Button,
@@ -13,13 +12,11 @@ import {
   Space,
   message,
   Popconfirm,
-  Tooltip,
 } from 'antd';
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  InfoCircleOutlined,
   FileTextOutlined,
   AppstoreOutlined,
   SyncOutlined,
@@ -35,6 +32,7 @@ import {
   reorderTemplates,
 } from '../api/templates';
 import { categoryLabels, categoryOrder, categoryFrequency, categoryLabel } from './reportCategories';
+import { MetricCard, PageHeader } from '../components/UiPrimitives';
 
 const categoryOptions = categoryOrder
   .filter((c) => categoryLabels[c])
@@ -208,7 +206,7 @@ export default function Templates() {
   const statCards = [
     {
       icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'var(--color-accent-soft)',
+      tone: 'info' as const,
       label: '模板项目',
       value: stats.total,
       suffix: '项',
@@ -216,7 +214,7 @@ export default function Templates() {
     },
     {
       icon: <AppstoreOutlined style={{ fontSize: 21, color: 'var(--color-purple)' }} />,
-      bg: 'var(--color-purple-soft)',
+      tone: 'purple' as const,
       label: '类别',
       value: stats.categories,
       suffix: '类',
@@ -224,7 +222,7 @@ export default function Templates() {
     },
     {
       icon: <SyncOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'var(--color-accent-soft)',
+      tone: 'info' as const,
       label: '变动项',
       value: stats.variable,
       suffix: '项',
@@ -232,7 +230,7 @@ export default function Templates() {
     },
     {
       icon: <BarChartOutlined style={{ fontSize: 21, color: 'var(--color-success)' }} />,
-      bg: 'var(--color-success-soft)',
+      tone: 'success' as const,
       label: '默认值合计',
       value: stats.defaultSum.toLocaleString(),
       suffix: '份',
@@ -242,52 +240,24 @@ export default function Templates() {
 
   return (
     <div className="tmpl-page">
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, gap: 16 }}>
-        <div>
-          <h2
-            style={{
-              fontSize: 24,
-              fontWeight: 700,
-              color: 'var(--color-text-primary)',
-              margin: 0,
-              letterSpacing: '-0.02em',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            报数模板
-            <Tooltip title="定义每期《报数》包含哪些项目——新建报数时按此母表逐行生成">
-              <InfoCircleOutlined style={{ fontSize: 15, color: 'var(--color-text-secondary)' }} />
-            </Tooltip>
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: '6px 0 0', maxWidth: 640, lineHeight: 1.6 }}>
-            定义每期《报数》包含哪些项目，新建报数时按这张母表逐行生成。按类别分组，和印数报数里的报表结构一致。
-          </p>
-        </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
-          新增项目
-        </Button>
-      </div>
+      <PageHeader
+        title="报数模板"
+        description="定义每期《报数》包含哪些项目；新建报数时按母表逐行生成，并与印数报数的分组结构保持一致。"
+        actions={<Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新增项目</Button>}
+      />
 
       <Row gutter={16} style={{ marginBottom: 20 }}>
         {statCards.map((card, idx) => (
           <Col xs={12} md={6} key={idx} style={{ display: 'flex' }}>
-            <Card loading={isLoading} className="dashboard-stat-card" size="small" style={{ flex: 1 }}>
-              <div className="dashboard-stat-card-inner">
-                <div className="dashboard-stat-icon" style={{ background: card.bg }}>
-                  {card.icon}
-                </div>
-                <div className="dashboard-stat-content">
-                  <div className="dashboard-stat-label">{card.label}</div>
-                  <div className="dashboard-stat-value">
-                    {card.value}
-                    <span className="dashboard-stat-suffix"> {card.suffix}</span>
-                  </div>
-                  <div className="dashboard-stat-sub">{card.sub}</div>
-                </div>
-              </div>
-            </Card>
+            <MetricCard
+              loading={isLoading}
+              icon={card.icon}
+              tone={card.tone}
+              label={card.label}
+              value={card.value}
+              suffix={card.suffix}
+              note={card.sub}
+            />
           </Col>
         ))}
       </Row>

@@ -46,7 +46,7 @@ const dataHandlers = [
 ]
 
 const meta = {
-  title: '页面/FinanceManagement（财务管理）',
+  title: '页面/合同与财务/财务管理',
   component: FinanceManagement,
   tags: ['ai-generated'],
   parameters: {
@@ -65,6 +65,7 @@ type Story = StoryObj<typeof meta>
 
 // 管理员：发票工作台 + 登记入口
 export const Loaded: Story = {
+  name: '已加载',
   parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('CBJ-2026-0001')).toBeVisible()
@@ -74,6 +75,7 @@ export const Loaded: Story = {
 
 // 操作员（只读）：无登记按钮
 export const OperatorReadonly: Story = {
+  name: '操作员只读',
   parameters: { auth: operatorAuth, msw: { handlers: dataHandlers } },
   play: async ({ canvas }) => {
     await canvas.findByText('CBJ-2026-0001')
@@ -83,6 +85,7 @@ export const OperatorReadonly: Story = {
 
 // 交互：点「登记发票」打开弹窗
 export const RegisterInvoice: Story = {
+  name: '登记发票',
   parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
   play: async ({ canvas, userEvent }) => {
     const buttons = await canvas.findAllByRole('button', { name: /登记发票/ })
@@ -94,6 +97,7 @@ export const RegisterInvoice: Story = {
 
 // 交互：切到「渠道结算」页签，结算行渲染
 export const SettlementsTab: Story = {
+  name: '渠道结算页签',
   parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole('tab', { name: '渠道结算' }))
@@ -103,6 +107,7 @@ export const SettlementsTab: Story = {
 
 // 空
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     auth: adminAuth,
     msw: {
@@ -117,6 +122,7 @@ export const Empty: Story = {
 
 // 加载中
 export const Loading: Story = {
+  name: '加载中',
   parameters: {
     auth: adminAuth,
     msw: {

@@ -56,8 +56,8 @@ import {
 } from './orderUtils';
 import EcommerceRules from './ecommerceRules';
 import { useAuth } from '../contexts/AuthContext';
+import { PageHeader } from '../components/UiPrimitives';
 
-const { Title } = Typography;
 const { RangePicker } = DatePicker;
 
 const STATUS_OPTIONS: Array<{ label: string; value: OrderStatus }> = [
@@ -481,18 +481,10 @@ export default function OrderList() {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-        }}
-      >
-        <Title level={3} style={{ margin: 0 }}>
-          订单管理
-        </Title>
-        <Space>
+      <PageHeader
+        title="订单管理"
+        description="管理订单创建、生效、履约与售后状态"
+        actions={<Space>
           <Button
             icon={<ReloadOutlined />}
             onClick={() => ordersQuery.refetch()}
@@ -512,8 +504,8 @@ export default function OrderList() {
           >
             新建订单
           </Button>
-        </Space>
-      </div>
+        </Space>}
+      />
 
       <EcommerceRules />
 

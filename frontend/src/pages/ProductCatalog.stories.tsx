@@ -10,7 +10,7 @@ const products = [
 ]
 
 const meta = {
-  title: '页面/ProductCatalog（商品库）',
+  title: '页面/营销与交易/商品管理',
   component: ProductCatalog,
   tags: ['ai-generated'],
   parameters: {
@@ -28,6 +28,7 @@ type Story = StoryObj<typeof meta>
 
 // 有数据：表格渲染商品（编码唯一，作为异步到达断言锚点）
 export const Loaded: Story = {
+  name: '已加载',
   parameters: {
     msw: { handlers: [http.get('/api/products', () => HttpResponse.json(products))] },
   },
@@ -38,6 +39,7 @@ export const Loaded: Story = {
 
 // 空列表
 export const Empty: Story = {
+  name: '空状态',
   parameters: {
     msw: { handlers: [http.get('/api/products', () => HttpResponse.json([]))] },
   },
@@ -45,6 +47,7 @@ export const Empty: Story = {
 
 // 交互：点击「新增商品」打开 Modal（portal 渲染在 document.body）
 export const CreateModal: Story = {
+  name: '新增商品弹窗',
   parameters: {
     msw: { handlers: [http.get('/api/products', () => HttpResponse.json(products))] },
   },
