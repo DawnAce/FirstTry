@@ -96,7 +96,9 @@ FirstTry/
 │   │   │   ├── Recipients.tsx     # 物流管理子菜单（/recipients「ZTO-MF」、/recipients?tab=recipients「收件人」两标签）
 │   │   │   ├── PostDelivery.tsx    # 邮局管理页（/post-delivery）— 投递明细 / 邮局工单；订报转投在 /post-delivery/subscription
 │   │   │   ├── ProductCatalog.tsx  # 商品管理页（/products，营销与交易门户入口）
-│   │   │   ├── ReportEditor.tsx
+│   │   │   ├── ReportEditor.tsx  # 报数编辑页：分区表单、分类折叠、实时汇总及状态操作
+│   │   │   ├── ReportEditor.css  # 报数编辑页的卡片式响应布局与视觉样式
+│   │   │   ├── ReportEditor.stories.tsx # 报数编辑页完整草稿态 Story
 │   │   │   ├── ShippingPreview.tsx
 │   │   │   └── Templates.tsx    # 报数模板页（/templates，从印数管理页进入）
 │   │   ├── App.tsx
@@ -1916,7 +1918,9 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - 印数管理各模块标题以“报数流程”为视觉基准，统一字号、字重、颜色和行高；次要文本及成功/警告状态文字使用主题中的高对比度语义色。
 - 普通 DOM/CSS 使用 `var(--color-*)` 等语义变量；Canvas/ECharts 等不能直接消费 CSS 的渲染器通过 `theme.useToken()` 取得当前主题色。
 - 所有 Ant Design `Modal` 在 `frontend/src/index.css` 统一复用“邮局工单”弹窗的遮罩、容器、标题、表单和操作栏样式；新增弹窗直接使用 `Modal`，仅在业务布局确有差异时添加局部类名。
+- 报数编辑页 `ReportEditor.tsx` 使用分区卡片式表单：临时加印、完整报数类别与右侧实时汇总在同一工作区内联动；实际版数继续使用原生 `InputNumber` 编辑，保存、确认、作废、导出、删除和发货等既有业务流程不变。页面专属响应式样式位于 `ReportEditor.css`。
 - Storybook 顶部工具栏可统一切换亮/暗主题、舒适/紧凑密度和圆润/克制圆角。新增或迁移业务页面时应补代表性 Story，并检查这些全局组合。
+- `ReportEditor.stories.tsx` 提供含全部 31 个可见项目、临时加印归属和中通校验数据的草稿态场景，用于核对完整页面而非精简占位稿。
 - Storybook 的“页面”分类覆盖业务首页、发行履约和邮局管理门户，便于按实际导航层级检查入口页面。
 - 历史业务页面已按普通页、复杂详情页、图表页三类完成迁移；`frontend/src/pages` 不再保留直接色值，新页面继续复用上述语义变量或当前 Ant Design token。
 
