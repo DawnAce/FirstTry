@@ -2117,57 +2117,302 @@ body {
 
 /* ===== Logistics · ZTO-MF (中通发货明细) ===== */
 .zto-page {
-  max-width: 1240px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
-.zto-issuebar {
+.zto-page-back.ant-btn {
+  padding-inline: 0;
+  margin-bottom: 6px;
+}
+
+.zto-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.zto-title-line {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--color-card);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: 10px 14px;
-  margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
-.zto-navib {
-  width: 34px;
+.zto-title-line h1 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.zto-issue-meta {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.zto-issue-tag.ant-tag {
+  margin-inline-end: 0;
+  border: 0;
+  font-weight: 600;
+}
+
+.zto-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
-.zto-issue-status {
-  margin-left: auto;
-  font-size: 12.5px;
+.zto-reconcile-card.ant-card,
+.zto-list-card.ant-card,
+.zto-empty-card.ant-card {
+  border: 1px solid var(--color-border) !important;
+}
+
+.zto-reconcile-card {
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.zto-reconcile-main {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.2fr) repeat(4, minmax(100px, 0.65fr));
+  min-height: 124px;
+}
+
+.zto-reconcile-result {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 24px;
+  border-right: 1px solid var(--color-border);
+}
+
+.zto-reconcile-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--color-accent);
+  font-size: 27px;
+}
+
+.zto-reconcile-result.is-match .zto-reconcile-icon {
+  background: var(--color-success);
+}
+
+.zto-reconcile-result.is-mismatch .zto-reconcile-icon {
+  background: var(--color-danger);
+}
+
+.zto-reconcile-result.is-pending .zto-reconcile-icon {
+  background: var(--color-accent);
+}
+
+.zto-reconcile-result span,
+.zto-reconcile-result small {
+  display: block;
   color: var(--color-text-secondary);
 }
 
-.zto-stat--ok {
-  background: var(--color-success-soft) !important;
-  box-shadow: 0 1px 3px rgba(82, 196, 26, 0.16) !important;
+.zto-reconcile-result span {
+  margin-bottom: 3px;
+  font-size: 12px;
 }
 
-.zto-stat--bad {
-  background: var(--color-danger-soft) !important;
-  box-shadow: 0 1px 3px rgba(255, 77, 79, 0.14) !important;
+.zto-reconcile-result strong {
+  display: block;
+  color: var(--color-accent);
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.zto-reconcile-result.is-match strong {
+  color: var(--color-success-text);
+}
+
+.zto-reconcile-result.is-mismatch strong {
+  color: var(--color-danger);
+}
+
+.zto-reconcile-result small {
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.zto-reconcile-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 18px 20px;
+  border-right: 1px solid var(--color-border);
+}
+
+.zto-reconcile-metric:last-child {
+  border-right: 0;
+}
+
+.zto-reconcile-metric > span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.zto-reconcile-metric > strong {
+  margin: 4px 0 1px;
+  color: var(--color-text-primary);
+  font-size: 22px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.zto-reconcile-metric > strong.is-success {
+  color: var(--color-success-text);
+}
+
+.zto-reconcile-metric > strong.is-danger {
+  color: var(--color-danger);
+}
+
+.zto-reconcile-metric > small {
+  color: #96989e;
+  font-size: 11px;
+}
+
+.zto-change-strip {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  border-top: 1px solid #f3dfb7;
+  color: #6f4b16;
+  background: var(--color-warning-soft);
+}
+
+.zto-change-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: var(--color-warning-text);
+  background: #ffebbd;
+  font-weight: 800;
+}
+
+.zto-change-copy {
+  min-width: 0;
+}
+
+.zto-change-copy strong {
+  color: #9b5100;
+}
+
+.zto-change-copy span {
+  margin-left: 8px;
+  color: #826434;
+}
+
+.zto-change-snapshot {
+  margin-left: auto;
+  color: #765a2b;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.zto-change-snapshot b {
+  color: #b65b00;
+}
+
+.zto-change-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.zto-reverify-btn.ant-btn {
+  color: var(--color-accent) !important;
+  border-color: #a9cef3 !important;
+  background: var(--color-card) !important;
+}
+
+.zto-list-card {
+  overflow: hidden;
+}
+
+.zto-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+}
+
+.zto-list-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.zto-list-title h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.zto-list-title span {
+  color: var(--color-text-secondary);
+  font-size: 13px;
 }
 
 .zto-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 9px;
+  padding: 0 20px 16px;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--color-divider);
+}
+
+.zto-filter-search {
+  width: 250px;
+}
+
+.zto-filter-channel,
+.zto-filter-status {
+  width: 128px;
+}
+
+.zto-filter-company {
+  width: 180px;
+}
+
+.zto-more-filters {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.zto-more-filters .ant-select {
+  width: 100%;
 }
 
 .zto-toolbar-tail {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 9px;
 }
 
 .zto-toolbar-count {
@@ -2183,27 +2428,45 @@ body {
 }
 
 .zto-recv-addr {
-  max-width: 300px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .zto-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .zto-mark {
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
-  gap: 3px;
   align-items: flex-start;
 }
 
-.zto-mark .ant-tag {
-  margin-inline-end: 0;
+.zto-source {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.zto-sync {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.zto-sync--synced {
+  color: var(--color-success-text);
+}
+
+.zto-sync--manually_modified {
+  color: var(--color-warning-text);
+}
+
+.zto-sync--orphaned {
+  color: var(--color-danger);
 }
 
 .zto-status-dot {
@@ -2215,11 +2478,128 @@ body {
   vertical-align: middle;
 }
 
+.zto-status {
+  white-space: nowrap;
+}
+
+.zto-person-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.zto-expand-btn.ant-btn {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  margin-top: -1px;
+  padding: 0;
+  color: #8a8e95;
+  transition: transform 0.18s ease;
+}
+
+.zto-expand-btn.open {
+  transform: rotate(90deg);
+}
+
+.zto-person-copy {
+  min-width: 0;
+}
+
+.zto-person-copy > strong {
+  display: block;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zto-person-tags {
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.zto-person-tags .ant-tag {
+  margin-inline-end: 4px;
+  border: 0;
+  border-radius: var(--radius-tag);
+  font-size: 12px;
+}
+
+.zto-company {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zto-quantity {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.zto-row-actions {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.zto-row-actions .ant-btn-link {
+  padding-inline: 4px;
+}
+
+.zto-action-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 118px;
+}
+
+.zto-action-menu > .ant-btn,
+.zto-action-menu > .ant-popconfirm-trigger {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.zto-table {
+  border-top: 1px solid var(--color-border);
+}
+
+.zto-table .ant-table-thead > tr > th {
+  height: 48px;
+  padding: 0 12px;
+  color: #74777e;
+  background: #fafafa;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.zto-table .ant-table-tbody > tr:not(.ant-table-measure-row) > td {
+  height: 72px;
+  padding: 10px 12px;
+  border-bottom-color: #f0f1f3;
+}
+
+.zto-table .ant-table-measure-row > td {
+  height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.zto-table .ant-table-selection-column {
+  text-align: center;
+}
+
+.zto-table .ant-table-expanded-row > td {
+  height: auto;
+  padding: 14px 28px 16px 56px !important;
+  background: #fafcff !important;
+}
+
 .zto-expand {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px 24px;
-  padding: 6px 8px 10px;
+  grid-template-columns: repeat(6, minmax(110px, 1fr));
+  gap: 16px;
 }
 
 .zto-expand .zto-cell .k {
@@ -2250,112 +2630,69 @@ body {
   margin-right: 4px;
 }
 
-/* ZTO-MF 当期中通校验状态：当前校验结果 + 确认时快照与变更 */
-.zto-check-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 16px;
+.zto-empty-card .ant-card-body {
+  padding: 48px 24px;
 }
 
-.zto-check-result {
-  border-radius: var(--radius-card);
-  padding: 16px 18px;
-  border: 1px solid var(--color-success);
-  background: var(--color-success-soft);
-}
-
-.zto-check-result.bad {
-  border-color: var(--color-danger);
-  background: var(--color-danger-soft);
-}
-
-.zto-check-title {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  margin-bottom: 12px;
-}
-
-.zto-check-hero {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.zto-check-hero-text {
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.zto-check-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
-.zto-check-rows > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 13.5px;
-  color: var(--color-text-tertiary);
-}
-
-.zto-check-rows > div b {
+.zto-empty-title {
   color: var(--color-text-primary);
+  font-size: 15px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
-.zto-check-snapshot {
-  border-radius: var(--radius-card);
-  padding: 16px 18px;
-  border: 1px solid var(--color-warning);
-  background: var(--color-warning-soft);
-}
-
-.zto-check-snapshot-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-  gap: 20px;
-}
-
-.zto-check-changes {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  border-left: 1px solid var(--color-border);
-  padding-left: 20px;
-}
-
-.zto-check-changes-text {
-  font-size: 12.5px;
+.zto-empty-copy {
+  margin-top: 4px;
   color: var(--color-text-secondary);
-  line-height: 1.65;
-  margin: 0;
+  font-size: 13px;
 }
 
-.zto-reverify-btn.ant-btn {
-  background: var(--color-card) !important;
-  color: var(--color-accent) !important;
-  border-color: var(--color-accent) !important;
-}
+@media (max-width: 1380px) {
+  .zto-reconcile-main {
+    grid-template-columns: minmax(240px, 1.15fr) repeat(4, minmax(92px, 0.62fr));
+  }
 
-.zto-reverify-btn.ant-btn:hover {
-  background: var(--color-accent-soft) !important;
-}
+  .zto-reconcile-metric {
+    padding-inline: 15px;
+  }
 
-@media (max-width: 1100px) {
-  .zto-check-grid,
-  .zto-check-snapshot-body {
-    grid-template-columns: 1fr;
+  .zto-change-snapshot {
+    display: none;
   }
 }
 
 @media (max-width: 1100px) {
-  .zto-expand {
+  .zto-page-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .zto-reconcile-main {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .zto-reconcile-result {
+    grid-column: 1 / -1;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .zto-reconcile-metric:nth-child(3),
+  .zto-reconcile-metric:nth-child(5) {
+    border-right: 0;
+  }
+
+  .zto-change-strip {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .zto-change-actions {
+    width: 100%;
+    margin-left: 38px;
+  }
+
+  .zto-expand {
+    grid-template-columns: repeat(3, minmax(110px, 1fr));
   }
 }
 

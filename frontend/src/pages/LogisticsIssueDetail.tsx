@@ -9,7 +9,6 @@ import {
   Input,
   Select,
   Tag,
-  Space,
   message,
   Drawer,
   Timeline,
@@ -19,30 +18,23 @@ import {
   Card,
   Tooltip,
   Popover,
-  Row,
-  Col,
   Empty,
-  Descriptions,
 } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
   DeleteOutlined,
-  EditOutlined,
   HistoryOutlined,
   DownloadOutlined,
   FilterOutlined,
   LeftOutlined,
   FileTextOutlined,
   InboxOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  CheckCircleFilled,
-  CloseCircleFilled,
+  CheckOutlined,
+  CloseOutlined,
   ReloadOutlined,
-  UnorderedListOutlined,
-  CloudUploadOutlined,
-  SafetyCertificateOutlined,
+  MoreOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TableColumnsType, TableProps } from 'antd';
@@ -83,7 +75,7 @@ const transportColors: Record<string, string> = {
   '中通物流': 'blue', '邮政物流': 'green', '包车运输': 'orange', '库房留存': 'default',
 };
 const sourceTypeMeta: Record<string, { label: string; color: string }> = {
-  manual: { label: '手工', color: 'default' },
+  manual: { label: '手工录入', color: 'default' },
   order_generated: { label: '订单生成', color: 'blue' },
   historical_import: { label: '历史导入', color: 'default' },
 };
@@ -128,6 +120,7 @@ export default function LogisticsIssueDetail() {
   const [logRecordId, setLogRecordId] = useState<number | null>(null);
   const [logRecordName, setLogRecordName] = useState<string>('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
+  const [expandedRowKeys, setExpandedRowKeys] = useState<Key[]>([]);
   const [batchDeadline, setBatchDeadline] = useState<dayjs.Dayjs | null>(null);
   const [exporting, setExporting] = useState(false);
   const [clearingIssue, setClearingIssue] = useState(false);
@@ -364,124 +357,76 @@ export default function LogisticsIssueDetail() {
   const rowSelection: TableProps<ShippingDetail>['rowSelection'] = {
     selectedRowKeys,
     onChange: (keys) => setSelectedRowKeys(keys),
+    columnWidth: 44,
   };
   const confirmationSummary = report?.confirmation_summary;
   const currentShippingTotal = details.reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const allShippingTotal = allDetails.reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
   const check = report?.shipping_check;
   const advancedFilterCount = [shippingFilters.frequency, shippingFilters.transport, shippingFilters.sub_channel].filter(Boolean).length;
-
-  // ---- 本期处理状态 ----
   const uploaded = allDetails.length > 0;
   const anomalyRows = allDetails.filter((d) => d.sync_status !== 'synced');
   const hasDrift = !!confirmationSummary?.has_shipping_drift;
-  const isException = uploaded && (((check && !check.is_match) ?? false) || hasDrift);
-  const isConfirmed = currentIssue?.status === 'confirmed' || currentIssue?.status === 'exported';
+  const displayedReportTotal = check?.report_zt_total ?? confirmationSummary?.confirmed_report_total ?? null;
+  const displayedShippingTotal = check?.shipping_total ?? confirmationSummary?.current_shipping_total ?? allShippingTotal;
+  const displayedDelta = check?.delta ?? confirmationSummary?.current_delta ?? null;
+  const currentIsMatch = check?.is_match ?? confirmationSummary?.current_is_match ?? null;
+  const snapshotDelta = confirmationSummary
+    ? confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total
+    : 0;
+  const hasShippingFilters = !!(
+    shippingFilters.channel
+    || shippingFilters.sub_channel
+    || shippingFilters.frequency
+    || shippingFilters.transport
+    || shippingFilters.status
+    || shippingFilters.search
+    || shippingFilters.company?.length
+  );
 
-  const statCards: {
-    icon: ReactNode; bg: string; label: string; value: ReactNode; suffix?: string;
-    sub: string; cardClass?: string; valueColor?: string;
-  }[] = [
-    {
-      icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'var(--color-accent-soft)',
-      label: '报数 · 中通合计',
-      value: check ? check.report_zt_total.toLocaleString() : '—',
-      suffix: check ? '份' : '',
-      sub: '报数编辑页「中通物流公司」合计',
-    },
-    {
-      icon: <InboxOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      bg: 'var(--color-accent-soft)',
-      label: '发货明细 · 合计',
-      value: check ? check.shipping_total.toLocaleString() : currentShippingTotal.toLocaleString(),
-      suffix: '份',
-      sub: `本期 ${allDetails.length} 条明细求和`,
-    },
-    {
-      icon: check
-        ? (check.is_match
-          ? <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success-text)' }} />
-          : <CloseCircleOutlined style={{ fontSize: 21, color: 'var(--color-danger)' }} />)
-        : <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-text-secondary)' }} />,
-      bg: check
-        ? (check.is_match ? 'var(--color-success-soft)' : 'var(--color-danger-soft)')
-        : 'var(--color-divider)',
-      label: '对账 · 差值（报数−发货）',
-      value: check ? (check.is_match ? '一致' : `差 ${Math.abs(check.delta).toLocaleString()} 份`) : '—',
-      suffix: '',
-      sub: check
-        ? (check.is_match
-          ? '报数与发货明细一致'
-          : `报数 ${check.report_zt_total.toLocaleString()} / 发货 ${check.shipping_total.toLocaleString()}`)
-        : '暂无报数校验',
-      valueColor: check
-        ? (check.is_match ? 'var(--color-success-text)' : 'var(--color-danger)')
-        : undefined,
-    },
-    {
-      icon: anomalyRows.length === 0
-        ? <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success-text)' }} />
-        : <CloseCircleOutlined style={{ fontSize: 21, color: 'var(--color-danger)' }} />,
-      bg: anomalyRows.length === 0 ? 'var(--color-success-soft)' : 'var(--color-danger-soft)',
-      label: '异常状态',
-      value: anomalyRows.length.toLocaleString(),
-      suffix: '条',
-      sub: anomalyRows.length === 0 ? '当前无异常记录' : '人工修改 / 孤立明细',
-      valueColor: anomalyRows.length === 0 ? undefined : 'var(--color-danger)',
-    },
-  ];
-
-  // ---- 本期处理状态 3 卡 ----
-  const processCards = [
-    {
-      icon: <CloudUploadOutlined style={{ fontSize: 24, color: uploaded ? 'var(--color-accent)' : 'var(--color-text-secondary)' }} />,
-      title: '是否已上传',
-      state: uploaded ? '已上传' : '未上传',
-      stateColor: uploaded ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-      desc: uploaded ? `发货明细已录入 ${allDetails.length} 条` : '尚未上传发货明细',
-    },
-    {
-      icon: isException
-        ? <CloseCircleOutlined style={{ fontSize: 24, color: 'var(--color-warning)' }} />
-        : <CheckCircleOutlined style={{ fontSize: 24, color: 'var(--color-success)' }} />,
-      title: '是否有异常',
-      state: isException ? '有异常' : '暂无异常',
-      stateColor: isException ? 'var(--color-warning)' : 'var(--color-success)',
-      desc: isException ? '存在差异 / 确认后变更 / 孤立明细' : '当前未发现异常报告',
-    },
-    {
-      icon: <SafetyCertificateOutlined style={{ fontSize: 24, color: isConfirmed ? 'var(--color-success)' : 'var(--color-text-secondary)' }} />,
-      title: '是否已确认',
-      state: isConfirmed ? '已确认' : '未确认',
-      stateColor: isConfirmed ? 'var(--color-success)' : 'var(--color-text-secondary)',
-      desc: isConfirmed ? '发货数据已确认并锁定' : '确认后本期将计入统计',
-    },
-  ];
-
-  const todoSteps = [
-    { label: '上传发货明细', done: uploaded },
-    { label: '检查并处理异常', done: uploaded && !isException },
-    { label: '确认本期数据', done: isConfirmed },
-  ];
+  const toggleExpanded = (recordId: number) => {
+    setExpandedRowKeys((keys) => (
+      keys.includes(recordId) ? keys.filter((key) => key !== recordId) : [...keys, recordId]
+    ));
+  };
 
   const shippingColumns: TableColumnsType<ShippingDetail> = [
     {
       title: '姓名 / 渠道',
       dataIndex: 'name',
       key: 'name',
+      width: 170,
       render: (_: unknown, r: ShippingDetail) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>{r.name}</div>
-          <div style={{ marginTop: 2 }}>
-            {r.channel ? <Tag color={channelColors[r.channel] || 'default'} style={{ marginInlineEnd: 4 }}>{r.channel}</Tag> : null}
-            {r.sub_channel ? <Tag color={r.sub_channel === '监管' ? 'orange' : 'gold'} style={{ marginInlineEnd: 0 }}>{r.sub_channel}</Tag> : null}
+        <div className="zto-person-cell">
+          <Button
+            type="text"
+            size="small"
+            className={`zto-expand-btn ${expandedRowKeys.includes(r.id) ? 'open' : ''}`}
+            icon={<RightOutlined />}
+            aria-label={expandedRowKeys.includes(r.id) ? `收起${r.name}详情` : `展开${r.name}详情`}
+            onClick={() => toggleExpanded(r.id)}
+          />
+          <div className="zto-person-copy">
+            <strong>{r.name}</strong>
+            <div className="zto-person-tags">
+              {r.channel ? <Tag color={channelColors[r.channel] || 'default'}>{r.channel}</Tag> : null}
+              {r.sub_channel ? <Tag color={r.sub_channel === '监管' ? 'orange' : 'gold'}>{r.sub_channel}</Tag> : null}
+            </div>
           </div>
         </div>
       ),
     },
-    { title: '签约公司', dataIndex: 'company', key: 'company', render: (v: string | null) => v || '—' },
     {
-      title: '收件信息（地址 · 电话）',
+      title: '签约公司',
+      dataIndex: 'company',
+      key: 'company',
+      width: 135,
+      render: (v: string | null) => (
+        <Tooltip title={v || ''}><span className="zto-company">{v || '—'}</span></Tooltip>
+      ),
+    },
+    {
+      title: '收件信息',
       key: 'recv',
       render: (_: unknown, r: ShippingDetail) => (
         <div>
@@ -497,17 +442,19 @@ export default function LogisticsIssueDetail() {
       dataIndex: 'quantity',
       key: 'quantity',
       align: 'right',
-      width: 72,
-      render: (v: number) => <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{v ?? '—'}</span>,
+      width: 66,
+      render: (v: number) => <span className="zto-quantity">{v ?? '—'}</span>,
     },
     {
-      title: '来源 · 同步',
+      title: '来源 / 同步',
       key: 'mark',
       width: 116,
       render: (_: unknown, r: ShippingDetail) => (
         <div className="zto-mark">
-          <Tag color={sourceTypeMeta[r.source_type]?.color || 'default'}>{sourceTypeMeta[r.source_type]?.label || r.source_type}</Tag>
-          <Tag color={syncStatusMeta[r.sync_status]?.color || 'default'}>{syncStatusMeta[r.sync_status]?.label || r.sync_status}</Tag>
+          <span className="zto-source">{sourceTypeMeta[r.source_type]?.label || r.source_type}</span>
+          <span className={`zto-sync zto-sync--${r.sync_status}`}>
+            {r.sync_status === 'synced' ? '✓ ' : ''}{syncStatusMeta[r.sync_status]?.label || r.sync_status}
+          </span>
         </div>
       ),
     },
@@ -515,29 +462,34 @@ export default function LogisticsIssueDetail() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 84,
+      width: 70,
       render: (v: string) => (
-        <span><span className="zto-status-dot" style={{ background: v === '正常' ? 'var(--color-success)' : 'var(--color-danger)' }} />{v || '—'}</span>
+        <span className="zto-status"><span className="zto-status-dot" style={{ background: v === '正常' ? 'var(--color-success)' : 'var(--color-danger)' }} />{v || '—'}</span>
       ),
     },
     {
       title: '操作',
       key: 'actions',
-      width: 110,
+      width: 92,
+      align: 'right',
       render: (_: unknown, record: ShippingDetail) => (
-        <Space size="small">
-          <Tooltip title="编辑">
-            <Button type="text" size="small" icon={<EditOutlined style={{ color: 'var(--color-accent)' }} />} onClick={() => handleEdit(record)} />
-          </Tooltip>
-          <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
-            <Tooltip title="删除">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
-          <Tooltip title="操作日志">
-            <Button type="text" size="small" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)} />
-          </Tooltip>
-        </Space>
+        <div className="zto-row-actions">
+          <Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button>
+          <Popover
+            trigger="click"
+            placement="bottomRight"
+            content={
+              <div className="zto-action-menu">
+                <Button type="text" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)}>操作日志</Button>
+                <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
+                  <Button type="text" danger icon={<DeleteOutlined />}>删除</Button>
+                </Popconfirm>
+              </div>
+            }
+          >
+            <Button type="text" size="small" icon={<MoreOutlined />} aria-label={`${record.name}更多操作`} />
+          </Popover>
+        </div>
       ),
     },
   ];
@@ -576,302 +528,242 @@ export default function LogisticsIssueDetail() {
 
   return (
     <div className="zto-page">
-      {/* 面包屑返回 */}
       <Button
         type="link"
         size="small"
         icon={<LeftOutlined />}
-        style={{ paddingLeft: 0, marginBottom: 4 }}
+        className="zto-page-back"
         onClick={() => navigate('/logistics/issues')}
       >
         期数总览
       </Button>
 
-      {/* 标题 + 状态 */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)', margin: 0, letterSpacing: '-0.02em' }}>
-          快递管理 · ZTO-MF
-        </h2>
-        {currentIssue && (
-          <>
-            <span style={{ fontSize: 15, color: 'var(--color-text-tertiary)' }}>
-              第 {currentIssue.issue_number} 期（{dayjs(currentIssue.publish_date).format('YYYY-MM-DD')}）
-            </span>
-            <Tag color={issueStatusColor[currentIssue.status] || 'default'} style={{ marginInlineEnd: 0, fontWeight: 500 }}>
-              {issueStatusLabel[currentIssue.status] || currentIssue.status}
-            </Tag>
-          </>
-        )}
+      <div className="zto-page-head">
+        <div className="zto-title-line">
+          <h1>快递管理 · ZTO-MF</h1>
+          {currentIssue && (
+            <>
+              <span className="zto-issue-meta">
+                第 {currentIssue.issue_number} 期 · {dayjs(currentIssue.publish_date).format('YYYY-MM-DD')}
+              </span>
+              <Tag color={issueStatusColor[currentIssue.status] || 'default'} className="zto-issue-tag">
+                {(currentIssue.status === 'confirmed' || currentIssue.status === 'exported') ? '✓ ' : ''}
+                {issueStatusLabel[currentIssue.status] || currentIssue.status}
+              </Tag>
+            </>
+          )}
+        </div>
+        <div className="zto-head-actions">
+          <Button icon={<FileTextOutlined />} onClick={() => navigate(`/report/${issueId}`)}>去报数</Button>
+          <Button icon={<DownloadOutlined />} onClick={handleExportShipping} disabled={currentIssue?.id == null} loading={exporting}>导出本期</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增明细</Button>
+          {isAdmin && (
+            <Popover
+              trigger="click"
+              placement="bottomRight"
+              content={
+                <Popconfirm
+                  title={`确认清空第 ${currentIssueNumber ?? '-'} 期 ZTO-MF？`}
+                  description="只删除该期 ZTO-MF，不会删除期号和报数数据。此操作不可恢复。"
+                  okText="清空"
+                  cancelText="取消"
+                  onConfirm={handleClearCurrentIssueShippingDetails}
+                  disabled={currentIssueNumber == null}
+                >
+                  <Button type="text" danger loading={clearingIssue} disabled={currentIssueNumber == null}>清空本期明细</Button>
+                </Popconfirm>
+              }
+            >
+              <Button icon={<MoreOutlined />} aria-label="更多本期操作" />
+            </Popover>
+          )}
+        </div>
       </div>
 
-      <Row gutter={20}>
-        {/* 主列 */}
-        <Col xs={24} lg={17}>
-          {/* 摘要条 */}
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            {statCards.map((card, idx) => (
-              <Col xs={12} md={6} key={idx} style={{ display: 'flex' }}>
-                <Card className={`dashboard-stat-card ${card.cardClass || ''}`} size="small" style={{ flex: 1 }}>
-                  <div className="dashboard-stat-card-inner">
-                    <div className="dashboard-stat-icon" style={{ background: card.bg }}>{card.icon}</div>
-                    <div className="dashboard-stat-content">
-                      <div className="dashboard-stat-label">{card.label}</div>
-                      <div className="dashboard-stat-value" style={card.valueColor ? { color: card.valueColor } : undefined}>
-                        {card.value}
-                        {card.suffix && <span className="dashboard-stat-suffix"> {card.suffix}</span>}
-                      </div>
-                      <div className="dashboard-stat-sub">{card.sub}</div>
-                    </div>
-                  </div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
+      <Card className="zto-reconcile-card" styles={{ body: { padding: 0 } }}>
+        <div className="zto-reconcile-main">
+          <div className={`zto-reconcile-result ${currentIsMatch === true ? 'is-match' : currentIsMatch === false ? 'is-mismatch' : 'is-pending'}`}>
+            <div className="zto-reconcile-icon">
+              {!uploaded
+                ? <InboxOutlined />
+                : currentIsMatch === true
+                  ? <CheckOutlined />
+                  : currentIsMatch === false
+                    ? <CloseOutlined />
+                    : <ReloadOutlined />}
+            </div>
+            <div>
+              <span>本期对账结果</span>
+              <strong>{!uploaded ? '等待发货明细' : currentIsMatch === true ? '当前一致' : currentIsMatch === false ? '当前不一致' : '等待校验'}</strong>
+              <small>{!uploaded ? '新增明细后将自动计算差异' : currentIsMatch === true ? '报数与当前发货明细一致' : currentIsMatch === false ? '报数与当前发货明细存在差异' : '暂无可用的报数校验'}</small>
+            </div>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>报数 · 中通</span>
+            <strong>{displayedReportTotal == null ? '—' : displayedReportTotal.toLocaleString()}</strong>
+            <small>{displayedReportTotal == null ? '暂无数据' : '份'}</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>发货明细</span>
+            <strong>{displayedShippingTotal.toLocaleString()}</strong>
+            <small>份</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>当前差值</span>
+            <strong className={currentIsMatch === false ? 'is-danger' : currentIsMatch === true ? 'is-success' : ''}>
+              {displayedDelta == null ? '—' : displayedDelta.toLocaleString()}
+            </strong>
+            <small>{displayedDelta == null ? '暂无数据' : '份'}</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>明细记录</span>
+            <strong>{allDetails.length.toLocaleString()}</strong>
+            <small>条 · 异常 {anomalyRows.length.toLocaleString()} 条</small>
+          </div>
+        </div>
+        {hasDrift && confirmationSummary && (
+          <div className="zto-change-strip">
+            <span className="zto-change-icon">!</span>
+            <div className="zto-change-copy">
+              <strong>确认后明细有变更</strong>
+              <span>
+                {currentIsMatch
+                  ? `当前仍与报数一致，请确认这 ${Math.abs(snapshotDelta).toLocaleString()} 份变更是否符合预期。`
+                  : '当前明细已偏离确认时快照，且与报数不一致。'}
+              </span>
+            </div>
+            <span className="zto-change-snapshot">
+              确认时 {confirmationSummary.confirmed_shipping_total.toLocaleString()} → 当前 {confirmationSummary.current_shipping_total.toLocaleString()}，
+              <b>{snapshotDelta > 0 ? '+' : ''}{snapshotDelta.toLocaleString()} 份</b>
+            </span>
+            <div className="zto-change-actions">
+              <Button size="small" onClick={() => setChangeLogOpen(true)}>查看变更</Button>
+              <Button size="small" className="zto-reverify-btn" icon={<ReloadOutlined />} onClick={handleReverify}>重新校验</Button>
+            </div>
+          </div>
+        )}
+      </Card>
 
-          {/* 本期处理状态 */}
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            {processCards.map((c, idx) => (
-              <Col xs={24} md={8} key={idx} style={{ display: 'flex' }}>
-                <Card size="small" style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    {c.icon}
-                    <div>
-                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{c.title}</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: c.stateColor }}>{c.state}</div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 8 }}>{c.desc}</div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
+      {allDetails.length === 0 ? (
+        <Card className="zto-empty-card">
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <div>
+                <div className="zto-empty-title">当前期数尚未上传发货明细</div>
+                <div className="zto-empty-copy">请新建记录，完成后系统将自动计算发货与报数差异。</div>
+              </div>
+            }
+          >
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增第一条</Button>
+          </Empty>
+        </Card>
+      ) : (
+        <Card className="zto-list-card" styles={{ body: { padding: 0 } }}>
+          <div className="zto-list-head">
+            <div className="zto-list-title">
+              <h2>发货明细</h2>
+              <span>收件人、地址与同步状态统一在此维护</span>
+            </div>
+          </div>
+          <div className="zto-toolbar">
+            <Input
+              placeholder="搜索姓名、地址或电话"
+              prefix={<SearchOutlined />}
+              className="zto-filter-search"
+              allowClear
+              value={shippingFilters.search ?? ''}
+              onChange={(e) => setShippingFilters((f) => ({ ...f, search: e.target.value }))}
+            />
+            <Select
+              placeholder="全部渠道"
+              className="zto-filter-channel"
+              allowClear
+              value={shippingFilters.channel}
+              onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value, sub_channel: undefined }))}
+            >
+              {CHANNEL_OPTIONS.map((ch) => <Select.Option key={ch} value={ch}>{ch}</Select.Option>)}
+            </Select>
+            <Select
+              mode="multiple"
+              placeholder="全部签约公司"
+              className="zto-filter-company"
+              allowClear
+              maxTagCount="responsive"
+              value={shippingFilters.company}
+              onChange={(value: string[]) => setShippingFilters((f) => ({ ...f, company: value }))}
+            >
+              {companyOptions.map((c) => <Select.Option key={c} value={c}>{c}</Select.Option>)}
+            </Select>
+            <Select
+              placeholder="全部状态"
+              className="zto-filter-status"
+              allowClear
+              value={shippingFilters.status}
+              onChange={(value) => setShippingFilters((f) => ({ ...f, status: value }))}
+            >
+              {SHIPPING_STATUS_OPTIONS.map((st) => <Select.Option key={st} value={st}>{st}</Select.Option>)}
+            </Select>
+            <Popover
+              trigger="click"
+              placement="bottomLeft"
+              title="更多筛选"
+              content={
+                <div className="zto-more-filters">
+                  <Select placeholder="频率" allowClear value={shippingFilters.frequency} onChange={(value) => setShippingFilters((f) => ({ ...f, frequency: value }))}>
+                    {FREQUENCY_OPTIONS.map((fr) => <Select.Option key={fr} value={fr}>{fr}</Select.Option>)}
+                  </Select>
+                  <Select placeholder="运输方式" allowClear value={shippingFilters.transport} onChange={(value) => setShippingFilters((f) => ({ ...f, transport: value }))}>
+                    {TRANSPORT_OPTIONS.map((tr) => <Select.Option key={tr} value={tr}>{tr}</Select.Option>)}
+                  </Select>
+                  <Select placeholder="子渠道" allowClear value={shippingFilters.sub_channel} onChange={(value) => setShippingFilters((f) => ({ ...f, sub_channel: value }))}>
+                    {SUB_CHANNEL_OPTIONS.map((sc) => <Select.Option key={sc} value={sc}>{sc}</Select.Option>)}
+                  </Select>
+                </div>
+              }
+            >
+              <Button icon={<FilterOutlined />}>更多筛选{advancedFilterCount > 0 ? ` · ${advancedFilterCount}` : ''}</Button>
+            </Popover>
+            <div className="zto-toolbar-tail">
+              <Button type="link" disabled={!hasShippingFilters} onClick={() => setShippingFilters({})}>清除筛选</Button>
+              <span className="zto-toolbar-count">
+                共 <b>{details.length}</b> 条 · 合计 <b>{currentShippingTotal.toLocaleString()}</b> 份
+              </span>
+            </div>
+          </div>
 
-          {confirmationSummary && (
-            <Card style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
-                <span style={{ fontSize: 15, fontWeight: 600 }}>当期中通校验状态</span>
-                <span style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>当前页合计 {currentShippingTotal.toLocaleString()} 份</span>
-              </div>
-              <div className="zto-check-grid">
-                <div className={`zto-check-result ${confirmationSummary.current_is_match ? 'ok' : 'bad'}`}>
-                  <div className="zto-check-title">当前校验结果</div>
-                  <div className="zto-check-hero">
-                    {confirmationSummary.current_is_match
-                      ? <CheckCircleFilled style={{ fontSize: 34, color: 'var(--color-success)' }} />
-                      : <CloseCircleFilled style={{ fontSize: 34, color: 'var(--color-danger)' }} />}
-                    <span className="zto-check-hero-text" style={{ color: confirmationSummary.current_is_match ? 'var(--color-success-text)' : 'var(--color-danger)' }}>
-                      {confirmationSummary.current_is_match ? '当前一致' : '当前不一致'}
-                    </span>
-                  </div>
-                  <div className="zto-check-rows">
-                    <div><span>报数中通</span><b>{confirmationSummary.confirmed_report_total.toLocaleString()} 份</b></div>
-                    <div><span>当前发货明细</span><b>{confirmationSummary.current_shipping_total.toLocaleString()} 份</b></div>
-                    <div><span>当前差值</span><b>{confirmationSummary.current_delta.toLocaleString()} 份</b></div>
-                  </div>
-                </div>
-                <div className="zto-check-snapshot">
-                  <div className="zto-check-title">确认时快照与变更</div>
-                  <div className="zto-check-snapshot-body">
-                    <div className="zto-check-rows">
-                      <div><span>确认时发货明细</span><b>{confirmationSummary.confirmed_shipping_total.toLocaleString()} 份</b></div>
-                      <div><span>当前发货明细</span><b>{confirmationSummary.current_shipping_total.toLocaleString()} 份</b></div>
-                      <div><span>与确认时差值</span><b style={{ color: (confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total) !== 0 ? 'var(--color-warning-text)' : undefined }}>{(confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total).toLocaleString()} 份</b></div>
-                    </div>
-                    <div className="zto-check-changes">
-                      {confirmationSummary.has_shipping_drift && <Tag color="orange" style={{ marginInlineEnd: 0 }}>确认后明细已变更</Tag>}
-                      <p className="zto-check-changes-text">
-                        {confirmationSummary.has_shipping_drift
-                          ? (confirmationSummary.current_is_match
-                            ? '当前数据与报数页一致，但发货明细已偏离确认时快照。'
-                            : '发货明细已偏离确认时快照，且当前与报数不一致。')
-                          : '当前发货明细与确认时快照一致。'}
-                      </p>
-                      <Space>
-                        <Button icon={<FileTextOutlined />} onClick={() => setChangeLogOpen(true)}>查看变更记录</Button>
-                        <Button className="zto-reverify-btn" icon={<ReloadOutlined />} onClick={handleReverify}>重新校验</Button>
-                      </Space>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
+          {selectedRowKeys.length > 0 && (
+            <div className="zto-batchbar">
+              <span className="zto-batch-lbl">已选 {selectedRowKeys.length} 条</span>
+              <Button size="small" onClick={() => handleBatchStatus('正常')}>设为正常</Button>
+              <Button size="small" danger onClick={() => handleBatchStatus('停发')}>设为停发</Button>
+              <DatePicker size="small" placeholder="截止日期" value={batchDeadline} onChange={setBatchDeadline} />
+              <Button size="small" onClick={handleBatchDeadline}>改截止日期</Button>
+              <Popconfirm title={`确认删除选中的 ${selectedRowKeys.length} 条记录？`} onConfirm={handleBatchDelete}>
+                <Button size="small" danger>批量删除</Button>
+              </Popconfirm>
+              <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+            </div>
           )}
 
-          {allDetails.length === 0 ? (
-            <Card>
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>当前期数尚未上传发货明细</div>
-                    <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                      请新建记录，完成后系统将自动计算发货与报数差异。
-                    </div>
-                  </div>
-                }
-              >
-                <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增第一条</Button>
-              </Empty>
-            </Card>
-          ) : (
-            <Card styles={{ body: { padding: 0 } }}>
-              <div className="zto-toolbar">
-                <Select
-                  placeholder="渠道"
-                  style={{ width: 150 }}
-                  allowClear
-                  value={shippingFilters.channel}
-                  onChange={(value) => setShippingFilters((f) => ({ ...f, channel: value, sub_channel: undefined }))}
-                >
-                  {CHANNEL_OPTIONS.map((ch) => <Select.Option key={ch} value={ch}>{ch}</Select.Option>)}
-                </Select>
-                <Select
-                  mode="multiple"
-                  placeholder="签约公司"
-                  style={{ width: 240, maxWidth: '100%' }}
-                  allowClear
-                  maxTagCount="responsive"
-                  value={shippingFilters.company}
-                  onChange={(value: string[]) => setShippingFilters((f) => ({ ...f, company: value }))}
-                >
-                  {companyOptions.map((c) => <Select.Option key={c} value={c}>{c}</Select.Option>)}
-                </Select>
-                <Select
-                  placeholder="状态"
-                  style={{ width: 120 }}
-                  allowClear
-                  value={shippingFilters.status}
-                  onChange={(value) => setShippingFilters((f) => ({ ...f, status: value }))}
-                >
-                  {SHIPPING_STATUS_OPTIONS.map((st) => <Select.Option key={st} value={st}>{st}</Select.Option>)}
-                </Select>
-                <Input
-                  placeholder="搜索姓名"
-                  prefix={<SearchOutlined />}
-                  style={{ width: 190 }}
-                  allowClear
-                  value={shippingFilters.search ?? ''}
-                  onChange={(e) => setShippingFilters((f) => ({ ...f, search: e.target.value }))}
-                />
-                <Popover
-                  trigger="click"
-                  placement="bottomLeft"
-                  title="更多筛选"
-                  content={
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 200 }}>
-                      <Select placeholder="频率" style={{ width: '100%' }} allowClear value={shippingFilters.frequency} onChange={(value) => setShippingFilters((f) => ({ ...f, frequency: value }))}>
-                        {FREQUENCY_OPTIONS.map((fr) => <Select.Option key={fr} value={fr}>{fr}</Select.Option>)}
-                      </Select>
-                      <Select placeholder="运输方式" style={{ width: '100%' }} allowClear value={shippingFilters.transport} onChange={(value) => setShippingFilters((f) => ({ ...f, transport: value }))}>
-                        {TRANSPORT_OPTIONS.map((tr) => <Select.Option key={tr} value={tr}>{tr}</Select.Option>)}
-                      </Select>
-                      <Select placeholder="子渠道" style={{ width: '100%' }} allowClear value={shippingFilters.sub_channel} onChange={(value) => setShippingFilters((f) => ({ ...f, sub_channel: value }))}>
-                        {SUB_CHANNEL_OPTIONS.map((sc) => <Select.Option key={sc} value={sc}>{sc}</Select.Option>)}
-                      </Select>
-                    </div>
-                  }
-                >
-                  <Button icon={<FilterOutlined />}>更多筛选{advancedFilterCount > 0 ? ` · ${advancedFilterCount}` : ''}</Button>
-                </Popover>
-                <div className="zto-toolbar-tail">
-                  <span className="zto-toolbar-count">
-                    共 <b>{details.length}</b> 条 · 合计 <b>{currentShippingTotal.toLocaleString()}</b> 份
-                  </span>
-                  <Button icon={<DownloadOutlined />} onClick={handleExportShipping} disabled={currentIssue?.id == null} loading={exporting}>
-                    导出
-                  </Button>
-                  {isAdmin && (
-                    <Popconfirm
-                      title={`确认清空第 ${currentIssueNumber ?? '-'} 期 ZTO-MF？`}
-                      description="只删除该期 ZTO-MF，不会删除期号和报数数据。此操作不可恢复。"
-                      okText="清空"
-                      cancelText="取消"
-                      onConfirm={handleClearCurrentIssueShippingDetails}
-                      disabled={currentIssueNumber == null}
-                    >
-                      <Button danger loading={clearingIssue} disabled={currentIssueNumber == null}>清空本期</Button>
-                    </Popconfirm>
-                  )}
-                  <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增</Button>
-                </div>
-              </div>
-
-              {selectedRowKeys.length > 0 && (
-                <div className="zto-batchbar">
-                  <span className="zto-batch-lbl">已选 {selectedRowKeys.length} 条</span>
-                  <Button size="small" onClick={() => handleBatchStatus('正常')}>设为正常</Button>
-                  <Button size="small" danger onClick={() => handleBatchStatus('停发')}>设为停发</Button>
-                  <DatePicker size="small" placeholder="截止日期" value={batchDeadline} onChange={setBatchDeadline} />
-                  <Button size="small" onClick={handleBatchDeadline}>改截止日期</Button>
-                  <Popconfirm title={`确认删除选中的 ${selectedRowKeys.length} 条记录？`} onConfirm={handleBatchDelete}>
-                    <Button size="small" danger>批量删除</Button>
-                  </Popconfirm>
-                  <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-                </div>
-              )}
-
-              <Table
-                loading={isLoading}
-                columns={shippingColumns}
-                dataSource={details}
-                rowKey="id"
-                rowSelection={rowSelection}
-                expandable={{ expandedRowRender: renderExpanded }}
-                pagination={{ pageSize: 20, showTotal: (total) => `共 ${total} 条记录` }}
-              />
-            </Card>
-          )}
-        </Col>
-
-        {/* 右侧栏 */}
-        <Col xs={24} lg={7}>
-          <Card size="small" title="下一步待办" style={{ marginBottom: 16 }}>
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              {todoSteps.map((step, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      background: step.done ? 'var(--color-success-soft)' : 'var(--color-divider)',
-                      color: step.done ? 'var(--color-success)' : 'var(--color-text-secondary)', fontSize: 12,
-                    }}>{idx + 1}</span>
-                    <span style={{ color: step.done ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}>{step.label}</span>
-                  </span>
-                  <Tag color={step.done ? 'success' : 'default'} style={{ marginInlineEnd: 0 }}>
-                    {step.done ? '已完成' : '待处理'}
-                  </Tag>
-                </div>
-              ))}
-            </Space>
-          </Card>
-
-          <Card size="small" title="期数信息" style={{ marginBottom: 16 }}>
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="期号">{currentIssue ? `第 ${currentIssue.issue_number} 期` : '—'}</Descriptions.Item>
-              <Descriptions.Item label="出版日期">{currentIssue ? dayjs(currentIssue.publish_date).format('YYYY-MM-DD') : '—'}</Descriptions.Item>
-              <Descriptions.Item label="状态">
-                {currentIssue ? (
-                  <Tag color={issueStatusColor[currentIssue.status] || 'default'} style={{ marginInlineEnd: 0 }}>
-                    {issueStatusLabel[currentIssue.status] || currentIssue.status}
-                  </Tag>
-                ) : '—'}
-              </Descriptions.Item>
-              <Descriptions.Item label="创建时间">
-                {currentIssue?.created_at ? dayjs(currentIssue.created_at).format('YYYY-MM-DD HH:mm') : '—'}
-              </Descriptions.Item>
-            </Descriptions>
-          </Card>
-
-          <Card size="small" title="快捷操作">
-            <Space direction="vertical" size={8} style={{ width: '100%' }}>
-              <Button block icon={<FileTextOutlined />} onClick={() => navigate(`/report/${issueId}`)}>去报数</Button>
-              <Button block icon={<DownloadOutlined />} onClick={handleExportShipping} disabled={currentIssue?.id == null} loading={exporting}>导出本期</Button>
-              <Button block icon={<UnorderedListOutlined />} onClick={() => navigate('/logistics/issues')}>返回期数总览</Button>
-            </Space>
-          </Card>
-        </Col>
-      </Row>
+          <Table
+            className="zto-table"
+            loading={isLoading}
+            columns={shippingColumns}
+            dataSource={details}
+            rowKey="id"
+            rowSelection={rowSelection}
+            tableLayout="fixed"
+            scroll={{ x: 960 }}
+            expandable={{
+              expandedRowRender: renderExpanded,
+              expandedRowKeys,
+              showExpandColumn: false,
+            }}
+            pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条记录` }}
+          />
+        </Card>
+      )}
 
       <Modal
         title={editingRecord ? '编辑记录' : '新增记录'}
