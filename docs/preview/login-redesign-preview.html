@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>发行系统 · 登录页改版草稿</title>
+  <style>
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #172033;
+      background: #fff;
+      font-synthesis: none;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-width: 320px;
+      min-height: 100svh;
+      margin: 0;
+      overflow-x: hidden;
+      background: #fff;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    .shell {
+      width: 100%;
+      min-height: 100vh;
+      min-height: 100svh;
+      display: grid;
+      grid-template-columns: minmax(0, 55fr) minmax(440px, 45fr);
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .story {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: clamp(40px, 4vw, 72px) clamp(44px, 5vw, 96px);
+      color: #fff;
+      background:
+        radial-gradient(circle at 76% 22%, rgba(88, 171, 255, .36), transparent 31%),
+        linear-gradient(145deg, #12366d 0%, #0c4a91 52%, #096ac0 100%);
+    }
+    .story::before,
+    .story::after {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 50%;
+    }
+    .story::before { width: 620px; height: 620px; right: -290px; top: -160px; }
+    .story::after { width: 420px; height: 420px; right: -170px; top: -60px; }
+    .dot-field {
+      position: absolute;
+      inset: auto auto 30px 28px;
+      z-index: -1;
+      width: 190px;
+      height: 150px;
+      opacity: .28;
+      background-image: radial-gradient(rgba(255, 255, 255, .72) 1px, transparent 1px);
+      background-size: 14px 14px;
+      mask-image: linear-gradient(90deg, #000, transparent);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-mark {
+      width: 48px;
+      height: 48px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, .3);
+      border-radius: 14px;
+      color: #0d4f98;
+      background: #fff;
+      box-shadow: 0 10px 28px rgba(7, 32, 71, .22);
+      font-size: 22px;
+      font-weight: 800;
+    }
+    .brand strong, .brand span { display: block; }
+    .brand strong { font-size: 19px; letter-spacing: .04em; }
+    .brand span { margin-top: 3px; color: rgba(255, 255, 255, .66); font-size: 12px; letter-spacing: .16em; }
+
+    .story-copy { margin: auto 0 30px; max-width: 680px; }
+    .overline {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      color: #9ed2ff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .15em;
+    }
+    .overline::before { content: ""; width: 28px; height: 2px; border-radius: 2px; background: #69bbff; }
+    h1 {
+      max-width: 660px;
+      margin: 22px 0 20px;
+      font-size: clamp(42px, 3.8vw, 72px);
+      line-height: 1.16;
+      letter-spacing: -.045em;
+    }
+    .story-copy > p {
+      max-width: 490px;
+      margin: 0;
+      color: rgba(255, 255, 255, .72);
+      font-size: 16px;
+      line-height: 1.85;
+    }
+
+    .workflow {
+      width: min(620px, 100%);
+      margin-top: 38px;
+      padding: 22px 24px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 18px;
+      background: rgba(8, 35, 76, .25);
+      box-shadow: 0 22px 52px rgba(5, 28, 65, .22);
+      backdrop-filter: blur(14px);
+    }
+    .workflow-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    .workflow-head span { color: rgba(255, 255, 255, .64); font-size: 12px; }
+    .live { display: inline-flex; align-items: center; gap: 7px; }
+    .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #61dfa4; box-shadow: 0 0 0 5px rgba(97, 223, 164, .12); }
+    .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .step { position: relative; min-width: 0; }
+    .step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 16px;
+      left: calc(50% + 20px);
+      right: calc(-50% + 20px);
+      height: 1px;
+      background: rgba(255, 255, 255, .2);
+    }
+    .step i {
+      position: relative;
+      z-index: 1;
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 10px;
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 10px;
+      color: #cde8ff;
+      background: rgba(255, 255, 255, .1);
+      font-style: normal;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .step b { display: block; overflow: hidden; color: #fff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .step small { color: rgba(255, 255, 255, .48); font-size: 11px; }
+    .story-footer { color: rgba(255, 255, 255, .48); font-size: 12px; }
+
+    .login-side {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 48px clamp(48px, 5vw, 100px);
+      background:
+        linear-gradient(rgba(245, 248, 252, .72) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(245, 248, 252, .72) 1px, transparent 1px),
+        #fff;
+      background-size: 40px 40px;
+    }
+    .login { width: 100%; max-width: 480px; margin: auto; }
+    .login .eyebrow { margin: 0 0 12px; color: #1677d8; font-size: 13px; font-weight: 700; letter-spacing: .12em; }
+    h2 { margin: 0; color: #172033; font-size: clamp(34px, 2.2vw, 42px); line-height: 1.25; letter-spacing: -.025em; }
+    .welcome { margin: 12px 0 36px; color: #758096; font-size: 14px; line-height: 1.7; }
+    .field { display: block; margin-bottom: 20px; }
+    .field-label { display: flex; justify-content: space-between; margin-bottom: 9px; color: #39445a; font-size: 13px; font-weight: 650; }
+    .input-wrap {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      border: 1px solid #dbe2eb;
+      border-radius: 12px;
+      background: rgba(250, 252, 255, .9);
+      transition: border-color .2s, box-shadow .2s, background .2s;
+    }
+    .input-wrap:focus-within { border-color: #1677d8; background: #fff; box-shadow: 0 0 0 4px rgba(22, 119, 216, .11); }
+    .input-wrap svg { width: 19px; flex: 0 0 auto; color: #8b96a8; }
+    input { width: 100%; min-width: 0; border: 0; outline: 0; color: #172033; background: transparent; font-size: 15px; }
+    input::placeholder { color: #a9b1c0; }
+    .show-password { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; color: #8893a6; background: transparent; }
+    .show-password:hover { color: #1677d8; background: #edf5ff; }
+    .show-password svg { width: 18px; }
+    .submit {
+      width: 100%;
+      height: 58px;
+      margin-top: 8px;
+      border: 0;
+      border-radius: 12px;
+      color: #fff;
+      background: linear-gradient(135deg, #1680e5, #075db8);
+      box-shadow: 0 13px 26px rgba(10, 102, 194, .24);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      transition: transform .2s, box-shadow .2s, filter .2s;
+    }
+    .submit:hover { transform: translateY(-1px); filter: brightness(1.04); box-shadow: 0 16px 30px rgba(10, 102, 194, .3); }
+    .submit:active { transform: translateY(0); }
+    .submit[disabled] { cursor: wait; opacity: .75; }
+    .security { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 24px 0 0; color: #9aa3b2; font-size: 12px; }
+    .security svg { width: 14px; }
+    .login-footer { max-width: 480px; width: 100%; margin: 46px auto 0; color: #a0a8b5; font-size: 11px; text-align: center; }
+
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      .story { min-height: 310px; padding: 28px 32px; }
+      .story-copy { margin: 56px 0 0; }
+      .story-copy h1 { max-width: 580px; margin: 14px 0 10px; font-size: clamp(32px, 7vw, 48px); }
+      .story-copy > p { font-size: 14px; }
+      .workflow, .story-footer { display: none; }
+      .login-side { min-height: 620px; padding: 58px 28px 36px; background-size: 32px 32px; }
+    }
+    @media (max-width: 520px) {
+      .story { min-height: 270px; padding: 24px; }
+      .brand-mark { width: 42px; height: 42px; }
+      .brand strong { font-size: 17px; }
+      .story-copy { margin-top: 42px; }
+      .story-copy h1 { font-size: 34px; }
+      .story-copy > p { display: none; }
+      .login-side { min-height: calc(100vh - 270px); padding: 45px 24px 28px; }
+      h2 { font-size: 29px; }
+      .welcome { margin-bottom: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="story" aria-label="发行系统介绍">
+      <div class="dot-field"></div>
+      <div class="brand">
+        <div class="brand-mark">发</div>
+        <div><strong>发行系统</strong><span>中国经营报</span></div>
+      </div>
+
+      <div class="story-copy">
+        <span class="overline">发行全链路协同平台</span>
+        <h1>让每一份发行数据，<br>都清晰抵达。</h1>
+        <p>从订单、印数到投递与结算，让复杂的发行工作回到一条清楚、可靠的业务链路。</p>
+        <div class="workflow" aria-label="核心业务流程">
+          <div class="workflow-head"><strong>核心业务流程</strong><span class="live">系统服务正常</span></div>
+          <div class="steps">
+            <div class="step"><i>01</i><b>订单归集</b><small>多渠道统一</small></div>
+            <div class="step"><i>02</i><b>印数管理</b><small>数据可追溯</small></div>
+            <div class="step"><i>03</i><b>发行履约</b><small>进度可查看</small></div>
+            <div class="step"><i>04</i><b>财务结算</b><small>结果可核对</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="story-footer">中国经营报社 · 内部业务系统</div>
+    </section>
+
+    <section class="login-side">
+      <form class="login" id="login-form">
+        <p class="eyebrow">WELCOME BACK</p>
+        <h2>登录发行系统</h2>
+        <p class="welcome">请输入内部账号与密码，继续处理今天的发行工作。</p>
+
+        <label class="field">
+          <span class="field-label">用户名</span>
+          <span class="input-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c.7-4.1 3.3-6.2 7.5-6.2s6.8 2.1 7.5 6.2"/></svg>
+            <input name="username" autocomplete="username" placeholder="请输入用户名" required>
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">密码</span>
+          <span class="input-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg>
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+            <button class="show-password" id="show-password" type="button" aria-label="显示密码" title="显示密码">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2.8 12s3.4-5.5 9.2-5.5 9.2 5.5 9.2 5.5-3.4 5.5-9.2 5.5S2.8 12 2.8 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+            </button>
+          </span>
+        </label>
+
+        <button class="submit" type="submit">登 录</button>
+        <p class="security">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 7 3v5c0 4.7-2.5 8.1-7 10-4.5-1.9-7-5.3-7-10V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+          仅限已授权人员访问，登录信息将安全传输
+        </p>
+      </form>
+      <div class="login-footer">© 2026 中国经营报社</div>
+    </section>
+  </main>
+
+  <script>
+    const password = document.getElementById('password');
+    const showPassword = document.getElementById('show-password');
+    showPassword.addEventListener('click', () => {
+      const visible = password.type === 'text';
+      password.type = visible ? 'password' : 'text';
+      showPassword.setAttribute('aria-label', visible ? '显示密码' : '隐藏密码');
+      showPassword.title = visible ? '显示密码' : '隐藏密码';
+    });
+
+    document.getElementById('login-form').addEventListener('submit', event => {
+      event.preventDefault();
+      const button = event.currentTarget.querySelector('.submit');
+      button.disabled = true;
+      button.textContent = '登录中…';
+      setTimeout(() => { button.disabled = false; button.textContent = '登 录'; }, 900);
+    });
+
+    console.assert(password && showPassword, '登录草稿缺少必要控件');
+  </script>
+</body>
+</html>

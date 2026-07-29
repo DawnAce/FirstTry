@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>快递管理 · 重设计草案</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --card: #fff;
+      --text: #1d1d1f;
+      --muted: #6e6e73;
+      --border: #e8e9ec;
+      --blue: #0878e8;
+      --blue-soft: #edf6ff;
+      --green: #2e9b20;
+      --green-soft: #f2faed;
+      --orange: #d66b00;
+      --orange-soft: #fff8e8;
+      --red: #cf1322;
+      --shadow: 0 1px 3px rgba(0, 0, 0, .05);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 1180px;
+      color: var(--text);
+      background: var(--bg);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+
+    .app { display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: 100vh; }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border-right: 1px solid var(--border);
+    }
+    .brand {
+      height: 84px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 24px;
+      border-bottom: 1px solid #f0f0f2;
+    }
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: #fff;
+      background: var(--blue);
+      font-size: 21px;
+      font-weight: 800;
+    }
+    .brand strong { display: block; font-size: 18px; line-height: 1.25; }
+    .brand small { color: var(--muted); font-size: 13px; }
+    .side-body { flex: 1; padding: 24px 14px; }
+    .back-link {
+      display: block;
+      width: 100%;
+      padding: 10px 10px 24px;
+      border: 0;
+      color: var(--blue);
+      background: transparent;
+      text-align: left;
+    }
+    .side-caption { padding: 0 12px 10px; color: #9a9aa0; font-size: 13px; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      height: 46px;
+      padding: 0 14px;
+      margin: 2px 0;
+      border: 0;
+      border-radius: 10px;
+      color: #36363a;
+      background: transparent;
+      text-align: left;
+    }
+    .nav-item.active { color: var(--blue); background: var(--blue-soft); font-weight: 600; }
+    .side-note {
+      margin: 24px 10px 0;
+      padding: 14px;
+      border: 1px dashed #b8dafc;
+      border-radius: 10px;
+      color: #657184;
+      background: #f7fbff;
+      font-size: 12px;
+    }
+    .profile {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 20px 22px;
+      border-top: 1px solid #f0f0f2;
+    }
+    .avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--blue); }
+    .profile strong, .profile small { display: block; line-height: 1.35; }
+    .profile small { color: var(--muted); }
+
+    .shell { min-width: 0; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, .96);
+    }
+    .crumbs { display: flex; gap: 12px; align-items: center; color: #72757d; }
+    .crumbs i { color: #b9bdc5; font-style: normal; }
+    .crumbs b { color: #353940; }
+    .top-actions { display: flex; align-items: center; gap: 10px; }
+    .global-search {
+      width: 300px;
+      height: 38px;
+      padding: 0 14px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      outline: 0;
+      background: #f3f4f6;
+    }
+    .icon-btn { width: 36px; height: 36px; border: 0; border-radius: 8px; color: #696d74; background: transparent; font-size: 17px; }
+    .icon-btn:hover { background: #f2f3f5; }
+
+    main { padding: 26px 34px 48px; }
+    .page { max-width: 1440px; margin: 0 auto; }
+    .page-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 6px;
+      padding: 0;
+      border: 0;
+      color: var(--blue);
+      background: transparent;
+    }
+    .page-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+    .title-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 26px; line-height: 1.25; letter-spacing: -.02em; }
+    .issue-meta { color: var(--muted); font-size: 14px; }
+    .draft-tag, .status-tag, .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .draft-tag { color: #7d65a8; background: #f3edfc; }
+    .status-tag { color: var(--green); background: var(--green-soft); }
+    .head-actions { display: flex; gap: 9px; flex-shrink: 0; }
+    .btn {
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 15px;
+      border: 1px solid #dcdfe4;
+      border-radius: 8px;
+      color: #31343a;
+      background: #fff;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: #9bc8f6; color: var(--blue); }
+    .btn.primary { color: #fff; border-color: var(--blue); background: var(--blue); }
+    .btn.ghost { color: var(--blue); border-color: #a9cef3; background: #fff; }
+    .btn.small { height: 32px; padding: 0 11px; font-size: 13px; }
+
+    .card { border: 1px solid var(--border); border-radius: 12px; background: var(--card); box-shadow: var(--shadow); }
+    .reconcile-card { margin-bottom: 18px; overflow: hidden; }
+    .reconcile-main {
+      display: grid;
+      grid-template-columns: minmax(250px, 1.2fr) repeat(4, minmax(100px, .65fr));
+      min-height: 124px;
+    }
+    .reconcile-result {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 22px 24px;
+      border-right: 1px solid var(--border);
+    }
+    .check-icon {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--green);
+      font-size: 24px;
+      font-weight: 800;
+    }
+    .reconcile-result small { display: block; margin-bottom: 3px; color: var(--muted); }
+    .reconcile-result strong { display: block; color: #227817; font-size: 22px; line-height: 1.25; }
+    .reconcile-result p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .metric {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+      padding: 18px 20px;
+      border-right: 1px solid var(--border);
+    }
+    .metric:last-child { border-right: 0; }
+    .metric span { color: var(--muted); font-size: 12px; }
+    .metric strong { margin: 4px 0 1px; font-size: 22px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .metric small { color: #96989e; font-size: 11px; }
+    .change-strip {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 18px;
+      border-top: 1px solid #f3dfb7;
+      color: #6f4b16;
+      background: var(--orange-soft);
+    }
+    .warn-icon { width: 26px; height: 26px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: var(--orange); background: #ffebbd; font-weight: 800; }
+    .change-strip strong { color: #9b5100; }
+    .change-copy { min-width: 0; }
+    .change-copy p { display: inline; margin: 0 0 0 8px; color: #826434; }
+    .snapshot { margin-left: auto; color: #765a2b; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .snapshot b { color: #b65b00; }
+    .change-actions { display: flex; gap: 8px; margin-left: 8px; }
+
+    .list-card { overflow: hidden; }
+    .list-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px 14px;
+    }
+    .list-title { display: flex; align-items: baseline; gap: 10px; }
+    .list-title h2 { margin: 0; font-size: 18px; }
+    .list-title span { color: var(--muted); font-size: 13px; }
+    .filters {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 20px 16px;
+      flex-wrap: wrap;
+    }
+    .control {
+      height: 36px;
+      padding: 0 11px;
+      border: 1px solid #dcdfe4;
+      border-radius: 8px;
+      color: #33373d;
+      outline: none;
+      background: #fff;
+    }
+    .control:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(8, 120, 232, .1); }
+    .search { width: 250px; }
+    select.control { min-width: 128px; color: #656970; }
+    .filter-tail { display: flex; align-items: center; gap: 9px; margin-left: auto; }
+    .result-count { color: var(--muted); white-space: nowrap; font-size: 13px; }
+    .result-count b { color: var(--text); }
+    .bulkbar {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 20px;
+      border-top: 1px solid #d6e9fc;
+      background: #f2f8ff;
+    }
+    .bulkbar.show { display: flex; }
+    .bulkbar strong { margin-right: 4px; color: #185b9d; }
+
+    .table-wrap { overflow-x: auto; border-top: 1px solid var(--border); }
+    table { width: 100%; min-width: 960px; border-collapse: collapse; table-layout: fixed; }
+    th {
+      height: 48px;
+      padding: 0 12px;
+      color: #74777e;
+      background: #fafafa;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    td { height: 72px; padding: 10px 12px; border-top: 1px solid #f0f1f3; vertical-align: middle; }
+    tbody tr:hover > td { background: #fafcff; }
+    .c-check { width: 44px; text-align: center; }
+    .c-person { width: 170px; }
+    .c-company { width: 135px; }
+    .c-recv { width: auto; }
+    .c-qty { width: 66px; text-align: right; }
+    .c-sync { width: 116px; }
+    .c-status { width: 70px; }
+    .c-actions { width: 92px; text-align: right; }
+    input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--blue); }
+    .person { display: flex; align-items: flex-start; gap: 7px; }
+    .expand-btn { margin: 1px 0 0; padding: 1px; border: 0; color: #8a8e95; background: transparent; transition: transform .18s; }
+    .expand-btn.open { transform: rotate(90deg); }
+    .person strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .person-meta { margin-top: 4px; }
+    .tag { min-height: 21px; padding: 1px 8px; margin-right: 5px; font-weight: 500; }
+    .tag.blue { color: #086acb; background: #e8f4ff; }
+    .tag.purple { color: #7c35a7; background: #f7edff; }
+    .tag.gray { color: #656970; background: #f1f2f4; }
+    .tag.green { color: var(--green); background: var(--green-soft); }
+    .company { display: block; overflow: hidden; color: #3d4147; text-overflow: ellipsis; white-space: nowrap; }
+    .address { overflow: hidden; color: #2f3338; text-overflow: ellipsis; white-space: nowrap; }
+    .phone { margin-top: 3px; color: #8a8d93; font-size: 12px; }
+    .quantity { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .source { color: #73767c; font-size: 12px; }
+    .sync { display: block; width: fit-content; margin-top: 4px; color: var(--green); font-size: 12px; font-weight: 600; }
+    .dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #43b928; }
+    .link-btn { padding: 4px 6px; border: 0; color: var(--blue); background: transparent; white-space: nowrap; }
+    .more-btn { color: #73777e; }
+    .detail-row { display: none; }
+    .detail-row.open { display: table-row; }
+    .detail-row td { height: auto; padding: 14px 28px 16px 56px; background: #fafcff !important; }
+    .detail-grid { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 16px; }
+    .detail-grid small { display: block; margin-bottom: 3px; color: #8b8e94; }
+    .detail-grid span { color: #3b3f45; font-size: 13px; }
+    .empty-row { display: none; }
+    .empty-row.show { display: table-row; }
+    .empty-row td { height: 150px; color: var(--muted); text-align: center; }
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 20px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .pages { display: flex; gap: 5px; }
+    .page-btn { min-width: 30px; height: 30px; border: 0; border-radius: 7px; color: #555960; background: transparent; }
+    .page-btn.active { color: var(--blue); background: var(--blue-soft); font-weight: 700; }
+
+    .toast {
+      position: fixed;
+      left: calc(50% + 126px);
+      bottom: 30px;
+      z-index: 20;
+      padding: 10px 15px;
+      border-radius: 8px;
+      color: #fff;
+      background: rgba(34, 37, 42, .9);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, .16);
+      opacity: 0;
+      transform: translate(-50%, 8px);
+      pointer-events: none;
+      transition: .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 1380px) {
+      main { padding-inline: 26px; }
+      .reconcile-main { grid-template-columns: minmax(240px, 1.15fr) repeat(4, minmax(92px, .62fr)); }
+      .metric { padding-inline: 15px; }
+      .snapshot { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">发</div>
+        <div><strong>发行系统</strong><small>中国经营报</small></div>
+      </div>
+      <div class="side-body">
+        <button class="back-link">← 返回业务首页</button>
+        <div class="side-caption">发行履约</div>
+        <button class="nav-item"><span>📮</span>邮局管理</button>
+        <button class="nav-item active"><span>🚚</span>快递管理</button>
+        <div class="side-note">当前只显示“发行履约”下的功能，减少无关菜单干扰。</div>
+      </div>
+      <div class="profile">
+        <div class="avatar">人</div>
+        <div><strong>admin</strong><small>管理员</small></div>
+      </div>
+    </aside>
+
+    <div class="shell">
+      <header class="topbar">
+        <div class="crumbs"><span>业务首页</span><i>/</i><span>发行履约</span><i>/</i><b>快递管理</b></div>
+        <div class="top-actions">
+          <input class="global-search" placeholder="⌕  搜索订单 / 商品 / 期数" />
+          <button class="icon-btn" aria-label="帮助">?</button>
+          <button class="icon-btn" aria-label="通知">♧</button>
+        </div>
+      </header>
+
+      <main>
+        <div class="page">
+          <button class="page-back">‹ 期数总览</button>
+          <div class="page-head">
+            <div>
+              <div class="title-line">
+                <h1>快递管理 · ZTO-MF</h1>
+                <span class="issue-meta">第 2653 期 · 2026-05-25</span>
+                <span class="status-tag">✓ 已确认</span>
+                <span class="draft-tag">设计草案</span>
+              </div>
+            </div>
+            <div class="head-actions">
+              <button class="btn" data-toast="这里将跳转到本期报数页面">▤ 去报数</button>
+              <button class="btn" data-toast="已准备导出本期数据">⇩ 导出本期</button>
+              <button class="btn primary" data-toast="这里将打开新增明细表单">＋ 新增明细</button>
+            </div>
+          </div>
+
+          <section class="card reconcile-card" aria-label="本期对账摘要">
+            <div class="reconcile-main">
+              <div class="reconcile-result">
+                <div class="check-icon">✓</div>
+                <div>
+                  <small>本期对账结果</small>
+                  <strong>当前一致</strong>
+                  <p>报数与当前发货明细一致</p>
+                </div>
+              </div>
+              <div class="metric"><span>报数 · 中通</span><strong>1,473</strong><small>份</small></div>
+              <div class="metric"><span>发货明细</span><strong>1,473</strong><small>份</small></div>
+              <div class="metric"><span>当前差值</span><strong style="color:var(--green)">0</strong><small>份</small></div>
+              <div class="metric"><span>明细记录</span><strong>77</strong><small>条 · 异常 0 条</small></div>
+            </div>
+            <div class="change-strip">
+              <span class="warn-icon">!</span>
+              <div class="change-copy">
+                <strong>确认后明细有变更</strong>
+                <p>当前仍与报数一致，请确认这 50 份变更是否符合预期。</p>
+              </div>
+              <span class="snapshot">确认时 1,423 → 当前 1,473，<b>+50 份</b></span>
+              <div class="change-actions">
+                <button class="btn small" data-toast="这里将展示确认后的变更记录">查看变更</button>
+                <button class="btn small ghost" data-toast="已重新校验：当前一致">↻ 重新校验</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card list-card" aria-label="发货明细列表">
+            <div class="list-head">
+              <div class="list-title"><h2>发货明细</h2><span>收件人、地址与同步状态统一在此维护</span></div>
+            </div>
+            <div class="filters">
+              <input id="search" class="control search" placeholder="⌕  搜索姓名、地址或电话" />
+              <select id="channel" class="control">
+                <option value="">全部渠道</option>
+                <option>渠道订阅</option>
+                <option>记者站</option>
+                <option>库房留存</option>
+              </select>
+              <select id="company" class="control">
+                <option value="">全部签约公司</option>
+                <option>广州日报</option>
+                <option>成都杂志铺</option>
+                <option>上海站</option>
+              </select>
+              <select id="status" class="control">
+                <option value="">全部状态</option>
+                <option>正常</option>
+                <option>停发</option>
+              </select>
+              <button class="btn small" data-toast="频率、运输方式、子渠道将在此展开">⚲ 更多筛选</button>
+              <div class="filter-tail">
+                <button id="reset" class="link-btn">清除筛选</button>
+                <span id="resultCount" class="result-count">共 <b>77</b> 条 · 合计 <b>1,473</b> 份</span>
+              </div>
+            </div>
+
+            <div id="bulkbar" class="bulkbar">
+              <strong id="selectedCount">已选 0 条</strong>
+              <button class="btn small" data-toast="已设为正常">设为正常</button>
+              <button class="btn small" data-toast="这里将批量修改截止日期">改截止日期</button>
+              <button class="btn small" style="color:var(--red)" data-toast="这里将要求再次确认后删除">批量删除</button>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="c-check"><input id="selectAll" type="checkbox" aria-label="全选" /></th>
+                    <th class="c-person">姓名 / 渠道</th>
+                    <th class="c-company">签约公司</th>
+                    <th class="c-recv">收件信息</th>
+                    <th class="c-qty">份数</th>
+                    <th class="c-sync">来源 / 同步</th>
+                    <th class="c-status">状态</th>
+                    <th class="c-actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="rows">
+                  <tr class="data-row" data-channel="库房留存" data-company="" data-status="正常" data-search="马飞 中通库房 18515617341">
+                    <td class="c-check"><input class="row-check" type="checkbox" /></td>
+                    <td class="c-person">
+                      <div class="person"><button class="expand-btn" aria-label="展开详情">›</button><div><strong>马飞</strong><div class="person-meta"><span class="tag gray">库房留存</span></div></div></div>
+                    </td>
+                    <td class="c-company"><span class="company">—</span></td>
+                    <td class="c-recv"><div class="address">中通库房</div><div class="phone">18515617341</div></td>
+                    <td class="c-qty"><span class="quantity">70</span></td>
+                    <td class="c-sync"><span class="source">手工录入</span><span class="sync">✓ 已同步</span></td>
+                    <td class="c-status"><span><i class="dot"></i>正常</span></td>
+                    <td class="c-actions"><button class="link-btn" data-toast="这里将编辑马飞的明细">编辑</button><button class="link-btn more-btn" data-toast="更多操作：日志、删除">•••</button></td>
+                  </tr>
+                  <tr class="detail-row"><td colspan="8"><div class="detail-grid"><div><small>运输方式</small><span>中通物流</span></div><div><small>频率</small><span>周</span></div><div><small>截止日期</small><span>长期</span></div><div><small>发货时间</small><span>—</span></div><div><small>实发份数</small><span>—</span></div><div><small>备注</small><span>库房留存</span></div></div></td></tr>
+
+                  <tr class="data-row" data-channel="渠道订阅" data-company="广州日报" data-status="正常" data-search="叶剑 广州市白云区增槎路1113号广州日报印务中心 13556046615">
+                    <td class="c-check"><input class="row-check" type="checkbox" /></td>
+                    <td class="c-person"><div class="person"><button class="expand-btn" aria-label="展开详情">›</button><div><strong>叶剑</strong><div class="person-meta"><span class="tag blue">渠道订阅</span></div></div></div></td>
+                    <td class="c-company"><span class="company" title="广州日报">广州日报</span></td>
+                    <td class="c-recv"><div class="address" title="广州市白云区增槎路1113号广州日报印务中心">广州市白云区增槎路1113号广州日报印务中心</div><div class="phone">13556046615</div></td>
+                    <td class="c-qty"><span class="quantity">531</span></td>
+                    <td class="c-sync"><span class="source">手工录入</span><span class="sync">✓ 已同步</span></td>
+                    <td class="c-status"><span><i class="dot"></i>正常</span></td>
+                    <td class="c-actions"><button class="link-btn" data-toast="这里将编辑叶剑的明细">编辑</button><button class="link-btn more-btn" data-toast="更多操作：日志、删除">•••</button></td>
+                  </tr>
+                  <tr class="detail-row"><td colspan="8"><div class="detail-grid"><div><small>运输方式</small><span>中通物流</span></div><div><small>频率</small><span>周</span></div><div><small>截止日期</small><span>2026-12-31</span></div><div><small>发货时间</small><span>—</span></div><div><small>实发份数</small><span>—</span></div><div><small>备注</small><span>—</span></div></div></td></tr>
+
+                  <tr class="data-row" data-channel="渠道订阅" data-company="成都杂志铺" data-status="正常" data-search="肖波 成都市双流文星镇通关路86号A1-A4杂志铺 157191468023 028-85312807">
+                    <td class="c-check"><input class="row-check" type="checkbox" /></td>
+                    <td class="c-person"><div class="person"><button class="expand-btn" aria-label="展开详情">›</button><div><strong>肖波</strong><div class="person-meta"><span class="tag blue">渠道订阅</span></div></div></div></td>
+                    <td class="c-company"><span class="company" title="成都杂志铺">成都杂志铺</span></td>
+                    <td class="c-recv"><div class="address" title="成都市双流文星镇通关路86号A1-A4杂志铺">成都市双流文星镇通关路86号A1-A4杂志铺</div><div class="phone">157191468023 / 028-85312807</div></td>
+                    <td class="c-qty"><span class="quantity">366</span></td>
+                    <td class="c-sync"><span class="source">手工录入</span><span class="sync">✓ 已同步</span></td>
+                    <td class="c-status"><span><i class="dot"></i>正常</span></td>
+                    <td class="c-actions"><button class="link-btn" data-toast="这里将编辑肖波的明细">编辑</button><button class="link-btn more-btn" data-toast="更多操作：日志、删除">•••</button></td>
+                  </tr>
+                  <tr class="detail-row"><td colspan="8"><div class="detail-grid"><div><small>运输方式</small><span>中通物流</span></div><div><small>频率</small><span>周</span></div><div><small>截止日期</small><span>长期</span></div><div><small>发货时间</small><span>—</span></div><div><small>实发份数</small><span>—</span></div><div><small>备注</small><span>—</span></div></div></td></tr>
+
+                  <tr class="data-row" data-channel="记者站" data-company="上海站" data-status="正常" data-search="李广 上海市徐汇区漕溪北路737弄2号楼2106 13564653181">
+                    <td class="c-check"><input class="row-check" type="checkbox" /></td>
+                    <td class="c-person"><div class="person"><button class="expand-btn" aria-label="展开详情">›</button><div><strong>李广</strong><div class="person-meta"><span class="tag purple">记者站</span></div></div></div></td>
+                    <td class="c-company"><span class="company">上海站</span></td>
+                    <td class="c-recv"><div class="address" title="上海市徐汇区漕溪北路737弄2号楼2106">上海市徐汇区漕溪北路737弄2号楼2106</div><div class="phone">13564653181</div></td>
+                    <td class="c-qty"><span class="quantity">20</span></td>
+                    <td class="c-sync"><span class="source">手工录入</span><span class="sync">✓ 已同步</span></td>
+                    <td class="c-status"><span><i class="dot"></i>正常</span></td>
+                    <td class="c-actions"><button class="link-btn" data-toast="这里将编辑李广的明细">编辑</button><button class="link-btn more-btn" data-toast="更多操作：日志、删除">•••</button></td>
+                  </tr>
+                  <tr class="detail-row"><td colspan="8"><div class="detail-grid"><div><small>运输方式</small><span>中通物流</span></div><div><small>频率</small><span>周</span></div><div><small>截止日期</small><span>长期</span></div><div><small>发货时间</small><span>—</span></div><div><small>实发份数</small><span>—</span></div><div><small>备注</small><span>记者站</span></div></div></td></tr>
+
+                  <tr class="data-row" data-channel="记者站" data-company="广州站" data-status="正常" data-search="纪玉文 广州市越秀区寺右新马路111-115号五羊新城广场 13661331923">
+                    <td class="c-check"><input class="row-check" type="checkbox" /></td>
+                    <td class="c-person"><div class="person"><button class="expand-btn" aria-label="展开详情">›</button><div><strong>纪玉文</strong><div class="person-meta"><span class="tag purple">记者站</span></div></div></div></td>
+                    <td class="c-company"><span class="company">广州站</span></td>
+                    <td class="c-recv"><div class="address" title="广州市越秀区寺右新马路111-115号五羊新城广场">广州市越秀区寺右新马路111-115号五羊新城广场</div><div class="phone">13661331923</div></td>
+                    <td class="c-qty"><span class="quantity">30</span></td>
+                    <td class="c-sync"><span class="source">手工录入</span><span class="sync">✓ 已同步</span></td>
+                    <td class="c-status"><span><i class="dot"></i>正常</span></td>
+                    <td class="c-actions"><button class="link-btn" data-toast="这里将编辑纪玉文的明细">编辑</button><button class="link-btn more-btn" data-toast="更多操作：日志、删除">•••</button></td>
+                  </tr>
+                  <tr class="detail-row"><td colspan="8"><div class="detail-grid"><div><small>运输方式</small><span>中通物流</span></div><div><small>频率</small><span>周</span></div><div><small>截止日期</small><span>长期</span></div><div><small>发货时间</small><span>—</span></div><div><small>实发份数</small><span>—</span></div><div><small>备注</small><span>记者站</span></div></div></td></tr>
+
+                  <tr id="emptyRow" class="empty-row"><td colspan="8">没有符合当前筛选条件的发货明细</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span>当前展示 5 条示例数据 · 实际每页 20 条</span>
+              <div class="pages"><button class="page-btn">‹</button><button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">4</button><button class="page-btn">›</button></div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script>
+    const search = document.querySelector('#search');
+    const channel = document.querySelector('#channel');
+    const company = document.querySelector('#company');
+    const status = document.querySelector('#status');
+    const reset = document.querySelector('#reset');
+    const selectAll = document.querySelector('#selectAll');
+    const bulkbar = document.querySelector('#bulkbar');
+    const selectedCount = document.querySelector('#selectedCount');
+    const emptyRow = document.querySelector('#emptyRow');
+    const resultCount = document.querySelector('#resultCount');
+    const rows = [...document.querySelectorAll('.data-row')];
+
+    function applyFilters() {
+      const query = search.value.trim().toLowerCase();
+      let visible = 0;
+      let copies = 0;
+      rows.forEach(row => {
+        const show = (!query || row.dataset.search.toLowerCase().includes(query))
+          && (!channel.value || row.dataset.channel === channel.value)
+          && (!company.value || row.dataset.company === company.value)
+          && (!status.value || row.dataset.status === status.value);
+        row.style.display = show ? '' : 'none';
+        const detail = row.nextElementSibling;
+        if (!show) detail.classList.remove('open');
+        if (show) {
+          visible += 1;
+          copies += Number(row.querySelector('.quantity').textContent);
+        }
+      });
+      emptyRow.classList.toggle('show', visible === 0);
+      resultCount.innerHTML = (query || channel.value || company.value || status.value)
+        ? `筛选示例 <b>${visible}</b> 条 · 合计 <b>${copies.toLocaleString()}</b> 份`
+        : '共 <b>77</b> 条 · 合计 <b>1,473</b> 份';
+    }
+
+    [search, channel, company, status].forEach(el => el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', applyFilters));
+    reset.addEventListener('click', () => {
+      search.value = '';
+      channel.value = '';
+      company.value = '';
+      status.value = '';
+      applyFilters();
+    });
+
+    document.querySelectorAll('.expand-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        button.classList.toggle('open');
+        button.closest('.data-row').nextElementSibling.classList.toggle('open');
+      });
+    });
+
+    function updateBulkbar() {
+      const checks = [...document.querySelectorAll('.row-check')];
+      const selected = checks.filter(check => check.checked).length;
+      bulkbar.classList.toggle('show', selected > 0);
+      selectedCount.textContent = `已选 ${selected} 条`;
+      selectAll.checked = selected === checks.length;
+      selectAll.indeterminate = selected > 0 && selected < checks.length;
+    }
+    selectAll.addEventListener('change', () => {
+      document.querySelectorAll('.row-check').forEach(check => { check.checked = selectAll.checked; });
+      updateBulkbar();
+    });
+    document.querySelectorAll('.row-check').forEach(check => check.addEventListener('change', updateBulkbar));
+
+    const toast = document.querySelector('#toast');
+    let toastTimer;
+    document.addEventListener('click', event => {
+      const target = event.target.closest('[data-toast]');
+      if (!target) return;
+      clearTimeout(toastTimer);
+      toast.textContent = target.dataset.toast;
+      toast.classList.add('show');
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+    });
+  </script>
+</body>
+</html>
