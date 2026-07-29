@@ -96,7 +96,7 @@
 |---|---|---|---|
 | **工作台总览** | `pages/LogisticsOverview.tsx` | `DashboardPage.tsx`（KPI卡+右侧待办）+ `History.tsx` statCards | 4 KPI（本年 期数/已上传/异常/待上传）+ 蓝按钮「查看期数总览」+ 待处理提醒(3项) + 最近操作记录表(`/operation-logs/recent` 取5) |
 | **期数总览** | `pages/LogisticsIssues.tsx` | `History.tsx`（近乎复制后重列） | 状态条 Segmented(6桶) + 可选4卡 + 表格列：期号/出版日期/状态/报数中通/发货合计/差值/异常说明/操作。数据源=聚合接口 `scope=periods`（`getIssues` 上限100且无 join，不够用） |
-| **单期详情** | `pages/LogisticsIssueDetail.tsx` | 现 `ShippingDetailsTab`（整体抬升） | 面包屑〈期数总览 + 摘要条(现4卡) + 新增"本期处理状态"3卡 + 右栏(下一步待办/期数信息/快捷操作) + 有/无数据两态；表格/筛选/弹窗/日志抽屉原样搬 |
+| **单期详情** | `pages/LogisticsIssueDetail.tsx` | 现 `ShippingDetailsTab`（整体抬升） | 面包屑〈期数总览 + 单条全宽对账汇总 + 确认后数据漂移提醒 + 全宽明细表；保留筛选、批量操作、增删改弹窗与日志抽屉 |
 
 - **单期详情重构要点**：删除顶部期次条选择器（`Recipients.tsx 589-624`）与相关 state，改为 `const {id}=useParams()` + `getIssue(id)`；`Recipients.tsx` 不再被路由，可删或留作重定向。
 - **StatusTag 扩展**：`History.tsx` 只有 draft/confirmed/exported 三色，需在 `index.css` 增 ~4 个新桶的样式修饰符（已上传/待上传/未创建 + 置灰休刊），不要把 3 色硬套 6 语义。
