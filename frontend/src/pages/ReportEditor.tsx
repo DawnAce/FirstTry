@@ -2,18 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Card,
   InputNumber,
   Button,
-  Tag,
-  Space,
   Spin,
   message,
   Modal,
   Input,
   Timeline,
   Select,
-  Alert,
 } from 'antd';
 import {
   CheckOutlined,
@@ -38,6 +34,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton';
 import { sortVisibleSocialUseEntries } from './reportOrder';
 import { formatIssueReportTitle } from './reportTitle';
+import './ReportEditor.css';
 
 const categoryLabels: Record<string, string> = {
   postal: '北京邮发',
@@ -71,8 +68,8 @@ const COMPOSITE_GROUPS: { label: string; prefix: string; items: string[] }[] = [
     items: ['营报传媒_收发室', '营报传媒_读者', '营报传媒_备用报'],
   },
   {
-    label: '报社订阅自投/展示',
-    prefix: '报社订阅_',
+    label: '报社订阅自投 / 展示',
+    prefix: '',
     items: ['营报传媒_上犹', '高铁展示'],
   },
 ];
@@ -421,641 +418,449 @@ export default function ReportEditor() {
   const tempSelfEntry = entries.find(e => e.category === 'social_use' && e.sub_category === '临时加印_自留');
   const tempExpressValue = (tempEntry?.value ?? 0) - (tempSelfEntry?.value ?? 0);
 
-  // Render value: plain text when confirmed, InputNumber when editing
-  const renderValue = (entry: ReportEntry, opts?: { width?: number; size?: 'mini' | 'small' | 'default' | 'large' }) => {
-    const inputSize = opts?.size === 'mini' || opts?.size === 'default' ? undefined : opts?.size;
-    if (isConfirmed) {
-      return (
-        <span style={{ fontSize: opts?.size === 'large' ? 16 : 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-          {entry.value.toLocaleString()} 份
-        </span>
-      );
-    }
+  const formatCount = (value: number) => value.toLocaleString('zh-CN');
+  const total = calculateTotal();
+  const channelTotal = total - (tempEntry?.value ?? 0);
+  const destinationSummary = report?.destination_summary ?? [];
+  const shippingCheck = report?.shipping_check;
+  const shippingMismatch = Boolean(shippingCheck && !shippingCheck.is_match);
+  const completionPercent = entries.length
+    ? Math.round(entries.filter(entry => Number.isFinite(entry.value) && entry.value >= 0).length / entries.length * 100)
+    : 0;
+  const updatedAt = issue.updated_at?.replace('T', ' ').slice(5, 16) || '—';
+  const tempSelfValue = tempDetails.length > 0
+    ? tempDetails.reduce((sum, detail) => sum + detail.self_quantity, 0)
+    : (tempSelfEntry?.value ?? 0);
+  const tempExpressDisplayValue = tempDetails.length > 0
+    ? tempDetails.reduce((sum, detail) => sum + detail.quantity - detail.self_quantity, 0)
+    : tempExpressValue;
+  const socialEntries = groupedEntries.social_use ?? [];
+  const bindingEntries = groupedEntries.binding ?? [];
+  const compositeNames = new Set(COMPOSITE_GROUPS.flatMap(group => group.items));
+  const mainSocialEntries = sortVisibleSocialUseEntries(socialEntries.filter(
+    entry => !EXTRA_ITEMS.includes(entry.sub_category) && !compositeNames.has(entry.sub_category),
+  ));
+  const socialTotal = calculateCategoryTotal([...socialEntries, ...bindingEntries]);
+  const socialItemCount = COMPOSITE_GROUPS.reduce(
+    (count, group) => count + group.items.filter(name => entries.some(entry => entry.sub_category === name)).length,
+    mainSocialEntries.length + bindingEntries.length,
+  );
+
+  const renderEntryControl = (entry: ReportEntry) => isConfirmed ? (
+    <span className="report-editor-static-count">{formatCount(entry.value)}</span>
+  ) : (
+    <InputNumber
+      aria-label={`${entry.sub_category}份数`}
+      className="report-editor-count-input"
+      controls={false}
+      value={entry.value}
+      onChange={(value) => handleValueChange(entry.id, value ?? undefined)}
+      min={0}
+      precision={0}
+    />
+  );
+
+  const renderMiniField = (entry: ReportEntry, label = entry.sub_category) => (
+    <div className="report-editor-mini-field" key={entry.id}>
+      <span>{label}</span>
+      <div className="report-editor-mini-value">
+        {renderEntryControl(entry)}
+        <em>份</em>
+      </div>
+    </div>
+  );
+
+  const renderCompositeGroup = (group: typeof COMPOSITE_GROUPS[number]) => {
+    const groupEntries = group.items.flatMap(name => {
+      const entry = entries.find(item => item.sub_category === name);
+      return entry ? [entry] : [];
+    });
+    if (groupEntries.length === 0) return null;
+    const groupTotal = groupEntries.reduce((sum, entry) => sum + entry.value, 0);
     return (
-      <InputNumber
-        value={entry.value}
-        onChange={(value) => handleValueChange(entry.id, value ?? undefined)}
-        min={0}
-        precision={0}
-        style={{ width: opts?.width ?? 140 }}
-        addonAfter="份"
-        size={inputSize}
-      />
+      <div className="report-editor-social-group" key={group.label}>
+        <div className="report-editor-social-head">
+          <span>{group.label}</span>
+          <span className="report-editor-pill">自动合计</span>
+          <strong>{formatCount(groupTotal)} 份</strong>
+        </div>
+        <div className="report-editor-social-grid">
+          {groupEntries.map(entry => renderMiniField(
+            entry,
+            group.prefix ? entry.sub_category.replace(group.prefix, '') : entry.sub_category,
+          ))}
+        </div>
+      </div>
     );
   };
 
-  // Render a single table row for an entry (used in social_use, spans first 2 columns)
-  const renderEntryRow = (entry: ReportEntry, showTags?: { freq?: string }) => {
-    const isExtra = EXTRA_ITEMS.includes(entry.sub_category);
-    return (
-      <tr
-        key={entry.id}
-        style={{
-          borderBottom: '1px solid var(--color-divider)',
-          background: entry.is_variable ? 'var(--color-accent-soft)' : 'transparent',
-        }}
-      >
-        <td colSpan={2} style={{ padding: '8px 16px' }}>
-          <Space size="small">
-            <span style={{ fontSize: 14, color: isExtra ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)' }}>
-              {entry.sub_category}
-            </span>
-            {entry.is_variable && !isExtra && <Tag color="blue">变动</Tag>}
-            {showTags?.freq && entry.is_variable && !isExtra && (
-              <Tag color="orange">{showTags.freq}</Tag>
-            )}
-          </Space>
-        </td>
-        <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-          {renderValue(entry)}
-        </td>
-      </tr>
-    );
-  };
+  const renderReadOnlyField = (value: number, label: string) => (
+    <div className="report-editor-readonly-count" aria-label={label}>
+      <span>{formatCount(value)}</span><em>份</em>
+    </div>
+  );
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Button
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/print')}
-          style={{ borderRadius: 8 }}
-        />
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-            {formatIssueReportTitle(issue)}
-          </h2>
-          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
-              人民日报印厂 · 出版日期 {issue.publish_date}
-            </span>
-            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    <div className="report-editor-page">
+      <section className="report-editor-shell">
+        <header className="report-editor-title">
+          <Button
+            className="report-editor-back"
+            icon={<ArrowLeftOutlined />}
+            aria-label="返回印数管理"
+            onClick={() => navigate('/print')}
+          />
+          <span className="report-editor-title-icon" aria-hidden="true">📰</span>
+          <div className="report-editor-title-copy">
+            <div className="report-editor-title-line">
+              <h1>{formatIssueReportTitle(issue)}</h1>
+              <span className="report-editor-pill">报数单</span>
+            </div>
+            <div className="report-editor-title-meta">
+              <span>出版日期 {issue.publish_date}</span><i>·</i>
+              <span>人民日报印厂</span><i>·</i>
               {issue.planned_page_count != null && (
-                <span>计划 <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{issue.planned_page_count}</span> 版</span>
+                <><span>计划 <b>{issue.planned_page_count}</b> 版</span><i>·</i></>
               )}
-              {issue.planned_page_count != null && <span>·</span>}
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                实际{isConfirmed ? (
-                  <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}> {issue.page_count ?? 24} </span>
+              <label className="report-editor-page-count">
+                实际
+                {isConfirmed ? (
+                  <b>{issue.page_count ?? 24}</b>
                 ) : (
                   <InputNumber
+                    aria-label="实际版数"
+                    controls
                     size="small"
                     value={issue.page_count ?? 24}
                     min={4}
                     step={4}
                     precision={0}
-                    style={{ width: 64, margin: '0 2px' }}
-                    onChange={(val) => {
-                      if (val && val !== issue.page_count) {
-                        updateIssue(Number(issueId), { page_count: val }).then(() => {
+                    onChange={(value) => {
+                      if (value && value !== issue.page_count) {
+                        updateIssue(Number(issueId), { page_count: value }).then(() => {
                           queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
                         });
                       }
                     }}
                   />
-                )}版
-              </span>
+                )}
+                版
+              </label>
               {issue.planned_page_count != null && issue.page_count !== issue.planned_page_count && (
-                <Tag color="orange" style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px', margin: 0 }}>
-                  <WarningOutlined /> 版数与计划不一致
-                </Tag>
+                <span className="report-editor-page-warning"><WarningOutlined />版数与计划不一致</span>
               )}
-            </span>
+              <i>·</i><span>最后更新 {updatedAt}</span>
+            </div>
           </div>
-        </div>
-        <Space size="middle">
-          {isConfirmed ? (
-            <>
-              <Tag color="green" style={{ fontSize: 13, padding: '4px 12px' }}>
-                ✅ 已确认报数
-              </Tag>
-              <Button
-                type="primary"
-                icon={<SendOutlined />}
-                onClick={() => navigate(`/shipping/${issueId}`)}
-              >
-                发货
-              </Button>
-              {isAdmin && (
-                <Button
-                  danger
-                  icon={<UndoOutlined />}
-                  onClick={() => setRevokeModalVisible(true)}
-                >
-                  作废
-                </Button>
-              )}
-              <Button icon={<DownloadOutlined />} onClick={handleExport}>
-                导出
-              </Button>
+          <div className="report-editor-title-actions">
+            <span className={`report-editor-status ${isConfirmed ? 'is-confirmed' : ''}`}>
+              {isConfirmed ? '已确认' : '待确认'}
+            </span>
+            {isConfirmed && (
+              <Button type="primary" icon={<SendOutlined />} onClick={() => navigate(`/shipping/${issueId}`)}>发货</Button>
+            )}
+            {isConfirmed && isAdmin && (
+              <Button danger icon={<UndoOutlined />} onClick={() => setRevokeModalVisible(true)}>作废</Button>
+            )}
+            <Button icon={<DownloadOutlined />} onClick={handleExport}>导出</Button>
+            {isConfirmed && (
               <IssueDeleteConfirmButton
                 issueNumber={issue.issue_number}
                 onConfirm={handleDeleteIssue}
+                buttonProps={{ size: 'middle' }}
               />
-            </>
-          ) : (
-            <>
-              {/* Auto-save status indicator */}
-              <span style={{ fontSize: 13, color: saveStatus === 'error' ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
-                {saveStatus === 'saving' && '⏳ 保存中...'}
-                {saveStatus === 'saved' && '✅ 已自动保存'}
-                {saveStatus === 'error' && '❌ 保存失败，请重试'}
+            )}
+          </div>
+        </header>
+
+        <div className="report-editor-body">
+          {shippingMismatch && shippingCheck && (
+            <div className="report-editor-notice">
+              <WarningOutlined />
+              <span>
+                <b>中通份数待核对：</b>
+                报数合计 {formatCount(shippingCheck.report_zt_total)} 份，
+                {shippingCheck.shipping_total === 0
+                  ? '发货明细尚未生成'
+                  : `发货明细合计 ${formatCount(shippingCheck.shipping_total)} 份，差值 ${formatCount(shippingCheck.delta)} 份`}
+                ；确认前需完成校验。
               </span>
-              <Button icon={<DownloadOutlined />} onClick={handleExport}>
-                导出
-              </Button>
+            </div>
+          )}
+
+          <div className="report-editor-work-grid">
+            <div className="report-editor-main-column">
+              {tempEntry && (
+                <section className="report-editor-section">
+                  <div className="report-editor-section-head">
+                    <span className="report-editor-section-icon" aria-hidden="true">🖨️</span>
+                    <h2>临时加印与分配</h2>
+                    <span className="report-editor-pill is-orange">变动项</span>
+                    <strong className="report-editor-section-total">合计 {formatCount(tempEntry.value)} 份</strong>
+                  </div>
+                  <div className="report-editor-field-grid">
+                    <div className="report-editor-field">
+                      <label>临时加印总数</label>
+                      {isConfirmed ? renderReadOnlyField(tempEntry.value, '临时加印总数') : (
+                        <div className="report-editor-editable-count">
+                          <InputNumber
+                            aria-label="临时加印总数"
+                            className="report-editor-wide-input"
+                            controls={false}
+                            value={tempEntry.value}
+                            onChange={(value) => handleValueChange(tempEntry.id, value ?? undefined)}
+                            min={0}
+                            precision={0}
+                          />
+                          <span>份</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="report-editor-field">
+                      <label>自留分发</label>
+                      {tempDetails.length > 0 || isConfirmed || !tempSelfEntry
+                        ? renderReadOnlyField(tempSelfValue, '自留分发')
+                        : (
+                          <div className="report-editor-editable-count">
+                            <InputNumber
+                              aria-label="自留分发"
+                              className="report-editor-wide-input"
+                              controls={false}
+                              value={tempSelfEntry.value}
+                              onChange={(value) => handleValueChange(tempSelfEntry.id, value ?? undefined)}
+                              min={0}
+                              max={tempEntry.value}
+                              precision={0}
+                            />
+                            <span>份</span>
+                          </div>
+                        )}
+                    </div>
+                    <div className="report-editor-field">
+                      <label>北京快递</label>
+                      {renderReadOnlyField(tempExpressDisplayValue, '北京快递')}
+                    </div>
+                  </div>
+
+                  {tempEntry.value > 0 && (
+                    <div className="report-editor-temp-details">
+                      <div className="report-editor-temp-details-head">
+                        <span><b>＋</b>{tempDetails.length > 0 ? '归属明细' : '尚无归属明细；需要按部门归属时，点击“添加”。'}</span>
+                        {!isConfirmed && <Button size="small" icon={<PlusOutlined />} onClick={handleAddTempDetail}>添加</Button>}
+                      </div>
+                      {tempDetails.length > 0 && (
+                        <div className="report-editor-table-scroll">
+                          <table className="report-editor-temp-table">
+                            <thead><tr><th>部门</th><th>份数</th><th>自留</th><th>快递</th>{!isConfirmed && <th>操作</th>}</tr></thead>
+                            <tbody>
+                              {tempDetails.map((detail, index) => (
+                                <tr key={detail.id ?? index}>
+                                  <td>
+                                    {isConfirmed ? (
+                                      detail.department === '其他' ? (detail.custom_name || '其他') : detail.department
+                                    ) : (
+                                      <div className="report-editor-department-control">
+                                        <Select
+                                          size="small"
+                                          value={detail.department}
+                                          options={DEPARTMENT_OPTIONS}
+                                          onChange={(value) => handleTempDetailChange(index, 'department', value)}
+                                        />
+                                        {detail.department === '其他' && (
+                                          <Input
+                                            size="small"
+                                            aria-label={`第${index + 1}条自定义部门名称`}
+                                            placeholder="名称"
+                                            value={detail.custom_name || ''}
+                                            onChange={(event) => handleTempDetailChange(index, 'custom_name', event.target.value)}
+                                          />
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td>{isConfirmed ? detail.quantity : <InputNumber size="small" aria-label={`第${index + 1}条份数`} controls={false} value={detail.quantity} min={0} precision={0} onChange={(value) => handleTempDetailChange(index, 'quantity', value ?? 0)} />}</td>
+                                  <td>{isConfirmed ? detail.self_quantity : <InputNumber size="small" aria-label={`第${index + 1}条自留`} controls={false} value={detail.self_quantity} min={0} max={detail.quantity} precision={0} onChange={(value) => handleTempDetailChange(index, 'self_quantity', value ?? 0)} />}</td>
+                                  <td>{formatCount(detail.quantity - detail.self_quantity)}</td>
+                                  {!isConfirmed && <td><Button size="small" type="text" danger aria-label={`删除第${index + 1}条归属明细`} icon={<DeleteOutlined />} onClick={() => handleRemoveTempDetail(index)} /></td>}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              <section className="report-editor-section">
+                <div className="report-editor-section-head">
+                  <span className="report-editor-section-icon" aria-hidden="true">📦</span>
+                  <h2>发行渠道报数</h2>
+                  <small>完整保留全部类别与项目，点击组头可收起</small>
+                  <strong className="report-editor-section-total">{formatCount(channelTotal)} 份</strong>
+                </div>
+                <div className="report-editor-channels">
+                  {sortedCategories.filter(category => category !== 'social_use').map(category => {
+                    const categoryEntries = groupedEntries[category];
+                    const frequency = categoryFrequency[category];
+                    const categoryTotal = calculateCategoryTotal(categoryEntries);
+                    return (
+                      <details className="report-editor-channel" open key={category}>
+                        <summary>
+                          <span className="report-editor-chevron">⌄</span>
+                          <strong>{categoryLabels[category]}</strong>
+                          {frequency && <span className={`report-editor-pill ${frequency === '每周' ? '' : 'is-orange'}`}>{frequency}</span>}
+                          <small>{categoryEntries.length} 个项目</small>
+                          <b>{formatCount(categoryTotal)} 份</b>
+                        </summary>
+                        <div className="report-editor-channel-body">
+                          {categoryEntries.map(entry => renderMiniField(entry))}
+                        </div>
+                      </details>
+                    );
+                  })}
+
+                  {groupedEntries.social_use && (
+                    <details className="report-editor-channel" open>
+                      <summary>
+                        <span className="report-editor-chevron">⌄</span>
+                        <strong>社用报</strong>
+                        <span className="report-editor-pill">完整 {socialItemCount} 项</span>
+                        <small>含 2 个自动合计组与合订本</small>
+                        <b>{formatCount(socialTotal)} 份</b>
+                      </summary>
+                      <div className="report-editor-channel-body is-social">
+                        {renderCompositeGroup(COMPOSITE_GROUPS[0])}
+                        {mainSocialEntries.length > 0 && (
+                          <div className="report-editor-social-group">
+                            <div className="report-editor-social-head">
+                              <span>社用报常规项目</span>
+                              <span className="report-editor-pill">{mainSocialEntries.length} 个项目</span>
+                              <strong>{formatCount(mainSocialEntries.reduce((sum, entry) => sum + entry.value, 0))} 份</strong>
+                            </div>
+                            <div className="report-editor-social-grid">
+                              {mainSocialEntries.map(entry => renderMiniField(entry))}
+                            </div>
+                          </div>
+                        )}
+                        {renderCompositeGroup(COMPOSITE_GROUPS[1])}
+                        {bindingEntries.length > 0 && (
+                          <div className="report-editor-social-group">
+                            <div className="report-editor-social-head">
+                              <span>合订本</span>
+                              <span className="report-editor-pill is-orange">固定项</span>
+                              <strong>{formatCount(bindingEntries.reduce((sum, entry) => sum + entry.value, 0))} 份</strong>
+                            </div>
+                            <div className="report-editor-social-grid">
+                              {bindingEntries.map(entry => renderMiniField(entry))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <aside className="report-editor-section report-editor-summary">
+              <div className="report-editor-section-head">
+                <span className="report-editor-section-icon" aria-hidden="true">∑</span>
+                <h2>本期汇总</h2>
+                <span className="report-editor-pill">实时</span>
+              </div>
+              <div className="report-editor-summary-total">
+                <small>当前总印数</small>
+                <strong>{formatCount(total)}</strong><span>份</span>
+              </div>
+              {destinationSummary.length > 0 && (
+                <ul className="report-editor-summary-list">
+                  {destinationSummary.map(item => (
+                    <li key={item.destination}><span>{item.destination}</span><b>{formatCount(item.total)} 份</b></li>
+                  ))}
+                </ul>
+              )}
+              {shippingCheck && (
+                <div className={`report-editor-check-card ${shippingCheck.is_match ? 'is-success' : ''}`}>
+                  <strong>{shippingCheck.is_match ? '✓ 中通份数一致' : '⚠ 1 项待处理'}</strong>
+                  {shippingCheck.is_match
+                    ? `报数与发货明细均为 ${formatCount(shippingCheck.report_zt_total)} 份。`
+                    : `中通报数与发货明细存在 ${formatCount(Math.abs(shippingCheck.delta))} 份差值，完成发货明细后即可确认。`}
+                </div>
+              )}
+              <div className="report-editor-progress">
+                <div><span>报数项目完整度</span><b>{completionPercent}%</b></div>
+                <span><i style={{ width: `${completionPercent}%` }} /></span>
+              </div>
+            </aside>
+          </div>
+
+          {confirmationSummary && (
+            <section className="report-editor-section report-editor-trace">
+              <div className="report-editor-section-head">
+                <span className="report-editor-section-icon" aria-hidden="true">✓</span>
+                <h2>中通校验追溯</h2>
+                <span className={`report-editor-pill ${confirmationSummary.confirmed_is_match ? '' : 'is-orange'}`}>确认时{confirmationSummary.confirmed_is_match ? '一致' : '不一致'}</span>
+                <span className={`report-editor-pill ${confirmationSummary.current_is_match ? '' : 'is-orange'}`}>当前{confirmationSummary.current_is_match ? '一致' : '不一致'}</span>
+                {confirmationSummary.has_shipping_drift && <span className="report-editor-pill is-orange">确认后明细已变更</span>}
+              </div>
+              <div className="report-editor-trace-grid">
+                <div><small>确认时快照</small><span>报数中通：{formatCount(confirmationSummary.confirmed_report_total)} 份</span><span>发货明细：{formatCount(confirmationSummary.confirmed_shipping_total)} 份</span><span>差值：{formatCount(confirmationSummary.confirmed_delta)} 份</span></div>
+                <div><small>当前中通明细</small><span>当前发货明细：{formatCount(confirmationSummary.current_shipping_total)} 份</span><span>相对报数差值：{formatCount(confirmationSummary.current_delta)} 份</span><span>{confirmationSummary.has_shipping_drift ? '当前数量已偏离确认快照' : '当前数量与确认快照一致'}</span></div>
+              </div>
+            </section>
+          )}
+
+          {revisions && revisions.length > 0 && (
+            <section className="report-editor-section report-editor-revisions">
+              <div className="report-editor-section-head">
+                <span className="report-editor-section-icon" aria-hidden="true">↺</span>
+                <h2>变更历史</h2>
+                <span className="report-editor-pill">共 {revisions.length} 次作废</span>
+              </div>
+              <Timeline>
+                {revisions.map((revision: RevisionRecord) => (
+                  <Timeline.Item key={revision.id} label={revision.revoked_at?.replace('T', ' ').slice(0, 16)}>
+                    <div className="report-editor-revision-item">
+                      <strong>第 {revision.revision_number} 次作废</strong>
+                      <span>操作人：{revision.operator}</span>
+                      {revision.reason && <div>原因：{revision.reason}</div>}
+                    </div>
+                  </Timeline.Item>
+                ))}
+              </Timeline>
+            </section>
+          )}
+        </div>
+
+        <footer className="report-editor-footer">
+          <span className={`report-editor-save-tip ${saveStatus === 'error' ? 'is-error' : ''}`}>
+            <b>{saveStatus === 'saving' ? '…' : saveStatus === 'error' ? '!' : '✓'}</b>
+            {isConfirmed && '报数已确认，数据已锁定'}
+            {!isConfirmed && saveStatus === 'saving' && '正在自动保存…'}
+            {!isConfirmed && saveStatus === 'saved' && '已自动保存'}
+            {!isConfirmed && saveStatus === 'error' && '保存失败，请重试'}
+            {!isConfirmed && saveStatus === 'idle' && '修改自动暂存；确认后将锁定报数数据'}
+          </span>
+          {!isConfirmed && (
+            <>
+              <Button className="report-editor-save-button" loading={saveStatus === 'saving'} onClick={() => { void doSave(); }}>保存草稿</Button>
               <Button
                 type="primary"
                 icon={<CheckOutlined />}
                 loading={saving}
                 onClick={() => {
-                  if (window.confirm('确认后将无法再修改，是否继续？')) {
-                    handleConfirm();
-                  }
+                  if (window.confirm('确认后将无法再修改，是否继续？')) handleConfirm();
                 }}
               >
                 确认报数
               </Button>
             </>
           )}
-        </Space>
-      </div>
+        </footer>
+      </section>
 
-      {/* Destination summary */}
-      {report?.destination_summary && report.destination_summary.length > 0 && (
-        <Card style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>
-              发货目的地汇总
-            </span>
-            <Space size={[12, 8]} wrap>
-              {report.destination_summary.map((item) => (
-                <Tag key={item.destination} style={{ marginInlineEnd: 0, padding: '4px 10px', fontSize: 13 }}>
-                  {item.destination}：{item.total.toLocaleString()} 份
-                </Tag>
-              ))}
-            </Space>
-          </div>
-          {report.shipping_check && !report.shipping_check.is_match && (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginTop: 12 }}
-              title={
-                `中通份数不一致：报数合计 ${report.shipping_check.report_zt_total.toLocaleString()} 份，` +
-                `发货明细合计 ${report.shipping_check.shipping_total.toLocaleString()} 份，` +
-                `差值 ${report.shipping_check.delta.toLocaleString()} 份`
-              }
-            />
-          )}
-        </Card>
-      )}
-
-      {confirmationSummary && (
-        <Card style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
-            <Space size="small" wrap>
-              <span style={{ fontSize: 15, fontWeight: 600 }}>中通校验追溯</span>
-              <Tag color={confirmationSummary.confirmed_is_match ? 'green' : 'red'}>
-                确认时{confirmationSummary.confirmed_is_match ? '一致' : '不一致'}
-              </Tag>
-              <Tag color={confirmationSummary.current_is_match ? 'green' : 'orange'}>
-                当前{confirmationSummary.current_is_match ? '一致' : '不一致'}
-              </Tag>
-              {confirmationSummary.has_shipping_drift && (
-                <Tag color="gold">确认后明细已变更</Tag>
-              )}
-            </Space>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-            <div style={{ padding: 12, borderRadius: 12, background: 'var(--color-bg-subtle)' }}>
-              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6 }}>确认时快照</div>
-              <div style={{ fontSize: 14, color: 'var(--color-text-primary)', lineHeight: 1.8 }}>
-                <div>报数中通：{confirmationSummary.confirmed_report_total.toLocaleString()} 份</div>
-                <div>发货明细：{confirmationSummary.confirmed_shipping_total.toLocaleString()} 份</div>
-                <div>差值：{confirmationSummary.confirmed_delta.toLocaleString()} 份</div>
-              </div>
-            </div>
-            <div style={{ padding: 12, borderRadius: 12, background: 'var(--color-bg-subtle)' }}>
-              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6 }}>当前中通明细</div>
-              <div style={{ fontSize: 14, color: 'var(--color-text-primary)', lineHeight: 1.8 }}>
-                <div>当前发货明细：{confirmationSummary.current_shipping_total.toLocaleString()} 份</div>
-                <div>相对报数差值：{confirmationSummary.current_delta.toLocaleString()} 份</div>
-                <div>{confirmationSummary.has_shipping_drift ? '当前数量已偏离确认快照' : '当前数量与确认快照一致'}</div>
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Prominent 临时加印 at top */}
-      {tempEntry && (
-        <Card style={{ marginBottom: 20, border: '2px dashed var(--color-warning)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Space size="small">
-              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>临时加印</span>
-              <Tag color="orange">变动</Tag>
-            </Space>
-            {renderValue(tempEntry, { width: 160, size: 'large' })}
-          </div>
-          {/* Allocation: 自留分发 vs 北京快递 */}
-          {tempEntry.value > 0 && tempSelfEntry && (
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-divider)', display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>分配：</span>
-              <Space size="small" style={{ alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>自留分发</span>
-                {tempDetails.length > 0 ? (
-                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                    {tempDetails.reduce((s, d) => s + d.self_quantity, 0).toLocaleString()} 份
-                  </span>
-                ) : isConfirmed ? (
-                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>{tempSelfEntry.value.toLocaleString()} 份</span>
-                ) : (
-                  <InputNumber
-                    value={tempSelfEntry.value}
-                    onChange={(value) => handleValueChange(tempSelfEntry.id, value ?? undefined)}
-                    min={0}
-                    max={tempEntry.value}
-                    precision={0}
-                    style={{ width: 120 }}
-                    addonAfter="份"
-                    size="small"
-                  />
-                )}
-              </Space>
-              <Space size="small" style={{ alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>北京快递</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                  {tempDetails.length > 0
-                    ? (tempDetails.reduce((s, d) => s + d.quantity, 0) - tempDetails.reduce((s, d) => s + d.self_quantity, 0)).toLocaleString()
-                    : tempExpressValue.toLocaleString()
-                  } 份
-                </span>
-              </Space>
-            </div>
-          )}
-
-          {/* 归属明细 detail table */}
-          {tempEntry.value > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-divider)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-tertiary)' }}>归属明细</span>
-                {!isConfirmed && (
-                  <Button
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={handleAddTempDetail}
-                  >
-                    添加
-                  </Button>
-                )}
-              </div>
-              {tempDetails.length > 0 && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--color-bg-subtle)', borderBottom: '1px solid var(--color-border)' }}>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--color-text-secondary)' }}>部门</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: 'var(--color-text-secondary)' }}>份数</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: 'var(--color-text-secondary)' }}>自留</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 500, color: 'var(--color-text-secondary)' }}>快递</th>
-                      {!isConfirmed && (
-                        <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 500, color: 'var(--color-text-secondary)', width: 40 }}>操作</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tempDetails.map((detail, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid var(--color-divider)' }}>
-                        <td style={{ padding: '6px 8px' }}>
-                          {isConfirmed ? (
-                            <span>{detail.department === '其他' ? (detail.custom_name || '其他') : detail.department}</span>
-                          ) : (
-                            <Space size="small">
-                              <Select
-                                size="small"
-                                value={detail.department}
-                                options={DEPARTMENT_OPTIONS}
-                                onChange={(val) => handleTempDetailChange(idx, 'department', val)}
-                                style={{ width: 100 }}
-                              />
-                              {detail.department === '其他' && (
-                                <Input
-                                  size="small"
-                                  placeholder="名称"
-                                  value={detail.custom_name || ''}
-                                  onChange={(e) => handleTempDetailChange(idx, 'custom_name', e.target.value)}
-                                  style={{ width: 80 }}
-                                />
-                              )}
-                            </Space>
-                          )}
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                          {isConfirmed ? (
-                            <span>{detail.quantity}</span>
-                          ) : (
-                            <InputNumber
-                              size="small"
-                              value={detail.quantity}
-                              onChange={(val) => handleTempDetailChange(idx, 'quantity', val ?? 0)}
-                              min={0}
-                              precision={0}
-                              style={{ width: 80 }}
-                            />
-                          )}
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                          {isConfirmed ? (
-                            <span>{detail.self_quantity}</span>
-                          ) : (
-                            <InputNumber
-                              size="small"
-                              value={detail.self_quantity}
-                              onChange={(val) => handleTempDetailChange(idx, 'self_quantity', val ?? 0)}
-                              min={0}
-                              max={detail.quantity}
-                              precision={0}
-                              style={{ width: 80 }}
-                            />
-                          )}
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--color-text-secondary)' }}>
-                          {detail.quantity - detail.self_quantity}
-                        </td>
-                        {!isConfirmed && (
-                          <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                            <Button
-                              size="small"
-                              type="text"
-                              danger
-                              icon={<DeleteOutlined />}
-                              onClick={() => handleRemoveTempDetail(idx)}
-                            />
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {tempDetails.length === 0 && !isConfirmed && (
-                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>暂无明细，点击"添加"按钮录入归属信息</span>
-              )}
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* Main report table */}
-      <Card style={{ padding: 0 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: 'var(--color-bg-subtle)', borderBottom: '1px solid var(--color-border)' }}>
-              <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                类别
-              </th>
-              <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                项目
-              </th>
-              <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500, width: 180 }}>
-                份数
-              </th>
-            </tr>
-          </thead>
-
-          {sortedCategories.map((category) => {
-            const allCategoryEntries = groupedEntries[category];
-            const freq = categoryFrequency[category];
-
-            // For social_use, handle composite groups, extras, and 临时加印 (shown at top)
-            if (category === 'social_use') {
-              // Include binding entries in social_use section
-              const bindingEntries = groupedEntries['binding'] || [];
-              const allSocialEntries = [...allCategoryEntries, ...bindingEntries];
-              // Identify all sub_categories that belong to composite groups
-              const compositeSubCategories = new Set<string>();
-              COMPOSITE_GROUPS.forEach(g => g.items.forEach(i => compositeSubCategories.add(i)));
-
-              const mainItems = sortVisibleSocialUseEntries(allSocialEntries.filter(
-                e => !EXTRA_ITEMS.includes(e.sub_category) &&
-                     !compositeSubCategories.has(e.sub_category)
-              ));
-              // All extra items are hidden (managed by temp print details or shown at top)
-              const extraItems: ReportEntry[] = [];
-              const subtotal = calculateCategoryTotal(allSocialEntries);
-
-              // Render composite group (auto-summing sub-items)
-              const renderCompositeGroup = (group: typeof COMPOSITE_GROUPS[0]) => {
-                const groupEntries = entries.filter(e => group.items.includes(e.sub_category));
-                const groupTotal = groupEntries.reduce((sum, e) => sum + e.value, 0);
-                return (
-                  <>
-                    {/* Group header with auto-calculated total */}
-                    <tr
-                      key={`${group.label}-header`}
-                      style={{ background: 'var(--color-accent-soft)', borderBottom: '1px solid var(--color-border)' }}
-                    >
-                      <td colSpan={2} style={{ padding: '10px 16px' }}>
-                        <Space size="small">
-                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                            {group.label}
-                          </span>
-                          <Tag color="blue">变动</Tag>
-                          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                            (自动合计)
-                          </span>
-                        </Space>
-                      </td>
-                      <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-accent)' }}>
-                          {groupTotal} 份
-                        </span>
-                      </td>
-                    </tr>
-                    {/* Sub-items */}
-                    {groupEntries.map(entry => (
-                      <tr
-                        key={entry.id}
-                        style={{
-                          borderBottom: '1px solid var(--color-divider)',
-                          background: 'var(--color-accent-soft)',
-                        }}
-                      >
-                        <td colSpan={2} style={{ padding: '6px 16px 6px 32px' }}>
-                          <Space size="small">
-                            <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-                              ├ {entry.sub_category.replace(group.prefix, '')}
-                            </span>
-                            {entry.is_variable && <Tag color="blue">变动</Tag>}
-                          </Space>
-                        </td>
-                        <td style={{ padding: '6px 16px', textAlign: 'right' }}>
-                          {renderValue(entry, { width: 120, size: 'small' })}
-                        </td>
-                      </tr>
-                    ))}
-                  </>
-                );
-              };
-
-              return (
-                <tbody key={category}>
-                  {/* Category header */}
-                  <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)' }}>
-                    <td
-                      colSpan={3}
-                      style={{ padding: '10px 16px', fontWeight: 700, fontSize: 14, color: 'var(--color-text-primary)' }}
-                    >
-                      社用报
-                    </td>
-                  </tr>
-                  {/* Composite: 营报传媒 */}
-                  {renderCompositeGroup(COMPOSITE_GROUPS[0])}
-                  {/* Regular main items */}
-                  {mainItems.map(entry => renderEntryRow(entry))}
-                  {/* Composite: 报社订阅自投/展示 (高铁展示) */}
-                  {renderCompositeGroup(COMPOSITE_GROUPS[1])}
-                  {/* Extra/加印 section */}
-                  {extraItems.length > 0 && (
-                    <>
-                      <tr style={{ background: 'var(--color-bg-subtle)', borderTop: '1px solid var(--color-border)' }}>
-                        <td
-                          colSpan={3}
-                          style={{ padding: '6px 16px', fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500 }}
-                        >
-                          加印项
-                        </td>
-                      </tr>
-                      {extraItems.map(entry => renderEntryRow(entry))}
-                    </>
-                  )}
-                  {/* Subtotal */}
-                  <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
-                    <td colSpan={2} style={{ padding: '8px 16px', fontWeight: 600, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-                      社用报小计
-                    </td>
-                    <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
-                      {subtotal.toLocaleString()} 份
-                    </td>
-                  </tr>
-                </tbody>
-              );
-            }
-
-            // Single-item categories(chengdu, guotumao, binding)
-            if (allCategoryEntries.length === 1) {
-              const entry = allCategoryEntries[0];
-              return (
-                <tbody key={category}>
-                  <tr style={{
-                    borderBottom: '2px solid var(--color-border)',
-                    background: entry.is_variable ? 'var(--color-accent-soft)' : 'transparent',
-                  }}>
-                    <td colSpan={2} style={{ padding: '10px 16px', fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
-                      <Space size="small">
-                        {categoryLabels[category]}
-                        {entry.is_variable && <Tag color="blue">变动</Tag>}
-                        {freq && <Tag color="orange">{freq}</Tag>}
-                      </Space>
-                    </td>
-                    <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-                      {renderValue(entry)}
-                    </td>
-                  </tr>
-                </tbody>
-              );
-            }
-
-            // Multi-item categories (postal, retail, guangzhou)
-            const subtotal = calculateCategoryTotal(allCategoryEntries);
-            return (
-              <tbody key={category}>
-                {allCategoryEntries.map((entry, idx) => (
-                  <tr
-                    key={entry.id}
-                    style={{
-                      borderBottom: '1px solid var(--color-divider)',
-                      background: entry.is_variable ? 'var(--color-accent-soft)' : 'transparent',
-                    }}
-                  >
-                    {idx === 0 && (
-                      <td
-                        rowSpan={allCategoryEntries.length}
-                        style={{
-                          padding: '10px 16px',
-                          fontWeight: 600,
-                          fontSize: 14,
-                          color: 'var(--color-text-primary)',
-                          verticalAlign: 'middle',
-                          borderRight: '1px solid var(--color-divider)',
-                          background: 'var(--color-bg-subtle)',
-                        }}
-                      >
-                        {categoryLabels[category]}
-                      </td>
-                    )}
-                    <td style={{ padding: '8px 16px' }}>
-                      <Space size="small">
-                        <span style={{ fontSize: 14 }}>{entry.sub_category}</span>
-                        {entry.is_variable && <Tag color="blue">变动</Tag>}
-                        {freq && <Tag color="orange">{freq}</Tag>}
-                      </Space>
-                    </td>
-                    <td style={{ padding: '8px 16px', textAlign: 'right' }}>
-                      {renderValue(entry)}
-                    </td>
-                  </tr>
-                ))}
-                <tr style={{ borderBottom: '2px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
-                  <td colSpan={2} style={{ padding: '8px 16px', fontWeight: 600, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-                    {categoryLabels[category]}小计
-                  </td>
-                  <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
-                    {subtotal.toLocaleString()} 份
-                  </td>
-                </tr>
-              </tbody>
-            );
-          })}
-
-          {/* Grand total */}
-          <tfoot>
-            <tr style={{ background: 'var(--color-text-primary)' }}>
-              <td colSpan={2} style={{ padding: '12px 16px', fontWeight: 700, fontSize: 15, color: 'var(--color-card)' }}>
-                总印数
-              </td>
-              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontSize: 16, color: 'var(--color-card)' }}>
-                {calculateTotal().toLocaleString()} 份
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </Card>
-
-      {/* Revision History */}
-      {revisions && revisions.length > 0 && (
-        <Card style={{ marginTop: 24 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: 'var(--color-text-primary)' }}>
-            变更历史（共 {revisions.length} 次作废）
-          </h3>
-          <Timeline>
-            {revisions.map((rev: RevisionRecord) => (
-              <Timeline.Item key={rev.id} label={rev.revoked_at?.replace('T', ' ').slice(0, 16)}>
-                <div style={{ fontSize: 13 }}>
-                  <strong>第 {rev.revision_number} 次作废</strong>
-                  <span style={{ color: 'var(--color-text-secondary)', marginLeft: 8 }}>操作人：{rev.operator}</span>
-                  {rev.reason && (
-                    <div style={{ color: 'var(--color-text-secondary)', marginTop: 4 }}>原因：{rev.reason}</div>
-                  )}
-                </div>
-              </Timeline.Item>
-            ))}
-          </Timeline>
-        </Card>
-      )}
-
-      {/* Revoke Modal */}
       <Modal
         title="作废确认"
         open={revokeModalVisible}
@@ -1066,13 +871,11 @@ export default function ReportEditor() {
         cancelText="取消"
         okButtonProps={{ danger: true }}
       >
-        <p style={{ marginBottom: 12, color: 'var(--color-text-tertiary)' }}>
-          作废后该期报数将恢复为可编辑状态，此操作将被记录。
-        </p>
+        <p className="report-editor-revoke-copy">作废后该期报数将恢复为可编辑状态，此操作将被记录。</p>
         <Input.TextArea
           placeholder="作废原因（可选）"
           value={revokeReason}
-          onChange={(e) => setRevokeReason(e.target.value)}
+          onChange={(event) => setRevokeReason(event.target.value)}
           autoSize={{ minRows: 2 }}
         />
       </Modal>

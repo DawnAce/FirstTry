@@ -10,7 +10,7 @@ describe('formatIssueReportTitle', () => {
         publish_date: '2026-04-20',
         year_issue_label: '十四',
       }),
-    ).toBe('2026年《中国经营报》第2648期 第十四期 报数表');
+    ).toBe('2026年《中国经营报》第2648期（第十四期）');
   });
 
   describe('sortVisibleSocialUseEntries', () => {
@@ -62,7 +62,7 @@ describe('formatIssueReportTitle', () => {
         publish_date: '2027-01-04',
         year_issue_label: '一',
       }),
-    ).toBe('2027年《中国经营报》第2700期 第一期 报数表');
+    ).toBe('2027年《中国经营报》第2700期（第一期）');
   });
 
   it('omits the annual sequence text when the label is unavailable', () => {
@@ -72,6 +72,6 @@ describe('formatIssueReportTitle', () => {
         publish_date: '2027-01-04',
         year_issue_label: null,
       }),
-    ).toBe('2027年《中国经营报》第2700期 报数表');
+    ).toBe('2027年《中国经营报》第2700期');
   });
 });

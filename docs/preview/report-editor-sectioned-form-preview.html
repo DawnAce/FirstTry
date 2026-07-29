@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>印数报数单 · 分区卡片式表单效果稿</title>
+<style>
+  :root {
+    --bg: #f3f5f8;
+    --card: #fff;
+    --text: #182230;
+    --muted: #6f7c8e;
+    --subtle: #8994a5;
+    --line: #e5eaf1;
+    --blue: #1677e8;
+    --blue-soft: #eaf3ff;
+    --orange: #c26612;
+    --orange-soft: #fff3e6;
+    --green: #24834f;
+    --green-soft: #eaf8f0;
+    --shadow: 0 12px 34px rgba(24, 34, 48, .08), 0 2px 8px rgba(24, 34, 48, .04);
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--text); background: var(--bg); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; }
+  .mock-banner { position: sticky; top: 0; z-index: 20; padding: 8px 16px; border-bottom: 1px solid #ffe58f; color: #7a4d00; background: #fffbe6; font-size: 12px; text-align: center; }
+  .shell { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 33px); }
+  .sider { position: sticky; top: 33px; height: calc(100vh - 33px); display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #fff; }
+  .brand { display: flex; align-items: center; gap: 10px; height: 64px; padding: 0 18px; border-bottom: 1px solid #eef1f5; }
+  .brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: #fff; background: linear-gradient(145deg, #1785f4, #0568ce); font-size: 20px; font-weight: 800; }
+  .brand strong { display: block; font-size: 16px; }
+  .brand small { color: var(--muted); font-size: 11px; }
+  .nav { padding: 22px 12px; }
+  .nav-back { margin: 0 8px 22px; color: var(--blue); font-size: 13px; }
+  .nav-label { padding: 0 10px 8px; color: #9aa4b3; font-size: 11px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; padding: 11px 13px; border-radius: 10px; color: #3b4658; font-size: 13px; }
+  .nav-item.active { color: #0b69ce; background: #eaf3ff; font-weight: 650; }
+  .nav-note { margin: 18px 8px; padding: 12px; border: 1px dashed #cbdcf1; border-radius: 10px; color: #60718a; background: #f7fbff; font-size: 11px; line-height: 1.6; }
+  .user { display: flex; align-items: center; gap: 10px; margin-top: auto; padding: 16px 18px; border-top: 1px solid #eef1f5; }
+  .avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #fff; background: var(--blue); }
+  .user strong { display: block; font-size: 12px; }
+  .user small { color: var(--muted); font-size: 10px; }
+  .main { min-width: 0; }
+  .topbar { position: sticky; top: 33px; z-index: 10; display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 30px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.94); backdrop-filter: blur(12px); }
+  .crumb { color: #707b8c; font-size: 12px; }
+  .crumb b { color: #253044; }
+  .search { width: 280px; padding: 10px 14px; border-radius: 9px; color: #9aa4b3; background: #f5f7fa; font-size: 12px; }
+  .canvas { max-width: 1260px; margin: 0 auto; padding: 26px 28px 52px; }
+  .back { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-size: 18px; }
+  .btn { height: 38px; padding: 0 16px; border: 1px solid #dce3ec; border-radius: 9px; color: #354156; background: #fff; font-weight: 600; cursor: pointer; }
+  .btn.primary { min-width: 108px; border-color: var(--blue); color: #fff; background: linear-gradient(#2387ef, #0f70dc); box-shadow: 0 6px 14px rgba(22,119,232,.22); }
+  .btn.ghost { color: var(--blue); background: #f7fbff; }
+  .report-shell { overflow: hidden; border: 1px solid rgba(255,255,255,.8); border-radius: 16px; background: #f8fafc; box-shadow: var(--shadow); }
+  .report-title { display: flex; align-items: center; gap: 14px; padding: 18px 22px; border-bottom: 1px solid var(--line); background: #fff; }
+  .title-icon { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 12px; background: var(--blue-soft); font-size: 21px; }
+  .title-copy { flex: 1; min-width: 0; }
+  .title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 5px; }
+  .title-copy strong { display: block; font-size: 19px; line-height: 1.3; }
+  .title-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; color: #7c8798; font-size: 12px; }
+  .title-meta span { white-space: nowrap; }
+  .title-meta i { color: #c0c7d2; font-style: normal; }
+  .page-count-input { width: 54px; height: 26px; margin: 0 3px; padding: 0 5px; border: 1px solid #dce3ec; border-radius: 7px; color: var(--text); background: #fff; font: inherit; font-weight: 650; text-align: center; }
+  .page-count-input:focus { border-color: var(--blue); outline: 2px solid rgba(22,119,232,.12); }
+  .title-actions { display: flex; align-items: center; gap: 9px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; color: var(--orange); background: var(--orange-soft); font-size: 12px; font-weight: 650; }
+  .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .report-body { padding: 12px; }
+  .notice { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid #ffd9ad; border-radius: 10px; color: #8a5312; background: #fff8ed; font-size: 12px; }
+  .notice b { color: #633b0d; }
+  .work-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(280px, .72fr); gap: 12px; align-items: start; }
+  .section { margin-bottom: 12px; padding: 14px 15px 15px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+  .section:last-child { margin-bottom: 0; }
+  .section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 13px; }
+  .section-icon { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; background: #f1f6fc; font-size: 14px; }
+  .section-head strong { font-size: 14px; }
+  .section-head small { margin-left: 2px; color: var(--subtle); font-size: 11px; font-weight: 400; }
+  .section-total { margin-left: auto; color: var(--blue); font-size: 12px; font-weight: 700; }
+  .pill { padding: 3px 8px; border-radius: 999px; color: #1769cc; background: #eaf3ff; font-size: 10px; font-weight: 650; }
+  .pill.orange { color: var(--orange); background: var(--orange-soft); }
+  .field-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px 12px; }
+  .field label { display: block; margin-bottom: 6px; color: #657184; font-size: 11px; font-weight: 650; }
+  .input { display: flex; align-items: center; min-height: 38px; overflow: hidden; border: 1px solid #dce3ec; border-radius: 8px; background: #fbfcfe; }
+  .input input { width: 100%; min-width: 0; padding: 8px 10px; border: 0; outline: 0; color: #263144; background: transparent; font-variant-numeric: tabular-nums; }
+  .unit { align-self: stretch; display: grid; place-items: center; min-width: 39px; border-left: 1px solid #e4e9f0; color: #667286; background: #f3f6f9; font-size: 11px; }
+  .source-note { display: flex; align-items: center; gap: 8px; margin-top: 11px; padding: 8px 10px; border-radius: 8px; color: #6f7c8e; background: #f6f8fb; font-size: 11px; }
+  .source-note b { color: #2f80ed; }
+  .channels { display: grid; gap: 9px; }
+  .channel { border: 1px solid #edf0f4; border-radius: 10px; background: #fbfcfe; }
+  .channel-head { display: flex; align-items: center; gap: 8px; padding: 10px 11px; cursor: pointer; }
+  .channel-head strong { font-size: 12px; }
+  .channel-head small { color: var(--subtle); font-size: 10px; }
+  .channel-head .sum { margin-left: auto; color: #334155; font-size: 12px; font-weight: 750; }
+  .chev { color: #9ba5b3; transition: transform .2s; }
+  .channel.closed .chev { transform: rotate(-90deg); }
+  .channel-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding: 0 11px 11px; }
+  .channel.closed .channel-body { display: none; }
+  .social-body { display: block; }
+  .social-group { margin-bottom: 9px; padding: 10px; border: 1px solid #e7edf5; border-radius: 9px; background: #fff; }
+  .social-group:last-child { margin-bottom: 0; }
+  .social-group-head { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: #334155; font-size: 11px; font-weight: 700; }
+  .social-group-head .sum { margin-left: auto; color: var(--blue); }
+  .social-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mini-field { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border: 1px solid #e6ebf2; border-radius: 8px; background: #fff; }
+  .mini-field span { flex: 1; color: #4b5668; font-size: 11px; }
+  .mini-field input { width: 78px; padding: 6px 8px; border: 1px solid #dce3ec; border-radius: 7px; outline: 0; background: #fbfcfe; text-align: right; font-variant-numeric: tabular-nums; }
+  .mini-field em { color: #8691a1; font-size: 10px; font-style: normal; }
+  .summary { position: sticky; top: 101px; }
+  .summary-total { padding: 17px; border-radius: 11px; color: #fff; background: linear-gradient(145deg, #263348, #162033); }
+  .summary-total small { display: block; margin-bottom: 6px; color: #b8c3d2; font-size: 11px; }
+  .summary-total strong { font-size: 28px; letter-spacing: -.03em; }
+  .summary-total span { margin-left: 5px; color: #c7d1df; font-size: 12px; }
+  .summary-list { margin: 13px 0 0; padding: 0; list-style: none; }
+  .summary-list li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #edf0f4; color: #657184; font-size: 11px; }
+  .summary-list li:last-child { border-bottom: 0; }
+  .summary-list b { color: #293348; font-variant-numeric: tabular-nums; }
+  .check-card { margin-top: 11px; padding: 11px; border-radius: 9px; color: #935d19; background: #fff6e8; font-size: 11px; line-height: 1.55; }
+  .check-card strong { display: block; margin-bottom: 3px; color: #71410d; }
+  .progress { margin-top: 13px; }
+  .progress-head { display: flex; justify-content: space-between; margin-bottom: 6px; color: #657184; font-size: 10px; }
+  .bar { height: 6px; overflow: hidden; border-radius: 999px; background: #edf1f5; }
+  .bar i { display: block; width: 88%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #64a9f2, #1677e8); }
+  .report-footer { display: flex; align-items: center; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--line); background: #fff; }
+  .save-tip { flex: 1; color: var(--subtle); font-size: 12px; }
+  .save-tip b { margin-right: 5px; color: #2f80ed; }
+  .decision { margin-top: 16px; padding: 12px 14px; border: 1px dashed #c9d8eb; border-radius: 10px; color: #53657c; background: #f7fbff; font-size: 11px; line-height: 1.65; }
+  .decision strong { color: #24476f; }
+  @media (max-width: 980px) {
+    .shell { grid-template-columns: 1fr; }
+    .sider { display: none; }
+    .work-grid { grid-template-columns: 1fr; }
+    .summary { position: static; }
+    .field-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 720px) {
+    .report-title { flex-wrap: wrap; align-items: flex-start; padding: 16px; }
+    .title-copy { flex-basis: calc(100% - 109px); }
+    .title-actions { width: 100%; justify-content: flex-end; }
+  }
+</style>
+</head>
+<body>
+<div class="mock-banner">设计效果稿 · 仅用于确认视觉与信息结构，不连接数据库，也未修改正式页面</div>
+<div class="shell">
+  <aside class="sider">
+    <div class="brand"><div class="brand-mark">发</div><div><strong>发行系统</strong><small>中国经营报</small></div></div>
+    <nav class="nav">
+      <div class="nav-back">← 返回业务首页</div>
+      <div class="nav-label">发行计划</div>
+      <div class="nav-item active">🖨️ <span>印数管理</span></div>
+      <div class="nav-item">🗓️ <span>刊期表管理</span></div>
+      <div class="nav-note">当前只显示“发行计划”下的功能，减少无关菜单干扰。</div>
+    </nav>
+    <div class="user"><div class="avatar">♙</div><div><strong>admin</strong><small>管理员</small></div></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar"><div class="crumb">业务首页　/　发行计划　/　印数管理　/　<b>第2654期</b></div><div class="search">⌕　搜索 订单 / 商品 / 期数</div></div>
+    <div class="canvas">
+      <section class="report-shell">
+        <div class="report-title">
+          <button class="back" aria-label="返回">←</button>
+          <span class="title-icon">📰</span>
+          <div class="title-copy">
+            <div class="title-line"><strong>2026年《中国经营报》第2654期（第二十期）</strong><span class="pill">报数单</span></div>
+            <div class="title-meta"><span>出版日期 2026-06-01</span><i>·</i><span>人民日报印厂</span><i>·</i><span>计划 <b>24</b> 版</span><i>·</i><label>实际 <input class="page-count-input" type="number" value="24" min="4" step="4" aria-label="实际版数" /> 版</label><i>·</i><span>最后更新 05-27 15:26</span></div>
+          </div>
+          <div class="title-actions">
+            <span class="status">待确认</span>
+            <button class="btn">⇩　导出</button>
+          </div>
+        </div>
+
+        <div class="report-body">
+          <div class="notice">⚠️ <span><b>中通份数待核对：</b>报数合计 1,473 份，发货明细尚未生成；确认前需完成校验。</span></div>
+          <div class="work-grid">
+            <div>
+              <section class="section">
+                <div class="section-head"><span class="section-icon">🖨️</span><strong>临时加印与分配</strong><span class="pill orange">变动项</span><span class="section-total">合计 50 份</span></div>
+                <div class="field-grid">
+                  <div class="field"><label>临时加印总数</label><div class="input"><input value="50" data-count /><span class="unit">份</span></div></div>
+                  <div class="field"><label>自留分发</label><div class="input"><input value="50" /><span class="unit">份</span></div></div>
+                  <div class="field"><label>北京快递</label><div class="input"><input value="0" /><span class="unit">份</span></div></div>
+                </div>
+                <div class="source-note"><b>＋</b><span>尚无归属明细；需要按部门归属时，在正式页面点击“添加”。</span></div>
+              </section>
+
+              <section class="section">
+                <div class="section-head"><span class="section-icon">📦</span><strong>发行渠道报数</strong><small>完整保留原页面全部类别与项目，点击组头可收起</small><span class="section-total">9,305 份</span></div>
+                <div class="channels">
+                  <div class="channel">
+                    <div class="channel-head"><span class="chev">⌄</span><strong>北京邮发</strong><span class="pill">每周</span><small>2 个项目</small><span class="sum">6,815 份</span></div>
+                    <div class="channel-body">
+                      <div class="mini-field"><span>外埠</span><input value="5597" data-count /><em>份</em></div>
+                      <div class="mini-field"><span>本市</span><input value="1218" data-count /><em>份</em></div>
+                    </div>
+                  </div>
+                  <div class="channel">
+                    <div class="channel-head"><span class="chev">⌄</span><strong>北京报零</strong><span class="pill">每周</span><small>2 个项目</small><span class="sum">1,052 份</span></div>
+                    <div class="channel-body">
+                      <div class="mini-field"><span>东部</span><input value="460" data-count /><em>份</em></div>
+                      <div class="mini-field"><span>西部</span><input value="592" data-count /><em>份</em></div>
+                    </div>
+                  </div>
+                  <div class="channel">
+                    <div class="channel-head"><span class="chev">⌄</span><strong>广州日报</strong><span class="pill">每周</span><small>2 个项目</small><span class="sum">531 份</span></div>
+                    <div class="channel-body">
+                      <div class="mini-field"><span>零售</span><input value="500" data-count /><em>份</em></div>
+                      <div class="mini-field"><span>订阅</span><input value="31" data-count /><em>份</em></div>
+                    </div>
+                  </div>
+                  <div class="channel">
+                    <div class="channel-head"><span class="chev">⌄</span><strong>成都杂志铺</strong><span class="pill orange">每月</span><small>1 个项目</small><span class="sum">366 份</span></div>
+                    <div class="channel-body">
+                      <div class="mini-field"><span>成都杂志铺</span><input value="366" data-count /><em>份</em></div>
+                    </div>
+                  </div>
+                  <div class="channel">
+                    <div class="channel-head"><span class="chev">⌄</span><strong>国图贸</strong><span class="pill orange">每年</span><small>1 个项目</small><span class="sum">1 份</span></div>
+                    <div class="channel-body">
+                      <div class="mini-field"><span>国图贸</span><input value="1" data-count /><em>份</em></div>
+                    </div>
+                  </div>
+                  <div class="channel">
+                    <div class="channel-head"><span class="chev">⌄</span><strong>社用报</strong><span class="pill">完整 22 项</span><small>含 2 个自动合计组与合订本</small><span class="sum">540 份</span></div>
+                    <div class="channel-body social-body">
+                      <div class="social-group">
+                        <div class="social-group-head"><span>营报传媒</span><span class="pill">自动合计</span><span class="sum">158 份</span></div>
+                        <div class="social-grid">
+                          <div class="mini-field"><span>收发室</span><input value="29" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>读者</span><input value="50" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>备用报</span><input value="79" data-count /><em>份</em></div>
+                        </div>
+                      </div>
+                      <div class="social-group">
+                        <div class="social-group-head"><span>社用报常规项目</span><span class="pill">16 个项目</span><span class="sum">227 份</span></div>
+                        <div class="social-grid">
+                          <div class="mini-field"><span>中经传媒智库</span><input value="3" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>新闻中心</span><input value="45" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>行政</span><input value="4" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>财经中心</span><input value="9" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>产经中心</span><input value="5" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>出版中心</span><input value="10" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>品牌中心</span><input value="5" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>经营网</span><input value="7" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>法务</span><input value="2" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>社科院、工经所</span><input value="64" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>财务</span><input value="1" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>库房</span><input value="10" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>上海站用</span><input value="20" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>广东站用</span><input value="30" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>成都站用</span><input value="2" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>西安站用</span><input value="10" data-count /><em>份</em></div>
+                        </div>
+                      </div>
+                      <div class="social-group">
+                        <div class="social-group-head"><span>报社订阅自投 / 展示</span><span class="pill">自动合计</span><span class="sum">140 份</span></div>
+                        <div class="social-grid">
+                          <div class="mini-field"><span>营报传媒_上犹</span><input value="30" data-count /><em>份</em></div>
+                          <div class="mini-field"><span>高铁展示</span><input value="110" data-count /><em>份</em></div>
+                        </div>
+                      </div>
+                      <div class="social-group">
+                        <div class="social-group-head"><span>合订本</span><span class="pill orange">固定项</span><span class="sum">15 份</span></div>
+                        <div class="social-grid">
+                          <div class="mini-field"><span>合订本（印厂留存）</span><input value="15" data-count /><em>份</em></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="section summary">
+              <div class="section-head"><span class="section-icon">∑</span><strong>本期汇总</strong><span class="pill">实时</span></div>
+              <div class="summary-total"><small>当前总印数</small><strong id="total">9,355</strong><span>份</span></div>
+              <ul class="summary-list">
+                <li><span>印厂留存</span><b>15 份</b></li>
+                <li><span>中通物流公司</span><b>1,473 份</b></li>
+                <li><span>北京市报刊发行局</span><b>6,815 份</b></li>
+                <li><span>北京市报刊零售公司</span><b>1,052 份</b></li>
+              </ul>
+              <div class="check-card"><strong>⚠ 1 项待处理</strong>中通报数与发货明细存在 1,473 份差值，完成发货明细后即可确认。</div>
+              <div class="progress"><div class="progress-head"><span>数据完整度</span><b>88%</b></div><div class="bar"><i></i></div></div>
+            </aside>
+          </div>
+        </div>
+
+        <footer class="report-footer">
+          <span class="save-tip"><b>✓</b>修改自动暂存；确认后将锁定报数数据</span>
+          <button class="btn ghost">保存草稿</button>
+          <button class="btn primary">✓　确认报数</button>
+        </footer>
+      </section>
+
+      <div class="decision"><strong>本稿的核心变化：</strong>用“邮局工单”同款标题栏、分区卡片、输入框和底部操作栏替代整页大表；把总数、目的地和校验集中到右侧固定汇总区；完整保留原页面 7 个类别、31 个可录入项目及社用报内部 2 个自动合计组，可逐组展开录入。正式实现前只需确认这个信息结构与视觉方向。</div>
+    </div>
+  </main>
+</div>
+<script>
+  document.querySelectorAll('.channel-head').forEach((head) => head.addEventListener('click', () => head.parentElement.classList.toggle('closed')))
+  document.querySelectorAll('[data-count]').forEach((input) => input.addEventListener('input', () => {
+    const total = [...document.querySelectorAll('[data-count]')].reduce((sum, item) => sum + (Number(item.value) || 0), 0)
+    document.querySelector('#total').textContent = total.toLocaleString('zh-CN')
+  }))
+</script>
+</body>
+</html>
