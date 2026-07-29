@@ -2,14 +2,10 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Col, DatePicker, InputNumber, Row, Select } from 'antd';
 import {
-  CalendarOutlined,
-  CoffeeOutlined,
-  ReadOutlined,
   ReloadOutlined,
   SearchOutlined,
   StopOutlined,
   UploadOutlined,
-  WarningOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 import dayjs from 'dayjs';
@@ -168,27 +164,27 @@ export default function ScheduleView() {
 
   const statCards: Array<{ icon: ReactNode; tone: 'info' | 'success' | 'purple' | 'warning'; label: string; value: ReactNode; suffix?: string; valueColor?: string }> = [
     {
-      icon: <CalendarOutlined style={{ fontSize: 22, color: 'var(--color-accent)' }} />,
+      icon: '📅',
       tone: 'info',
       label: '出版期数',
       value: yearSummary.published_count,
       suffix: '期',
     },
     {
-      icon: <CoffeeOutlined style={{ fontSize: 22, color: 'var(--color-success)' }} />,
+      icon: '☕',
       tone: 'success',
       label: '休刊次数',
       value: yearSummary.suspended_count,
       suffix: '次',
     },
     {
-      icon: <ReadOutlined style={{ fontSize: 22, color: 'var(--color-purple)' }} />,
+      icon: '📰',
       tone: 'purple',
       label: '期号范围',
       value: issueRange,
     },
     {
-      icon: <WarningOutlined style={{ fontSize: 22, color: 'var(--color-warning)' }} />,
+      icon: '⚠️',
       tone: 'warning',
       label: '异常版次',
       value: mismatchCount,
