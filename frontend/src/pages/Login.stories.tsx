@@ -22,7 +22,13 @@ const meta = {
   decorators: [withRouter],
   parameters: {
     layout: 'fullscreen',
-    reactRouter: reactRouterParameters({ routing: { path: '/login' } }),
+    reactRouter: reactRouterParameters({
+      location: { path: '/login' },
+      routing: [
+        { path: '/login', useStoryElement: true },
+        { path: '/', element: <div /> },
+      ],
+    }),
     auth: loggedOutAuth,
     docs: {
       description: {
@@ -39,7 +45,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// 静态渲染：登录卡片（标题 + 用户名/密码输入 + 登录按钮）。
+// 静态渲染：品牌介绍 + 用户名/密码输入 + 登录按钮。
 export const Default: Story = { name: '默认' }
 
 // 交互：填入账号密码 → 点登录 → MSW 返回 token → setAuth 被调用（id 固定为 0，见 Login.tsx）。
@@ -60,8 +66,8 @@ export const LoginSuccess: Story = {
     },
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(canvas.getByPlaceholderText('用户名'), 'admin')
-    await userEvent.type(canvas.getByPlaceholderText('密码'), 'secret123')
+    await userEvent.type(canvas.getByPlaceholderText('请输入用户名'), 'admin')
+    await userEvent.type(canvas.getByPlaceholderText('请输入密码'), 'secret123')
     // antd v6 在两个中文字之间插入空格，按钮无障碍名实为「登 录」
     await userEvent.click(canvas.getByRole('button', { name: /登\s*录/ }))
     await waitFor(() =>
@@ -87,8 +93,8 @@ export const LoginFailure: Story = {
     },
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(canvas.getByPlaceholderText('用户名'), 'admin')
-    await userEvent.type(canvas.getByPlaceholderText('密码'), 'wrongpass')
+    await userEvent.type(canvas.getByPlaceholderText('请输入用户名'), 'admin')
+    await userEvent.type(canvas.getByPlaceholderText('请输入密码'), 'wrongpass')
     await userEvent.click(canvas.getByRole('button', { name: /登\s*录/ }))
     // antd message 渲染在 document.body 的 portal 中
     await waitFor(() =>

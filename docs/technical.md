@@ -90,7 +90,8 @@ FirstTry/
 │   │   │   ├── DashboardPage.tsx  # 印数管理仪表盘（/print）— 统计卡片、一键创建/补录、报数流程、近期印数表、趋势图（ECharts）、待处理/快捷入口侧栏
 │   │   │   ├── History.tsx        # 历史期数页（/history，从印数管理页进入）
 │   │   │   ├── HistoryImport.tsx  # 往期导入页（/history-import，从历史印数期数页右上角「导入往期」按钮进入）
-│   │   │   ├── Login.tsx       # 登录页面
+│   │   │   ├── Login.tsx       # 登录页面（全屏品牌区 + 登录表单）
+│   │   │   ├── Login.css       # 登录页桌面/移动端响应式样式
 │   │   │   ├── ScheduleView.tsx              # 期刊表页面（/schedule）
 │   │   │   ├── ScheduleImport.tsx            # 导入期刊表页面（/schedule/import）
 │   │   │   ├── Recipients.tsx     # 物流管理子菜单（/recipients「ZTO-MF」、/recipients?tab=recipients「收件人」两标签）
@@ -1914,6 +1915,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 
 #### 前端设计系统与 Storybook
 - `frontend/src/theme.tsx` 是 Ant Design token 与 CSS variables 的唯一主题入口；生产应用和 Storybook 均通过 `DesignSystemProvider` 使用同一套配置。
+- 登录页使用 `Login.tsx` + `Login.css` 实现无边框全屏双栏布局，960px 以下切换为单栏；认证接口、表单校验、密码显隐和提交状态继续复用现有 Ant Design 与认证上下文。
 - `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard` 和 `StatusPill`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。
 - 印数管理各模块标题以“报数流程”为视觉基准，统一字号、字重、颜色和行高；次要文本及成功/警告状态文字使用主题中的高对比度语义色。
 - 普通 DOM/CSS 使用 `var(--color-*)` 等语义变量；Canvas/ECharts 等不能直接消费 CSS 的渲染器通过 `theme.useToken()` 取得当前主题色。
