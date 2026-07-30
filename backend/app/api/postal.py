@@ -60,6 +60,7 @@ def list_tickets(
     year: Optional[int] = None,
     status: Optional[str] = None,
     applied: Optional[bool] = None,
+    postal_delivery_id: Optional[int] = None,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
@@ -70,6 +71,7 @@ def list_tickets(
         raise HTTPException(status_code=400, detail=f"未知工单类型：{type}")
     rows, total, summary = ticket_svc.list_tickets(
         db, type=type, year=year, status=status, applied=applied,
+        postal_delivery_id=postal_delivery_id,
         search=search, page=page, page_size=page_size,
     )
     return TicketListOut(rows=[TicketOut(**r) for r in rows], total=total, summary=summary)
@@ -334,6 +336,7 @@ def list_deliveries(
     channel: Optional[str] = None,
     distribution_unit_id: Optional[int] = None,
     month: Optional[int] = None,
+    status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
@@ -342,7 +345,7 @@ def list_deliveries(
 ):
     rows, total = delivery_svc.list_deliveries(
         db, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
-        month=month, search=search, page=page, page_size=page_size,
+        month=month, status=status, search=search, page=page, page_size=page_size,
     )
     ids = {r.distribution_unit_id for r in rows if r.distribution_unit_id}
     names = (
@@ -356,7 +359,7 @@ def list_deliveries(
         out.append(o)
     summary = delivery_svc.summarize_deliveries(
         db, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
-        month=month, search=search,
+        month=month, status=status, search=search,
     )
     return DeliveryListOut(rows=out, total=total, summary=summary)
 

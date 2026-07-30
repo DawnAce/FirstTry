@@ -74,6 +74,7 @@ class DeliverySummary(BaseModel):
     total_copies: int = 0
     unit_count: int = 0
     missing_unit_count: int = 0
+    nearest_expiry_date: Optional[date] = None
 
 
 class DeliveryListOut(BaseModel):

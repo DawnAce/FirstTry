@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>投递明细 · 即将到期筛选预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color: #1f2329; font: 14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","Helvetica Neue",Arial,sans-serif; background: #f5f6f8; }
+    body { margin: 0; min-width: 1180px; }
+    button, input, select { font: inherit; }
+    button, select { cursor: pointer; }
+    .demo { position: sticky; top: 0; z-index: 10; padding: 8px 24px; color: #6b4e16; text-align: center; background: #fff7e6; border-bottom: 1px solid #ffe1ad; }
+    .shell { display: grid; grid-template-columns: 242px 1fr; min-height: calc(100vh - 41px); }
+    aside { position: relative; background: #fff; border-right: 1px solid #e8eaed; }
+    .brand { display: flex; align-items: center; gap: 12px; height: 80px; padding: 0 24px; border-bottom: 1px solid #eef0f2; }
+    .logo { display: grid; width: 44px; height: 44px; color: #fff; font-size: 25px; font-weight: 700; place-items: center; border-radius: 14px; background: #0879e8; }
+    .brand b { display: block; font-size: 18px; }
+    .brand small { color: #71757d; font-size: 12px; }
+    .back { display: block; padding: 28px 24px 20px; color: #1677ff; text-decoration: none; }
+    .section-title { padding: 8px 24px; color: #9aa1aa; font-size: 12px; }
+    nav { padding: 0 12px; }
+    nav a { display: flex; align-items: center; gap: 12px; margin: 4px 0; padding: 11px 16px; color: #2d3138; text-decoration: none; border-radius: 10px; }
+    nav a.on { color: #1268cf; font-weight: 600; background: #eaf4ff; }
+    .note { margin: 22px 20px; padding: 14px; color: #657285; font-size: 12px; line-height: 1.7; border: 1px dashed #badcff; border-radius: 10px; background: #f5faff; }
+    .user { position: absolute; right: 0; bottom: 0; left: 0; display: flex; align-items: center; gap: 10px; padding: 20px 24px; border-top: 1px solid #eef0f2; }
+    .avatar { display: grid; width: 38px; height: 38px; color: #fff; place-items: center; border-radius: 50%; background: #0879e8; }
+    main { min-width: 0; }
+    header { display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 32px; color: #70757d; font-size: 13px; background: #fff; border-bottom: 1px solid #e8eaed; }
+    .crumb span { margin: 0 12px; color: #c1c5ca; }
+    .global-search { width: 330px; padding: 8px 14px; color: #a0a4aa; border-radius: 10px; background: #f5f6f8; }
+    .content { padding: 34px 38px 48px; }
+    .titlebar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 26px; }
+    h1 { margin: 0; font-size: 24px; line-height: 1.35; letter-spacing: -.02em; }
+    .subtitle { margin-top: 4px; color: #747b85; font-size: 13px; }
+    .actions { display: flex; gap: 10px; }
+    .btn { min-height: 34px; padding: 5px 14px; border: 1px solid #d8dce2; border-radius: 8px; background: #fff; }
+    .btn.primary { color: #fff; border-color: #1677ff; background: #1677ff; }
+    .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+    .search { width: 300px; height: 34px; padding: 6px 12px; border: 1px solid #d9dde3; border-radius: 8px; outline: none; background: #fff; }
+    .filter { min-width: 120px; height: 34px; padding: 0 32px 0 12px; color: #414750; border: 1px solid #d9dde3; border-radius: 8px; outline: none; background: #fff; }
+    .filter.status { min-width: 190px; color: #ad6800; font-weight: 600; border-color: #ffb94e; background: #fffaf0; }
+    .filter:focus { border-color: #1677ff; box-shadow: 0 0 0 2px #1677ff1f; }
+    .active-filters { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 10px; color: #7a8088; font-size: 12px; }
+    .chip { display: inline-flex; align-items: center; gap: 8px; padding: 2px 9px; color: #ad6800; border: 1px solid #ffd591; border-radius: 999px; background: #fff7e6; }
+    .chip button { padding: 0; color: #ad6800; border: 0; background: none; }
+    .table-card { overflow: hidden; border: 1px solid #eaecf0; border-radius: 10px; background: #fff; box-shadow: 0 1px 2px #00000008; }
+    .summary { display: flex; align-items: center; gap: 9px; height: 46px; padding: 0 14px; font-size: 13px; border-bottom: 1px solid #eaecf0; }
+    .summary b { font-size: 14px; }
+    .summary .warning { color: #d46b08; }
+    .summary .sort { margin-left: auto; color: #7a8088; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th { padding: 11px 14px; color: #69707a; font-size: 13px; font-weight: 600; text-align: left; background: #fafafa; }
+    th:last-child, td:last-child { text-align: right; }
+    td { height: 72px; padding: 11px 14px; vertical-align: middle; border-top: 1px solid #eef0f2; }
+    tbody tr:hover { background: #fafcff; }
+    .strong { display: block; margin-bottom: 3px; font-size: 14px; font-weight: 600; }
+    .muted { overflow: hidden; display: block; color: #818791; font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+    .subscription { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+    .tag { display: inline-flex; align-items: center; padding: 2px 8px; color: #ad6800; font-size: 12px; border: 1px solid #ffd591; border-radius: 999px; background: #fff7e6; }
+    .tag.green { color: #237804; border-color: #b7eb8f; background: #f6ffed; }
+    .tag.blue { color: #0958d9; border-color: #91caff; background: #e6f4ff; }
+    .tag.gray { color: #666; border-color: #d9d9d9; background: #fafafa; }
+    .countdown { color: #d46b08; font-size: 12px; font-weight: 600; }
+    .link { padding: 0; color: #1677ff; font-size: 13px; border: 0; background: none; }
+    .empty { display: none; padding: 76px; color: #888; text-align: center; }
+    .foot { padding: 11px 14px; color: #858b94; font-size: 13px; text-align: right; border-top: 1px solid #eef0f2; }
+  </style>
+</head>
+<body>
+  <div class="demo">设计效果预览 · 使用示例数据，未连接真实系统</div>
+  <div class="shell">
+    <aside>
+      <div class="brand"><div class="logo">发</div><div><b>发行系统</b><small>中国经营报</small></div></div>
+      <a class="back" href="#">← 返回发行履约</a>
+      <div class="section-title">邮局管理</div>
+      <nav>
+        <a class="on" href="#">📋 <span>投递明细</span></a>
+        <a href="#">🔄 <span>订报转投</span></a>
+        <a href="#">🎫 <span>邮局工单</span></a>
+      </nav>
+      <div class="note">投递明细、订报转投和邮局工单统一归属邮局管理。</div>
+      <div class="user"><div class="avatar">管</div><div><b>admin</b><div class="muted">管理员</div></div></div>
+    </aside>
+    <main>
+      <header><div class="crumb">业务首页 <span>/</span> 发行履约 <span>/</span> 邮局管理 <span>/</span> <b>投递明细</b></div><div class="global-search">⌕&nbsp;&nbsp;搜索 订单/商品/期数</div></header>
+      <div class="content">
+        <div class="titlebar">
+          <div><h1>投递明细</h1><div class="subtitle" id="subtitle">投递记录 6 条</div></div>
+          <div class="actions"><button class="btn">⇧&nbsp; 导入</button><button class="btn primary">＋&nbsp; 新增记录</button></div>
+        </div>
+        <div class="toolbar">
+          <input class="search" id="search" placeholder="搜索姓名、编号或地址">
+          <select class="filter"><option>年度</option><option>2026年</option><option>2025年</option></select>
+          <select class="filter"><option>渠道</option><option>CBJ+小程序</option><option>淘宝发行部</option></select>
+          <select class="filter status" id="status" aria-label="订阅状态">
+            <option value="all">订阅状态：全部</option>
+            <option value="expiring" selected>即将到期（30天内）</option>
+            <option value="active">投递中</option>
+            <option value="pending">待开始</option>
+            <option value="completed">已完结</option>
+          </select>
+          <button class="btn">更多筛选</button>
+        </div>
+        <div class="active-filters" id="activeFilters"><span>已选：</span><span class="chip">即将到期 · 30天内 <button id="clear" aria-label="清除到期筛选">×</button></span></div>
+        <div class="table-card">
+          <div class="summary"><span id="resultLabel">即将到期 <b>3</b> 位订户</span><span>·</span><span>合计 <b id="copies">4</b> 份</span><span>·</span><span class="warning">最早 <b id="nearest">2</b> 天后到期</span><span class="sort">已按到期日由近到远排序</span></div>
+          <table>
+            <colgroup><col style="width:15%"><col style="width:39%"><col style="width:18%"><col style="width:21%"><col style="width:7%"></colgroup>
+            <thead><tr><th>读者</th><th>地址</th><th>订阅</th><th>渠道 / 投递单位</th><th>操作</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div class="empty" id="empty">没有符合条件的投递记录</div>
+          <div class="foot" id="foot">共 3 条投递记录</div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script>
+    const records = [
+      {name:'宋女士', no:'2026-6352', area:'山东省 · 济南市 · 历下区', address:'姚家街道华润置地广场南区6区3号楼29层', copies:1, start:'2026.02', end:'2026.08.01', days:2, status:'expiring', channel:'CBJ+小程序', unit:'北京集订分送'},
+      {name:'徐先生', no:'2026-6351', area:'浙江省 · 杭州市 · 余杭区', address:'良渚街道北大颐和江南府南区31-14', copies:2, start:'2026.02', end:'2026.08.12', days:13, status:'expiring', channel:'淘宝发行部', unit:'杭州报刊发行局'},
+      {name:'潘克荣', no:'2026-6350', area:'江苏省 · 南京市 · 玄武区', address:'红山街道红山路175号红森公寓5栋2单元504室', copies:1, start:'2026.03', end:'2026.08.27', days:28, status:'expiring', channel:'淘宝发行部', unit:'南京报刊发行局'},
+      {name:'钟志强', no:'2026-6349', area:'广东省 · 深圳市 · 龙岗区', address:'坂田街道坂田大族云峰A1-803', copies:1, start:'2026.08', end:'2026.12.31', days:154, status:'pending', channel:'CBJ+小程序', unit:'待补投递单位'},
+      {name:'王凯伦', no:'2026-6348', area:'河北省 · 沧州市 · 运河区', address:'南陈屯镇颐和云墅营销中心', copies:1, start:'2026.01', end:'2026.12.31', days:154, status:'active', channel:'淘宝发行部', unit:'石家庄报刊发行局'},
+      {name:'魏建英', no:'2025-6347', area:'山西省 · 太原市 · 小店区', address:'龙城北街恒大翡翠华庭8-4-1201', copies:1, start:'2025.01', end:'2025.12.31', days:-211, status:'completed', channel:'中经报有赞', unit:'太原报刊发行局'}
+    ];
+    const meta = {expiring:['即将到期','tag','剩'], active:['投递中','tag green','剩'], pending:['待开始','tag blue','距开始'], completed:['已完结','tag gray','已到期']};
+    const status = document.querySelector('#status');
+    const rows = document.querySelector('#rows');
+    const search = document.querySelector('#search');
+    function render() {
+      const keyword = search.value.trim().toLowerCase();
+      const filtered = records.filter(r => (status.value === 'all' || r.status === status.value) && (!keyword || `${r.name}${r.no}${r.area}${r.address}`.toLowerCase().includes(keyword)));
+      rows.innerHTML = filtered.map(r => {
+        const m = meta[r.status];
+        const countdown = r.status === 'completed' ? `${Math.abs(r.days)} 天` : `${m[2]} ${r.days} 天`;
+        return `<tr><td><span class="strong">${r.name}</span><span class="muted">${r.no}</span></td><td><span class="strong">${r.area}</span><span class="muted">${r.address}</span></td><td><div class="subscription"><span>${r.copies} 份</span><span class="${m[1]}">${m[0]}</span></div><span class="muted">${r.start}—${r.end}</span><span class="countdown">${countdown}</span></td><td><span class="strong">${r.channel}</span><span class="muted">${r.unit}</span></td><td><button class="link">查看</button></td></tr>`;
+      }).join('');
+      document.querySelector('#empty').style.display = filtered.length ? 'none' : 'block';
+      document.querySelector('#foot').textContent = `共 ${filtered.length} 条投递记录`;
+      document.querySelector('#subtitle').textContent = `投递记录 ${filtered.length} 条`;
+      document.querySelector('#copies').textContent = filtered.reduce((n, r) => n + r.copies, 0);
+      const expiring = status.value === 'expiring';
+      document.querySelector('#activeFilters').style.visibility = status.value === 'all' ? 'hidden' : 'visible';
+      document.querySelector('#resultLabel').innerHTML = `${expiring ? '即将到期' : '筛选结果'} <b>${filtered.length}</b> 位订户`;
+      document.querySelector('.warning').style.display = expiring && filtered.length ? '' : 'none';
+      if (expiring && filtered.length) document.querySelector('#nearest').textContent = Math.min(...filtered.map(r => r.days));
+      document.querySelector('.sort').textContent = expiring ? '已按到期日由近到远排序' : '';
+    }
+    status.addEventListener('change', render);
+    search.addEventListener('input', render);
+    document.querySelector('#clear').addEventListener('click', () => { status.value = 'all'; render(); });
+    console.assert(records.filter(r => r.status === 'expiring').length === 3, '即将到期筛选示例应返回 3 条');
+    render();
+  </script>
+</body>
+</html>

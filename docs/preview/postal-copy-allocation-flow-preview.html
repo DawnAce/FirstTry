@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>邮局工单 · 份数去向流程预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      color: #172033;
+      background: #f5f7fa;
+      font-synthesis: none;
+    }
+    body { margin: 0; min-width: 0; font-size: 13px; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    .app { min-height: 100vh; display: grid; grid-template-columns: 248px 1fr; }
+    .sidebar { position: relative; padding: 26px 18px; border-right: 1px solid #e7ebf0; background: #fff; }
+    .brand { display: flex; align-items: center; gap: 13px; margin: 0 12px 60px; }
+    .brand-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 17px; color: #fff; background: #1769cc; font-size: 25px; font-weight: 800; }
+    .brand strong { display: block; font-size: 19px; }
+    .brand span { color: #7c8798; font-size: 12px; }
+    .back { display: block; margin: 0 12px 34px; color: #1769cc; text-decoration: none; }
+    .nav-title { margin: 0 16px 12px; color: #a0a9b7; font-size: 12px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; margin: 5px 0; padding: 14px 16px; border-radius: 12px; color: #445066; }
+    .nav-item.active { color: #1769cc; background: #eaf3ff; font-weight: 700; }
+    .nav-note { margin: 24px 10px; padding: 14px; border: 1px dashed #bcd2ea; border-radius: 12px; color: #718096; background: #f8fbff; font-size: 12px; line-height: 1.65; }
+    .profile { position: absolute; bottom: 24px; left: 28px; display: flex; align-items: center; gap: 10px; }
+    .profile-avatar { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: #fff; background: #1769cc; }
+    .profile strong { display: block; font-size: 13px; }
+    .profile small { color: #8b95a5; }
+
+    .page { min-width: 0; background: #f6f8fb; }
+    .topbar { height: 74px; padding: 27px 42px; border-bottom: 1px solid #e8ecf1; color: #7d8796; background: #fff; font-size: 13px; }
+    .main { padding: 30px 42px 48px; }
+    .page-title { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .page-title h1 { margin: 0 0 5px; font-size: 24px; }
+    .page-title p { margin: 0; color: #7c8798; font-size: 13px; }
+    .new-btn { height: 40px; padding: 0 16px; border: 0; border-radius: 9px; color: #fff; background: #1769cc; font-weight: 700; box-shadow: 0 6px 14px rgba(23, 105, 204, .18); }
+
+    .demo-panel { margin-bottom: 16px; padding: 14px 16px; border: 1px solid #dce7f5; border-radius: 13px; background: linear-gradient(135deg, #fff, #f7fbff); }
+    .demo-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; color: #405069; font-size: 12px; }
+    .demo-head b { color: #1769cc; font-size: 13px; }
+    .scenario-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
+    .scenario { min-width: 0; padding: 10px 12px; border: 1px solid #e0e6ee; border-radius: 10px; color: #667184; background: #fff; text-align: left; }
+    .scenario strong { display: block; margin-bottom: 3px; color: #303c50; font-size: 12px; }
+    .scenario small { display: block; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .scenario.active { color: #6951ae; border-color: #b9a8ee; background: #f7f4ff; box-shadow: 0 0 0 2px rgba(112, 82, 188, .07); }
+    .scenario[data-id="4"].active { color: #b42318; border-color: #f0a69f; background: #fff5f4; }
+
+    .tabs { display: flex; align-items: center; gap: 2px; width: fit-content; margin-bottom: 14px; padding: 4px; border: 1px solid #e1e6ed; border-radius: 11px; background: #fff; }
+    .tab { padding: 8px 15px; border: 0; border-radius: 8px; color: #5d6879; background: transparent; }
+    .tab.active { color: #fff; background: #1769cc; font-weight: 700; }
+    .tab-danger { margin-left: 4px; color: #b42318; background: #fff0ee; font-weight: 700; }
+    .tab-danger.hidden { display: none; }
+    .toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) 150px 150px; gap: 10px; margin-bottom: 13px; }
+    .control { height: 40px; padding: 10px 13px; border: 1px solid #dfe4eb; border-radius: 9px; color: #8993a2; background: #fff; font-size: 12px; }
+    .table { overflow: hidden; border: 1px solid #e2e7ed; border-radius: 13px; background: #fff; box-shadow: 0 4px 16px rgba(25, 36, 54, .03); }
+    .table-head, .ticket-row { display: grid; grid-template-columns: 190px 1fr 155px; align-items: center; gap: 18px; }
+    .table-head { padding: 13px 18px; color: #8b95a4; background: #fafbfc; font-size: 12px; }
+    .ticket-row { position: relative; padding: 20px 18px; border-top: 1px solid #edf0f4; cursor: pointer; }
+    .ticket-row:hover { background: #f8fbff; }
+    .ticket-row.pending { background: linear-gradient(90deg, #fff7f6, #fff 48%); }
+    .ticket-row.pending::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: #d92d20; }
+    .person strong, .content strong { display: block; margin-bottom: 5px; color: #273246; font-size: 14px; }
+    .person small, .content small { color: #7e8999; font-size: 12px; }
+    .content .flow-copy { margin-top: 7px; color: #5e697a; font-size: 12px; }
+    .content .flow-copy b { color: #6b4fc0; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 6px 10px; border-radius: 999px; color: #207a48; background: #eaf8f0; font-size: 11px; font-weight: 800; }
+    .status-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .status-pill.danger { color: #b42318; background: #feeceb; box-shadow: 0 0 0 1px #f7c3be inset; }
+    .status-sub { display: block; margin-top: 6px; color: #8b95a4; font-size: 10px; }
+
+    .mask { position: fixed; inset: 0; z-index: 8; background: rgba(18, 27, 42, .42); backdrop-filter: blur(1.5px); }
+    .drawer { position: fixed; z-index: 9; top: 0; right: 0; width: min(560px, 44vw); height: 100vh; display: grid; grid-template-rows: auto 1fr auto; background: #f7f9fc; box-shadow: -22px 0 60px rgba(15, 23, 42, .22); }
+    .drawer-header { display: flex; align-items: center; gap: 10px; min-height: 68px; padding: 12px 18px; border-bottom: 1px solid #e5eaf0; background: #fff; }
+    .drawer-close { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; color: #748092; background: transparent; font-size: 20px; }
+    .drawer-close:hover { background: #f1f4f8; }
+    .drawer-title { min-width: 0; flex: 1; }
+    .drawer-title h2 { margin: 0 0 3px; font-size: 16px; }
+    .drawer-title p { margin: 0; color: #8490a0; font-size: 10px; }
+    .readonly { color: #697487; font-size: 11px; white-space: nowrap; }
+    .drawer-body { overflow-y: auto; padding: 14px 18px; }
+    .alert { display: flex; gap: 10px; margin-bottom: 10px; padding: 10px 12px; border: 1px solid #f1aaa4; border-radius: 9px; color: #8f1d16; background: #fff1f0; }
+    .alert.hidden { display: none; }
+    .alert-icon { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px; border-radius: 50%; color: #fff; background: #d92d20; font-weight: 900; }
+    .alert strong { display: block; margin-bottom: 3px; font-size: 12px; }
+    .alert p { margin: 0; color: #a43a32; font-size: 11px; line-height: 1.55; }
+    .section { margin-bottom: 10px; padding: 12px; border: 1px solid #e3e8ef; border-radius: 10px; background: #fff; }
+    .section-head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+    .section-icon { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: #f0f5fb; }
+    .section-head h3 { margin: 0; flex: 1; color: #2c374b; font-size: 13px; }
+    .section-head small { color: #7d899a; font-size: 10px; }
+    .source { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #e4e8ee; border-radius: 9px; background: #f8fafc; }
+    .source-avatar { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border-radius: 50%; color: #58667a; background: #e8edf3; font-weight: 800; }
+    .source-main { min-width: 0; flex: 1; }
+    .source-main strong { display: block; margin-bottom: 2px; font-size: 12px; }
+    .source-main small { display: block; overflow: hidden; color: #7c8797; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .copies { padding: 5px 9px; border-radius: 7px; color: #334155; background: #e9edf2; font-size: 12px; font-weight: 800; }
+    .flow-arrow { position: relative; height: 22px; margin-left: 27px; border-left: 1px dashed #b8c2cf; }
+    .flow-arrow::after { content: "⌄"; position: absolute; bottom: -3px; left: -7px; color: #8e99a8; font-size: 14px; }
+    .allocation-list { display: grid; gap: 7px; }
+    .allocation { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid #ddd5f7; border-radius: 9px; background: #f9f7ff; }
+    .allocation.retained { border-color: #cde7d8; background: #f4fbf7; }
+    .allocation.pending { border-color: #f2aaa4; background: #fff4f3; }
+    .allocation-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: #7655c4; font-size: 11px; font-weight: 800; }
+    .retained .allocation-avatar { background: #3d9463; }
+    .pending .allocation-avatar { background: #d92d20; }
+    .allocation-main { min-width: 0; }
+    .allocation-main strong { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; font-size: 11px; }
+    .allocation-main small { display: block; overflow: hidden; color: #7c8798; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .source-main .start-time, .allocation-main .start-time { margin-top: 3px; color: #5f6d80; font-weight: 700; }
+    .allocation.pending .start-time { color: #a43a32; }
+    .allocation-badge { padding: 3px 7px; border-radius: 999px; color: #6748b8; background: #ece6ff; font-size: 9px; font-weight: 800; }
+    .retained .allocation-badge { color: #26754a; background: #ddf3e6; }
+    .pending .allocation-badge { color: #b42318; background: #fee0dd; }
+    .allocation-count { color: #4c3c7c; font-size: 13px; font-weight: 800; }
+    .retained .allocation-count { color: #2d7650; }
+    .pending .allocation-count { color: #b42318; }
+    .pending-action { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 7px; padding: 8px 10px; border-radius: 8px; color: #8f1d16; background: #fee9e7; font-size: 10px; line-height: 1.45; }
+    .danger-btn { min-width: 102px; height: 30px; padding: 0 10px; border: 0; border-radius: 7px; color: #fff; background: #c92a20; font-size: 10px; font-weight: 800; box-shadow: 0 4px 10px rgba(201, 42, 32, .2); }
+    .summary-line { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; margin-top: 13px; padding-top: 12px; border-top: 1px solid #edf0f4; }
+    .progress-label { display: flex; justify-content: space-between; margin-bottom: 6px; color: #697487; font-size: 10px; }
+    .progress { height: 6px; overflow: hidden; border-radius: 999px; background: #f0d5d2; }
+    .progress > i { display: block; height: 100%; border-radius: inherit; background: #d92d20; transition: width .25s ease; }
+    .summary-count { color: #b42318; font-size: 12px; font-weight: 800; }
+    .summary-line.confirmed .progress { background: #dff1e7; }
+    .summary-line.confirmed .progress > i { background: #37a56b; }
+    .summary-line.confirmed .summary-count { color: #26754a; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; overflow: hidden; border: 1px solid #e8ecf1; border-radius: 9px; background: #e8ecf1; }
+    .info { padding: 10px 12px; background: #fbfcfe; }
+    .info.wide { grid-column: 1 / -1; }
+    .info span { display: block; margin-bottom: 4px; color: #8a95a5; font-size: 10px; }
+    .info strong { color: #455166; font-size: 11px; font-weight: 600; }
+    .drawer-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; border-top: 1px solid #e3e8ef; background: #fff; }
+    .footer-note { color: #8b95a4; font-size: 10px; }
+    .plain-btn { height: 36px; padding: 0 16px; border: 1px solid #dce3ec; border-radius: 8px; color: #354052; background: #fff; font-size: 12px; font-weight: 700; }
+
+    .dialog-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(14, 22, 35, .52); backdrop-filter: blur(2px); }
+    .dialog-layer.hidden { display: none; }
+    .dialog { width: 540px; overflow: hidden; border-radius: 14px; background: #fff; box-shadow: 0 28px 70px rgba(11, 20, 34, .32); }
+    .dialog-header { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px 13px; border-bottom: 1px solid #edf0f4; }
+    .dialog-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: #fff; background: #d92d20; font-weight: 900; }
+    .dialog-header div:nth-child(2) { flex: 1; }
+    .dialog-header h3 { margin: 0 0 4px; font-size: 15px; }
+    .dialog-header p { margin: 0; color: #7e8999; font-size: 11px; }
+    .dialog-close { border: 0; color: #788496; background: transparent; font-size: 22px; }
+    .dialog-body { padding: 14px 18px; }
+    .dialog-alert { margin-bottom: 15px; padding: 10px 12px; border-radius: 9px; color: #8e3a34; background: #fff3f1; font-size: 11px; line-height: 1.55; }
+    .choice { display: flex; gap: 9px; margin-bottom: 7px; padding: 10px; border: 1px solid #e0e5ec; border-radius: 9px; cursor: pointer; }
+    .choice.selected { border-color: #8e76d0; background: #faf8ff; box-shadow: 0 0 0 2px rgba(118, 85, 196, .08); }
+    .radio { width: 16px; height: 16px; margin-top: 1px; border: 1px solid #aeb8c5; border-radius: 50%; }
+    .choice.selected .radio { border: 5px solid #7655c4; }
+    .choice strong { display: block; margin-bottom: 3px; font-size: 12px; }
+    .choice small { color: #7c8798; font-size: 10px; }
+    .recipient-form { display: grid; grid-template-columns: .8fr 1.05fr 1fr; gap: 8px; margin: 11px 0 0 25px; }
+    .field { min-width: 0; }
+    .field.wide { grid-column: 1 / -1; }
+    .field span { display: block; margin-bottom: 5px; color: #657184; font-size: 10px; font-weight: 700; }
+    .field input { width: 100%; height: 35px; padding: 7px 9px; border: 1px solid #dce3ec; border-radius: 8px; color: #354052; background: #fff; font-size: 11px; outline: none; }
+    .field input:focus { border-color: #8e76d0; box-shadow: 0 0 0 2px rgba(118, 85, 196, .1); }
+    .dialog-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 18px; border-top: 1px solid #edf0f4; background: #fafbfc; }
+    .primary-btn { height: 36px; padding: 0 16px; border: 0; border-radius: 8px; color: #fff; background: #1769cc; font-size: 12px; font-weight: 800; }
+    .toast { position: fixed; z-index: 30; top: 26px; left: 50%; display: flex; align-items: center; gap: 8px; padding: 10px 15px; border: 1px solid #bfe2cd; border-radius: 10px; color: #237548; background: #effbf4; box-shadow: 0 10px 24px rgba(23, 53, 37, .14); font-size: 12px; transform: translateX(-50%); }
+    .toast.hidden { display: none; }
+
+    @media (max-width: 1320px) {
+      .drawer { width: 560px; }
+      .scenario-tabs { grid-template-columns: 1fr 1fr; }
+      .toolbar { grid-template-columns: 1fr 130px; }
+      .toolbar .control:last-child { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">发</div><div><strong>发行系统</strong><span>中国经营报</span></div></div>
+      <a class="back" href="#">← 返回发行履约</a>
+      <p class="nav-title">邮局管理</p>
+      <div class="nav-item">📋 投递明细</div>
+      <div class="nav-item">🔄 订报转投</div>
+      <div class="nav-item active">🎫 邮局工单</div>
+      <div class="nav-note">投递明细、订报转投和邮局工单统一归属邮局管理。</div>
+      <div class="profile"><div class="profile-avatar">人</div><div><strong>admin</strong><small>管理员</small></div></div>
+    </aside>
+
+    <section class="page">
+      <div class="topbar">业务首页　/　发行履约　/　邮局管理　/　邮局工单</div>
+      <div class="main">
+        <div class="page-title"><div><h1>邮局工单</h1><p>统一查看投诉、收件信息变更和回访记录</p></div><button class="new-btn">＋ 新增工单</button></div>
+
+        <section class="demo-panel" aria-label="场景预览切换">
+          <div class="demo-head"><b>方案预览</b><span>点击切换四种“原2份”的去向，当前默认展示强提醒流程</span></div>
+          <div class="scenario-tabs">
+            <button class="scenario" data-id="1"><strong>情况一 · 保留原人</strong><small>王安1份 + 薛舟瀛1份</small></button>
+            <button class="scenario" data-id="2"><strong>情况二 · 分给其他人</strong><small>王安1份 + 林晓雯1份</small></button>
+            <button class="scenario" data-id="3"><strong>情况三 · 全部变更</strong><small>王安2份（最常见）</small></button>
+            <button class="scenario active" data-id="4"><strong>情况四 · 1份待确认</strong><small>强提醒 + 补充变更闭环</small></button>
+          </div>
+        </section>
+
+        <div class="tabs">
+          <button class="tab">全部 4</button><button class="tab">投诉 0</button><button class="tab active">收件信息变更 4</button><button class="tab">回访 0</button>
+          <button class="tab tab-danger" id="danger-filter">⚠ 收件人未确认 1</button>
+        </div>
+        <div class="toolbar"><div class="control">⌕　搜索姓名、编号或地址</div><div class="control">应用状态　⌄</div><div class="control">年度　⌄</div></div>
+        <div class="table">
+          <div class="table-head"><span>读者 / 类型</span><span>内容</span><span>状态</span></div>
+          <div class="ticket-row pending" id="ticket-row">
+            <div class="person"><strong id="row-name">王安</strong><small>收件信息变更 · 4281</small></div>
+            <div class="content"><strong id="row-address">广东省深圳市福田区金田路2030号卓越世纪中心</strong><small>已关联投递明细 · 修改记录 #395</small><div class="flow-copy" id="row-flow">原2份 → <b>王安1份 + 待确认1份</b></div></div>
+            <div><span class="status-pill danger" id="row-status">1份收件人未确认</span><small class="status-sub" id="row-status-sub">暂按原信息投递</small></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="mask" id="mask"></div>
+  <aside class="drawer" id="drawer" aria-label="收件信息变更工单详情">
+    <header class="drawer-header">
+      <button class="drawer-close" id="drawer-close" aria-label="关闭">×</button>
+      <div class="drawer-title"><h2>收件信息变更工单</h2><p>修改记录 #395 · 编号 2025-4281</p></div>
+      <span class="readonly">已应用 · 只读</span>
+    </header>
+    <div class="drawer-body">
+      <div class="alert" id="alert"><span class="alert-icon">!</span><div><strong>仍有1份收件人未确认</strong><p>当前暂按薛舟瀛原收件信息投递，请尽快确认最终收件人并发起补充变更。</p></div></div>
+
+      <section class="section">
+        <div class="section-head"><span class="section-icon">↪</span><h3>份数去向</h3><small id="flow-subtitle">每一份都应有明确去向</small></div>
+        <div class="source"><div class="source-avatar">薛</div><div class="source-main"><strong>变更前 · 薛舟瀛</strong><small>18768185482 · 浙江省杭州市江干区富春路290号钱江国际时代广场</small><small class="start-time">原起投时间：2025-01-01</small></div><span class="copies">共 2 份</span></div>
+        <div class="flow-arrow"></div>
+        <div class="allocation-list" id="allocation-list"></div>
+        <div class="summary-line" id="summary-line"><div><div class="progress-label"><span>去向确认进度</span><span id="progress-text">已确认 1 / 2份</span></div><div class="progress"><i id="progress-bar" style="width:50%"></i></div></div><strong class="summary-count" id="summary-count">待确认 1份</strong></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><span class="section-icon">📋</span><h3>工单信息</h3></div>
+        <div class="info-grid">
+          <div class="info"><span>变更登记时间</span><strong>2025-03-27 00:00</strong></div>
+          <div class="info"><span>应用状态</span><strong>已应用 · 仅名册</strong></div>
+          <div class="info"><span>处理情况</span><strong>转北京局微信</strong></div>
+          <div class="info"><span>关联读者</span><strong>王安 · 2025-4281</strong></div>
+          <div class="info wide"><span>备注</span><strong>来源：邮局年改地址第90行</strong></div>
+        </div>
+      </section>
+    </div>
+    <footer class="drawer-footer"><span class="footer-note">🔒 历史工单不可修改；待确认份数通过补充变更处理</span><button class="plain-btn" id="footer-close">关闭</button></footer>
+  </aside>
+
+  <div class="dialog-layer hidden" id="dialog-layer">
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <header class="dialog-header"><div class="dialog-mark">!</div><div><h3 id="dialog-title">补充确认剩余1份去向</h3><p>原工单保持只读，本次确认将生成一条新的补充变更记录</p></div><button class="dialog-close" id="dialog-close" aria-label="关闭">×</button></header>
+      <div class="dialog-body">
+        <div class="dialog-alert">当前这1份仍按薛舟瀛原信息正常投递。提交后，红色提醒会自动解除。</div>
+        <div class="choice" data-choice="retain"><span class="radio"></span><div><strong>确认继续由薛舟瀛接收</strong><small>最终归属不变，保留原姓名、电话和地址</small></div></div>
+        <div class="choice selected" data-choice="other"><span class="radio"></span><div style="flex:1"><strong>变更为其他收件人</strong><small>补充新的姓名、电话、地址和起投时间</small><div class="recipient-form" id="recipient-form"><label class="field"><span>姓名</span><input id="recipient-name" value="林晓雯"></label><label class="field"><span>电话</span><input value="13857123906"></label><label class="field"><span>起投时间</span><input id="recipient-start" type="date" value="2025-05-01"></label><label class="field wide"><span>地址</span><input value="浙江省杭州市拱墅区湖州街168号"></label></div></div></div>
+      </div>
+      <footer class="dialog-footer"><button class="plain-btn" id="dialog-cancel">取消</button><button class="primary-btn" id="dialog-confirm">确认并生成补充变更</button></footer>
+    </section>
+  </div>
+  <div class="toast hidden" id="toast">✓ 已确认剩余1份去向，红色提醒已解除</div>
+
+  <script>
+    var scenarios = {
+      1: { flow: '原2份 → 王安1份 + 薛舟瀛1份', rows: [
+        { type: 'moved', name: '王安', tag: '已变更', copy: '18759190952 · 广东省深圳市福田区金田路2030号', start: '2025-04-01', count: 1 },
+        { type: 'retained', name: '薛舟瀛', tag: '保留原信息', copy: '18768185482 · 浙江省杭州市江干区富春路290号', start: '2025-01-01（沿用原记录）', count: 1 }
+      ]},
+      2: { flow: '原2份 → 王安1份 + 林晓雯1份', rows: [
+        { type: 'moved', name: '王安', tag: '已变更', copy: '18759190952 · 广东省深圳市福田区金田路2030号', start: '2025-04-01', count: 1 },
+        { type: 'moved', name: '林晓雯', tag: '已变更', copy: '13857123906 · 浙江省杭州市拱墅区湖州街168号', start: '2025-05-01', count: 1 }
+      ]},
+      3: { flow: '原2份 → 王安2份', rows: [
+        { type: 'moved', name: '王安', tag: '全部变更', copy: '18759190952 · 广东省深圳市福田区金田路2030号', start: '2025-04-01', count: 2 }
+      ]},
+      4: { flow: '原2份 → 王安1份 + 待确认1份', pending: true, rows: [
+        { type: 'moved', name: '王安', tag: '已变更', copy: '18759190952 · 广东省深圳市福田区金田路2030号', start: '2025-04-01', count: 1 },
+        { type: 'pending', name: '收件人待确认', tag: '强提醒', copy: '当前暂按薛舟瀛原姓名、电话和地址投递', start: '待确认；当前暂按 2025-01-01 投递', count: 1 }
+      ]}
+    };
+    var currentScenario = 4;
+    var selectedChoice = 'other';
+
+    function allocationHtml(row) {
+      var avatar = row.type === 'pending' ? '!' : row.name.slice(0, 1);
+      var action = row.type === 'pending' ? '<div class="pending-action"><span>这1份只是临时沿用原信息，最终收件人尚未闭环。</span><button class="danger-btn" id="supplement-btn">发起补充变更</button></div>' : '';
+      return '<div class="allocation ' + row.type + '"><div class="allocation-avatar">' + avatar + '</div><div class="allocation-main"><strong>' + row.name + '<span class="allocation-badge">' + row.tag + '</span></strong><small>' + row.copy + '</small><small class="start-time">起投时间：' + row.start + '</small></div><span class="allocation-count">' + row.count + '份</span></div>' + action;
+    }
+
+    function renderScenario(id) {
+      currentScenario = Number(id);
+      var data = scenarios[currentScenario];
+      var isPending = Boolean(data.pending);
+      document.querySelectorAll('.scenario').forEach(function (button) { button.classList.toggle('active', Number(button.dataset.id) === currentScenario); });
+      document.querySelector('#allocation-list').innerHTML = data.rows.map(allocationHtml).join('');
+      document.querySelector('#row-flow').innerHTML = data.flow.replace('→ ', '→ <b>') + '</b>';
+      document.querySelector('#ticket-row').classList.toggle('pending', isPending);
+      document.querySelector('#alert').classList.toggle('hidden', !isPending);
+      document.querySelector('#danger-filter').classList.toggle('hidden', !isPending);
+      document.querySelector('#row-status').className = 'status-pill' + (isPending ? ' danger' : '');
+      document.querySelector('#row-status').textContent = isPending ? '1份收件人未确认' : '去向已全部确认';
+      document.querySelector('#row-status-sub').textContent = isPending ? '暂按原信息投递' : '共2份 · 数量已闭环';
+      document.querySelector('#progress-text').textContent = isPending ? '已确认 1 / 2份' : '已确认 2 / 2份';
+      document.querySelector('#progress-bar').style.width = isPending ? '50%' : '100%';
+      document.querySelector('#summary-count').textContent = isPending ? '待确认 1份' : '全部确认';
+      document.querySelector('#summary-line').classList.toggle('confirmed', !isPending);
+      var supplement = document.querySelector('#supplement-btn');
+      if (supplement) supplement.addEventListener('click', openDialog);
+    }
+
+    function openDrawer() { document.querySelector('#drawer').hidden = false; document.querySelector('#mask').hidden = false; }
+    function closeDrawer() { document.querySelector('#drawer').hidden = true; document.querySelector('#mask').hidden = true; }
+    function openDialog() { document.querySelector('#dialog-layer').classList.remove('hidden'); }
+    function closeDialog() { document.querySelector('#dialog-layer').classList.add('hidden'); }
+    function choose(choice) {
+      selectedChoice = choice;
+      document.querySelectorAll('.choice').forEach(function (item) { item.classList.toggle('selected', item.dataset.choice === choice); });
+      document.querySelector('#recipient-form').style.display = choice === 'other' ? 'grid' : 'none';
+    }
+    function confirmSupplement() {
+      var name = selectedChoice === 'retain' ? '薛舟瀛' : (document.querySelector('#recipient-name').value.trim() || '新收件人');
+      var type = selectedChoice === 'retain' ? 'retained' : 'moved';
+      var start = selectedChoice === 'retain' ? '2025-01-01（沿用原记录）' : document.querySelector('#recipient-start').value;
+      scenarios[4] = { flow: '原2份 → 王安1份 + ' + name + '1份', rows: [
+        scenarios[4].rows[0],
+        { type: type, name: name, tag: selectedChoice === 'retain' ? '确认保留' : '补充变更', copy: selectedChoice === 'retain' ? '18768185482 · 浙江省杭州市江干区富春路290号' : '13857123906 · 浙江省杭州市拱墅区湖州街168号', start: start, count: 1 }
+      ]};
+      closeDialog();
+      renderScenario(4);
+      var toast = document.querySelector('#toast');
+      toast.classList.remove('hidden');
+      setTimeout(function () { toast.classList.add('hidden'); }, 2600);
+    }
+
+    Object.keys(scenarios).forEach(function (key) {
+      console.assert(scenarios[key].rows.reduce(function (total, row) { return total + row.count; }, 0) === 2 && scenarios[key].rows.every(function (row) { return row.start; }), '场景份数与起投时间必须完整');
+    });
+    document.querySelectorAll('.scenario').forEach(function (button) { button.addEventListener('click', function () { renderScenario(button.dataset.id); openDrawer(); }); });
+    document.querySelector('#ticket-row').addEventListener('click', openDrawer);
+    document.querySelector('#drawer-close').addEventListener('click', closeDrawer);
+    document.querySelector('#footer-close').addEventListener('click', closeDrawer);
+    document.querySelector('#mask').addEventListener('click', closeDrawer);
+    document.querySelector('#dialog-close').addEventListener('click', closeDialog);
+    document.querySelector('#dialog-cancel').addEventListener('click', closeDialog);
+    document.querySelector('#dialog-confirm').addEventListener('click', confirmSupplement);
+    document.querySelectorAll('.choice').forEach(function (item) { item.addEventListener('click', function () { choose(item.dataset.choice); }); });
+    document.addEventListener('keydown', function (event) { if (event.key === 'Escape') closeDialog(); });
+    renderScenario(4);
+  </script>
+</body>
+</html>

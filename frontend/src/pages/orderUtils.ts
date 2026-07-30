@@ -12,6 +12,7 @@ import type {
   SubscriptionTerm,
   TargetStatus,
 } from '../api/orders';
+import dayjs from 'dayjs';
 
 // =============================================================================
 // Label maps (Chinese)
@@ -208,6 +209,24 @@ export function formatCoverage(
 ): string {
   if (!start && !end) return '-';
   return `${start ?? '-'} ~ ${end ?? '-'}`;
+}
+
+export type CoverageStatus = 'pending' | 'active' | 'expiring' | 'completed' | 'unknown';
+export const EXPIRING_DAYS = 30;
+
+export function coverageStatus(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  today = dayjs().format('YYYY-MM-DD'),
+): CoverageStatus {
+  if (!start && !end) return 'unknown';
+  const current = dayjs(today);
+  const startDate = start ? dayjs(start) : null;
+  const endDate = end ? dayjs(end) : null;
+  if (endDate?.isBefore(current, 'day')) return 'completed';
+  if (startDate?.isAfter(current, 'day')) return 'pending';
+  if (endDate && !endDate.isAfter(current.add(EXPIRING_DAYS, 'day'), 'day')) return 'expiring';
+  return 'active';
 }
 
 const currencyFormatter = new Intl.NumberFormat('zh-CN', {

@@ -5,6 +5,7 @@ import {
   canDeleteOrder,
   canEditOrder,
   canVoidOrder,
+  coverageStatus,
   deliveryMethodLabel,
   driftColor,
   driftLabel,
@@ -145,6 +146,24 @@ describe('formatCoverage', () => {
   it('handles partial null', () => {
     expect(formatCoverage('2026-03-01', null)).toBe('2026-03-01 ~ -');
     expect(formatCoverage(null, '2026-12-31')).toBe('- ~ 2026-12-31');
+  });
+});
+
+describe('coverageStatus', () => {
+  const today = '2026-07-30';
+
+  it('distinguishes pending, active, expiring, completed, and missing dates', () => {
+    expect(coverageStatus('2026-08-01', '2026-12-31', today)).toBe('pending');
+    expect(coverageStatus('2026-01-01', '2026-09-01', today)).toBe('active');
+    expect(coverageStatus('2026-01-01', '2026-08-29', today)).toBe('expiring');
+    expect(coverageStatus('2026-01-01', '2026-07-29', today)).toBe('completed');
+    expect(coverageStatus(null, null, today)).toBe('unknown');
+  });
+
+  it('starts the reminder 30 days before the end date', () => {
+    expect(coverageStatus('2026-01-01', '2026-03-31', '2026-02-28')).toBe('active');
+    expect(coverageStatus('2026-01-01', '2026-03-31', '2026-03-01')).toBe('expiring');
+    expect(coverageStatus('2026-01-01', '2026-07-30', today)).toBe('expiring');
   });
 });
 

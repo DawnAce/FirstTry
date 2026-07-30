@@ -70,11 +70,13 @@ import {
   updateFollowUp,
 } from '../api/postal';
 import { PageHeader } from '../components/UiPrimitives';
+import { coverageStatus, EXPIRING_DAYS } from './orderUtils';
 import type {
   AddrImportRow,
   ComplaintImportPreview,
   ComplaintImportRow,
   DeliveryPayload,
+  DeliveryStatusFilter,
   FollowImportRow,
   PostalAddressChange,
   PostalComplaint,
@@ -90,7 +92,7 @@ import type {
   TicketType,
 } from '../api/postal';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const DECISION_META: Record<PostalImportDecision, { label: string; color: string }> = {
   import: { label: '✅ 导入', color: 'green' },
@@ -112,7 +114,21 @@ const COMPLAINT_STATUS_OPTS = [
 
 const COMPLAINT_SOURCE_OPTS = ['客服中心', '发行电话接入', '同事反馈'].map((value) => ({ label: value, value }));
 
-const POSTAL_CHANNELS = ['CBJ+小程序', '中经报有赞', '淘宝发行部', '对公转账'];
+const POSTAL_CHANNELS = [
+  '中经报有赞',
+  '对公转账',
+  'CBJ+小程序',
+  '2024年VIP',
+  '2025年VIP',
+  '2026年VIP',
+  '商学院有赞',
+  '淘宝发行部',
+  '拼多多',
+  '天猫店',
+  '订阅卡',
+  '商学院APP',
+  '中国经营报APP',
+];
 const YEAR_OPTS = [2024, 2025, 2026].map((y) => ({ label: `${y}年`, value: y }));
 const MONTH_OPTS = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1} 月`, value: i + 1 }));
 const POSTAL_SOURCE_META: Record<string, { label: string; color: string }> = {
@@ -121,6 +137,29 @@ const POSTAL_SOURCE_META: Record<string, { label: string; color: string }> = {
   manual: { label: '手工', color: 'gold' },
   order_generated: { label: '订单生成', color: 'blue' },
 };
+const DELIVERY_STATUS_META = {
+  pending: { label: '待开始', color: 'blue' },
+  active: { label: '投递中', color: 'green' },
+  expiring: { label: '即将到期', color: 'orange' },
+  completed: { label: '已完结', color: 'default' },
+  unknown: { label: '期限待补', color: 'default' },
+} as const;
+const DELIVERY_STATUS_OPTIONS: { label: string; value: DeliveryStatusFilter }[] = [
+  { label: `即将到期（${EXPIRING_DAYS}天内）`, value: 'expiring' },
+  { label: '投递中', value: 'active' },
+  { label: '待开始', value: 'pending' },
+  { label: '已完结', value: 'completed' },
+];
+
+function deliveryStatusTag(record: Pick<PostalDelivery, 'coverage_start_date' | 'coverage_end_date'>) {
+  const meta = DELIVERY_STATUS_META[coverageStatus(record.coverage_start_date, record.coverage_end_date)];
+  return <Tag color={meta.color}>{meta.label}</Tag>;
+}
+
+function expiryDays(record: Pick<PostalDelivery, 'coverage_start_date' | 'coverage_end_date'>) {
+  if (!record.coverage_end_date || coverageStatus(record.coverage_start_date, record.coverage_end_date) !== 'expiring') return null;
+  return Math.max(0, dayjs(record.coverage_end_date).startOf('day').diff(dayjs().startOf('day'), 'day'));
+}
 
 function errText(err: unknown): string {
   return (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '操作失败';
@@ -331,6 +370,7 @@ function DeliveriesTab() {
   const [year, setYear] = useState<number | undefined>();
   const [month, setMonth] = useState<number | undefined>();
   const [channel, setChannel] = useState<string | undefined>();
+  const [status, setStatus] = useState<DeliveryStatusFilter | undefined>();
   const [unitId, setUnitId] = useState<number | undefined>();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -338,6 +378,7 @@ function DeliveriesTab() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PostalDelivery | null>(null);
   const [detail, setDetail] = useState<PostalDelivery | null>(null);
+  const [sourceChangeId, setSourceChangeId] = useState<number | null>(null);
   const PAGE_SIZE = 50;
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
@@ -351,9 +392,9 @@ function DeliveriesTab() {
   const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
 
   const q = useQuery({
-    queryKey: ['postalDeliveries', { year, month, channel, unitId, search, page }],
+    queryKey: ['postalDeliveries', { year, month, channel, status, unitId, search, page }],
     queryFn: () => listDeliveries({
-      year, month, channel, distribution_unit_id: unitId,
+      year, month, channel, status, distribution_unit_id: unitId,
       search: search.trim() || undefined, page, page_size: PAGE_SIZE,
     }).then((r) => r.data),
   });
@@ -373,13 +414,14 @@ function DeliveriesTab() {
     ) },
     { title: '订阅', key: 'coverage', width: 150, render: (_: unknown, r) => (
       <Space direction="vertical" size={0}>
-        <Text>{r.copies} 份</Text>
+        <Space size={4}><Text>{r.copies} 份</Text>{deliveryStatusTag(r)}</Space>
         <Text type="secondary" className="postal-cell-secondary">
           {r.coverage_start_date ? dayjs(r.coverage_start_date).format('YYYY.MM') : '—'}—{r.coverage_end_date ? dayjs(r.coverage_end_date).format('YYYY.MM') : '—'}
         </Text>
+        {expiryDays(r) != null && <Text className="postal-expiry-countdown">剩 {expiryDays(r)} 天</Text>}
       </Space>
     ) },
-    { title: '渠道 / 投递单位', key: 'fulfillment', width: 190, render: (_: unknown, r) => (
+    { title: '订单来源 / 投递单位', key: 'fulfillment', width: 190, render: (_: unknown, r) => (
       <Space direction="vertical" size={0}>
         <Text>{r.source_channel || '—'}</Text>
         <Text type="secondary" className="postal-cell-secondary">{r.distribution_unit_name || '待补投递单位'}</Text>
@@ -403,7 +445,9 @@ function DeliveriesTab() {
       <Flex className="postal-toolbar" wrap gap={8}>
         <Input.Search allowClear placeholder="搜索姓名、编号或地址" style={{ width: 300 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); if (v == null) setMonth(undefined); setPage(1); }} options={YEAR_OPTS} />
-        <Select allowClear placeholder="渠道" style={{ width: 150 }} value={channel} onChange={(v) => { setChannel(v); setPage(1); }} options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
+        <Select allowClear placeholder="订单来源" style={{ width: 150 }} value={channel} onChange={(v) => { setChannel(v); setPage(1); }} options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
+        <Select allowClear placeholder="订阅状态" className={status === 'expiring' ? 'postal-status-filter-expiring' : undefined}
+          style={{ width: 190 }} value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={DELIVERY_STATUS_OPTIONS} />
         <Dropdown trigger={['click']} dropdownRender={() => (
           <Card size="small">
             <Space direction="vertical">
@@ -415,10 +459,24 @@ function DeliveriesTab() {
           <Button>更多筛选{month != null || unitId != null ? ' · 已选' : ''}</Button>
         </Dropdown>
       </Flex>
+      {status && (
+        <Space className="postal-active-filters" size={8}>
+          <Text type="secondary">已选：</Text>
+          <Tag color={DELIVERY_STATUS_META[status].color} closable onClose={() => { setStatus(undefined); setPage(1); }}>
+            {status === 'expiring' ? `即将到期 · ${EXPIRING_DAYS}天内` : DELIVERY_STATUS_META[status].label}
+          </Tag>
+        </Space>
+      )}
       <Card className="postal-table-card" styles={{ body: { padding: 0 } }}>
         <div className="postal-summary">
-          合计 <b>{(q.data?.summary.total_copies ?? 0).toLocaleString()}</b> 份 <span className="sep">·</span> <b>{q.data?.summary.unit_count ?? 0}</b> 家投递单位
-          {(q.data?.summary.missing_unit_count ?? 0) > 0 && <><span className="sep">·</span> <span className="warn"><b>{q.data?.summary.missing_unit_count}</b> 条未填单位</span></>}
+          {status === 'expiring' ? <>
+            即将到期 <b>{q.data?.total ?? 0}</b> 位订户 <span className="sep">·</span> 合计 <b>{(q.data?.summary.total_copies ?? 0).toLocaleString()}</b> 份
+            {q.data?.summary.nearest_expiry_date && <><span className="sep">·</span><span className="warn">最早 <b>{Math.max(0, dayjs(q.data.summary.nearest_expiry_date).startOf('day').diff(dayjs().startOf('day'), 'day'))}</b> 天后到期</span></>}
+            <span className="postal-summary-sort">已按到期日由近到远排序</span>
+          </> : <>
+            合计 <b>{(q.data?.summary.total_copies ?? 0).toLocaleString()}</b> 份 <span className="sep">·</span> <b>{q.data?.summary.unit_count ?? 0}</b> 家投递单位
+            {(q.data?.summary.missing_unit_count ?? 0) > 0 && <><span className="sep">·</span> <span className="warn"><b>{q.data?.summary.missing_unit_count}</b> 条未填单位</span></>}
+          </>}
         </div>
         <Table<PostalDelivery> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small"
           scroll={{ x: 900 }}
@@ -428,7 +486,9 @@ function DeliveriesTab() {
       <DeliveryDetailDrawer record={detail} isAdmin={isAdmin} deleting={deleteMut.isPending}
         onClose={() => setDetail(null)}
         onEdit={(record) => { setDetail(null); setEditing(record); setFormOpen(true); }}
-        onDelete={(record) => deleteMut.mutate(record.id, { onSuccess: () => setDetail(null) })} />
+        onDelete={(record) => deleteMut.mutate(record.id, { onSuccess: () => setDetail(null) })}
+        onOpenAddressChange={setSourceChangeId} />
+      <AddressDetailDrawer addressId={sourceChangeId} readOnly modal onClose={() => setSourceChangeId(null)} onEdit={() => {}} />
       <DeliveryFormDrawer open={formOpen} editing={editing} unitOpts={unitOpts} onClose={() => { setFormOpen(false); setEditing(null); }} />
     </>
   );
@@ -558,7 +618,7 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
           <Form.Item name="coverage_end_date" label="止投日期" style={{ width: 150 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
         </Flex>
         <Flex gap={12} wrap>
-          <Form.Item name="source_channel" label="渠道" style={{ width: 170 }}>
+          <Form.Item name="source_channel" label="订单来源" style={{ width: 170 }}>
             <Select allowClear options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
           </Form.Item>
           <Form.Item name="distribution_unit_id" label="投递单位" style={{ width: 190 }}>
@@ -567,63 +627,108 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
           <Form.Item name="salesperson" label="业务员" style={{ width: 120 }}><Input /></Form.Item>
           <Form.Item name="remittance_name" label="汇款名" style={{ width: 150 }}><Input /></Form.Item>
         </Flex>
-        <Form.Item name="external_order_no" label="平台订单号（可选）"><Input /></Form.Item>
+        <Form.Item name="external_order_no" label="来源单号（可选）"><Input placeholder="原平台订单号" /></Form.Item>
       </Form>
     </Drawer>
   );
 }
 
-function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDelete }: {
+function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDelete, onOpenAddressChange }: {
   record: PostalDelivery | null;
   isAdmin: boolean;
   deleting: boolean;
   onClose: () => void;
   onEdit: (record: PostalDelivery) => void;
   onDelete: (record: PostalDelivery) => void;
+  onOpenAddressChange: (id: number) => void;
 }) {
   const source = record?.source_type ? POSTAL_SOURCE_META[record.source_type] : null;
+  const changesQ = useQuery({
+    queryKey: ['postalTickets', 'delivery-applied-changes', record?.id],
+    queryFn: () => listTickets({
+      type: 'address', applied: true, postal_delivery_id: record?.id, page_size: 50,
+    }).then((r) => r.data.rows),
+    enabled: record != null,
+  });
+  const changeSources = changesQ.data ?? [];
+  const statusKey = record ? coverageStatus(record.coverage_start_date, record.coverage_end_date) : 'unknown';
+  const statusMeta = DELIVERY_STATUS_META[statusKey];
+  const statusClass = statusKey === 'active' ? 'status-resolved'
+    : statusKey === 'pending' ? 'status-open'
+      : statusKey === 'expiring' ? 'status-address' : 'status-completed';
   return (
-    <Drawer title="投递记录详情" open={record != null} onClose={onClose} width={560} destroyOnClose
+    <Drawer title={record ? (
+      <div className="complaint-form-title postal-detail-title">
+        <span className="complaint-form-title-icon" aria-hidden>📬</span>
+        <div className="complaint-form-title-copy">
+          <strong>投递记录详情</strong>
+          <div className="complaint-form-meta">投递编号 {record.year}-{record.delivery_no}</div>
+        </div>
+        <span className={`complaint-form-status ${statusClass}`}>{statusMeta.label}</span>
+      </div>
+    ) : '投递记录详情'} open={record != null} onClose={onClose} width={720} destroyOnClose
+      rootClassName="postal-delivery-detail-drawer-root"
       extra={isAdmin && record ? <Button icon={<EditOutlined />} onClick={() => onEdit(record)}>编辑记录</Button> : null}
-      footer={isAdmin && record ? (
-        <Flex justify="space-between" align="center">
-          <Popconfirm title="删除该投递记录？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => onDelete(record)}>
-            <Button danger icon={<DeleteOutlined />} loading={deleting}>删除记录</Button>
-          </Popconfirm>
-          <Button onClick={onClose}>返回列表</Button>
-        </Flex>
+      footer={record ? (
+        <div className="complaint-form-footer">
+          <span className="complaint-form-save-tip"><b>✓</b>投诉、信息修改和回访均通过投递编号关联</span>
+          {isAdmin && (
+            <Popconfirm title="删除该投递记录？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => onDelete(record)}>
+              <Button danger icon={<DeleteOutlined />} loading={deleting}>删除记录</Button>
+            </Popconfirm>
+          )}
+          <Button type="primary" onClick={onClose}>返回列表</Button>
+        </div>
       ) : null}>
       {record && (
-        <Space direction="vertical" size={20} style={{ width: '100%' }}>
-          <Flex gap={12} align="center">
+        <div className="postal-detail-body">
+          <div className="postal-detail-reader">
             <div className="postal-reader-avatar">{record.recipient_name.slice(0, 1)}</div>
-            <div>
-              <Title level={5} style={{ margin: 0 }}>{record.recipient_name}</Title>
-              <Text type="secondary">{record.year}-{record.delivery_no}{record.recipient_phone ? ` · ${record.recipient_phone}` : ''}</Text>
+            <div className="postal-detail-reader-copy">
+              <strong>{record.recipient_name}</strong>
+              <span>{record.recipient_phone || '未记录电话'}　·　{record.product || '未记录产品'}</span>
             </div>
-          </Flex>
-          <div>
-            <Title level={5}>投递信息</Title>
-            <Descriptions size="small" column={1} bordered items={[
-              { key: 'address', label: '详细地址', children: [record.recipient_province, record.recipient_city, record.recipient_district, record.recipient_address].filter(Boolean).join(' ') || '—' },
-              { key: 'postal', label: '邮编', children: record.recipient_postal_code || '—' },
-              { key: 'coverage', label: '订阅范围', children: `${record.coverage_start_date || '—'} 至 ${record.coverage_end_date || '—'} · ${record.copies}份` },
-              { key: 'product', label: '产品', children: record.product || '—' },
-              { key: 'channel', label: '渠道', children: record.source_channel || '—' },
-              { key: 'unit', label: '投递单位', children: record.distribution_unit_name || '待补投递单位' },
-              { key: 'source', label: '来源', children: source ? <Tag color={source.color}>{source.label}</Tag> : '—' },
-            ]} />
+            <span className="postal-detail-reader-linked">✓ 读者已关联</span>
           </div>
-          <div>
-            <Title level={5}>业务信息</Title>
-            <Descriptions size="small" column={1} bordered items={[
-              { key: 'amount', label: '金额', children: record.amount != null ? `¥${record.amount}` : '—' },
-              { key: 'sales', label: '业务员', children: record.salesperson || '—' },
-              { key: 'remit', label: '汇款名', children: record.remittance_name || '—' },
-              { key: 'order', label: '平台订单', children: record.external_order_no || (record.order_id ? `订单 #${record.order_id}` : '未关联') },
-            ]} />
-          </div>
-        </Space>
+
+          <section className="complaint-form-section postal-detail-section">
+            <h3><span aria-hidden>📍</span>投递信息</h3>
+            <div className="postal-detail-grid">
+              <div className="postal-detail-field wide"><span>详细地址</span><strong>{[record.recipient_province, record.recipient_city, record.recipient_district, record.recipient_address].filter(Boolean).join(' ') || '—'}</strong></div>
+              <div className="postal-detail-field"><span>邮政编码</span><strong>{record.recipient_postal_code || '未记录'}</strong></div>
+              <div className="postal-detail-field"><span>投递状态</span><strong>{deliveryStatusTag(record)}</strong></div>
+              <div className="postal-detail-field"><span>订阅起止</span><strong>{record.coverage_start_date || '—'} — {record.coverage_end_date || '—'}</strong></div>
+              <div className="postal-detail-field"><span>订阅份数</span><strong>{record.copies} 份</strong></div>
+              <div className="postal-detail-field wide"><span>投递单位</span><strong className={!record.distribution_unit_name ? 'muted' : ''}>{record.distribution_unit_name || '待补投递单位'}</strong></div>
+            </div>
+            <div className="complaint-form-source-note postal-detail-change-note">
+              <span aria-hidden>💡</span>
+              {changesQ.isLoading ? <span>正在查询信息修改记录…</span> : changesQ.isError ? <Text type="danger">信息修改记录加载失败</Text> : changeSources.length ? (
+                <Space wrap size={4}>
+                  <span>已应用的信息修改：</span>
+                  {changeSources.map((change) => (
+                    <Button key={change.id} type="link" icon={<HistoryOutlined />} onClick={() => onOpenAddressChange(change.id)}>
+                      #{change.id} · {change.ticket_date ? dayjs(change.ticket_date).format('YYYY-MM-DD') : '日期未填'}
+                    </Button>
+                  ))}
+                </Space>
+              ) : <span>当前记录暂无已应用的信息修改；后续可在“邮局工单”中追溯。</span>}
+            </div>
+          </section>
+
+          <section className="complaint-form-section postal-detail-section">
+            <h3><span aria-hidden>💼</span>订单来源与业务</h3>
+            <div className="postal-detail-grid">
+              <div className="postal-detail-field"><span>订单来源</span><strong>{record.source_channel || '未记录'}</strong></div>
+              <div className="postal-detail-field"><span>来源单号</span><strong className={!record.external_order_no ? 'muted' : ''}>{record.external_order_no || '未记录'}</strong></div>
+              <div className="postal-detail-field"><span>金额</span><strong>{record.amount != null ? `¥${record.amount}` : '未记录'}</strong></div>
+              <div className="postal-detail-field"><span>业务员</span><strong className={!record.salesperson ? 'muted' : ''}>{record.salesperson || '未填写'}</strong></div>
+              <div className="postal-detail-field"><span>汇款名</span><strong className={!record.remittance_name ? 'muted' : ''}>{record.remittance_name || '未填写'}</strong></div>
+              <div className="postal-detail-field"><span>录入方式</span><strong>{source ? <Tag color={source.color}>{source.label}</Tag> : '未记录'}</strong></div>
+            </div>
+            <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>来源单号用于记录原平台订单号；未摘抄时可保持为空。</span></div>
+          </section>
+        </div>
       )}
     </Drawer>
   );
@@ -1244,8 +1349,8 @@ function ticketStatusTag(t: Ticket) {
 }
 
 /** 收件信息变更详情抽屉：新旧对比 + 应用变更（写回投递记录，挂单则同步履约订单）。 */
-function AddressDetailDrawer({ addressId, onEdit, onClose }: {
-  addressId: number | null; onEdit: (rec: PostalAddressChange) => void; onClose: () => void;
+function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdit, onClose }: {
+  addressId: number | null; readOnly?: boolean; modal?: boolean; onEdit: (rec: PostalAddressChange) => void; onClose: () => void;
 }) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
@@ -1265,13 +1370,11 @@ function AddressDetailDrawer({ addressId, onEdit, onClose }: {
     onError: (e) => message.error(errText(e)),
   });
   const a = q.data;
-  return (
-    <Drawer title="收件信息变更工单" width={560} open={open} onClose={onClose} destroyOnClose
-      extra={isAdmin && a && (a.applied_to_order
-        ? <Text type="secondary">已应用 · 只读</Text>
-        : <Button icon={<EditOutlined />} onClick={() => onEdit(a)}>编辑</Button>)}>
-      {!a ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+  const extra = a && (readOnly || a.applied_to_order
+    ? <Text type="secondary">{a.applied_to_order ? '已应用 · 只读' : '只读查看'}</Text>
+    : isAdmin ? <Button icon={<EditOutlined />} onClick={() => onEdit(a)}>编辑</Button> : null);
+  const content = !a ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <div className="diff-row" style={{ display: 'flex', gap: 12 }}>
             <Card size="small" title="原" style={{ flex: 1, background: 'var(--color-bg-subtle)' }}>
               <div>{a.old_name || '—'}{a.old_phone ? ` / ${a.old_phone}` : ''}</div>
@@ -1294,7 +1397,7 @@ function AddressDetailDrawer({ addressId, onEdit, onClose }: {
                 ? <Tag color="green">已应用{a.order_id ? '·已同步履约订单' : '·仅名册'}</Tag>
                 : (a.postal_delivery_id ? <Tag color="orange">待应用</Tag> : <Tag>未匹配（未关联读者）</Tag>) },
           ]} />
-          {isAdmin && !a.applied_to_order && (
+          {isAdmin && !readOnly && !a.applied_to_order && (
             <Popconfirm
               title="应用收件信息变更？"
               description={a.postal_delivery_id
@@ -1306,8 +1409,18 @@ function AddressDetailDrawer({ addressId, onEdit, onClose }: {
             </Popconfirm>
           )}
           {a.notes && <Text type="secondary">备注：{a.notes}</Text>}
-        </Space>
-      )}
+    </Space>
+  );
+  if (modal) return (
+    <Modal title={<Space>收件信息变更工单{extra}</Space>} width={680} open={open} onCancel={onClose}
+      footer={<Button onClick={onClose}>关闭</Button>} destroyOnClose mask={false} zIndex={1100}
+      style={{ top: 72, marginLeft: 40, marginRight: 'auto' }}>
+      <div style={{ maxHeight: 'calc(100vh - 210px)', overflowY: 'auto', paddingRight: 4 }}>{content}</div>
+    </Modal>
+  );
+  return (
+    <Drawer title="收件信息变更工单" width={560} open={open} onClose={onClose} destroyOnClose extra={extra}>
+      {content}
     </Drawer>
   );
 }

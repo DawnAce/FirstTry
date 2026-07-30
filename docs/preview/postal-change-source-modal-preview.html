@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>信息变更来源弹窗 · 设计预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #182230;
+      background: #f5f7fa;
+      font-synthesis: none;
+    }
+    body { margin: 0; min-width: 320px; }
+    button { font: inherit; }
+
+    .app { min-height: 100vh; display: grid; grid-template-columns: 272px 1fr; }
+    .sidebar { padding: 26px 20px; border-right: 1px solid #e7ebf0; background: #fff; }
+    .brand { display: flex; align-items: center; gap: 14px; margin: 0 10px 64px; }
+    .brand-mark { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 18px; color: #fff; background: #1769cc; font-size: 26px; font-weight: 800; }
+    .brand strong { display: block; font-size: 20px; }
+    .brand span { color: #7c8798; font-size: 13px; }
+    .back { display: block; margin: 0 10px 34px; color: #1769cc; text-decoration: none; }
+    .nav-title { margin: 0 14px 12px; color: #a0a9b7; font-size: 12px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; margin: 6px 0; padding: 14px 16px; border-radius: 12px; color: #445066; }
+    .nav-item.active { color: #1769cc; background: #eaf3ff; font-weight: 700; }
+
+    .page { min-width: 0; }
+    .topbar { height: 76px; padding: 27px 44px; border-bottom: 1px solid #e7ebf0; color: #7c8798; background: #fff; font-size: 13px; }
+    .page-main { padding: 40px 52px; }
+    .page-main h1 { margin: 0 0 6px; font-size: 30px; }
+    .page-main > p { margin: 0 0 28px; color: #7c8798; }
+    .toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) 160px 160px auto; gap: 10px; margin-bottom: 16px; }
+    .control { height: 42px; padding: 11px 14px; border: 1px solid #dde3eb; border-radius: 9px; color: #98a1ae; background: #fff; }
+    .table { overflow: hidden; border: 1px solid #e4e8ee; border-radius: 12px; background: #fff; }
+    .summary { padding: 14px 18px; border-bottom: 1px solid #edf0f4; color: #667184; font-size: 13px; }
+    .row { display: grid; grid-template-columns: 190px 1fr; gap: 20px; padding: 20px; border-bottom: 1px solid #edf0f4; }
+    .row strong { display: block; margin-bottom: 5px; }
+    .row small { color: #7c8798; }
+
+    .drawer-mask { position: fixed; inset: 0; z-index: 5; background: rgba(16, 24, 40, .38); }
+    .drawer { position: fixed; z-index: 6; top: 0; right: 0; width: min(640px, 42vw); height: 100vh; display: grid; grid-template-rows: auto 1fr auto; background: #f7f9fc; box-shadow: -20px 0 52px rgba(15, 23, 42, .2); }
+    .drawer-header { display: flex; align-items: center; gap: 13px; min-height: 86px; padding: 18px 24px; border-bottom: 1px solid #e7ebf0; background: #fff; }
+    .drawer-close, .modal-close { display: grid; place-items: center; border: 0; color: #7a8494; background: transparent; cursor: pointer; }
+    .drawer-close { width: 34px; height: 34px; border-radius: 9px; font-size: 25px; }
+    .drawer-title { min-width: 0; flex: 1; }
+    .drawer-title h2 { margin: 0 0 5px; font-size: 19px; }
+    .drawer-title p { margin: 0; color: #7c8798; font-size: 12px; }
+    .edit { height: 38px; padding: 0 14px; border: 1px solid #dce3ec; border-radius: 9px; color: #354052; background: #fff; font-weight: 600; }
+    .drawer-body { overflow: auto; padding: 24px; }
+    .reader { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; padding: 16px 18px; border: 1px solid #dfe9f5; border-radius: 12px; background: linear-gradient(135deg, #f7fbff, #eef6ff); }
+    .avatar { display: grid; place-items: center; width: 46px; height: 46px; flex: 0 0 46px; border-radius: 50%; color: #fff; background: #1769cc; font-weight: 700; box-shadow: 0 7px 16px rgba(23, 105, 204, .2); }
+    .reader-copy { flex: 1; }
+    .reader-copy strong { display: block; margin-bottom: 5px; font-size: 17px; }
+    .reader-copy span { color: #6f7c8e; font-size: 12px; }
+    .drawer-section { margin-bottom: 14px; padding: 16px; border: 1px solid #e5eaf1; border-radius: 12px; background: #fff; }
+    .drawer-section h3, .form-section h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 13px; color: #293348; font-size: 14px; }
+    .drawer-section h3 span, .form-section h3 span { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; background: #f1f6fc; font-size: 14px; }
+    .info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid #e8ecf1; border-radius: 10px; background: #e8ecf1; }
+    .info-field { min-width: 0; padding: 11px 13px; background: #fbfcfe; }
+    .info-field.wide { grid-column: 1 / -1; }
+    .label { display: block; margin-bottom: 5px; color: #8994a5; font-size: 11px; font-weight: 600; }
+    .value { color: #354052; font-size: 13px; line-height: 1.55; }
+    .tag { display: inline-block; padding: 3px 9px; border-radius: 999px; color: #6b4ec0; background: #f1edff; font-size: 11px; font-weight: 700; }
+    .source-link { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 0; color: #1677e8; background: transparent; font-weight: 700; cursor: pointer; }
+    .drawer-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; border-top: 1px solid #e3e8ef; background: #fff; }
+
+    .source-layer { position: fixed; inset: 0; z-index: 20; }
+    .source-layer.hidden { display: none; }
+    .source-mask { position: absolute; inset: 0; background: rgba(22, 31, 45, .55); backdrop-filter: blur(2px); }
+    .modal { position: absolute; top: 50%; left: max(28px, calc((100vw - min(640px, 42vw) - min(880px, calc(100vw - min(640px, 42vw) - 72px))) / 2)); width: min(880px, calc(100vw - min(640px, 42vw) - 72px)); max-height: calc(100vh - 48px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border: 1px solid rgba(255, 255, 255, .75); border-radius: 18px; background: #f7f9fc; box-shadow: 0 28px 80px rgba(7, 17, 34, .3), 0 7px 22px rgba(7, 17, 34, .16); transform: translateY(-50%); }
+    .modal-header { display: flex; align-items: center; gap: 14px; min-height: 79px; padding: 14px 22px; border-bottom: 1px solid #e8edf3; background: #fff; }
+    .title-icon { display: grid; place-items: center; width: 43px; height: 43px; flex: 0 0 43px; border-radius: 12px; background: #f1edff; font-size: 21px; }
+    .title-copy { min-width: 0; flex: 1; }
+    .title-copy strong { display: block; margin-bottom: 4px; color: #182230; font-size: 19px; line-height: 1.3; }
+    .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; color: #7c8798; font-size: 12px; }
+    .meta i { color: #c0c7d2; font-style: normal; }
+    .record-pill { padding: 3px 9px; border: 1px solid #e1daf8; border-radius: 999px; color: #6b55a4; background: #faf8ff; font-size: 11px; }
+    .status { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; color: #24834f; background: #eaf8f0; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .audit-status { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; color: #9a5c13; background: #fff3df; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .modal-close { width: 32px; height: 32px; margin-left: -2px; border-radius: 9px; font-size: 24px; }
+    .modal-close:hover, .drawer-close:hover { background: #f1f4f8; }
+
+    .modal-body { overflow-y: auto; padding: 8px 22px 9px; }
+    .form-section { margin-bottom: 11px; padding: 10px 15px 11px; border: 1px solid #e5eaf1; border-radius: 12px; background: #fff; }
+    .form-section:last-child { margin-bottom: 0; }
+    .form-section h3 { margin-bottom: 10px; }
+    .field-grid { display: grid; grid-template-columns: 1.45fr 1fr 1fr; gap: 11px 12px; }
+    .read-field { min-width: 0; }
+    .read-field > span { display: block; margin-bottom: 6px; color: #657184; font-size: 11px; font-weight: 600; }
+    .read-value { min-height: 36px; padding: 8px 10px; overflow: hidden; border: 1px solid #dce3ec; border-radius: 8px; color: #354052; background: #fbfcfe; font-size: 13px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+    .read-value.linked { color: #1769cc; background: #f8fbff; font-weight: 600; }
+    .source-note { display: flex; align-items: center; gap: 8px; margin-top: 9px; padding: 7px 10px; border-radius: 8px; color: #6f7c8e; background: #f6f8fb; font-size: 11px; line-height: 1.45; }
+    .source-note b { color: #49617d; }
+
+    .compare { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+    .compare::after { content: "→"; position: absolute; top: 50%; left: 50%; display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid #e1e7ef; border-radius: 50%; color: #7d8a9d; background: #fff; font-size: 14px; transform: translate(-50%, -50%); }
+    .compare-card { padding: 12px; border: 1px solid #e4e8ee; border-radius: 10px; background: #f8fafc; }
+    .compare-card.after { border-color: #d8cfff; background: linear-gradient(145deg, #fbfaff, #f6f3ff); }
+    .compare-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: #5e697a; font-size: 12px; font-weight: 600; }
+    .compare-head strong { padding: 3px 8px; border-radius: 999px; color: #667184; background: #e8edf3; font-size: 11px; }
+    .after .compare-head { color: #66519d; }
+    .after .compare-head strong { color: #6547b9; background: #e9e1ff; }
+    .person-grid { display: grid; grid-template-columns: .85fr 1.2fr .65fr; gap: 8px; }
+    .compare-card .read-field > span { margin-bottom: 5px; }
+    .compare-card .read-value { min-height: 34px; padding: 7px 9px; background: rgba(255, 255, 255, .78); }
+    .address { margin-top: 9px; }
+    .address .read-value { min-height: 55px; white-space: normal; }
+    .changed { color: #6547b9; font-weight: 600; }
+
+    .copy-flow { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 12px; border: 1px solid #eadffc; border-radius: 10px; background: linear-gradient(135deg, #fcfbff, #faf8ff); }
+    .copy-flow-title { padding-right: 12px; border-right: 1px solid #e6e0f1; }
+    .copy-flow-title strong { display: block; margin-bottom: 2px; color: #354052; font-size: 12px; }
+    .copy-flow-title small { color: #8994a5; font-size: 10px; }
+    .copy-flow-total { color: #5e697a; font-size: 11px; white-space: nowrap; }
+    .copy-flow-total b { display: block; margin-top: 2px; color: #293348; font-size: 16px; }
+    .copy-flow-results { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+    .copy-flow-item { min-width: 0; padding: 8px 10px; border-radius: 8px; }
+    .copy-flow-item span { display: block; margin-bottom: 3px; font-size: 10px; }
+    .copy-flow-item strong { display: block; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .copy-flow-item.moved { color: #6547b9; background: #eee8ff; }
+    .copy-flow-item.retained { color: #24834f; background: #eaf8f0; }
+    .copy-flow-item.pending { color: #9a5c13; background: #fff3df; }
+    .copy-flow-plus { color: #a0a9b7; font-weight: 700; }
+    .copy-flow-warning { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: #8d651f; font-size: 11px; }
+    .copy-flow-confirmed { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: #4f7a61; font-size: 11px; }
+
+    .handling-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px; }
+    .handling-grid .read-value { white-space: normal; }
+    .modal-footer { display: flex; align-items: center; gap: 10px; min-height: 61px; padding: 11px 22px; border-top: 1px solid #e6ebf2; background: #fff; }
+    .footer-tip { flex: 1; color: #8994a5; font-size: 12px; }
+    .footer-tip b { margin-right: 5px; color: #2f80ed; }
+    .btn { height: 38px; padding: 0 18px; border: 1px solid #dce3ec; border-radius: 9px; color: #354052; background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn:hover { color: #1769cc; border-color: #9ac5f5; }
+
+    @media (max-width: 1180px) {
+      .drawer { width: 48vw; }
+      .modal { left: 24px; width: calc(52vw - 48px); }
+      .field-grid, .person-grid { grid-template-columns: 1fr; }
+      .compare { grid-template-columns: 1fr; gap: 20px; }
+      .compare::after { top: 50%; transform: translate(-50%, -50%) rotate(90deg); }
+    }
+    @media (max-width: 760px) {
+      .sidebar { display: none; }
+      .app { grid-template-columns: 1fr; }
+      .drawer { display: none; }
+      .modal { left: 12px; width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
+      .status { display: none; }
+      .audit-status { display: none; }
+      .modal-header { padding-inline: 16px; }
+      .modal-body, .modal-footer { padding-inline: 14px; }
+      .handling-grid { grid-template-columns: 1fr; }
+      .footer-tip { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app" aria-hidden="true">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">发</div><div><strong>发行系统</strong><span>中国经营报</span></div></div>
+      <a class="back" href="#">← 返回发行履约</a>
+      <p class="nav-title">邮局管理</p>
+      <div class="nav-item active">📋 投递明细</div>
+      <div class="nav-item">🔄 订报转投</div>
+      <div class="nav-item">🎫 邮局工单</div>
+    </aside>
+    <section class="page">
+      <div class="topbar">业务首页　/　发行履约　/　邮局管理　/　投递明细</div>
+      <div class="page-main">
+        <h1>投递明细</h1><p>投递记录 4,342 条</p>
+        <div class="toolbar"><div class="control">搜索姓名、编号或地址</div><div class="control">年度</div><div class="control">渠道</div><div class="control">更多筛选</div></div>
+        <div class="table">
+          <div class="summary">合计 <b>7,776</b> 份　·　<b>7</b> 家投递单位</div>
+          <div class="row"><div><strong>王安</strong><small>2025-4281</small></div><div><strong>广东省 · 深圳市 · 福田区</strong><small>金田路2030号卓越世纪中心1号楼3904-06单元</small></div></div>
+          <div class="row"><div><strong>徐先生</strong><small>2026-6351</small></div><div><strong>浙江省 · 杭州市 · 余杭区</strong><small>良渚街道北大顾和江南府南区31-14</small></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="drawer-mask"></div>
+  <aside class="drawer" aria-label="投递记录详情">
+    <header class="drawer-header">
+      <button class="drawer-close" aria-label="关闭详情">×</button>
+      <div class="drawer-title"><h2>投递记录详情</h2><p>投递明细 · 当前名册信息</p></div>
+      <button class="edit">✎&nbsp; 编辑记录</button>
+    </header>
+    <div class="drawer-body">
+      <section class="reader">
+        <div class="avatar">王</div>
+        <div class="reader-copy"><strong>王安</strong><span>2025-4281 · 18759190952</span></div>
+      </section>
+      <section class="drawer-section">
+        <h3><span>📍</span>投递信息</h3>
+        <div class="info-grid">
+          <div class="info-field wide"><span class="label">详细地址</span><div class="value">广东省 深圳市 福田区 金田路2030号卓越世纪中心1号楼3904-06单元</div></div>
+          <div class="info-field"><span class="label">邮编</span><div class="value">310020</div></div>
+          <div class="info-field"><span class="label">投递状态</span><div class="value"><span class="tag">已完结</span></div></div>
+          <div class="info-field"><span class="label">订阅范围</span><div class="value">2025-01-01 — 2025-10-31</div></div>
+          <div class="info-field"><span class="label">份数</span><div class="value">1 份</div></div>
+          <div class="info-field wide"><span class="label">信息变更来源</span><button class="source-link" data-open>◷ 修改记录 #395 · 2025-03-27</button></div>
+        </div>
+      </section>
+      <section class="drawer-section">
+        <h3><span>💼</span>业务信息</h3>
+        <div class="info-grid"><div class="info-field"><span class="label">产品</span><div class="value">中国经营报</div></div><div class="info-field"><span class="label">渠道</span><div class="value">对公转账</div></div></div>
+      </section>
+    </div>
+    <footer class="drawer-footer"><button class="btn">返回列表</button></footer>
+  </aside>
+
+  <div class="source-layer" id="source-layer">
+    <div class="source-mask" data-close></div>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-header">
+        <div class="title-icon" aria-hidden="true">📬</div>
+        <div class="title-copy">
+          <strong id="modal-title">收件信息变更记录</strong>
+          <div class="meta"><span>2025 年度</span><i>·</i><span>编号 2025-4281</span><i>·</i><span class="record-pill">修改记录 #395</span></div>
+        </div>
+        <span class="status">已应用</span>
+        <button class="modal-close" data-close aria-label="关闭弹窗">×</button>
+      </header>
+
+      <div class="modal-body">
+        <section class="form-section">
+          <h3><span>🔗</span>关联与生效</h3>
+          <div class="field-grid">
+            <div class="read-field"><span>关联读者</span><div class="read-value linked">王安 · 2025-4281</div></div>
+            <div class="read-field"><span>变更登记时间</span><div class="read-value">2025-03-27 00:00</div></div>
+            <div class="read-field"><span>实际起月日</span><div class="read-value">—</div></div>
+          </div>
+          <div class="source-note"><span aria-hidden="true">✓</span><span>该工单已于 <b>2025-03-27</b> 应用到投递名册；当前仅用于追溯，不可在此修改</span></div>
+        </section>
+
+        <section class="form-section">
+          <h3><span>↔️</span>变更前后对比</h3>
+          <div class="compare">
+            <div class="compare-card before">
+              <div class="compare-head"><strong>变更前</strong>应用前的名册快照</div>
+              <div class="person-grid">
+                <div class="read-field"><span>姓名</span><div class="read-value">薛舟瀛</div></div>
+                <div class="read-field"><span>电话</span><div class="read-value">18768185482</div></div>
+                <div class="read-field"><span>份数</span><div class="read-value">2</div></div>
+              </div>
+              <div class="read-field address"><span>地址</span><div class="read-value">浙江省杭州市江干区杭州市江干区富春路290号钱江国际时代广场3号楼3505、3506室</div></div>
+            </div>
+            <div class="compare-card after">
+              <div class="compare-head"><strong>变更后</strong>已应用到当前名册</div>
+              <div class="person-grid">
+                <div class="read-field"><span>姓名</span><div class="read-value changed">王安</div></div>
+                <div class="read-field"><span>电话</span><div class="read-value changed">18759190952</div></div>
+                <div class="read-field"><span>份数</span><div class="read-value changed">1</div></div>
+              </div>
+              <div class="read-field address"><span>地址</span><div class="read-value changed">广东省深圳市福田区金田路2030号卓越世纪中心1号楼3904-06单元</div></div>
+            </div>
+          </div>
+          <div class="copy-flow">
+            <div class="copy-flow-title"><strong>份数流向</strong><small>每一份都应有明确去向</small></div>
+            <div class="copy-flow-total">原记录<b>共 2 份</b></div>
+            <div class="copy-flow-results">
+              <div class="copy-flow-item moved"><span>已转出</span><strong>王安 · 1份</strong></div>
+              <div class="copy-flow-plus">+</div>
+              <div class="copy-flow-item retained"><span>原信息保留</span><strong>薛舟瀛 · 1份</strong></div>
+            </div>
+          </div>
+          <div class="copy-flow-confirmed"><span aria-hidden="true">✓</span><span>剩余1份继续沿用薛舟瀛原姓名、电话和地址，本次未发生变更</span></div>
+        </section>
+
+        <section class="form-section">
+          <h3><span>📝</span>处理说明</h3>
+          <div class="handling-grid">
+            <div class="read-field"><span>处理情况</span><div class="read-value">转北京局微信</div></div>
+            <div class="read-field"><span>备注</span><div class="read-value">来源：邮局年改地址第90行</div></div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="modal-footer">
+        <span class="footer-tip"><b>🔒</b>只读查看；不会改变当前投递详情或原工单</span>
+        <button class="btn" data-close>关闭</button>
+      </footer>
+    </section>
+  </div>
+
+  <script>
+    const layer = document.querySelector('#source-layer');
+    document.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', () => layer.classList.add('hidden')));
+    document.querySelector('[data-open]').addEventListener('click', () => layer.classList.remove('hidden'));
+    document.addEventListener('keydown', (event) => event.key === 'Escape' && layer.classList.add('hidden'));
+  </script>
+</body>
+</html>

@@ -3,10 +3,11 @@
 每行 → 一条投诉工单。挂订单：``编号``("000680")去零 + ``年度`` → ``f"{year}-{no}"`` 匹配
 ``orders.external_order_no``（匹配不到则 order_id 留空、external 字符串保留）。处理情况原文保留，
 另抽 ``routed_label``(热线 \\d*11185 或 XX局)。状态：有回访→resolved 否则 open。去重键：
-(external_order_no, 接诉日期, 投诉情况) —— 同人可多次接诉，故带日期+情况区分。
+相同内容按出现次数逐条保留；数据库已有几条就抵扣几条，既容纳客户反复投诉，也保持整表重导幂等。
 """
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Optional, Tuple
@@ -29,6 +30,7 @@ class ComplaintPreviewRow:
     routed_label: Optional[str] = None
     distribution_unit: str = ""
     status: str = "open"
+    occurrence: int = 1
     data: Optional[dict] = field(default=None, repr=False)
 
 
@@ -99,6 +101,10 @@ def _dedup_key(external: Optional[str], cdate: Optional[str], missing: Optional[
     return (external or "", cdate or "", missing or "")
 
 
+def _source_notes(notes: str, row_no: int) -> str:
+    return "；".join(filter(None, (notes, f"来源:邮局年投诉!第{row_no}行")))
+
+
 def build_complaint_preview(db: Session, rows) -> ComplaintImportPreview:
     # 按 年度+编号 关联投递记录：{f"{year}-{no}": (postal_delivery_id, order_id)}。
     delivery_map = {
@@ -116,15 +122,15 @@ def build_complaint_preview(db: Session, rows) -> ComplaintImportPreview:
         .filter(Partner.partner_type == PartnerType.distribution)
         .all()
     }
-    existing = {
+    existing = Counter(
         _dedup_key(e, c.isoformat() if c else None, m)
         for e, c, m in db.query(
             PostalComplaint.external_order_no,
             PostalComplaint.complaint_date,
             PostalComplaint.missing_issues,
         ).all()
-    }
-    seen: set = set()
+    )
+    occurrences = Counter()
 
     out: List[ComplaintPreviewRow] = []
     for pc in rows:
@@ -135,11 +141,12 @@ def build_complaint_preview(db: Session, rows) -> ComplaintImportPreview:
         cdate_iso = cdate.isoformat() if cdate else None
 
         key = _dedup_key(external, cdate_iso, pc.missing_issues or None)
-        if key in existing or key in seen:
+        occurrences[key] += 1
+        occurrence = occurrences[key]
+        if occurrence <= existing[key]:
             out.append(ComplaintPreviewRow(external or "(无编号)", pc.name, cdate_iso,
-                                           pc.missing_issues, "duplicate"))
+                                           pc.missing_issues, "duplicate", occurrence=occurrence))
             continue
-        seen.add(key)
 
         rec = delivery_map.get(external) if external else None
         postal_delivery_id = rec[0] if rec else None
@@ -165,7 +172,7 @@ def build_complaint_preview(db: Session, rows) -> ComplaintImportPreview:
             "snap_phone": pc.phone or None,
             "snap_address": _compose_addr(pc) or None,
             "snap_postal_code": pc.postal_code or None,
-            "notes": pc.notes or None,
+            "notes": _source_notes(pc.notes, pc.row_no),
         }
         out.append(ComplaintPreviewRow(
             external_order_no=external or "(无编号)",
@@ -177,6 +184,7 @@ def build_complaint_preview(db: Session, rows) -> ComplaintImportPreview:
             routed_label=routed,
             distribution_unit=pc.distribution_unit_name,
             status=status,
+            occurrence=occurrence,
             data=data,
         ))
     return ComplaintImportPreview(out)
@@ -209,7 +217,7 @@ def preview_import(db: Session, file_bytes: bytes) -> Tuple[dict, str]:
         )
     parsed = parse_postal_complaints(file_bytes)
     preview = build_complaint_preview(db, parsed)
-    commit_rows = [{"data": r.data} for r in preview.importable()]
+    commit_rows = [{"data": r.data, "occurrence": r.occurrence} for r in preview.importable()]
     session_id = save_order_import_session({"mode": "postal_complaint", "rows": commit_rows})
     return {
         "session_id": session_id,
@@ -224,23 +232,23 @@ def commit_import(db: Session, session_id: str, operator_id: Optional[int] = Non
     if payload is None:
         raise HTTPException(status_code=400, detail="导入会话不存在或已过期，请重新预览")
 
-    existing = {
+    existing = Counter(
         _dedup_key(e, c.isoformat() if c else None, m)
         for e, c, m in db.query(
             PostalComplaint.external_order_no,
             PostalComplaint.complaint_date,
             PostalComplaint.missing_issues,
         ).all()
-    }
+    )
     created = 0
     skipped = 0
     for r in payload["rows"]:
         d = dict(r["data"])
         key = _dedup_key(d["external_order_no"], d["complaint_date"], d["missing_issues"])
-        if key in existing:
+        if existing[key] >= r["occurrence"]:
             skipped += 1
             continue
-        existing.add(key)
+        existing[key] += 1
         d["complaint_date"] = date.fromisoformat(d["complaint_date"]) if d["complaint_date"] else None
         d["status"] = PostalComplaintStatus(d["status"])
         db.add(PostalComplaint(**d))
