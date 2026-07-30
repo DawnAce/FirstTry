@@ -23,6 +23,101 @@ from app.models import (
 from app.services.address_service import normalize_address
 from app.services import postal_common as pc
 
+_MISSING = object()
+
+
+def _start_date(rec: PostalAddressChange, raw: Optional[str]) -> Optional[str]:
+    """把旧表的 MMDD 起月日转换成可展示的完整日期。"""
+    if not raw:
+        return None
+    text = str(raw).strip().replace("-", "").replace("/", "")
+    year = rec.year or (rec.change_date.year if rec.change_date else None)
+    if len(text) == 8 and text.isdigit():
+        year, month, day = int(text[:4]), int(text[4:6]), int(text[6:])
+    elif len(text) == 4 and text.isdigit() and year:
+        month, day = int(text[:2]), int(text[2:])
+    else:
+        return None
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def address_change_allocations(rec: PostalAddressChange) -> list[dict]:
+    """兼容旧工单：没有显式去向时，按旧/新份数推导，差额视为待确认。"""
+    if rec.copy_allocations is not None:
+        return list(rec.copy_allocations)
+
+    old_copies = max(rec.old_copies or 0, 0)
+    new_copies = old_copies if rec.new_copies is None else max(rec.new_copies, 0)
+    rows = []
+    if new_copies:
+        rows.append({
+            "kind": "changed",
+            "copies": new_copies,
+            "name": rec.new_name or rec.old_name,
+            "phone": rec.new_phone or rec.old_phone,
+            "address": rec.new_address or rec.old_address,
+            "start_date": _start_date(rec, rec.effective_start_month),
+        })
+    remainder = max(old_copies - new_copies, 0)
+    if remainder:
+        rows.append({
+            "kind": "pending",
+            "copies": remainder,
+            "name": rec.old_name,
+            "phone": rec.old_phone,
+            "address": rec.old_address,
+            "start_date": _start_date(rec, rec.original_start_month),
+        })
+    return rows
+
+
+def address_allocation_summary(rec: PostalAddressChange) -> Optional[str]:
+    rows = address_change_allocations(rec)
+    if not rows:
+        return None
+    total = rec.old_copies if rec.old_copies is not None else sum(r["copies"] for r in rows)
+    destinations = " + ".join(
+        f"{'待确认' if row['kind'] == 'pending' else (row.get('name') or '未命名')}"
+        f"{row['copies']}份"
+        for row in rows
+    )
+    return f"原{total}份 → {destinations}"
+
+
+def _normalise_allocations(rec: PostalAddressChange, rows) -> list[dict]:
+    normalised = []
+    for raw in rows or []:
+        row = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+        kind = row["kind"]
+        if kind == "retained" or kind == "pending":
+            row["name"] = row.get("name") or rec.old_name
+            row["phone"] = row.get("phone") or rec.old_phone
+            row["address"] = row.get("address") or rec.old_address
+        else:
+            row["name"] = row.get("name") or rec.new_name or rec.old_name
+            row["phone"] = row.get("phone") or rec.new_phone or rec.old_phone
+            row["address"] = row.get("address") or rec.new_address or rec.old_address
+        start = row.get("start_date")
+        if not start and kind in {"retained", "pending"}:
+            start = _start_date(rec, rec.original_start_month)
+        row["start_date"] = start.isoformat() if hasattr(start, "isoformat") else start
+        normalised.append(row)
+    if rec.old_copies is not None and sum(row["copies"] for row in normalised) != rec.old_copies:
+        raise HTTPException(status_code=400, detail="各去向份数合计必须等于原份数")
+    return normalised
+
+
+def _sync_allocations(rec: PostalAddressChange, rows=None) -> None:
+    if rows is not None:
+        rec.copy_allocations = _normalise_allocations(rec, rows)
+    rec.unresolved_copies = sum(
+        row["copies"] for row in address_change_allocations(rec)
+        if row["kind"] == "pending"
+    )
+
 
 def _addr_query(
     db: Session,
@@ -285,6 +380,7 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
         if ac.new_address:
             target.recipient_address = ac.new_address
 
+    _sync_allocations(ac)
     ac.applied_to_order = True
     ac.applied_by = operator_id
     ac.applied_at = datetime.now()
@@ -308,6 +404,7 @@ def create_address_change(db: Session, payload: dict, operator_id: Optional[int]
     d = dict(payload)
     year = d.pop("year", None)
     delivery_no = d.pop("delivery_no", None)
+    allocations = d.pop("copy_allocations", None)
     external, pd_id, order_id = pc.link_delivery(db, year, delivery_no)
     handling = d.get("handling")
     rec = PostalAddressChange(
@@ -319,6 +416,7 @@ def create_address_change(db: Session, payload: dict, operator_id: Optional[int]
         applied_to_order=False,
         **d,
     )
+    _sync_allocations(rec, allocations) if allocations is not None else _sync_allocations(rec)
     db.add(rec)
     db.commit()
     db.refresh(rec)
@@ -340,6 +438,7 @@ def update_address_change(db: Session, change_id: int, patch: dict) -> PostalAdd
             detail="该收件信息变更已应用，不能再编辑；如需更正请新建收件信息变更工单",
         )
     patch = dict(patch)
+    allocations = patch.pop("copy_allocations", _MISSING)
     relink = "delivery_no" in patch
     year_present = "year" in patch
     year = patch.pop("year", None)
@@ -355,6 +454,71 @@ def update_address_change(db: Session, change_id: int, patch: dict) -> PostalAdd
         rec.routed_label = pc.routed_label(patch["handling"]) if patch["handling"] else None
     for k, v in patch.items():
         setattr(rec, k, v)
+    if allocations is _MISSING:
+        _sync_allocations(rec)
+    elif allocations is None:
+        rec.copy_allocations = None
+        _sync_allocations(rec)
+    else:
+        _sync_allocations(rec, allocations)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+def resolve_address_allocation(
+    db: Session,
+    change_id: int,
+    payload: dict,
+    operator_id: Optional[int] = None,
+) -> PostalAddressChange:
+    """确认已应用工单中的待定份数；原业务字段保持只读。"""
+    rec = (
+        db.query(PostalAddressChange)
+        .filter(PostalAddressChange.id == change_id)
+        .with_for_update()
+        .first()
+    )
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
+    if not rec.applied_to_order:
+        raise HTTPException(status_code=409, detail="请先应用收件信息变更，再确认剩余份数去向")
+
+    rows = address_change_allocations(rec)
+    pending = sum(row["copies"] for row in rows if row["kind"] == "pending")
+    copies = payload["copies"]
+    if pending <= 0:
+        raise HTTPException(status_code=409, detail="该工单没有待确认份数")
+    if copies > pending:
+        raise HTTPException(status_code=400, detail=f"最多只能确认 {pending} 份")
+    if payload["kind"] == "changed" and not payload.get("name"):
+        raise HTTPException(status_code=400, detail="变更为其他收件人时必须填写姓名")
+    if payload["kind"] == "changed" and not payload.get("address"):
+        raise HTTPException(status_code=400, detail="变更为其他收件人时必须填写地址")
+    if payload["kind"] == "changed" and not payload.get("start_date"):
+        raise HTTPException(status_code=400, detail="变更为其他收件人时必须填写起投时间")
+
+    resolved = [row for row in rows if row["kind"] != "pending"]
+    resolved.append({**payload, "copies": copies})
+    remaining = pending - copies
+    if remaining:
+        resolved.append({
+            "kind": "pending",
+            "copies": remaining,
+            "name": rec.old_name,
+            "phone": rec.old_phone,
+            "address": rec.old_address,
+            "start_date": _start_date(rec, rec.original_start_month),
+        })
+    _sync_allocations(rec, resolved)
+    db.add(PostalComplaintHandlingRecord(
+        ticket_id=rec.id,
+        event_type=PostalTicketEventType.address_applied,
+        handled_at=datetime.now(),
+        handled_by=operator_id,
+        action=f"补充确认 {copies} 份去向",
+        follow_result="保留原收件人" if payload["kind"] == "retained" else payload["name"],
+    ))
     db.commit()
     db.refresh(rec)
     return rec

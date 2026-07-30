@@ -28,12 +28,15 @@ class TicketOut(BaseModel):
     status: Optional[str] = None     # 投诉三态；改地址 applied/pending/unmatched；回访 None
     handling_count: Optional[int] = None
     applied_to_order: Optional[bool] = None
+    pending_copies: int = 0
+    allocation_summary: Optional[str] = None
 
 
 class TicketSummary(BaseModel):
     complaint: int
     address: int
     follow: int
+    address_recipient_pending: int = 0
 
 
 class TicketListOut(BaseModel):
@@ -47,6 +50,9 @@ class DeliveryOut(BaseModel):
     year: int
     delivery_no: str
     order_id: Optional[int] = None
+    order_item_id: Optional[int] = None
+    fulfillment_target_id: Optional[int] = None
+    order_code: Optional[str] = None
     external_order_no: Optional[str] = None
     recipient_name: str
     recipient_phone: Optional[str] = None
@@ -81,6 +87,70 @@ class DeliveryListOut(BaseModel):
     rows: List[DeliveryOut]
     total: int
     summary: DeliverySummary = DeliverySummary()
+
+
+class PostalRenewalRow(BaseModel):
+    status: Literal["pending", "needs_link"]
+    order_id: int
+    order_code: Optional[str] = None
+    external_order_no: Optional[str] = None
+    order_item_id: int
+    fulfillment_target_id: int
+    recipient_name: str
+    recipient_phone: Optional[str] = None
+    recipient_address: str
+    product: str
+    copies: int
+    entitlement_start_date: date
+    entitlement_end_date: date
+    previous_delivery_id: Optional[int] = None
+    previous_delivery_no: Optional[str] = None
+    previous_end_date: Optional[date] = None
+    proposed_start_date: date
+    proposed_end_date: date
+    proposed_amount: Decimal
+    overlap_delivery_id: Optional[int] = None
+    overlap_delivery_no: Optional[str] = None
+
+
+class PostalRenewalSummary(BaseModel):
+    candidate_count: int = 0
+    pending_order_count: int = 0
+    pending_detail_count: int = 0
+    pending_copies: int = 0
+    covered_count: int = 0
+    needs_link_count: int = 0
+
+
+class PostalRenewalListOut(BaseModel):
+    target_month: str
+    rows: List[PostalRenewalRow]
+    total: int
+    summary: PostalRenewalSummary
+
+
+class PostalRenewalGenerateIn(BaseModel):
+    target_month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    fulfillment_target_ids: List[int] = Field(min_length=1)
+
+
+class PostalRenewalSkipped(BaseModel):
+    fulfillment_target_id: int
+    reason: str
+
+
+class PostalRenewalGenerateOut(BaseModel):
+    created: List[DeliveryOut]
+    created_count: int
+    skipped: List[PostalRenewalSkipped]
+    skipped_count: int
+    linked_existing_count: int = 0
+
+
+class PostalExactLinkOut(BaseModel):
+    linked: int
+    unresolved: int
+    examined: int
 
 
 class ComplaintOut(BaseModel):
@@ -123,6 +193,15 @@ class ComplaintListOut(BaseModel):
     summary: ComplaintSummary = ComplaintSummary()
 
 
+class AddressAllocation(BaseModel):
+    kind: Literal["changed", "retained", "pending"]
+    copies: int = Field(ge=1)
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    start_date: Optional[date] = None
+
+
 class AddressChangeOut(BaseModel):
     id: int
     postal_delivery_id: Optional[int] = None
@@ -139,6 +218,8 @@ class AddressChangeOut(BaseModel):
     new_copies: Optional[int] = None
     original_start_month: Optional[str] = None
     effective_start_month: Optional[str] = None
+    copy_allocations: Optional[List[AddressAllocation]] = None
+    unresolved_copies: int = 0
     handling: Optional[str] = None
     routed_label: Optional[str] = None
     applied_to_order: bool
@@ -350,6 +431,7 @@ class AddressChangeCreateIn(BaseModel):
     new_copies: Optional[int] = None
     original_start_month: Optional[str] = None
     effective_start_month: Optional[str] = None
+    copy_allocations: Optional[List[AddressAllocation]] = None
     handling: Optional[str] = None
     notes: Optional[str] = None
 
@@ -368,8 +450,18 @@ class AddressChangeUpdateIn(BaseModel):
     new_copies: Optional[int] = None
     original_start_month: Optional[str] = None
     effective_start_month: Optional[str] = None
+    copy_allocations: Optional[List[AddressAllocation]] = None
     handling: Optional[str] = None
     notes: Optional[str] = None
+
+
+class AddressAllocationResolveIn(BaseModel):
+    kind: Literal["changed", "retained"]
+    copies: int = Field(ge=1)
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    start_date: Optional[date] = None
 
 
 # --- 回访 -------------------------------------------------------------

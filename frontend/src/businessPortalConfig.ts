@@ -41,7 +41,7 @@ export const businessCenters: BusinessCenter[] = [
     color: '#1677ff',
     path: '/business/fulfilment',
     modules: [
-      { key: 'postal', title: '邮局管理', description: '管理邮局渠道的订报、投递与异常工单', icon: '📮', path: '/business/fulfilment/postal', matches: ['/business/fulfilment/postal', '/post-delivery'], detail: '包含：投递明细 · 订报转投 · 邮局工单' },
+      { key: 'postal', title: '邮局管理', description: '管理邮局渠道的订报、续投、投递与异常工单', icon: '📮', path: '/business/fulfilment/postal', matches: ['/business/fulfilment/postal', '/post-delivery'], detail: '包含：投递明细 · 待续投 · 订报转投 · 邮局工单' },
       { key: 'courier', title: '快递管理', description: '管理快递发货、批次与物流轨迹', icon: '🚚', path: '/recipients', matches: ['/recipients', '/logistics', '/shipping'], detail: '独立履约渠道' },
     ],
   },
@@ -85,6 +85,7 @@ export const businessCenters: BusinessCenter[] = [
 
 export const postalFunctions = [
   { title: '投递明细', icon: '📋', path: '/post-delivery/deliveries' },
+  { title: '待续投', icon: '🗓️', path: '/post-delivery/renewals' },
   { title: '订报转投', icon: '🔄', path: '/post-delivery/subscription' },
   { title: '邮局工单', icon: '🎫', path: '/post-delivery/tickets' },
 ];

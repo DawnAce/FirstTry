@@ -8,6 +8,7 @@ from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import PostalTicket, PostalTicketType
+from app.services.postal_change_service import address_allocation_summary
 
 TICKET_TYPES = tuple(t.value for t in PostalTicketType)
 
@@ -44,6 +45,8 @@ def _ticket_date(rec: PostalTicket):
 
 def _addr_status(rec: PostalTicket) -> str:
     if rec.applied_to_order:
+        if (rec.unresolved_copies or 0) > 0:
+            return "recipient_pending"
         return "applied"
     return "pending" if rec.postal_delivery_id else "unmatched"
 
@@ -62,12 +65,19 @@ def _row(rec: PostalTicket) -> dict:
         status = _addr_status(rec)
         handling_count = None
         applied_to_order = rec.applied_to_order
+        pending_copies = rec.unresolved_copies or 0
+        allocation_summary = address_allocation_summary(rec)
     else:
         name = rec.snap_name
         summary = rec.communication_content or rec.result
         status = None
         handling_count = None
         applied_to_order = None
+        pending_copies = 0
+        allocation_summary = None
+    if type_value != PostalTicketType.address.value:
+        pending_copies = 0
+        allocation_summary = None
     return {
         "type": type_value,
         "id": rec.id,
@@ -81,6 +91,8 @@ def _row(rec: PostalTicket) -> dict:
         "status": status,
         "handling_count": handling_count,
         "applied_to_order": applied_to_order,
+        "pending_copies": pending_copies,
+        "allocation_summary": allocation_summary,
     }
 
 
@@ -137,6 +149,7 @@ def list_tickets(
     year: Optional[int] = None,
     status: Optional[str] = None,
     applied: Optional[bool] = None,
+    recipient_pending: Optional[bool] = None,
     postal_delivery_id: Optional[int] = None,
     search: Optional[str] = None,
     page: int = 1,
@@ -164,6 +177,12 @@ def list_tickets(
                 PostalTicket.type != PostalTicketType.address,
                 PostalTicket.applied_to_order.is_(applied),
             ))
+    if recipient_pending:
+        q = q.filter(
+            PostalTicket.type == PostalTicketType.address,
+            PostalTicket.applied_to_order.is_(True),
+            PostalTicket.unresolved_copies > 0,
+        )
 
     total = q.count()
     rows = (
@@ -185,4 +204,15 @@ def list_tickets(
     for ticket_type, count in summary_rows:
         key = ticket_type.value if hasattr(ticket_type, "value") else str(ticket_type)
         summary[key] = int(count)
+    summary["address_recipient_pending"] = (
+        _base_query(
+            db, year=year, search=search, postal_delivery_id=postal_delivery_id,
+        )
+        .filter(
+            PostalTicket.type == PostalTicketType.address,
+            PostalTicket.applied_to_order.is_(True),
+            PostalTicket.unresolved_copies > 0,
+        )
+        .count()
+    )
     return [_row(rec) for rec in rows], total, summary

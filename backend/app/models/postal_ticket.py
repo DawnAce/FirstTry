@@ -15,6 +15,7 @@ from sqlalchemy import (
     Enum as SAEnum,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
 )
@@ -102,6 +103,11 @@ class PostalTicket(Base):
     new_copies = Column(Integer, nullable=True)
     original_start_month = Column(String(16), nullable=True)
     effective_start_month = Column(String(16), nullable=True)
+    # 一张改址工单可把原份数拆到多个去向；空值表示旧数据，读取时按旧字段推导。
+    copy_allocations = Column(JSON, nullable=True)
+    unresolved_copies = Column(
+        Integer, default=0, server_default="0", nullable=False, index=True
+    )
     applied_to_order = Column(Boolean, default=False, nullable=False)
     applied_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     applied_at = Column(DateTime, nullable=True)

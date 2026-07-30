@@ -383,6 +383,52 @@ def test_applied_address_change_cannot_be_edited_or_deleted(client):
     }).json()["total"] == 0
 
 
+def test_address_change_pending_copies_can_be_resolved(client):
+    client.post("/api/postal/deliveries", json={
+        "year": 2026,
+        "delivery_no": "902",
+        "recipient_name": "薛舟瀛",
+        "recipient_address": "北京市原地址",
+        "copies": 2,
+    })
+    created = client.post("/api/postal/address-changes", json={
+        "year": 2026,
+        "delivery_no": "902",
+        "change_date": "2026-03-16",
+        "old_name": "薛舟瀛",
+        "old_address": "北京市原地址",
+        "old_copies": 2,
+        "new_name": "王安",
+        "new_address": "上海市新地址",
+        "new_copies": 1,
+        "original_start_month": "0101",
+        "effective_start_month": "0401",
+    })
+    assert created.status_code == 201, created.text
+    change_id = created.json()["id"]
+    assert client.post(f"/api/postal/address-changes/{change_id}/apply").status_code == 200
+
+    tickets = client.get("/api/postal/tickets", params={"recipient_pending": True}).json()
+    assert tickets["total"] == 1
+    assert tickets["rows"][0]["status"] == "recipient_pending"
+    assert tickets["rows"][0]["pending_copies"] == 1
+
+    resolved = client.post(f"/api/postal/address-changes/{change_id}/resolve-pending", json={
+        "kind": "changed",
+        "copies": 1,
+        "name": "林晓雯",
+        "address": "浙江省新地址",
+        "start_date": "2026-05-01",
+    })
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["unresolved_copies"] == 0
+    assert [row["start_date"] for row in resolved.json()["copy_allocations"]] == [
+        "2026-04-01",
+        "2026-05-01",
+    ]
+    assert client.get("/api/postal/tickets", params={"recipient_pending": True}).json()["total"] == 0
+
+
 def test_follow_up_crud(client):
     r = client.post("/api/postal/follow-ups", json={
         "year": 2026, "delivery_no": "123", "follow_up_date": "2026-03-20",
@@ -424,7 +470,9 @@ def test_unified_tickets_list(client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["total"] == 3
-    assert body["summary"] == {"complaint": 1, "address": 1, "follow": 1}
+    assert body["summary"] == {
+        "complaint": 1, "address": 1, "follow": 1, "address_recipient_pending": 0,
+    }
     types = {row["type"] for row in body["rows"]}
     assert types == {"complaint", "address", "follow"}
     # 按日期倒序：回访(05-12) 在最前
@@ -477,7 +525,9 @@ def test_unified_ticket_crud_merges_follow_up_into_complaint_timeline(client):
 
     tickets = client.get("/api/postal/tickets?year=2026").json()
     assert tickets["total"] == 2
-    assert tickets["summary"] == {"complaint": 1, "address": 1, "follow": 0}
+    assert tickets["summary"] == {
+        "complaint": 1, "address": 1, "follow": 0, "address_recipient_pending": 0,
+    }
 
     detail = client.get(f"/api/postal/tickets/{complaint_id}").json()
     follow_event = next(h for h in detail["handlings"] if h["event_type"] == "follow_up")
@@ -573,7 +623,9 @@ def test_deleting_complaint_restores_linked_follow_up_as_independent_ticket(clie
 
     independent = client.get("/api/postal/tickets?type=follow&year=2026").json()
     assert independent["total"] == 1
-    assert independent["summary"] == {"complaint": 0, "address": 0, "follow": 1}
+    assert independent["summary"] == {
+        "complaint": 0, "address": 0, "follow": 1, "address_recipient_pending": 0,
+    }
     assert independent["rows"][0]["id"] == follow_id
 
     db_override = app.dependency_overrides[get_db]()

@@ -290,9 +290,14 @@ def commit_import(db: Session, session_id: str, operator_id: Optional[int] = Non
         delivery_ids.append(rec.id)
         created += 1
 
+    # 历史名册若带有唯一来源单号，立即补齐真实订单/明细/收件目标关联。
+    from app.services.postal_renewal_service import link_exact_deliveries
+
+    link_result = link_exact_deliveries(db, delivery_ids=delivery_ids, commit=False)
     db.commit()
     return {
         "created": created,
         "delivery_ids": delivery_ids,
         "skipped_duplicates": skipped,
+        "linked_orders": link_result["linked"],
     }
