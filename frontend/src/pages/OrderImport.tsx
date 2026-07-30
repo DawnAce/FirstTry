@@ -29,7 +29,7 @@ import { ProductFormFields, PUBLICATION_OPTIONS, buildProductPayload } from './P
 import type { ProductFormValues } from './ProductForm';
 import { deliveryMethodLabel, formatCoverage, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
 import EcommerceRules from './ecommerceRules';
-import { PageHeader } from '../components/UiPrimitives';
+import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives';
 
 const { Text } = Typography;
 
@@ -428,28 +428,55 @@ export default function OrderImport() {
       )}
 
       <Drawer
-        title={drawerMode === 'quick' ? '加入商品库（已预填名称）' : `订单详情 · ${detailRow?.external_order_no ?? ''}`}
+        title={(
+          <DrawerTitle
+            icon={drawerMode === 'quick' ? '➕' : '📦'}
+            title={drawerMode === 'quick' ? '加入商品库' : '订单识别详情'}
+            description={drawerMode === 'quick'
+              ? '补齐商品后自动重新识别本次导入'
+              : `来源单号 ${detailRow?.external_order_no || '未记录'} · ${detailRow?.recipient_name || '未记录收件人'}`}
+            tone={drawerMode === 'quick' ? 'purple' : 'info'}
+            status={(
+              <StatusPill tone={drawerMode === 'quick' ? 'warning' : detailRow?.decision === 'import' ? 'success' : detailRow?.decision === 'unresolved' ? 'danger' : 'neutral'}>
+                {drawerMode === 'quick' ? '待补商品' : detailRow ? DECISION_META[detailRow.decision].label : '查看中'}
+              </StatusPill>
+            )}
+          />
+        )}
         open={drawerMode !== null}
         onClose={() => setDrawerMode(null)}
-        width={560}
-        extra={
-          drawerMode === 'quick' ? (
-            <Button type="primary" onClick={() => quickForm.submit()} loading={quickAddMutation.isPending}>保存并重新识别</Button>
-          ) : null
-        }
+        size={560}
+        rootClassName="app-drawer-root"
+        footer={(
+          <div className="app-drawer-footer">
+            <span className="app-drawer-footer-tip"><b>✓</b>{drawerMode === 'quick' ? '保存后自动刷新全部订单识别结果' : '这里只读展示本次导入判断'}</span>
+            <Button onClick={() => setDrawerMode(null)}>{drawerMode === 'quick' ? '取消' : '关闭'}</Button>
+            {drawerMode === 'quick' && <Button type="primary" onClick={() => quickForm.submit()} loading={quickAddMutation.isPending}>保存并重新识别</Button>}
+          </div>
+        )}
       >
         {drawerMode === 'quick' && (
-          <>
+          <div className="app-drawer-stack">
             <Alert type="info" style={{ marginBottom: 12 }} title="填好这一个商品并保存后，会自动重新预览——用到它的所有订单会一起变为「导入」。" />
-            <Form<ProductFormValues> form={quickForm} layout="vertical" onFinish={(v) => quickAddMutation.mutate(v)}>
-              <ProductFormFields editing={false} />
-            </Form>
-          </>
+            <div className="app-drawer-panel">
+              <h3><span aria-hidden>📦</span>商品信息</h3>
+              <Form<ProductFormValues> form={quickForm} layout="vertical" onFinish={(v) => quickAddMutation.mutate(v)}>
+                <ProductFormFields editing={false} />
+              </Form>
+            </div>
+          </div>
         )}
         {drawerMode === 'detail' && detailRow && (
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Text><b>收件人：</b>{detailRow.recipient_name}{' '}<b>付款：</b>¥{detailRow.paid_amount}</Text>
-            <Text><b>平台状态：</b>{detailRow.status_raw} → {detailRow.commercial_status ?? '-'}</Text>
+          <div className="app-drawer-stack">
+            <div className="app-drawer-hero">
+              <span className="app-drawer-avatar">{detailRow.recipient_name.slice(0, 1)}</span>
+              <div className="app-drawer-hero-copy">
+                <strong>{detailRow.recipient_name}</strong>
+                <span>实付 ¥{detailRow.paid_amount} · 平台状态 {detailRow.status_raw} → {detailRow.commercial_status ?? '-'}</span>
+              </div>
+            </div>
+            <div className="app-drawer-panel">
+              <h3><span aria-hidden>🔎</span>识别结果</h3>
             <Text><b>结果：</b>{DECISION_META[detailRow.decision].label}{detailRow.reason ? `（${detailRow.reason}）` : ''}</Text>
             {detailRow.delivery_overridden_to_zto && <Tag color="orange">投递已改中通，请核对</Tag>}
             {detailRow.items.length > 0 && (
@@ -464,7 +491,8 @@ export default function OrderImport() {
               </Card>
             )}
             <Text type="secondary" style={{ fontSize: 12 }}>导入后如需改起止日期/状态等，可到「订单管理 → 订单列表」对应订单详情页调整。</Text>
-          </Space>
+            </div>
+          </div>
         )}
       </Drawer>
     </div>

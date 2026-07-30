@@ -408,6 +408,170 @@ body {
   border-radius: var(--radius-card) 0 0 var(--radius-card) !important;
 }
 
+.app-drawer-root .ant-drawer-content-wrapper {
+  max-width: 100vw;
+  box-shadow: -18px 0 48px rgba(15, 23, 42, 0.13) !important;
+}
+
+.app-drawer-root .ant-drawer-header {
+  min-height: 86px;
+  padding: 18px 26px;
+  border-bottom: 1px solid #e6ebf2;
+  background: #fff;
+}
+
+.app-drawer-root .ant-drawer-title {
+  min-width: 0;
+}
+
+.app-drawer-root .ant-drawer-body {
+  padding: 20px 26px 28px;
+  background: #f7f9fc;
+}
+
+.app-drawer-root .ant-drawer-footer {
+  min-height: 68px;
+  padding: 14px 26px;
+  border-top: 1px solid #e6ebf2;
+  background: #fff;
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.app-drawer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.app-drawer-hero,
+.app-drawer-panel {
+  border: 1px solid #e3e9f1;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.app-drawer-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-color: #dfe9f5;
+  background: linear-gradient(135deg, #f7fbff, #eef6ff);
+}
+
+.app-drawer-hero-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.app-drawer-hero-copy > strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #182230;
+  font-size: 17px;
+}
+
+.app-drawer-hero-copy > span {
+  color: #6f7c8e;
+  font-size: 12px;
+}
+
+.app-drawer-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #4096ff, #1769cc);
+  box-shadow: 0 7px 16px rgba(23, 105, 204, 0.2);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.app-drawer-panel {
+  padding: 16px;
+}
+
+.app-drawer-panel > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 13px;
+  color: #293348;
+  font-size: 14px;
+}
+
+.app-drawer-panel > h3 > span {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+  background: #f1f6fc;
+}
+
+.app-drawer-root .ant-table-wrapper,
+.app-drawer-root .ant-descriptions-bordered,
+.app-drawer-root .ant-card {
+  overflow: hidden;
+  border: 1px solid #e3e9f1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.app-drawer-root .ant-table-wrapper .ant-table {
+  background: #fff;
+}
+
+.app-drawer-root .ant-table-wrapper .ant-table-thead > tr > th {
+  color: #657184;
+  font-size: 12px;
+  background: #f8fafc;
+}
+
+.app-drawer-root .ant-descriptions-bordered .ant-descriptions-item-label {
+  width: 128px;
+  color: #7c8798;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f8fafc !important;
+}
+
+.app-drawer-root .ant-descriptions-bordered .ant-descriptions-item-content {
+  color: #354052;
+  background: #fff;
+}
+
+.app-drawer-root .ant-form-item-label > label {
+  color: #657184;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.app-drawer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+}
+
+.app-drawer-footer-tip {
+  min-width: 0;
+  flex: 1;
+  color: #8994a5;
+  font-size: 12px;
+  text-align: left;
+}
+
+.app-drawer-footer-tip b {
+  margin-right: 5px;
+  color: #2f80ed;
+}
+
 /* ===== Timeline ===== */
 .ant-timeline-item-head {
   background: var(--color-accent) !important;
@@ -3175,6 +3339,451 @@ body {
   margin-bottom: 0;
 }
 
+/* Read-only address-change source opened from delivery detail. */
+.address-source-record-pill {
+  padding: 3px 9px;
+  border: 1px solid #e1daf8;
+  border-radius: var(--radius-tag);
+  color: #6b55a4;
+  background: #faf8ff;
+  font-size: 11px;
+}
+
+.address-source-review-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: var(--radius-tag);
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.address-source-content {
+  width: 100%;
+}
+
+.postal-ticket-row-pending > td {
+  background: var(--color-danger-soft) !important;
+}
+
+.postal-ticket-row-pending > td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+.address-allocation-section {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card);
+}
+
+.address-allocation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.address-allocation-heading strong {
+  font-size: 13px;
+}
+
+.address-allocation-heading span {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.address-allocation-source,
+.address-allocation-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+}
+
+.address-allocation-source {
+  background: var(--color-bg-subtle);
+}
+
+.address-allocation-source > div,
+.address-allocation-main {
+  min-width: 0;
+}
+
+.address-allocation-source strong,
+.address-allocation-main strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.address-allocation-source small,
+.address-allocation-main small {
+  display: block;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-allocation-main small.start {
+  color: #56667b;
+  font-weight: 600;
+}
+
+.address-allocation-source > b,
+.address-allocation-row > b {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.address-allocation-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--color-purple);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.address-allocation-avatar.original {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-muted);
+}
+
+.address-allocation-arrow {
+  height: 20px;
+  padding-left: 26px;
+  color: var(--color-text-secondary);
+  line-height: 20px;
+}
+
+.address-allocation-list {
+  display: grid;
+  gap: 7px;
+}
+
+.address-allocation-row.changed {
+  border-color: #ded4f7;
+  background: #faf8ff;
+}
+
+.address-allocation-row.retained {
+  border-color: #cde7d8;
+  background: var(--color-success-soft);
+}
+
+.address-allocation-row.retained .address-allocation-avatar {
+  background: var(--color-success);
+}
+
+.address-allocation-row.pending {
+  border-color: #f2aaa4;
+  background: var(--color-danger-soft);
+}
+
+.address-allocation-row.pending .address-allocation-avatar {
+  background: var(--color-danger);
+}
+
+.address-allocation-row.pending .start {
+  color: var(--color-danger);
+}
+
+.address-allocation-main .ant-tag {
+  margin: 0;
+  font-size: 10px;
+  line-height: 17px;
+}
+
+.address-allocation-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  font-size: 10px;
+}
+
+.address-allocation-progress {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-divider);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+}
+
+.address-allocation-progress > div {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #efd2d0;
+}
+
+.address-allocation-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-danger);
+}
+
+.address-allocation-progress.confirmed > div {
+  background: #dff1e7;
+}
+
+.address-allocation-progress.confirmed i {
+  background: var(--color-success);
+}
+
+.address-allocation-progress b {
+  color: var(--color-danger);
+  font-size: 11px;
+}
+
+.address-allocation-progress.confirmed b {
+  color: var(--color-success-text);
+}
+
+.address-resolve-form {
+  margin-top: 14px;
+}
+
+.address-resolve-options {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.address-resolve-options .ant-radio-wrapper {
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+}
+
+.address-resolve-options strong,
+.address-resolve-options small {
+  display: block;
+}
+
+.address-resolve-options strong {
+  font-size: 12px;
+}
+
+.address-resolve-options small {
+  margin-top: 3px;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+}
+
+.address-resolve-grid {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr 1fr;
+  gap: 8px;
+}
+
+.address-resolve-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.address-source-link-grid {
+  display: grid;
+  grid-template-columns: 1.45fr 1fr 1fr;
+  gap: 11px 12px;
+}
+
+.address-source-field {
+  min-width: 0;
+}
+
+.address-source-field > span {
+  display: block;
+  margin-bottom: 6px;
+  color: #657184;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.address-source-field > strong {
+  display: block;
+  min-height: 36px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid #dce3ec;
+  border-radius: 8px;
+  color: #354052;
+  background: #fbfcfe;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-source-field > strong.linked {
+  color: #1769cc;
+  background: #f8fbff;
+  font-weight: 600;
+}
+
+.address-source-field > strong.changed {
+  color: #6547b9;
+  font-weight: 600;
+}
+
+.address-form-card .address-source-field > strong {
+  min-height: 34px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.address-form-card .address-form-address > strong {
+  min-height: 55px;
+  white-space: normal;
+}
+
+.address-source-copy-flow {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #eadffc;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fcfbff, #faf8ff);
+}
+
+.address-source-copy-title {
+  padding-right: 12px;
+  border-right: 1px solid #e6e0f1;
+}
+
+.address-source-copy-title strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #354052;
+  font-size: 12px;
+}
+
+.address-source-copy-title small {
+  color: #8994a5;
+  font-size: 10px;
+}
+
+.address-source-copy-total {
+  color: #5e697a;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.address-source-copy-total b {
+  display: block;
+  margin-top: 2px;
+  color: #293348;
+  font-size: 16px;
+}
+
+.address-source-copy-results {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.address-source-copy-item {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.address-source-copy-item span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 10px;
+}
+
+.address-source-copy-item strong {
+  display: block;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-source-copy-item.moved {
+  color: #6547b9;
+  background: #eee8ff;
+}
+
+.address-source-copy-item.retained {
+  color: #24834f;
+  background: #eaf8f0;
+}
+
+.address-source-copy-item.pending {
+  color: #9a5c13;
+  background: #fff3df;
+}
+
+.address-source-copy-plus {
+  color: #a0a9b7;
+  font-weight: 700;
+}
+
+.address-source-copy-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+.address-source-copy-note.confirmed {
+  color: #4f7a61;
+}
+
+.address-source-copy-note.pending {
+  color: #8d651f;
+}
+
+.address-source-processing {
+  margin-bottom: 0;
+}
+
+.address-source-processing-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 12px;
+}
+
+.address-source-processing-grid .address-source-field > strong {
+  white-space: normal;
+}
+
 .follow-form-link-grid {
   grid-template-columns: 2fr 0.8fr;
 }
@@ -3245,36 +3854,6 @@ body {
   background: #eef1f5;
 }
 
-.postal-delivery-detail-drawer-root .ant-drawer-content-wrapper {
-  max-width: 100vw;
-}
-
-.postal-delivery-detail-drawer-root .ant-drawer-header {
-  min-height: 86px;
-  padding: 18px 26px;
-  background: #fff;
-}
-
-.postal-delivery-detail-drawer-root .ant-drawer-title {
-  min-width: 0;
-}
-
-.postal-delivery-detail-drawer-root .ant-drawer-body {
-  padding: 20px 26px 28px;
-  background: #f7f9fc;
-}
-
-.postal-delivery-detail-drawer-root .ant-drawer-footer {
-  min-height: 68px;
-  padding: 14px 26px;
-  background: #fff;
-  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.postal-detail-title {
-  width: 100%;
-}
-
 .postal-detail-body {
   display: flex;
   flex-direction: column;
@@ -3322,6 +3901,43 @@ body {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.postal-detail-reader-linked.unlinked {
+  color: var(--color-warning-text);
+}
+
+.postal-inline-link {
+  height: auto;
+  padding: 0;
+  font-weight: 600;
+}
+
+.postal-renewal-stats {
+  margin-bottom: 12px;
+}
+
+.postal-renewal-stat {
+  min-width: 150px;
+  flex: 1 1 150px;
+}
+
+.postal-renewal-stat .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.postal-renewal-stat strong {
+  font-size: 24px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.postal-renewal-warning {
+  margin-bottom: 12px;
+  border-color: #ffccc7;
+  background: #fff2f0;
 }
 
 .postal-detail-section {
@@ -3401,6 +4017,8 @@ body {
   .address-form-compare,
   .address-form-person-grid,
   .address-form-explain,
+  .address-source-link-grid,
+  .address-source-processing-grid,
   .follow-form-link-grid,
   .follow-form-communication-grid,
   .follow-next-actions {
@@ -3411,16 +4029,39 @@ body {
     display: none;
   }
 
-  .postal-delivery-detail-drawer-root .ant-drawer-header,
-  .postal-delivery-detail-drawer-root .ant-drawer-body,
-  .postal-delivery-detail-drawer-root .ant-drawer-footer {
+  .address-source-copy-flow,
+  .address-source-copy-results {
+    grid-template-columns: 1fr;
+  }
+
+  .address-source-copy-title {
+    padding: 0 0 8px;
+    border-right: 0;
+    border-bottom: 1px solid #e6e0f1;
+  }
+
+  .address-source-copy-plus,
+  .address-source-modal .complaint-form-status,
+  .address-source-review-status {
+    display: none;
+  }
+
+  .address-source-modal {
+    margin-inline: auto !important;
+  }
+
+  .app-drawer-root .ant-drawer-header,
+  .app-drawer-root .ant-drawer-body,
+  .app-drawer-root .ant-drawer-footer {
     padding-inline: 16px;
   }
 
-  .postal-detail-title .complaint-form-title-icon,
-  .postal-detail-title .complaint-form-status,
-  .postal-delivery-detail-drawer-root .complaint-form-save-tip {
+  .app-drawer-footer-tip {
     display: none;
+  }
+
+  .app-drawer-hero {
+    align-items: flex-start;
   }
 
   .postal-detail-grid {

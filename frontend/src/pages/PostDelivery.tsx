@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -7,7 +7,6 @@ import {
   Checkbox,
   DatePicker,
   Descriptions,
-  Divider,
   Drawer,
   Dropdown,
   Empty,
@@ -69,7 +68,7 @@ import {
   updateDelivery,
   updateFollowUp,
 } from '../api/postal';
-import { PageHeader } from '../components/UiPrimitives';
+import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives';
 import { coverageStatus, EXPIRING_DAYS } from './orderUtils';
 import type {
   AddrImportRow,
@@ -592,47 +591,60 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
   });
 
   return (
-    <Drawer title={editing ? '编辑投递记录' : '新增投递记录'} open={open} onClose={onClose}
-      width={720} destroyOnClose footer={(
-        <Flex justify="flex-end" gap={8}>
+    <Drawer title={(
+      <DrawerTitle
+        icon={editing ? '✏️' : '➕'}
+        title={editing ? '编辑投递记录' : '新增投递记录'}
+        description={editing ? `投递编号 ${editing.year}-${editing.delivery_no}` : '手工补录一条邮局投递台账'}
+        tone={editing ? 'purple' : 'info'}
+        status={<StatusPill tone={editing ? 'purple' : 'info'}>{editing ? '编辑模式' : '新记录'}</StatusPill>}
+      />
+    )} open={open} onClose={onClose} rootClassName="app-drawer-root"
+      size={720} destroyOnHidden footer={(
+        <div className="app-drawer-footer">
+          <span className="app-drawer-footer-tip"><b>✓</b>保存后立即更新投递明细与关联工单</span>
           <Button onClick={onClose}>取消</Button>
           <Button type="primary" loading={saveMut.isPending} onClick={() => form.submit()}>保存</Button>
-        </Flex>
+        </div>
       )}>
-      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
-        <Flex gap={12} wrap>
-          <Form.Item name="year" label="年度" rules={[{ required: true, message: '必填' }]} style={{ width: 120 }}>
-            <InputNumber style={{ width: '100%' }} min={2000} max={2100} />
-          </Form.Item>
-          <Form.Item name="delivery_no" label="编号" rules={[{ required: true, message: '必填' }]} style={{ width: 140 }}><Input /></Form.Item>
-          <Form.Item name="recipient_name" label="收报人" rules={[{ required: true, message: '必填' }]} style={{ width: 140 }}><Input /></Form.Item>
-          <Form.Item name="recipient_phone" label="电话" style={{ width: 160 }}><Input /></Form.Item>
-        </Flex>
-        <Flex gap={12} wrap>
-          <Form.Item name="recipient_province" label="省" style={{ width: 110 }}><Input /></Form.Item>
-          <Form.Item name="recipient_city" label="市" style={{ width: 110 }}><Input /></Form.Item>
-          <Form.Item name="recipient_district" label="区" style={{ width: 110 }}><Input /></Form.Item>
-          <Form.Item name="recipient_postal_code" label="邮编" style={{ width: 110 }}><Input /></Form.Item>
-        </Flex>
-        <Form.Item name="recipient_address" label="详细地址" rules={[{ required: true, message: '必填' }]}><Input /></Form.Item>
-        <Flex gap={12} wrap>
-          <Form.Item name="product" label="产品" style={{ width: 160 }}><Input /></Form.Item>
-          <Form.Item name="copies" label="份数" style={{ width: 100 }}><InputNumber style={{ width: '100%' }} min={1} /></Form.Item>
-          <Form.Item name="amount" label="金额" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={0} precision={2} /></Form.Item>
-          <Form.Item name="coverage_start_date" label="起投日期" style={{ width: 150 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
-          <Form.Item name="coverage_end_date" label="止投日期" style={{ width: 150 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
-        </Flex>
-        <Flex gap={12} wrap>
-          <Form.Item name="source_channel" label="订单来源" style={{ width: 170 }}>
-            <Select allowClear options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
-          </Form.Item>
-          <Form.Item name="distribution_unit_id" label="投递单位" style={{ width: 190 }}>
-            <Select allowClear showSearch optionFilterProp="label" options={unitOpts} />
-          </Form.Item>
-          <Form.Item name="salesperson" label="业务员" style={{ width: 120 }}><Input /></Form.Item>
-          <Form.Item name="remittance_name" label="汇款名" style={{ width: 150 }}><Input /></Form.Item>
-        </Flex>
-        <Form.Item name="external_order_no" label="来源单号（可选）"><Input placeholder="原平台订单号" /></Form.Item>
+      <Form form={form} layout="vertical" className="complaint-form app-drawer-stack" onFinish={(v) => saveMut.mutate(v)}>
+        <section className="complaint-form-section">
+          <h3><span aria-hidden>👤</span>读者与地址</h3>
+          <Flex gap={12} wrap>
+            <Form.Item name="year" label="年度" rules={[{ required: true, message: '必填' }]} style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={2000} max={2100} /></Form.Item>
+            <Form.Item name="delivery_no" label="编号" rules={[{ required: true, message: '必填' }]} style={{ width: 140 }}><Input /></Form.Item>
+            <Form.Item name="recipient_name" label="收报人" rules={[{ required: true, message: '必填' }]} style={{ width: 140 }}><Input /></Form.Item>
+            <Form.Item name="recipient_phone" label="电话" style={{ width: 160 }}><Input /></Form.Item>
+          </Flex>
+          <Flex gap={12} wrap>
+            <Form.Item name="recipient_province" label="省" style={{ width: 110 }}><Input /></Form.Item>
+            <Form.Item name="recipient_city" label="市" style={{ width: 110 }}><Input /></Form.Item>
+            <Form.Item name="recipient_district" label="区" style={{ width: 110 }}><Input /></Form.Item>
+            <Form.Item name="recipient_postal_code" label="邮编" style={{ width: 110 }}><Input /></Form.Item>
+          </Flex>
+          <Form.Item name="recipient_address" label="详细地址" rules={[{ required: true, message: '必填' }]}><Input /></Form.Item>
+        </section>
+        <section className="complaint-form-section">
+          <h3><span aria-hidden>🗓️</span>订阅信息</h3>
+          <Flex gap={12} wrap>
+            <Form.Item name="product" label="产品" style={{ width: 160 }}><Input /></Form.Item>
+            <Form.Item name="copies" label="份数" style={{ width: 100 }}><InputNumber style={{ width: '100%' }} min={1} /></Form.Item>
+            <Form.Item name="amount" label="金额" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={0} precision={2} /></Form.Item>
+            <Form.Item name="coverage_start_date" label="起投日期" style={{ width: 150 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+            <Form.Item name="coverage_end_date" label="止投日期" style={{ width: 150 }}><DatePicker style={{ width: '100%' }} /></Form.Item>
+          </Flex>
+        </section>
+        <section className="complaint-form-section">
+          <h3><span aria-hidden>💼</span>订单来源与业务</h3>
+          <Flex gap={12} wrap>
+            <Form.Item name="source_channel" label="订单来源" style={{ width: 170 }}><Select allowClear options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} /></Form.Item>
+            <Form.Item name="distribution_unit_id" label="投递单位" style={{ width: 190 }}><Select allowClear showSearch optionFilterProp="label" options={unitOpts} /></Form.Item>
+            <Form.Item name="salesperson" label="业务员" style={{ width: 120 }}><Input /></Form.Item>
+            <Form.Item name="remittance_name" label="汇款名" style={{ width: 150 }}><Input /></Form.Item>
+          </Flex>
+          <Form.Item name="external_order_no" label="来源单号（可选）"><Input placeholder="原平台订单号" /></Form.Item>
+          <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>来源单号与订单管理口径一致，均指原平台订单号。</span></div>
+        </section>
       </Form>
     </Drawer>
   );
@@ -647,6 +659,7 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
   onDelete: (record: PostalDelivery) => void;
   onOpenAddressChange: (id: number) => void;
 }) {
+  const navigate = useNavigate();
   const source = record?.source_type ? POSTAL_SOURCE_META[record.source_type] : null;
   const changesQ = useQuery({
     queryKey: ['postalTickets', 'delivery-applied-changes', record?.id],
@@ -662,17 +675,15 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
     : statusKey === 'pending' ? 'status-open'
       : statusKey === 'expiring' ? 'status-address' : 'status-completed';
   return (
-    <Drawer title={record ? (
-      <div className="complaint-form-title postal-detail-title">
-        <span className="complaint-form-title-icon" aria-hidden>📬</span>
-        <div className="complaint-form-title-copy">
-          <strong>投递记录详情</strong>
-          <div className="complaint-form-meta">投递编号 {record.year}-{record.delivery_no}</div>
-        </div>
-        <span className={`complaint-form-status ${statusClass}`}>{statusMeta.label}</span>
-      </div>
-    ) : '投递记录详情'} open={record != null} onClose={onClose} width={720} destroyOnClose
-      rootClassName="postal-delivery-detail-drawer-root"
+    <Drawer title={(
+      <DrawerTitle
+        icon="📬"
+        title="投递记录详情"
+        description={record ? `投递编号 ${record.year}-${record.delivery_no}` : '邮局投递台账'}
+        status={record ? <span className={`complaint-form-status ${statusClass}`}>{statusMeta.label}</span> : undefined}
+      />
+    )} open={record != null} onClose={onClose} size={720} destroyOnHidden
+      rootClassName="app-drawer-root"
       extra={isAdmin && record ? <Button icon={<EditOutlined />} onClick={() => onEdit(record)}>编辑记录</Button> : null}
       footer={record ? (
         <div className="complaint-form-footer">
@@ -693,7 +704,9 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
               <strong>{record.recipient_name}</strong>
               <span>{record.recipient_phone || '未记录电话'} · {record.product || '未记录产品'}</span>
             </div>
-            <span className="postal-detail-reader-linked">✓ 读者已关联</span>
+            <span className={`postal-detail-reader-linked${record.order_id ? '' : ' unlinked'}`}>
+              {record.order_id ? '✓ 来源订单已关联' : '尚未关联来源订单'}
+            </span>
           </div>
 
           <section className="complaint-form-section postal-detail-section">
@@ -724,6 +737,9 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
           <section className="complaint-form-section postal-detail-section">
             <h3><span aria-hidden>💼</span>订单来源与业务</h3>
             <div className="postal-detail-grid">
+              <div className="postal-detail-field"><span>来源系统订单</span><strong>{record.order_id
+                ? <Button type="link" className="postal-inline-link" onClick={() => navigate(`/orders/${record.order_id}`)}>{`订单 #${record.order_id}`}</Button>
+                : <Tag>未关联</Tag>}</strong></div>
               <div className="postal-detail-field"><span>订单来源</span><strong>{record.source_channel || '未记录'}</strong></div>
               <div className="postal-detail-field"><span>来源单号</span><strong className={!record.external_order_no ? 'muted' : ''}>{record.external_order_no || '未记录'}</strong></div>
               <div className="postal-detail-field"><span>金额</span><strong>{record.amount != null ? `¥${record.amount}` : '未记录'}</strong></div>
@@ -731,7 +747,7 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
               <div className="postal-detail-field"><span>汇款名</span><strong className={!record.remittance_name ? 'muted' : ''}>{record.remittance_name || '未填写'}</strong></div>
               <div className="postal-detail-field"><span>录入方式</span><strong>{source ? <Tag color={source.color}>{source.label}</Tag> : '未记录'}</strong></div>
             </div>
-            <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>来源单号用于记录原平台订单号；未摘抄时可保持为空。</span></div>
+            <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>来源单号是原平台单号；“来源系统订单”表示已经补齐内部正式关联。</span></div>
           </section>
         </div>
       )}
@@ -947,10 +963,26 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
   const c = detail?.complaint;
 
   return (<>
-    <Drawer title="投诉详情" width={640} open={open} onClose={onClose} destroyOnClose>
+    <Drawer title={(
+      <DrawerTitle
+        icon="📣"
+        title="投诉详情"
+        description={c ? `${c.snap_name || '未记录收报人'} · 编号 ${c.external_order_no || '未记录'}` : '邮局投诉工单'}
+        tone="warning"
+        status={c ? <StatusPill tone={c.status === 'resolved' ? 'success' : c.status === 'in_progress' ? 'info' : 'warning'}>{COMPLAINT_STATUS_META[c.status].label}</StatusPill> : undefined}
+      />
+    )} size={640} open={open} onClose={onClose} destroyOnHidden rootClassName="app-drawer-root"
+      footer={(
+        <div className="app-drawer-footer">
+          <span className="app-drawer-footer-tip"><b>✓</b>处理记录和回访按时间写入工单时间线</span>
+          <Button type="primary" onClick={onClose}>关闭</Button>
+        </div>
+      )}>
       {!c ? <Empty description={detailQ.isLoading ? '加载中…' : (detailQ.isError ? errText(detailQ.error) : '无数据')} /> : (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Descriptions size="small" column={1} bordered items={[
+        <div className="app-drawer-stack">
+          <section className="app-drawer-panel">
+            <h3><span aria-hidden>📋</span>投诉信息</h3>
+            <Descriptions size="small" column={1} bordered items={[
             { key: 's', label: '状态', children: <Tag color={COMPLAINT_STATUS_META[c.status].color}>{COMPLAINT_STATUS_META[c.status].label}</Tag> },
             { key: 'date', label: '接诉日期', children: c.complaint_date || '—' },
             { key: 'source', label: '投诉来源', children: c.complaint_source || '—' },
@@ -965,7 +997,8 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
             { key: 'first', label: '第一接诉人', children: c.first_handler || '—' },
             { key: 'cnt', label: '处理次数', children: c.handling_count ?? 0 },
             { key: 'notes', label: '备注', children: c.notes || '—' },
-          ]} />
+            ]} />
+          </section>
 
           {isAdmin && (
             <Card size="small" title="登记一次处理">
@@ -982,8 +1015,8 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
             </Card>
           )}
 
-          <div>
-            <Divider plain style={{ marginTop: 0 }}>工单时间线</Divider>
+          <section className="app-drawer-panel">
+            <h3><span aria-hidden>🕘</span>工单时间线</h3>
             {(detail?.handlings.length ?? 0) === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无处理记录" />
             ) : (
@@ -1005,8 +1038,8 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
                 ),
               }))} />
             )}
-          </div>
-        </Space>
+          </section>
+        </div>
       )}
     </Drawer>
     <FollowUpFormModal
@@ -1141,8 +1174,8 @@ function AddressChangeFormModal({ open, editing, prefill, onClose }: {
             <Form.Item name="change_date" label="变更登记时间">
               <DatePicker showTime={{ format: 'HH:mm' }} format="YYYY-MM-DD HH:mm" />
             </Form.Item>
-            <Form.Item name="original_start_month" label="原起月日"><Input /></Form.Item>
-            <Form.Item name="effective_start_month" label="实际起月日"><Input /></Form.Item>
+            <Form.Item name="original_start_month" label="原起投时间（月日）"><Input placeholder="如 0101" /></Form.Item>
+            <Form.Item name="effective_start_month" label="变更后起投时间（月日）"><Input placeholder="如 0401" /></Form.Item>
           </div>
           <div className="complaint-form-source-note"><span aria-hidden>✓</span><span>已从投递明细带入当前名册信息；保存工单不会立即改写名册</span></div>
         </section>
@@ -1375,58 +1408,159 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
     onError: (e) => message.error(errText(e)),
   });
   const a = q.data;
+  const sourceYear = a?.external_order_no?.match(/^(\d{4})-/)?.[1]
+    || (a?.change_date ? dayjs(a.change_date).format('YYYY') : null);
   const extra = a && (readOnly || a.applied_to_order
     ? <Text type="secondary">{a.applied_to_order ? '已应用 · 只读' : '只读查看'}</Text>
     : isAdmin ? <Button icon={<EditOutlined />} onClick={() => onEdit(a)}>编辑</Button> : null);
   const content = !a ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <div className="diff-row" style={{ display: 'flex', gap: 12 }}>
-            <Card size="small" title="原" style={{ flex: 1, background: 'var(--color-bg-subtle)' }}>
-              <div>{a.old_name || '—'}{a.old_phone ? ` / ${a.old_phone}` : ''}</div>
-              <div style={{ color: 'var(--color-text-tertiary)' }}>{a.old_address || '—'}</div>
-              {a.old_copies != null && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>份数 {a.old_copies}</div>}
-            </Card>
-            <Card size="small" title="新" style={{ flex: 1, background: 'var(--color-success-soft)', borderColor: 'var(--color-success)' }}>
-              <div>{a.new_name || '—'}{a.new_phone ? ` / ${a.new_phone}` : ''}</div>
-              <div style={{ color: 'var(--color-success-text)' }}>{a.new_address || '—'}</div>
-              {a.new_copies != null && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>份数 {a.new_copies}</div>}
-            </Card>
-          </div>
-          <Descriptions size="small" column={1} bordered items={[
-            { key: 'date', label: '修改时间', children: a.change_date ? dayjs(a.change_date).format('YYYY-MM-DD HH:mm') : '—' },
-            { key: 'st', label: '起月日', children: `${a.original_start_month || '—'} → ${a.effective_start_month || '—'}` },
-            { key: 'h', label: '处理情况', children: a.handling || (a.routed_label ? <Tag>{a.routed_label}</Tag> : '—') },
-            { key: 'r', label: '关联读者', children: readerTag(a.postal_delivery_id) },
-            { key: 'no', label: '编号', children: a.external_order_no || '—' },
-            { key: 'ap', label: '应用状态', children: a.applied_to_order
-                ? <Tag color="green">已应用{a.order_id ? '·已同步履约订单' : '·仅名册'}</Tag>
-                : (a.postal_delivery_id ? <Tag color="orange">待应用</Tag> : <Tag>未匹配（未关联读者）</Tag>) },
-          ]} />
-          {isAdmin && !readOnly && !a.applied_to_order && (
-            <Popconfirm
-              title="应用收件信息变更？"
-              description={a.postal_delivery_id
-                ? '把变更后的姓名、电话、地址和份数写回投递明细' + (a.order_id ? '，并同步该读者在履约的订单。' : '（该读者未挂订单，仅更新名册）。')
-                : '该工单未关联投递记录，无法应用（请先导入读者名册）。'}
-              okText="应用" onConfirm={() => applyMut.mutate()} disabled={!a.postal_delivery_id}
-            >
-              <Button type="primary" loading={applyMut.isPending} disabled={!a.postal_delivery_id}>✅ 应用变更</Button>
-            </Popconfirm>
-          )}
-          {a.notes && <Text type="secondary">备注：{a.notes}</Text>}
+      <div className="diff-row" style={{ display: 'flex', gap: 12 }}>
+        <Card size="small" title="变更前" style={{ flex: 1, background: 'var(--color-bg-subtle)' }}>
+          <div>{a.old_name || '—'}{a.old_phone ? ` / ${a.old_phone}` : ''}</div>
+          <div style={{ color: 'var(--color-text-tertiary)' }}>{a.old_address || '—'}</div>
+          {a.old_copies != null && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>份数 {a.old_copies}</div>}
+        </Card>
+        <Card size="small" title="变更后" style={{ flex: 1, background: 'var(--color-success-soft)', borderColor: 'var(--color-success)' }}>
+          <div>{a.new_name || a.old_name || '—'}{(a.new_phone || a.old_phone) ? ` / ${a.new_phone || a.old_phone}` : ''}</div>
+          <div style={{ color: 'var(--color-success-text)' }}>{a.new_address || a.old_address || '—'}</div>
+          {(a.new_copies ?? a.old_copies) != null && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>份数 {a.new_copies ?? a.old_copies}</div>}
+        </Card>
+      </div>
+      <Descriptions size="small" column={1} bordered items={[
+        { key: 'date', label: '变更登记时间', children: a.change_date ? dayjs(a.change_date).format('YYYY-MM-DD HH:mm') : '—' },
+        { key: 'st', label: '起月日', children: `${a.original_start_month || '—'} → ${a.effective_start_month || '—'}` },
+        { key: 'h', label: '处理情况', children: a.handling || a.routed_label || '—' },
+        { key: 'r', label: '关联读者', children: readerTag(a.postal_delivery_id) },
+        { key: 'no', label: '编号', children: a.external_order_no || '—' },
+        { key: 'ap', label: '应用状态', children: a.applied_to_order
+            ? <Tag color="green">已应用{a.order_id ? '·已同步履约订单' : '·仅名册'}</Tag>
+            : (a.postal_delivery_id ? <Tag color="orange">待应用</Tag> : <Tag>未匹配（未关联读者）</Tag>) },
+        { key: 'notes', label: '备注', children: a.notes || '—' },
+      ]} />
+      {isAdmin && !readOnly && !a.applied_to_order && (
+        <Popconfirm title="应用收件信息变更？" description="把变更后的收件信息写回投递明细。"
+          okText="应用" onConfirm={() => applyMut.mutate()} disabled={!a.postal_delivery_id}>
+          <Button type="primary" loading={applyMut.isPending} disabled={!a.postal_delivery_id}>应用变更</Button>
+        </Popconfirm>
+      )}
     </Space>
   );
+  const sourceContent = !a ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
+    <div className="address-source-content">
+      <section className="complaint-form-section">
+        <h3><span aria-hidden>🔗</span>关联与生效</h3>
+        <div className="address-source-link-grid">
+          <div className="address-source-field">
+            <span>关联读者</span>
+            <strong className="linked">{a.new_name || a.old_name || '读者'} · {a.external_order_no || '编号未填'}</strong>
+          </div>
+          <div className="address-source-field">
+            <span>变更登记时间</span>
+            <strong>{a.change_date ? dayjs(a.change_date).format('YYYY-MM-DD HH:mm') : '—'}</strong>
+          </div>
+          <div className="address-source-field">
+            <span>实际起月日</span>
+            <strong>{a.effective_start_month || '—'}</strong>
+          </div>
+        </div>
+        <div className="complaint-form-source-note">
+          <span aria-hidden>✓</span>
+          <span>{a.applied_to_order
+            ? <>该工单{a.applied_at ? <>已于 <b>{dayjs(a.applied_at).format('YYYY-MM-DD')}</b> </> : '已'}应用到投递名册；当前仅用于追溯，不可在此修改</>
+            : <>该工单尚未应用到投递名册；当前为只读查看</>}</span>
+        </div>
+      </section>
+
+      <section className="complaint-form-section">
+        <h3><span aria-hidden>↔️</span>变更前后对比</h3>
+        <div className="address-form-compare">
+          <div className="address-form-card before">
+            <div className="address-form-card-head"><strong>变更前</strong>应用前的名册快照</div>
+            <div className="address-form-person-grid">
+              <div className="address-source-field"><span>姓名</span><strong>{a.old_name || '—'}</strong></div>
+              <div className="address-source-field"><span>电话</span><strong>{a.old_phone || '—'}</strong></div>
+              <div className="address-source-field"><span>份数</span><strong>{a.old_copies ?? '—'}</strong></div>
+            </div>
+            <div className="address-source-field address-form-address"><span>地址</span><strong>{a.old_address || '—'}</strong></div>
+          </div>
+          <div className="address-form-card after">
+            <div className="address-form-card-head"><strong>变更后</strong>已应用到当前名册</div>
+            <div className="address-form-person-grid">
+              <div className="address-source-field"><span>姓名</span><strong className="changed">{a.new_name || a.old_name || '—'}</strong></div>
+              <div className="address-source-field"><span>电话</span><strong className="changed">{a.new_phone || a.old_phone || '—'}</strong></div>
+              <div className="address-source-field"><span>份数</span><strong className="changed">{a.new_copies ?? a.old_copies ?? '—'}</strong></div>
+            </div>
+            <div className="address-source-field address-form-address"><span>地址</span><strong className="changed">{a.new_address || a.old_address || '—'}</strong></div>
+          </div>
+        </div>
+
+        <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>紫色文字为本次实际变更内容，右侧资料与当前投递详情一致</span></div>
+      </section>
+
+      <section className="complaint-form-section address-source-processing">
+        <h3><span aria-hidden>📝</span>处理说明</h3>
+        <div className="address-source-processing-grid">
+          <div className="address-source-field"><span>处理情况</span><strong>{a.handling || a.routed_label || '—'}</strong></div>
+          <div className="address-source-field"><span>备注</span><strong>{a.notes || '—'}</strong></div>
+        </div>
+      </section>
+    </div>
+  );
   if (modal) return (
-    <Modal title={<Space>收件信息变更工单{extra}</Space>} width={680} open={open} onCancel={onClose}
-      footer={<Button onClick={onClose}>关闭</Button>} destroyOnClose mask={false} zIndex={1100}
-      style={{ top: 72, marginLeft: 40, marginRight: 'auto' }}>
-      <div style={{ maxHeight: 'calc(100vh - 210px)', overflowY: 'auto', paddingRight: 4 }}>{content}</div>
-    </Modal>
+    <><Modal
+      title={a ? (
+        <div className="complaint-form-title">
+          <span className="complaint-form-title-icon" aria-hidden>📬</span>
+          <div className="complaint-form-title-copy">
+            <strong>收件信息变更记录</strong>
+            <div className="complaint-form-meta">
+              <span>{sourceYear ? `${sourceYear} 年度` : '年度未填'}</span><i>·</i>
+              <span>{a.external_order_no ? `编号 ${a.external_order_no}` : '编号未填'}</span><i>·</i>
+              <span className="address-source-record-pill">修改记录 #{a.id}</span>
+            </div>
+          </div>
+          <span className={`complaint-form-status ${a.applied_to_order ? 'status-resolved' : 'status-address'}`}>
+            {a.applied_to_order ? '已应用' : '待应用'}
+          </span>
+        </div>
+      ) : '收件信息变更记录'}
+      width={900}
+      open={open}
+      onCancel={onClose}
+      className="complaint-form-modal address-form-modal address-source-modal"
+      rootClassName="complaint-form-modal-root"
+      footer={(
+        <div className="complaint-form-footer">
+          <span className="complaint-form-save-tip"><b>🔒</b>只读查看；不会改变当前投递详情或原工单</span>
+          <Button onClick={onClose}>关闭</Button>
+        </div>
+      )}
+      destroyOnClose
+      zIndex={1100}
+      style={{ top: 24, marginLeft: 40, marginRight: 'auto' }}
+    >
+      {sourceContent}
+    </Modal></>
   );
   return (
-    <Drawer title="收件信息变更工单" width={560} open={open} onClose={onClose} destroyOnClose extra={extra}>
+    <><Drawer title={(
+      <DrawerTitle
+        icon="📝"
+        title="收件信息变更工单"
+        description={a ? `${a.old_name || a.new_name || '未记录收报人'} · 编号 ${a.external_order_no || '未记录'}` : '查看修改前后信息'}
+        tone="purple"
+        status={a ? <StatusPill tone={a.applied_to_order ? 'success' : a.postal_delivery_id ? 'warning' : 'neutral'}>{a.applied_to_order ? '已应用' : a.postal_delivery_id ? '待应用' : '未匹配'}</StatusPill> : undefined}
+      />
+    )} size={560} open={open} onClose={onClose} destroyOnHidden extra={extra} rootClassName="app-drawer-root"
+      footer={(
+        <div className="app-drawer-footer">
+          <span className="app-drawer-footer-tip"><b>✓</b>已应用工单保持只读，修改记录可追溯</span>
+          <Button type="primary" onClick={onClose}>关闭</Button>
+        </div>
+      )}>
       {content}
-    </Drawer>
+    </Drawer></>
   );
 }
 
@@ -1443,8 +1577,22 @@ function FollowDetailDrawer({ followId, onEdit, onClose }: {
   });
   const f = q.data;
   return (
-    <Drawer title="回访记录" width={480} open={open} onClose={onClose} destroyOnClose
-      extra={isAdmin && f && <Button icon={<EditOutlined />} onClick={() => onEdit(f)}>编辑</Button>}>
+    <Drawer title={(
+      <DrawerTitle
+        icon="💬"
+        title="回访记录"
+        description={f ? `${f.snap_name || '未记录收报人'} · 编号 ${f.external_order_no || '未记录'}` : '客户沟通留痕'}
+        tone="success"
+        status={<StatusPill tone="success">回访留痕</StatusPill>}
+      />
+    )} size={480} open={open} onClose={onClose} destroyOnHidden rootClassName="app-drawer-root"
+      extra={isAdmin && f && <Button icon={<EditOutlined />} onClick={() => onEdit(f)}>编辑</Button>}
+      footer={(
+        <div className="app-drawer-footer">
+          <span className="app-drawer-footer-tip"><b>✓</b>沟通内容与结果独立留存</span>
+          <Button type="primary" onClick={onClose}>关闭</Button>
+        </div>
+      )}>
       {!f ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
         <Descriptions size="small" column={1} bordered items={[
           { key: 'd', label: '回访日期', children: f.follow_up_date || '—' },
