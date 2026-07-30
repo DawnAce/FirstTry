@@ -400,19 +400,22 @@ function DeliveriesTab() {
   });
 
   const cols: TableColumnsType<PostalDelivery> = [
-    { title: '读者', key: 'reader', width: 150, render: (_: unknown, r) => (
-      <Space direction="vertical" size={0}>
-        <Text strong>{r.recipient_name}</Text>
-        <Text type="secondary" className="postal-cell-secondary">{r.year}-{r.delivery_no}</Text>
+    { title: '编号', key: 'delivery_no', width: 120, render: (_: unknown, r) => (
+      <Text className="postal-delivery-number">{r.year}-{r.delivery_no}</Text>
+    ) },
+    { title: '收报人', key: 'reader', width: 160, render: (_: unknown, r) => (
+      <Space direction="vertical" size={0} className="postal-reader-cell">
+        <Text strong className="postal-reader-name">{r.recipient_name}</Text>
+        <Text type="secondary" className="postal-cell-secondary postal-reader-phone">{r.recipient_phone || '未记录电话'}</Text>
       </Space>
     ) },
     { title: '地址', key: 'addr', render: (_: unknown, r) => (
-      <Space direction="vertical" size={0} style={{ maxWidth: 380 }}>
+      <Space direction="vertical" size={0} className="postal-address-cell">
         <Text strong>{[r.recipient_province, r.recipient_city, r.recipient_district].filter(Boolean).join(' · ') || '—'}</Text>
         <Text type="secondary" className="postal-cell-secondary" ellipsis>{r.recipient_address}</Text>
       </Space>
     ) },
-    { title: '订阅', key: 'coverage', width: 150, render: (_: unknown, r) => (
+    { title: '订阅', key: 'coverage', width: 170, render: (_: unknown, r) => (
       <Space direction="vertical" size={0}>
         <Space size={4}><Text>{r.copies} 份</Text>{deliveryStatusTag(r)}</Space>
         <Text type="secondary" className="postal-cell-secondary">
@@ -421,11 +424,13 @@ function DeliveriesTab() {
         {expiryDays(r) != null && <Text className="postal-expiry-countdown">剩 {expiryDays(r)} 天</Text>}
       </Space>
     ) },
-    { title: '订单来源 / 投递单位', key: 'fulfillment', width: 190, render: (_: unknown, r) => (
-      <Space direction="vertical" size={0}>
-        <Text>{r.source_channel || '—'}</Text>
-        <Text type="secondary" className="postal-cell-secondary">{r.distribution_unit_name || '待补投递单位'}</Text>
-      </Space>
+    { title: '投递单位', key: 'distribution_unit', width: 180, render: (_: unknown, r) => (
+      r.distribution_unit_name
+        ? <Text className="postal-distribution-unit">{r.distribution_unit_name}</Text>
+        : <Tag color="orange" className="postal-unit-missing">待补投递单位</Tag>
+    ) },
+    { title: '订单来源', key: 'source_channel', width: 150, render: (_: unknown, r) => (
+      r.source_channel ? <span className="postal-source-pill">{r.source_channel}</span> : <Text type="secondary">—</Text>
     ) },
     { title: '操作', key: 'act', width: 72, align: 'right', render: (_: unknown, r) => (
       <Button type="link" size="small" onClick={() => setDetail(r)}>查看</Button>
@@ -443,7 +448,7 @@ function DeliveriesTab() {
         </Space>}
       />
       <Flex className="postal-toolbar" wrap gap={8}>
-        <Input.Search allowClear placeholder="搜索姓名、编号或地址" style={{ width: 300 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
+        <Input.Search allowClear placeholder="搜索姓名、电话、编号或地址" style={{ width: 300 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); if (v == null) setMonth(undefined); setPage(1); }} options={YEAR_OPTS} />
         <Select allowClear placeholder="订单来源" style={{ width: 150 }} value={channel} onChange={(v) => { setChannel(v); setPage(1); }} options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
         <Select allowClear placeholder="订阅状态" className={status === 'expiring' ? 'postal-status-filter-expiring' : undefined}
@@ -479,7 +484,7 @@ function DeliveriesTab() {
           </>}
         </div>
         <Table<PostalDelivery> rowKey="id" columns={cols} dataSource={q.data?.rows ?? []} loading={q.isLoading} size="small"
-          scroll={{ x: 900 }}
+          scroll={{ x: 1100 }}
           pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条投递记录`, showSizeChanger: false }} />
       </Card>
       <ReaderImportModal open={importOpen} onClose={() => setImportOpen(false)} />
