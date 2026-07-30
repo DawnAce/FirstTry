@@ -4,7 +4,7 @@ In-memory SQLite + TestClient，覆盖 get_db / get_current_user / require_admin
 与 test_postal_api 同风格（模型 create_all，不跑迁移；三态枚举随 model 自动可用）。
 """
 
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -83,6 +83,38 @@ def test_delivery_summary(client):
     assert s["total_copies"] == 5
     assert s["unit_count"] == 1
     assert s["missing_unit_count"] == 1
+
+
+def test_delivery_status_filter_uses_30_day_window_and_expiry_order(client):
+    today = date.today()
+    cases = [
+        ("8101", today - timedelta(days=100), today + timedelta(days=5), 1),
+        ("8102", today - timedelta(days=100), today + timedelta(days=30), 2),
+        ("8103", today - timedelta(days=100), today + timedelta(days=31), 1),
+        ("8104", today + timedelta(days=1), today + timedelta(days=100), 1),
+        ("8105", today - timedelta(days=100), today - timedelta(days=1), 1),
+    ]
+    for no, start, end, copies in cases:
+        response = client.post("/api/postal/deliveries", json={
+            "year": today.year,
+            "delivery_no": no,
+            "recipient_name": f"读者{no}",
+            "recipient_address": "测试地址",
+            "coverage_start_date": start.isoformat(),
+            "coverage_end_date": end.isoformat(),
+            "copies": copies,
+        })
+        assert response.status_code == 201, response.text
+
+    expiring = client.get("/api/postal/deliveries", params={"status": "expiring"}).json()
+    assert expiring["total"] == 2
+    assert [row["delivery_no"] for row in expiring["rows"]] == ["8101", "8102"]
+    assert expiring["summary"]["total_copies"] == 3
+    assert expiring["summary"]["nearest_expiry_date"] == (today + timedelta(days=5)).isoformat()
+    assert client.get("/api/postal/deliveries", params={"status": "active"}).json()["total"] == 1
+    assert client.get("/api/postal/deliveries", params={"status": "pending"}).json()["total"] == 1
+    assert client.get("/api/postal/deliveries", params={"status": "completed"}).json()["total"] == 1
+    assert client.get("/api/postal/deliveries", params={"status": "bad"}).status_code == 400
 
 
 # --- 投递明细 --------------------------------------------------------
@@ -303,12 +335,12 @@ def test_address_change_crud(client):
 
 
 def test_applied_address_change_cannot_be_edited_or_deleted(client):
-    client.post("/api/postal/deliveries", json={
+    delivery = client.post("/api/postal/deliveries", json={
         "year": 2026,
         "delivery_no": "901",
         "recipient_name": "锁定前姓名",
         "recipient_address": "北京市旧地址",
-    })
+    }).json()
     created = client.post("/api/postal/tickets", json={
         "type": "address",
         "year": 2026,
@@ -340,6 +372,15 @@ def test_applied_address_change_cannot_be_edited_or_deleted(client):
     assert saved["applied_to_order"] is True
     assert saved["new_name"] == "锁定后姓名"
     assert saved["new_address"] == "北京市新地址"
+
+    linked = client.get("/api/postal/tickets", params={
+        "type": "address", "applied": True, "postal_delivery_id": delivery["id"],
+    }).json()
+    assert linked["total"] == 1
+    assert linked["rows"][0]["id"] == change_id
+    assert client.get("/api/postal/tickets", params={
+        "type": "address", "applied": True, "postal_delivery_id": delivery["id"] + 999,
+    }).json()["total"] == 0
 
 
 def test_follow_up_crud(client):

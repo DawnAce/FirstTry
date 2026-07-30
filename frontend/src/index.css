@@ -2709,8 +2709,84 @@ body {
   margin-bottom: 12px;
 }
 
+.postal-active-filters {
+  min-height: 28px;
+  margin: -4px 0 10px;
+  font-size: 12px;
+}
+
+.postal-status-filter-expiring .ant-select-selector {
+  border-color: #ffd591 !important;
+  background: var(--color-warning-soft) !important;
+}
+
+.postal-status-filter-expiring .ant-select-selection-item {
+  color: var(--color-warning-text);
+  font-weight: 600;
+}
+
 .postal-cell-secondary {
   font-size: 12px;
+}
+
+.postal-delivery-number {
+  color: var(--color-accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.postal-reader-cell,
+.postal-address-cell {
+  min-width: 0;
+}
+
+.postal-reader-name {
+  font-size: 15px;
+}
+
+.postal-reader-phone {
+  color: #667085;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.postal-address-cell {
+  max-width: 420px;
+}
+
+.postal-distribution-unit {
+  font-weight: 500;
+}
+
+.postal-unit-missing {
+  margin-inline-end: 0;
+  border-radius: 999px;
+}
+
+.postal-source-pill {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  overflow: hidden;
+  color: #475467;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-radius: 5px;
+  background: #f2f4f7;
+}
+
+.postal-table-card .ant-table-small .ant-table-tbody > tr > td {
+  padding: 12px 14px;
+  vertical-align: middle;
+}
+
+.postal-expiry-countdown {
+  color: var(--color-warning-text);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .postal-reader-avatar {
@@ -3163,6 +3239,150 @@ body {
   white-space: normal;
 }
 
+/* Postal delivery detail drawer follows the postal-ticket modal shell. */
+.complaint-form-status.status-completed {
+  color: #667184;
+  background: #eef1f5;
+}
+
+.postal-delivery-detail-drawer-root .ant-drawer-content-wrapper {
+  max-width: 100vw;
+}
+
+.postal-delivery-detail-drawer-root .ant-drawer-header {
+  min-height: 86px;
+  padding: 18px 26px;
+  background: #fff;
+}
+
+.postal-delivery-detail-drawer-root .ant-drawer-title {
+  min-width: 0;
+}
+
+.postal-delivery-detail-drawer-root .ant-drawer-body {
+  padding: 20px 26px 28px;
+  background: #f7f9fc;
+}
+
+.postal-delivery-detail-drawer-root .ant-drawer-footer {
+  min-height: 68px;
+  padding: 14px 26px;
+  background: #fff;
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.postal-detail-title {
+  width: 100%;
+}
+
+.postal-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.postal-detail-reader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid #dfe9f5;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f7fbff, #eef6ff);
+}
+
+.postal-detail-reader .postal-reader-avatar {
+  width: 46px;
+  height: 46px;
+  flex-basis: 46px;
+  box-shadow: 0 7px 16px rgba(23, 105, 204, 0.2);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.postal-detail-reader-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.postal-detail-reader-copy strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #182230;
+  font-size: 17px;
+}
+
+.postal-detail-reader-copy span {
+  color: #6f7c8e;
+  font-size: 12px;
+}
+
+.postal-detail-reader-linked {
+  color: #24834f;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.postal-detail-section {
+  margin: 0;
+  padding: 16px;
+}
+
+.postal-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #e8ecf1;
+  border-radius: 10px;
+  background: #e8ecf1;
+}
+
+.postal-detail-field {
+  min-width: 0;
+  padding: 11px 13px;
+  background: #fbfcfe;
+}
+
+.postal-detail-field.wide {
+  grid-column: 1 / -1;
+}
+
+.postal-detail-field > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #8994a5;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.postal-detail-field > strong {
+  display: block;
+  color: #354052;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.postal-detail-field > strong.muted {
+  color: #8994a5;
+}
+
+.postal-detail-field .ant-tag {
+  margin: 0;
+}
+
+.postal-detail-change-note .ant-space {
+  align-items: center;
+}
+
+.postal-detail-change-note .ant-btn-link {
+  height: auto;
+  padding: 0 3px;
+  font-size: 11px;
+}
+
 @media (max-width: 760px) {
   .complaint-form-columns,
   .complaint-form-grid-three {
@@ -3189,6 +3409,26 @@ body {
 
   .address-form-compare::after {
     display: none;
+  }
+
+  .postal-delivery-detail-drawer-root .ant-drawer-header,
+  .postal-delivery-detail-drawer-root .ant-drawer-body,
+  .postal-delivery-detail-drawer-root .ant-drawer-footer {
+    padding-inline: 16px;
+  }
+
+  .postal-detail-title .complaint-form-title-icon,
+  .postal-detail-title .complaint-form-status,
+  .postal-delivery-detail-drawer-root .complaint-form-save-tip {
+    display: none;
+  }
+
+  .postal-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .postal-detail-field.wide {
+    grid-column: auto;
   }
 }
 
@@ -3256,6 +3496,12 @@ body {
 
 .postal-summary .warn {
   color: var(--color-warning-text);
+}
+
+.postal-summary-sort {
+  margin-left: auto;
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 .postal-chip {

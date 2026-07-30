@@ -97,6 +97,7 @@ def _base_query(
     *,
     year: Optional[int],
     search: Optional[str],
+    postal_delivery_id: Optional[int] = None,
 ):
     # parent_ticket_id 非空的回访已经并入投诉时间线，不作为独立工单重复展示。
     q = db.query(PostalTicket).filter(PostalTicket.parent_ticket_id.is_(None))
@@ -117,6 +118,8 @@ def _base_query(
             PostalTicket.new_name.contains(s),
             PostalTicket.external_order_no.contains(s),
         ))
+    if postal_delivery_id is not None:
+        q = q.filter(PostalTicket.postal_delivery_id == postal_delivery_id)
     return q
 
 
@@ -134,12 +137,15 @@ def list_tickets(
     year: Optional[int] = None,
     status: Optional[str] = None,
     applied: Optional[bool] = None,
+    postal_delivery_id: Optional[int] = None,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
 ) -> Tuple[List[dict], int, dict]:
     """返回当前页工单、匹配总数和忽略状态筛选的各类型计数。"""
-    q = _base_query(db, year=year, search=search)
+    q = _base_query(
+        db, year=year, search=search, postal_delivery_id=postal_delivery_id,
+    )
     if type:
         q = q.filter(PostalTicket.type == PostalTicketType(type))
     if status:
@@ -168,7 +174,9 @@ def list_tickets(
     )
 
     summary_rows = (
-        _base_query(db, year=year, search=search)
+        _base_query(
+            db, year=year, search=search, postal_delivery_id=postal_delivery_id,
+        )
         .with_entities(PostalTicket.type, func.count(PostalTicket.id))
         .group_by(PostalTicket.type)
         .all()

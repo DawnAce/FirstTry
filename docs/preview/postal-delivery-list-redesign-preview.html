@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>投递明细 · 列表排版草稿</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color: #1f2329; font: 14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Arial,sans-serif; background: #f5f6f8; }
+    body { margin: 0; min-width: 1280px; }
+    button, input, select { font: inherit; }
+    button, select { cursor: pointer; }
+    .draft { height: 38px; padding: 8px 24px; color: #6b4e16; text-align: center; background: #fff7e6; border-bottom: 1px solid #ffe1ad; }
+    .shell { display: grid; grid-template-columns: 242px minmax(0,1fr); min-height: calc(100vh - 38px); }
+    aside { position: relative; background: #fff; border-right: 1px solid #e8eaed; }
+    .brand { display: flex; align-items: center; gap: 12px; height: 80px; padding: 0 24px; border-bottom: 1px solid #eef0f2; }
+    .logo { display: grid; width: 44px; height: 44px; color: #fff; font-size: 25px; font-weight: 700; place-items: center; border-radius: 14px; background: #0879e8; }
+    .brand b { display: block; font-size: 18px; }
+    .brand small { color: #71757d; font-size: 12px; }
+    .back { display: block; padding: 28px 24px 20px; color: #1677ff; text-decoration: none; }
+    .section-title { padding: 8px 24px; color: #9aa1aa; font-size: 12px; }
+    nav { padding: 0 12px; }
+    nav a { display: flex; align-items: center; gap: 12px; margin: 4px 0; padding: 11px 16px; color: #2d3138; text-decoration: none; border-radius: 10px; }
+    nav a.on { color: #1268cf; font-weight: 600; background: #eaf4ff; }
+    .note { margin: 22px 20px; padding: 14px; color: #657285; font-size: 12px; line-height: 1.7; border: 1px dashed #badcff; border-radius: 10px; background: #f5faff; }
+    .user { position: absolute; right: 0; bottom: 0; left: 0; display: flex; align-items: center; gap: 10px; padding: 20px 24px; border-top: 1px solid #eef0f2; }
+    .avatar { display: grid; width: 38px; height: 38px; color: #fff; place-items: center; border-radius: 50%; background: #0879e8; }
+    main { min-width: 0; }
+    header { display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 32px; color: #70757d; font-size: 13px; background: #fff; border-bottom: 1px solid #e8eaed; }
+    .crumb span { margin: 0 12px; color: #c1c5ca; }
+    .global-search { width: 330px; padding: 8px 14px; color: #a0a4aa; border-radius: 10px; background: #f5f6f8; }
+    .content { padding: 32px 36px 48px; }
+    .titlebar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 24px; line-height: 1.35; letter-spacing: -.02em; }
+    .subtitle { margin-top: 4px; color: #747b85; font-size: 13px; }
+    .actions, .toolbar { display: flex; align-items: center; gap: 10px; }
+    .btn { min-height: 36px; padding: 6px 14px; border: 1px solid #d8dce2; border-radius: 8px; background: #fff; }
+    .btn.primary { color: #fff; border-color: #1677ff; background: #1677ff; }
+    .toolbar { margin-bottom: 14px; }
+    .search { width: 300px; height: 36px; padding: 6px 12px; border: 1px solid #d9dde3; border-radius: 8px; outline: none; background: #fff; }
+    .filter { min-width: 120px; height: 36px; padding: 0 32px 0 12px; color: #414750; border: 1px solid #d9dde3; border-radius: 8px; outline: none; background: #fff; }
+    .filter.source { min-width: 145px; }
+    .filter.status { min-width: 150px; }
+    .table-card { overflow: hidden; border: 1px solid #e8ebef; border-radius: 10px; background: #fff; box-shadow: 0 1px 2px #00000008; }
+    .summary { display: flex; align-items: center; gap: 9px; height: 46px; padding: 0 14px; font-size: 13px; border-bottom: 1px solid #eaecf0; }
+    .summary b { font-size: 14px; }
+    .summary .warning { color: #d46b08; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th { padding: 11px 14px; color: #69707a; font-size: 13px; font-weight: 600; text-align: left; background: #fafafa; }
+    th:last-child, td:last-child { text-align: right; }
+    td { height: 78px; padding: 12px 14px; vertical-align: middle; border-top: 1px solid #eef0f2; }
+    tbody tr:hover { background: #fafcff; }
+    .number { color: #1769c7; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cell-primary { display: block; margin-bottom: 4px; color: #20252c; font-weight: 600; }
+    .secondary { overflow: hidden; display: block; color: #7d8591; font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+    .reader .cell-primary { font-size: 15px; }
+    .phone { color: #667085; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+    .address .cell-primary { margin-bottom: 3px; }
+    .subscription { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+    .tag { display: inline-flex; align-items: center; padding: 2px 8px; color: #0958d9; font-size: 12px; line-height: 18px; border: 1px solid #91caff; border-radius: 999px; background: #e6f4ff; }
+    .tag.green { color: #237804; border-color: #b7eb8f; background: #f6ffed; }
+    .tag.gray { color: #666; border-color: #d9d9d9; background: #fafafa; }
+    .tag.warning { color: #ad6800; border-color: #ffd591; background: #fff7e6; }
+    .unit { font-weight: 500; }
+    .source-pill { display: inline-block; max-width: 100%; padding: 2px 8px; overflow: hidden; color: #475467; font-size: 12px; white-space: nowrap; text-overflow: ellipsis; border-radius: 5px; background: #f2f4f7; }
+    .link { padding: 0; color: #1677ff; border: 0; background: none; }
+    .foot { padding: 12px 14px; color: #858b94; font-size: 13px; text-align: right; border-top: 1px solid #eef0f2; }
+  </style>
+</head>
+<body>
+  <div class="draft">列表排版草稿 · 编号独立｜姓名与电话上下展示｜投递单位与订单来源拆列</div>
+  <div class="shell">
+    <aside>
+      <div class="brand"><div class="logo">发</div><div><b>发行系统</b><small>中国经营报</small></div></div>
+      <a class="back" href="#">← 返回发行履约</a>
+      <div class="section-title">邮局管理</div>
+      <nav>
+        <a class="on" href="#">📋 <span>投递明细</span></a>
+        <a href="#">🔄 <span>订报转投</span></a>
+        <a href="#">🎫 <span>邮局工单</span></a>
+      </nav>
+      <div class="note">投递明细、订报转投和邮局工单统一归属邮局管理。</div>
+      <div class="user"><div class="avatar">管</div><div><b>admin</b><div class="secondary">管理员</div></div></div>
+    </aside>
+    <main>
+      <header><div class="crumb">业务首页 <span>/</span> 发行履约 <span>/</span> 邮局管理 <span>/</span> <b>投递明细</b></div><div class="global-search">⌕&nbsp;&nbsp;搜索 订单/商品/期数</div></header>
+      <div class="content">
+        <div class="titlebar">
+          <div><h1>投递明细</h1><div class="subtitle">投递记录 4,342 条</div></div>
+          <div class="actions"><button class="btn">⇧&nbsp; 导入</button><button class="btn primary">＋&nbsp; 新增记录</button></div>
+        </div>
+        <div class="toolbar">
+          <input class="search" placeholder="搜索姓名、电话、编号或地址">
+          <select class="filter"><option>年度</option><option>2026年</option></select>
+          <select class="filter source"><option>订单来源</option><option>CBJ+小程序</option></select>
+          <select class="filter status"><option>订阅状态</option><option>待开始</option></select>
+          <button class="btn">更多筛选</button>
+        </div>
+        <div class="table-card">
+          <div class="summary">合计 <b>7,776</b> 份 <span>·</span> <b>7</b> 家投递单位 <span>·</span> <span class="warning"><b>2,610</b> 条待补投递单位</span></div>
+          <table>
+            <colgroup>
+              <col style="width:10%"><col style="width:14%"><col style="width:31%"><col style="width:15%"><col style="width:15%"><col style="width:10%"><col style="width:5%">
+            </colgroup>
+            <thead><tr><th>编号</th><th>收报人</th><th>地址</th><th>订阅</th><th>投递单位</th><th>订单来源</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="number">2026-6352</span></td>
+                <td class="reader"><span class="cell-primary">宋女士</span><span class="secondary phone">132 5678 5090</span></td>
+                <td class="address"><span class="cell-primary">山东省 · 济南市 · 历下区</span><span class="secondary">姚家街道华润置地广场南区6区3号楼29层</span></td>
+                <td><div class="subscription"><span>1 份</span><span class="tag">待开始</span></div><span class="secondary">2026.08—2026.12</span></td>
+                <td><span class="unit">北京集订分送</span></td>
+                <td><span class="source-pill">CBJ+小程序</span></td>
+                <td><button class="link">查看</button></td>
+              </tr>
+              <tr>
+                <td><span class="number">2026-6351</span></td>
+                <td class="reader"><span class="cell-primary">徐先生</span><span class="secondary phone">138 2046 3177</span></td>
+                <td class="address"><span class="cell-primary">浙江省 · 杭州市 · 余杭区</span><span class="secondary">良渚街道北大颐和江南府南区31-14</span></td>
+                <td><div class="subscription"><span>1 份</span><span class="tag">待开始</span></div><span class="secondary">2026.08—2026.12</span></td>
+                <td><span class="unit">杭州报刊发行局</span></td>
+                <td><span class="source-pill">淘宝发行部</span></td>
+                <td><button class="link">查看</button></td>
+              </tr>
+              <tr>
+                <td><span class="number">2026-6350</span></td>
+                <td class="reader"><span class="cell-primary">潘克荣</span><span class="secondary phone">189 5182 6034</span></td>
+                <td class="address"><span class="cell-primary">江苏省 · 南京市 · 玄武区</span><span class="secondary">红山街道红山路175号红森公寓5栋2单元504室</span></td>
+                <td><div class="subscription"><span>1 份</span><span class="tag green">投递中</span></div><span class="secondary">2026.03—2026.08</span></td>
+                <td><span class="unit">南京报刊发行局</span></td>
+                <td><span class="source-pill">淘宝发行部</span></td>
+                <td><button class="link">查看</button></td>
+              </tr>
+              <tr>
+                <td><span class="number">2026-6349</span></td>
+                <td class="reader"><span class="cell-primary">钟志强</span><span class="secondary phone">未记录电话</span></td>
+                <td class="address"><span class="cell-primary">广东省 · 深圳市 · 龙岗区</span><span class="secondary">坂田街道坂田大族云峰A1-803</span></td>
+                <td><div class="subscription"><span>1 份</span><span class="tag">待开始</span></div><span class="secondary">2026.08—2026.12</span></td>
+                <td><span class="tag warning">待补投递单位</span></td>
+                <td><span class="source-pill">CBJ+小程序</span></td>
+                <td><button class="link">查看</button></td>
+              </tr>
+              <tr>
+                <td><span class="number">2026-6348</span></td>
+                <td class="reader"><span class="cell-primary">王凯伦</span><span class="secondary phone">156 3274 8110</span></td>
+                <td class="address"><span class="cell-primary">河北省 · 沧州市 · 运河区</span><span class="secondary">南陈屯镇颐和云墅营销中心</span></td>
+                <td><div class="subscription"><span>1 份</span><span class="tag gray">已完结</span></div><span class="secondary">2026.01—2026.06</span></td>
+                <td><span class="unit">石家庄报刊发行局</span></td>
+                <td><span class="source-pill">淘宝发行部</span></td>
+                <td><button class="link">查看</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="foot">共 4,342 条投递记录　1 / 87　›</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

@@ -323,12 +323,14 @@
 ### 5C.2 源台账与手工维护
 投递明细、邮局工单、收款发票各源台账均支持 Excel 导入，并提供页面内「新增 / 编辑 / 删除」。邮局工单按投诉 / 收件信息变更 / 回访类型使用不同导入模板（收件信息变更继续兼容历史《改地址》Excel），但物理上统一存入 `postal_tickets`。写操作需管理员权限。投递明细删除已无守卫，可直接删除（不再返回 409）。
 
-前端初代正式布局统一为“页面标题与主操作 → 筛选 → 概览 / 列表 → 右侧详情抽屉”：投递明细常驻列收敛为读者、地址、订阅、渠道 / 投递单位，查看与编辑均使用抽屉；邮局工单列表收敛为读者 / 类型、内容、时间、状态、操作。订报转投以批次选择器和三步进度展示主流程；“重新上传来源”进入页面内工作区，依次完成上传、校验 / 汇总对比、设为有效，旧版本在确认前保持有效且确认后继续保留。生成文件中的地区分送表按地区折叠展示。
+前端初代正式布局统一为“页面标题与主操作 → 筛选 → 概览 / 列表 → 右侧详情抽屉”：投递明细按编号、收报人、地址、订阅、投递单位、订单来源分列，查看与编辑均使用抽屉；提供订阅状态直选（即将到期 / 投递中 / 待开始 / 已完结）。“即将到期”采用包含边界的 30 天窗口（止订日 `>= today` 且 `<= today + 30 days`，并且已开始），按止订日升序展示剩余天数、匹配订户 / 份数和最近到期时间。投递详情显示当前状态，并列出关联到该投递记录且已应用的收件信息变更，来源工单以只读弹窗查看。邮局工单列表收敛为读者 / 类型、内容、时间、状态、操作。订报转投以批次选择器和三步进度展示主流程；“重新上传来源”进入页面内工作区，依次完成上传、校验 / 汇总对比、设为有效，旧版本在确认前保持有效且确认后继续保留。生成文件中的地区分送表按地区折叠展示。
+
+历史工单导入需保留可追溯性：投诉按“年度编号＋接诉日期＋投诉内容”的出现次数判重，既保留源表中确实重复的多次投诉，又保证整表重导幂等；收件信息变更结合表头年度、修改日期年度、原姓名 / 电话和编号处理跨年及混合年度匹配；投诉与收件信息变更均在备注中记录源工作表和行号。
 
 ### 5C.3 邮局工单（投诉 / 收件信息变更 / 回访三合一）
 投诉、收件信息变更（接口类型仍为 `address`，兼容历史《改地址》Excel）和回访三类工单合并为统一的「邮局工单」页，回访不再是独立菜单 / Tab，而是工单的一种类型，按类型筛选。
 
-统一接口 `GET /api/postal/tickets` 从 `postal_tickets` 查询三类工单并返回 `TicketOut`（`type` / `id` / `year` / `delivery_no` / `recipient_name` / `postal_delivery_id` / `order_id` / `ticket_date` / `summary` / `status` / `handling_count` / `applied_to_order`），支持 `type`（`complaint` | `address` | `follow`）/ `year` / `status`（投诉）/ `applied`（收件信息变更）/ `search` 及数据库分页，另返回各类型计数 `summary{complaint, address, follow}`。详情与 CRUD 统一走 `/api/postal/tickets[/{id}]`，处理时间线走 `/tickets/{id}/handlings`，应用变更走 `/tickets/{id}/apply`，三类导入走 `/tickets/import/{type}/preview|commit`。
+统一接口 `GET /api/postal/tickets` 从 `postal_tickets` 查询三类工单并返回 `TicketOut`（`type` / `id` / `year` / `delivery_no` / `recipient_name` / `postal_delivery_id` / `order_id` / `ticket_date` / `summary` / `status` / `handling_count` / `applied_to_order`），支持 `type`（`complaint` | `address` | `follow`）/ `year` / `status`（投诉）/ `applied`（收件信息变更）/ `postal_delivery_id` / `search` 及数据库分页，另返回各类型计数 `summary{complaint, address, follow}`。详情与 CRUD 统一走 `/api/postal/tickets[/{id}]`，处理时间线走 `/tickets/{id}/handlings`，应用变更走 `/tickets/{id}/apply`，三类导入走 `/tickets/import/{type}/preview|commit`。
 
 前端（`TicketsTab`，`api/postal.ts` 的 `listTickets` 等）：类型分段筛选（全部 / 投诉 / 收件信息变更 / 回访，带各类型计数）+ 统一列表（读者 / 类型 / 内容 / 时间 / 状态 / 操作）；差异化详情抽屉——
 - **投诉**：真正的三态处理流程 `open`（待处理）/ `in_progress`（处理中）/ `resolved`（已解决），每次处理记入统一时间线表 `postal_ticket_events`（时间 / 处理人 / 处理过程 / 回访结果），处理次数每次 +1，状态由最新一次处理驱动，抽屉按时间线展示历次处理记录。
@@ -624,6 +626,7 @@ V1.1 上线 MVP 级订单管理，目标是把目前散落在 Excel 中的读者
 - 订单一旦作废即为终态，不可恢复，需重新创建
 - 期数快照只在生效时写入一次，刊期表后续调整不会回溯，但详情页可看到实时偏差，便于人工跟进
 - 金额字段使用 `DECIMAL(10, 2)`，前后端字符串传输避免浮点精度问题
+- 手工订单保存 / 确认前的表单校验需显示 Ant Design 返回的具体错误；单项错误直接提示，多项错误汇总展示，并自动滚动到第一处错误。订单明细缺失时定位到“订单明细”区域。
 - **录入方式（原"来源类型"）UI 隐藏**：因 V1.1 100% 是手工录入，下拉里只有一个有意义的选项无价值；表单完全不显示该字段，详情页右上角用 Tag「📥 手工录入」表达 provenance；列表的「来源」筛选器同步移除，改为「渠道/平台」列展示 `source_platform`（销售渠道信息）。原 `source_type` 5 个枚举值混杂了 4 个不同维度的概念（销售渠道 / 付款方式 / 业务性质 / 录入方式），与 `source_platform` / `payment_method` / `billing_type` 等已有字段重复；PR-A 解耦 UX、PR-B 计划做 schema rename：列名 `source_type → entry_method`、枚举值改为 `manual / excel_import / api_sync`，分别对应"手工录入 / Excel 批量导入 / 第三方平台 API 同步"三种数据进入系统的方式。Excel 批量导入与 API 同步入口在后续版本启用时再各自固定写对应值，那时录入方式会再次有筛选价值
 
 ### 10.5 订单 V1.2A：订阅期限与套餐价

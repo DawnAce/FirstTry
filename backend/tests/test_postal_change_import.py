@@ -144,6 +144,7 @@ def test_address_change_parse_link_commit(db):
     assert addr_commit(db, sid)["created"] == 2
     imported = db.query(PostalAddressChange).filter_by(external_order_no="2024-402").one()
     assert imported.change_date == datetime(2024, 1, 3, 0, 0)
+    assert imported.notes == "来源:邮局年改地址!第2行"
     # 幂等
     out2, _ = addr_preview(db, _addr_wb(_ADDR_ROWS))
     assert out2["counts"]["duplicate"] == 2
@@ -312,6 +313,34 @@ def test_cross_year_uses_header_declared_year(db):
     assert pv.counts["linked"] == 1
     assert pv.rows[0].data["postal_delivery_id"] == d.id
     assert pv.rows[0].data["external_order_no"] == "2024-402"  # 用括注年度而非修改日期年份
+
+
+def test_stale_header_year_uses_matching_reader_identity(db):
+    """混合年度历史表沿用 2024 表头时，按原姓名/电话挂到实际年度。"""
+    _delivery(db, "402", "另一位读者", year=2024)
+    d2025 = _delivery(db, "402", "韩博武", year=2025)
+    d2025.recipient_phone = "18602953816"
+    db.commit()
+
+    rows = [{"修改日期": "2025-03-10", "姓名": "韩博武", "联系电话": "18602953816",
+             "编号": "000402", "新地址": "陕西省西安市新地址"}]
+    pv = build_address_change_preview(db, parse_postal_address_changes(_addr_wb(rows)))
+
+    assert pv.rows[0].data["postal_delivery_id"] == d2025.id
+    assert pv.rows[0].data["external_order_no"] == "2025-402"
+
+
+def test_stale_header_year_uses_only_available_reader_year(db):
+    """名册已更新为新资料时，仍可用唯一存在的年度+编号关联。"""
+    d2025 = _delivery(db, "403", "已更新姓名", year=2025)
+    db.commit()
+    rows = [{"修改日期": "2025-03-10", "姓名": "原姓名", "编号": "000403",
+             "新地址": "陕西省西安市新地址"}]
+
+    pv = build_address_change_preview(db, parse_postal_address_changes(_addr_wb(rows)))
+
+    assert pv.rows[0].data["postal_delivery_id"] == d2025.id
+    assert pv.rows[0].data["external_order_no"] == "2025-403"
 
 
 def test_apply_new_copies_zero(db):

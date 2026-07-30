@@ -1,6 +1,7 @@
 """邮局改地址导入 —— 解析结果 → PostalAddressChange（preview / commit）。
 
-挂订单：year(修改日期) + 编号(去零) → orders.external_order_no。处理情况归一 routed_label。
+挂投递：表头年度/修改年度结合原姓名或电话 + 编号(去零)定位，兼容跨年改址和混合年度历史表。
+处理情况归一 routed_label。
 去重键 (external_order_no, 修改日期, 新地址)。回流动作在 postal_change_service。
 """
 
@@ -11,7 +12,7 @@ from typing import List, Optional, Tuple
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import PostalAddressChange
+from app.models import PostalAddressChange, PostalDelivery
 from app.order_import_cache import pop_order_import_session, save_order_import_session
 from app.services import postal_common as pc
 
@@ -51,8 +52,42 @@ def _key(external, cdate, new_addr):
     return (external or "", date_text[:10], new_addr or "")
 
 
+def _source_notes(notes: str, row_no: int) -> str:
+    return "；".join(filter(None, (notes, f"来源:邮局年改地址!第{row_no}行")))
+
+
+def _delivery_year(ac, cdate, deliveries) -> Optional[int]:
+    header_year = pc.parse_year(ac.source_year_raw)
+    date_year = cdate.year if cdate else None
+
+    def matches(row) -> bool:
+        return bool(
+            (ac.old_phone and ac.old_phone == row.recipient_phone)
+            or (ac.old_name and ac.old_name == row.recipient_name)
+        )
+
+    matched = [row for row in deliveries if matches(row)]
+    for preferred in (header_year, date_year):
+        if preferred and any(row.year == preferred for row in matched):
+            return preferred
+    years = {row.year for row in matched}
+    if len(years) == 1:
+        return years.pop()
+    available_years = {row.year for row in deliveries}
+    if header_year in available_years and date_year not in available_years:
+        return header_year
+    if date_year in available_years and header_year not in available_years:
+        return date_year
+    if len(available_years) == 1:
+        return available_years.pop()
+    return header_year or date_year
+
+
 def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
     dmap = pc.delivery_map(db)
+    deliveries_by_no = {}
+    for delivery in db.query(PostalDelivery).filter(PostalDelivery.is_archived.is_(False)).all():
+        deliveries_by_no.setdefault(delivery.delivery_no, []).append(delivery)
     existing = {
         _key(e, c.isoformat() if c else None, a)
         for e, c, a in db.query(
@@ -66,10 +101,8 @@ def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
     for ac in rows:
         cdate = pc.parse_date(ac.change_date_raw)
         cdate_iso = cdate.isoformat() if cdate else None
-        # 年度优先取表头括注声明的读者年度（如「…(邮局2024读者明细)」）；缺失才用修改日期年份。
-        # 这样跨年改地址（次年初提交上年读者的改址）仍能挂对年份，而不是错挂/漏挂。
-        year = pc.parse_year(ac.source_year_raw) or (cdate.year if cdate else None)
         no = pc.norm_no(ac.external_no_raw)
+        year = _delivery_year(ac, cdate, deliveries_by_no.get(no, []))
         external = f"{year}-{no}" if (year and no) else None
 
         key = _key(external, cdate_iso, ac.new_address or None)
@@ -101,7 +134,7 @@ def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
             "effective_start_month": ac.effective_start_month or None,
             "handling": ac.handling or None,
             "routed_label": routed,
-            "notes": ac.notes or None,
+            "notes": _source_notes(ac.notes, ac.row_no),
         }
         out.append(AddrPreviewRow(external or "(无编号)", ac.old_name, cdate_iso, ac.new_address,
                                   "import", linked=postal_delivery_id is not None, routed_label=routed, data=data))

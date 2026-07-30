@@ -29,13 +29,16 @@ export interface PostalDelivery {
   source_type: 'historical_import' | 'order_generated' | 'manual' | 'subscription_generated' | null;
 }
 
-export interface DeliveryListOut { rows: PostalDelivery[]; total: number; summary: { total_copies: number; unit_count: number; missing_unit_count: number } }
+export type DeliveryStatusFilter = 'pending' | 'active' | 'expiring' | 'completed';
+
+export interface DeliveryListOut { rows: PostalDelivery[]; total: number; summary: { total_copies: number; unit_count: number; missing_unit_count: number; nearest_expiry_date: string | null } }
 
 export interface DeliveryFilters {
   year?: number;
   channel?: string;
   distribution_unit_id?: number;
   month?: number;
+  status?: DeliveryStatusFilter;
   search?: string;
   page?: number;
   page_size?: number;
@@ -294,6 +297,7 @@ export function listTickets(f: {
   year?: number;
   status?: string;
   applied?: boolean;
+  postal_delivery_id?: number;
   search?: string;
   page?: number;
   page_size?: number;

@@ -447,6 +447,7 @@ FirstTry/
 - **单期期次标识 `order_items.issue_label`（迁移 `b8e3a1c5d7f0`，`String(32)`、加索引）**：为没有「期号」的刊物（主要是商学院月刊）记录归一化的单期身份，格式 `YYYY-MM` / `YYYY-MM~MM`（合刊）。年月归属于「期」这一层（即本字段），**不写进任何商品名**。中国经营报单期继续使用 `issue_number`（期号），商学院月刊使用 `issue_label`。归一化辅助函数：`app/services/issue_label.py` 的 `normalize_business_school_issue_label()`。本字段也是 §4.15「按期统计」的聚合维度。
 - **原价列 `orders.original_amount`（迁移 `c4f1a9e2b6d3`，`Numeric(10,2)`、可空）**：CBJ 导出的「原价」（折前标价）列原先解析后被丢弃（导入器只写 `total_amount=实付`），现予以持久化；`total_amount` 仍追踪实付。该列支撑 §4.15「按活动统计」的折扣计算：`原价合计 = SUM(COALESCE(original_amount, paid))`，`折扣额 = 原价合计 − 实收`（未捕获原价的订单按「无折扣」计）。
 - 所有金额字段使用 `DECIMAL(10, 2)`（最大 9999 9999.99 元）；前端 TS 用 `string` 传输，避免 JS 浮点损失
+- `OrderEditor.tsx` 在 `validateFields()` 失败时通过 `extractFormValidation()` 保留 Ant Design 返回的字段路径和具体错误；单项错误直接 toast，多项错误沿用汇总弹窗，并滚动 / 聚焦第一处错误。`items` 是列表字段，使用 `#order-items-section` 定位到订单明细卡片。
 - 在 active 状态下，`PUT /api/orders/{id}` 仍只允许 `order_service.ACTIVE_EDITABLE_FIELDS` 白名单内的 13 个非结构字段被修改；明细 / 履约目标的结构改动改走 `PUT /api/orders/{id}/items`，并按 `effective_from_issue` 关闭旧 allocation、创建新版本或取消缺失明细
 - **当前业务范围限定**：仍主要覆盖"个人客户预付 + 同事赠阅"两种场景。`paid_amount` 字段虽已建表，但**没有任何业务逻辑读它**（不算欠款、不阻塞 confirm、不做对账、列表不能按"未付清"过滤）。"渠道订单（先履约后付款 / 赊账）"留待后续版本的财务对账引入「收款流水子表 + 欠款追踪 + 未付清筛选 + Dashboard 欠款卡片」时再激活该字段的业务价值
 - **`source_type` 字段的录入方式收敛**：原 5 个枚举值（`ecommerce` / `corporate_transfer` / `vip_gift` / `manual` / `mail_annual`）实际混杂了 4 个维度的概念（销售渠道 / 付款方式 / 业务性质 / 录入方式），与已有的 `source_platform`（销售渠道）/ `payment_method`（付款方式）/ `billing_type`（业务性质）字段重复。**PR-A 已将 UX 解耦为"录入方式"** —— 前端表单完全隐藏该字段，列表筛选器移除，详情页用 Tag「📥 手工录入」展示；后端 `OrderCreate.source_type` 默认 `manual`、`OrderUpdate` 完全移除该字段（provenance 元数据任何状态下都不可改）。数据迁移 `d8a1f4e7b9c2` 已把全部历史数据规范化为 `manual`。后续版本电商批量导入 / API 同步启用前，建议继续推进 DB schema rename `source_type` → `entry_method`，枚举值收敛为 `manual / excel_import / api_sync`
@@ -521,7 +522,7 @@ FirstTry/
 
 「发行履约 → 邮局管理」现有 3 个三级入口：①**投递明细**（`/post-delivery/deliveries`，纯台账/查询）②**订报转投**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表/分送表/zip，给邮局的名单只来自这里）③**邮局工单**（`/post-delivery/tickets`，投诉/收件信息变更/回访三合一，按类型筛选）。「收款发票」已迁到「财务管理」，作为财务管理第三个 Tab「邮局收款」（见 §4.16 迁移说明）。
 
-**前端布局（2026-07 初代正式稿）**：`PostDelivery.tsx` 的投递明细和邮局工单共用统一的标题、操作、筛选和紧凑表格层级；投递记录详情和新增 / 编辑使用 Ant Design `Drawer`，避免离开列表上下文。`SubscriptionGeneration.tsx` 取消常驻左侧批次栏，改为顶部批次选择器；批次页按三步进度、摘要卡、不可变版本流水和折叠后的地区产物组织。“重新上传来源”是页面内三步工作区（上传 → 校验及与当前版本汇总对比 → 激活），只有最终确认使用 `Popconfirm`；明细和校验问题继续使用只读宽抽屉。
+**前端布局（2026-07 初代正式稿）**：`PostDelivery.tsx` 的投递明细和邮局工单共用统一的标题、操作、筛选和紧凑表格层级；投递明细将编号 / 收报人、投递单位 / 订单来源分别拆列，便于快速扫描，投递记录详情和新增 / 编辑使用 Ant Design `Drawer`，避免离开列表上下文。投递明细可直接按订阅状态筛选；“即将到期”使用含首尾的 30 天窗口，显示剩余天数及汇总并按止订日升序排列。详情抽屉显示投递状态，并通过 `GET /tickets?type=address&applied=true&postal_delivery_id=...` 加载已应用的信息修改来源；来源详情使用只读 `Modal`，不暴露编辑 / 应用操作。`SubscriptionGeneration.tsx` 取消常驻左侧批次栏，改为顶部批次选择器；批次页按三步进度、摘要卡、不可变版本流水和折叠后的地区产物组织。“重新上传来源”是页面内三步工作区（上传 → 校验及与当前版本汇总对比 → 激活），只有最终确认使用 `Popconfirm`；明细和校验问题继续使用只读宽抽屉。
 
 **投诉表单布局（2026-07）**：`ComplaintFormModal` 继续复用原 Ant Design `Form` 和保存接口，仅将字段重排为“投诉信息 / 联系人信息 / 处理信息”三个语义区；年度、编号、来源平台提升为标题元信息，姓名、电话、地址合并为联系人信息。弹窗桌面宽度 780px，下半区双列并在窄屏回退单列，内容高度随视口受限并仅在确有溢出时滚动。
 
@@ -535,7 +536,7 @@ FirstTry/
 
 > **重构说明（2026-07）**：早先版本把邮局每行做成 `post_office` 订单（`create_imported_order`），会污染订单列表/客户管理、并与电商真实订单双算。现改为独立的 `PostalDelivery` 投递记录层——不再造订单；邮局记录不进订单列表/客户管理；有平台订单号且平台对得上才挂真实订单（读者明细本身无平台订单号 → 多数 `order_id=NULL`，独立）。**注：本系统无独立客户资料表**，订单收报人真值在 `FulfillmentTarget`。
 
-**投递记录 `postal_delivery`（迁移 `b5d7f9a1c3e6`，照 `shipping_details`）**：`(year, delivery_no)` 唯一（`delivery_no`=编号去前导零）；`order_id`/`order_item_id`/`fulfillment_target_id` 全可空（SET NULL，将来挂真实订单用）；`external_order_no`（平台订单号，将来补）；`source_type`（`historical_import`/`order_generated`/`manual`）；收报人（姓名/电话/省市区/详细地址/邮编）；`product`（认不出留原文，不强求刊物枚举）；`copies`/`amount`/`coverage_start_date`/`coverage_end_date`；`source_channel`（渠道/平台）；`distribution_unit_id`→`partners`（投递单位，落在本表，原表未填则留空、不推断）；`salesperson`/`remittance_name`/`remittance_date`/`notes`。
+**投递记录 `postal_delivery`（迁移 `b5d7f9a1c3e6`，照 `shipping_details`）**：`(year, delivery_no)` 唯一（`delivery_no`=编号去前导零），组合展示为投递编号并供邮局工单关联；`order_id`/`order_item_id`/`fulfillment_target_id` 全可空（SET NULL，仅在存在真实订单时作内部关联）；`external_order_no` 是来源单号，与订单管理同名字段统一指原平台订单号；`source_channel` 是订单来源（平台）；`source_type` 是录入方式（`historical_import`/`order_generated`/`manual`）。其余字段包括收报人（姓名/电话/省市区/详细地址/邮编）、`product`（认不出留原文，不强求刊物枚举）、`copies`/`amount`/`coverage_start_date`/`coverage_end_date`、`distribution_unit_id`→`partners`（投递单位，原表未填则留空、不推断）、`salesperson`/`remittance_name`/`remittance_date`/`notes`。本次仅统一 UI 术语和展示，无数据库迁移。
 
 **月度起投明细批次（已移除，PR#77）**：早先的「月度起投明细」层（`postal_delivery_batches` / `postal_delivery_rows` 两表 + `postal_batch_service.generate_batch` 冻结成行 + `/api/postal/batches*` 端点 + 前端 BatchesTab）**整层已删除**。迁移 `c3d5e7f9a1b3` 删除两表；删表前先用 `backend/scripts/export_postal_snapshot.py` 把两表导成 json 归档。给邮局的名单改由「订报转投」（`/post-delivery/subscription`）独立产出。：`postal_order_import_parser`（按表头解析「邮局读者明细」，零改动）+ `postal_delivery_import_service`（映射→`PostalDelivery`，不造订单；`(year, delivery_no)` 去重；投递单位有则挂 `Partner(distribution)` 无则空；产品留原文）。**投递明细**：`postal_delivery_service.list_deliveries`（年度/渠道/投递单位/起投月/搜索筛选）——邮局记录不进订单列表，这里是完整名册的家。投递明细列表另返回 `summary` 聚合（合计份数·未填单位数）供页面顶部「概览行」使用。
 
@@ -546,7 +547,7 @@ FirstTry/
 **投诉工单（P2）**：投诉 `编号`(去前导零) + `年度` 经 `postal_common.delivery_map` → `postal_delivery`（`postal_delivery_id` 可空 SET NULL；关联的投递记录挂了真实订单才继承 `order_id`；匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；状态为 open/in_progress/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。
 
 **收件信息变更 + 回访（P3）**：均按 编号+年度 关联投递记录；历史独立表已由 PR-E 迁入 `postal_tickets`。
-- **收件信息变更**：编号(去零) + `year(变更登记时间)` → `postal_delivery`；`change_date` 为 `DateTime`（迁移 `b7d9f1a3c5e8`；历史日期保留为当天 `00:00`），处理情况归一 `routed_label`（XX局）；**「应用变更」** `apply_address_change` 把新姓名/电话/地址/份数写回**投递记录**并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——若该读者挂了真实订单则同步当前 `FulfillmentTarget`（=同步履约订单），详情标注「已应用·已同步履约订单」或「已应用·仅名册」；未关联投递记录（`postal_delivery_id` 空）→ 400。应用后工单永久只读，更新/删除均以行锁复查并返回 409；再次更正必须新建工单，避免审计记录与已写入信息失配。
+- **收件信息变更**：导入按编号(去零)，结合表头年度、变更登记年度及原姓名 / 电话定位 `postal_delivery`，兼容跨年改址和沿用旧表头的混合年度历史表；`change_date` 为 `DateTime`（迁移 `b7d9f1a3c5e8`；历史日期保留为当天 `00:00`），处理情况归一 `routed_label`（XX局）；**「应用变更」** `apply_address_change` 把新姓名/电话/地址/份数写回**投递记录**并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——若该读者挂了真实订单则同步当前 `FulfillmentTarget`（=同步履约订单），详情标注「已应用·已同步履约订单」或「已应用·仅名册」；未关联投递记录（`postal_delivery_id` 空）→ 400。应用后工单永久只读，更新/删除均以行锁复查并返回 409；再次更正必须新建工单，避免审计记录与已写入信息失配。导入备注附加 `来源:邮局年改地址!第N行`。
 - **回访**：迁移 `e3f5a7c9b1d4` 新增 `communication_content`，手工记录拆为沟通内容与结果；历史 Excel 的 `batch_label` 仅作导入兼容。若回访先于投诉创建，补建同编号投诉时会自动把独立回访并入投诉时间线。
 - 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/`order_map`/`delivery_map`）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`；前端统一使用 `/api/postal/tickets*` 完成列表、详情、CRUD、应用、处理和导入。旧 `/complaints`、`/address-changes`、`/follow-ups` 路径仅作部署兼容。
 
@@ -1657,7 +1658,7 @@ draft ──confirm──> active ──void──> void
 | `GET` | `/api/postal/deliveries` | **投递明细**：全部投递记录，筛选 `year`/`channel`/`distribution_unit_id`/`month`(起投月)/`search`(年度编号·姓名·电话·地址·邮编·平台单号) + 分页；邮局工单新建选择器复用此查询 |
 | `POST` | `/api/postal/import/preview` | 上传《邮局读者明细》.xlsx 预览 → 投递记录（不造订单）；计数 import/duplicate/unresolved |
 | `POST` | `/api/postal/import/commit` | 提交导入（建 `PostalDelivery`；`(year, delivery_no)` 去重幂等） |
-| `GET` | `/api/postal/tickets` | **邮局工单统一查询**：从 `postal_tickets` 按 `type`/`year`/`status`/`applied`/`search` 做数据库筛选与分页；返回 `TicketOut` 和类型计数 `summary{complaint,address,follow}` |
+| `GET` | `/api/postal/tickets` | **邮局工单统一查询**：从 `postal_tickets` 按 `type`/`year`/`status`/`applied`/`postal_delivery_id`/`search` 做数据库筛选与分页；返回 `TicketOut` 和同口径类型计数 `summary{complaint,address,follow}` |
 | `POST` | `/api/postal/tickets` | 按 body `type` 新增投诉 / 收件信息变更 / 独立回访工单 |
 | `GET`/`PUT`/`DELETE` | `/api/postal/tickets/{id}` | 统一详情 / 编辑 / 删除；响应带类型判别字段；投诉详情含 `complaint_source` 与动态派生的 `source_platform`；已应用收件信息变更的 `PUT`/`DELETE` 返回 409；删除投诉会删除其时间线，但关联回访解除归属后恢复为独立工单 |
 | `POST` | `/api/postal/tickets/{id}/apply` | 应用收件信息变更：写回投递记录；挂真实订单时精确同步已绑定 `FulfillmentTarget`，未绑定仅接受唯一当前邮局目标，多目标返回 409 |
@@ -1670,6 +1671,7 @@ draft ──confirm──> active ──void──> void
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| `GET` | `/api/postal/deliveries` | 投递明细查询；支持 `year`/`channel`/`distribution_unit_id`/`month`/`status`/`search`。`status` 为 `pending|active|expiring|completed`；`expiring` 是含边界的未来 30 天窗口，按止订日升序，汇总另返回 `nearest_expiry_date` |
 | `POST`/`PUT`/`DELETE` | `/api/postal/deliveries[/{id}]` | 投递明细：手工建/改/删投递记录（`source_type=manual`）；`(year, delivery_no)` 重复 409；**删除无守卫、可直接删**（月度起投明细层已随 PR#77 移除，不再有批次引用） |
 | `POST`/`PUT`/`DELETE` | `/api/postal/complaints[/{id}]` | 投诉工单 CRUD（详见下方三态处理流程） |
 | `POST` | `/api/postal/complaints/{id}/handlings` | 登记一次处理（body `{action, follow_result?, result_status?}`）；未指定 `result_status` → 置「处理中」；`handling_count +1`；投诉 `status` 由本次处理驱动；返回投诉详情（含处理时间线） |
@@ -1678,7 +1680,7 @@ draft ──confirm──> active ──void──> void
 | `POST`/`PUT`/`DELETE` | `/api/postal/follow-ups[/{id}]` | 回访 CRUD |
 | `POST`/`PUT`/`DELETE` | `/api/finance/postal-receipts[/{id}]` | 收款发票 CRUD（已迁至财务管理，见本节末） |
 
-**关键点**：`import/commit` 返回 `{created, delivery_ids?, skipped_duplicates}`（投递记录导入用 `delivery_ids`，工单/发票用 `created`）。工单列表出参含 `postal_delivery_id`（前端据此显示「已关联读者 / 未匹配」）；收件信息变更出参含 `applied_to_order`/`applied_by`/`applied_at`。删除被邮局投递引用的投递单位 `Partner` 会被 §partners 守卫拦（409，见 §3.17）。
+**关键点**：`import/commit` 返回 `{created, delivery_ids?, skipped_duplicates}`（投递记录导入用 `delivery_ids`，工单/发票用 `created`）。工单列表出参含 `postal_delivery_id`（前端据此显示「已关联读者 / 未匹配」，也用于从投递详情反查来源工单）；收件信息变更出参含 `applied_to_order`/`applied_by`/`applied_at`。投诉导入用 `Counter` 按相同去重键的出现序号抵扣数据库现有条数，确保源表多条相同投诉可逐条保存且重导幂等；投诉及收件信息变更导入备注均附源工作表与行号。删除被邮局投递引用的投递单位 `Partner` 会被 §partners 守卫拦（409，见 §3.17）。
 
 **投诉详情与三态处理流程（PR#41，PR-E 后）**：`postal_tickets.complaint_source`（迁移 `d2f4a6c8e0b1`）仅接受 **客服中心 / 发行电话接入 / 同事反馈**；`ComplaintOut.source_platform` 不重复存储，详情查询优先读取关联 `Order.source_platform`，无订单平台时回退 `PostalDelivery.source_channel`。投诉状态为 **open(待处理) / in_progress(处理中) / resolved(已解决)**；每次处理经 `POST /tickets/{id}/handlings` 追加一行到 **`postal_ticket_events`**（处理时间 / 处理人 / 处理过程 / 回访结果 / 本次处理后状态），`handling_count +1`，状态由最新处理驱动；删除处理记录会回退到剩余最新状态。删除投诉前会将关联回访的 `parent_ticket_id` 置空，因此投诉时间线随投诉删除，而源回访恢复为独立工单；外键也由迁移 `f6b8d0e2a4c7` 改为 `ON DELETE SET NULL`，避免数据库级联误删。迁移 `c7e9a1b3d5f2` 最初建立三态和旧处理子表，PR-E 迁移 `d4e6f8a0b2c4` 再将其归一到统一时间线。
 
@@ -1922,6 +1924,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - 所有 Ant Design `Modal` 在 `frontend/src/index.css` 统一复用“邮局工单”弹窗的遮罩、容器、标题、表单和操作栏样式；新增弹窗直接使用 `Modal`，仅在业务布局确有差异时添加局部类名。
 - 报数编辑页 `ReportEditor.tsx` 使用分区卡片式表单：临时加印、完整报数类别与右侧实时汇总在同一工作区内联动；实际版数继续使用原生 `InputNumber` 编辑，保存、确认、作废、导出、删除和发货等既有业务流程不变。页面专属响应式样式位于 `ReportEditor.css`。
 - Storybook 顶部工具栏可统一切换亮/暗主题、舒适/紧凑密度和圆润/克制圆角。新增或迁移业务页面时应补代表性 Story，并检查这些全局组合。
+- 邮局投递明细的字号、控件高度和信息密度以“发行计划 → 印数管理”为基准；通用值应在 `theme.tsx`、共享组件或 `index.css` 中修改，Storybook 负责复用这些配置做预览验证，不作为独立样式源。当前交互稿保存在 `docs/preview/postal-*.html`。
 - `ReportEditor.stories.tsx` 提供含全部 31 个可见项目、临时加印归属和中通校验数据的草稿态场景，用于核对完整页面而非精简占位稿。
 - Storybook 的“页面”分类覆盖业务首页、发行履约和邮局管理门户，便于按实际导航层级检查入口页面。
 - 历史业务页面已按普通页、复杂详情页、图表页三类完成迁移；`frontend/src/pages` 不再保留直接色值，新页面继续复用上述语义变量或当前 Ant Design token。

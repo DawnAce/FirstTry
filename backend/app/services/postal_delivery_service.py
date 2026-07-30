@@ -3,7 +3,7 @@
 邮局记录不进「订单列表 / 客户管理」，这里是它们完整名册的家。
 """
 
-from datetime import date
+from datetime import date, timedelta
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
@@ -16,6 +16,9 @@ from app.models import (
 from app.models.postal_delivery import PostalDeliverySourceType
 from app.services import postal_common as pc
 
+DELIVERY_STATUSES = {"pending", "active", "expiring", "completed"}
+EXPIRING_DAYS = 30
+
 
 def _deliveries_query(
     db: Session,
@@ -24,6 +27,7 @@ def _deliveries_query(
     channel: Optional[str] = None,
     distribution_unit_id: Optional[int] = None,
     month: Optional[int] = None,
+    status: Optional[str] = None,
     search: Optional[str] = None,
 ):
     q = db.query(PostalDelivery).filter(PostalDelivery.is_archived.is_(False))
@@ -41,6 +45,26 @@ def _deliveries_query(
             PostalDelivery.coverage_start_date >= month_start,
             PostalDelivery.coverage_start_date < month_end,
         )
+    if status:
+        if status not in DELIVERY_STATUSES:
+            raise HTTPException(status_code=400, detail=f"未知投递状态：{status}")
+        today = date.today()
+        expiring_end = today + timedelta(days=EXPIRING_DAYS)
+        start = PostalDelivery.coverage_start_date
+        end = PostalDelivery.coverage_end_date
+        if status == "completed":
+            q = q.filter(end < today)
+        elif status == "pending":
+            q = q.filter(start > today, or_(end.is_(None), end >= today))
+        elif status == "expiring":
+            q = q.filter(end >= today, end <= expiring_end, or_(start.is_(None), start <= today))
+        else:
+            q = q.filter(
+                or_(start.is_not(None), end.is_not(None)),
+                or_(end.is_(None), end >= today),
+                or_(start.is_(None), start <= today),
+                or_(end.is_(None), end > expiring_end),
+            )
     if search and search.strip():
         s = search.strip()
         matches = [
@@ -71,17 +95,23 @@ def list_deliveries(
     channel: Optional[str] = None,
     distribution_unit_id: Optional[int] = None,
     month: Optional[int] = None,
+    status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
 ) -> Tuple[List[PostalDelivery], int]:
     q = _deliveries_query(
         db, year=year, channel=channel,
-        distribution_unit_id=distribution_unit_id, month=month, search=search,
+        distribution_unit_id=distribution_unit_id, month=month, status=status, search=search,
     )
     total = q.count()
+    order = (
+        (PostalDelivery.coverage_end_date.asc(), PostalDelivery.id.desc())
+        if status == "expiring"
+        else (PostalDelivery.year.desc(), PostalDelivery.id.desc())
+    )
     rows = (
-        q.order_by(PostalDelivery.year.desc(), PostalDelivery.id.desc())
+        q.order_by(*order)
         .offset(max(0, (page - 1) * page_size))
         .limit(page_size)
         .all()
@@ -96,12 +126,13 @@ def summarize_deliveries(
     channel: Optional[str] = None,
     distribution_unit_id: Optional[int] = None,
     month: Optional[int] = None,
+    status: Optional[str] = None,
     search: Optional[str] = None,
 ) -> dict:
     """概览行：合计份数 / 投递单位数 / 未填投递单位条数（同筛选口径）。"""
     q = _deliveries_query(
         db, year=year, channel=channel,
-        distribution_unit_id=distribution_unit_id, month=month, search=search,
+        distribution_unit_id=distribution_unit_id, month=month, status=status, search=search,
     )
     total_copies = q.with_entities(func.coalesce(func.sum(PostalDelivery.copies), 0)).scalar() or 0
     unit_count = q.with_entities(func.count(func.distinct(PostalDelivery.distribution_unit_id))).scalar() or 0
@@ -110,6 +141,10 @@ def summarize_deliveries(
         "total_copies": int(total_copies),
         "unit_count": int(unit_count),
         "missing_unit_count": int(missing_unit_count),
+        "nearest_expiry_date": (
+            q.with_entities(func.min(PostalDelivery.coverage_end_date)).scalar()
+            if status == "expiring" else None
+        ),
     }
 
 

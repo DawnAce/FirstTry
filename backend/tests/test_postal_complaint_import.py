@@ -104,7 +104,21 @@ def test_commit_and_reimport_idempotent(db):
     assert c.postal_delivery_id is not None
     assert c.status.value == "resolved"
     assert c.handling_count == 1
+    assert c.notes == "来源:邮局年投诉!第2行"
 
     out2, _ = preview_import(db, _wb(_ROWS))
+    assert out2["counts"]["duplicate"] == 2
+    assert out2["counts"]["import"] == 0
+
+
+def test_repeated_customer_complaints_are_kept_and_reimport_is_idempotent(db):
+    repeated = [dict(_ROWS[0]), dict(_ROWS[0], 处理情况="再次转徐州11185", 处理次数="2")]
+
+    out, sid = preview_import(db, _wb(repeated))
+    assert out["counts"]["import"] == 2
+    assert commit_import(db, sid)["created"] == 2
+    assert db.query(PostalComplaint).count() == 2
+
+    out2, _ = preview_import(db, _wb(repeated))
     assert out2["counts"]["duplicate"] == 2
     assert out2["counts"]["import"] == 0
