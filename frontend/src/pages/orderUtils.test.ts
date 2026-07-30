@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addressChangeAllocations,
   billingTypeLabel,
   canConfirmOrder,
   canDeleteOrder,
@@ -23,6 +24,28 @@ import {
   targetStatusColor,
   targetStatusLabel,
 } from './orderUtils';
+
+describe('addressChangeAllocations', () => {
+  const legacy = {
+    copy_allocations: null, old_copies: 2, new_copies: 1,
+    old_name: '薛舟瀛', old_phone: '1', old_address: '原地址',
+    new_name: '王安', new_phone: '2', new_address: '新地址',
+    original_start_month: '0101', effective_start_month: '0401',
+    change_date: '2025-03-27', external_order_no: '2025-4281',
+  };
+
+  it('derives a pending remainder from legacy copy counts', () => {
+    expect(addressChangeAllocations(legacy)).toEqual([
+      expect.objectContaining({ kind: 'changed', name: '王安', copies: 1, start_date: '2025-04-01' }),
+      expect.objectContaining({ kind: 'pending', name: '薛舟瀛', copies: 1, start_date: '2025-01-01' }),
+    ]);
+  });
+
+  it('uses persisted destinations when the remainder is confirmed', () => {
+    const persisted = [{ kind: 'retained' as const, copies: 2, name: '薛舟瀛', phone: null, address: '原地址', start_date: '2025-01-01' }];
+    expect(addressChangeAllocations({ ...legacy, copy_allocations: persisted })).toBe(persisted);
+  });
+});
 
 describe('entryMethodLabel', () => {
   it('maps the converged entry-method enums', () => {

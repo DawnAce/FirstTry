@@ -61,6 +61,8 @@ import type {
   RefundPayload,
 } from '../api/orders';
 import { getIssues } from '../api/issues';
+import { listDeliveries } from '../api/postal';
+import type { PostalDelivery } from '../api/postal';
 import { useAuth } from '../contexts/AuthContext';
 import {
   billingTypeLabel,
@@ -558,6 +560,11 @@ export default function OrderDetail() {
             key: 'shipping',
             label: '关联快递明细',
             children: <ShippingSyncTab orderId={order.id} />,
+          },
+          {
+            key: 'postal',
+            label: '关联邮局投递',
+            children: <PostalDeliveriesTab orderId={order.id} />,
           },
           {
             key: 'events',
@@ -1118,6 +1125,44 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
 // =============================================================================
 // Tab 3: Shipping sync
 // =============================================================================
+
+function PostalDeliveriesTab({ orderId }: { orderId: number }) {
+  const navigate = useNavigate();
+  const q = useQuery({
+    queryKey: ['postalDeliveries', 'order', orderId],
+    queryFn: () => listDeliveries({ order_id: orderId, page_size: 200 }).then((r) => r.data),
+  });
+  const columns: TableColumnsType<PostalDelivery> = [
+    { title: '投递编号', key: 'number', width: 140, render: (_: unknown, row) => `${row.year}-${row.delivery_no}` },
+    { title: '收报人', key: 'recipient', width: 160, render: (_: unknown, row) => (
+      <Space direction="vertical" size={0}>
+        <Text strong>{row.recipient_name}</Text>
+        <Text type="secondary">{row.recipient_phone || '未记录电话'} · {row.copies}份</Text>
+      </Space>
+    ) },
+    { title: '年度投递段', key: 'coverage', render: (_: unknown, row) => `${row.coverage_start_date || '—'} — ${row.coverage_end_date || '—'}` },
+    { title: '分段金额', dataIndex: 'amount', width: 110, render: (amount: string | null) => amount == null ? '—' : `¥${amount}` },
+    { title: '来源', key: 'source', width: 110, render: (_: unknown, row) => row.source_type === 'order_generated' ? <Tag color="blue">订单生成</Tag> : <Tag>名册补链</Tag> },
+  ];
+  if (!q.isLoading && !q.data?.rows.length) {
+    return (
+      <Card>
+        <Empty description="尚无正式关联的邮局投递记录；历史名册可在“待续投”中补齐来源关联。">
+          <Button type="primary" onClick={() => navigate('/post-delivery/renewals')}>前往待续投</Button>
+        </Empty>
+      </Card>
+    );
+  }
+  return (
+    <Card
+      size="small"
+      title={`邮局年度投递段（${q.data?.total ?? 0}）`}
+      extra={<Button type="link" onClick={() => navigate('/post-delivery/deliveries')}>打开投递明细</Button>}
+    >
+      <Table<PostalDelivery> rowKey="id" size="small" loading={q.isLoading} pagination={false} columns={columns} dataSource={q.data?.rows ?? []} />
+    </Card>
+  );
+}
 
 function ShippingSyncTab({ orderId }: { orderId: number }) {
   const queryClient = useQueryClient();

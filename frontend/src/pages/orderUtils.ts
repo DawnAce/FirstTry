@@ -12,6 +12,7 @@ import type {
   SubscriptionTerm,
   TargetStatus,
 } from '../api/orders';
+import type { AddressAllocation, PostalAddressChange } from '../api/postal';
 import dayjs from 'dayjs';
 
 // =============================================================================
@@ -227,6 +228,41 @@ export function coverageStatus(
   if (startDate?.isAfter(current, 'day')) return 'pending';
   if (endDate && !endDate.isAfter(current.add(EXPIRING_DAYS, 'day'), 'day')) return 'expiring';
   return 'active';
+}
+
+function addressStartDate(change: Pick<PostalAddressChange, 'change_date' | 'external_order_no'>, raw: string | null) {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 8) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+  const year = change.external_order_no?.match(/^(\d{4})-/)?.[1]
+    ?? (change.change_date ? dayjs(change.change_date).format('YYYY') : null);
+  return digits.length === 4 && year ? `${year}-${digits.slice(0, 2)}-${digits.slice(2)}` : null;
+}
+
+export function addressChangeAllocations(
+  change: Pick<PostalAddressChange,
+    'copy_allocations' | 'old_copies' | 'new_copies' | 'old_name' | 'old_phone' |
+    'old_address' | 'new_name' | 'new_phone' | 'new_address' | 'original_start_month' |
+    'effective_start_month' | 'change_date' | 'external_order_no'>,
+): AddressAllocation[] {
+  if (change.copy_allocations) return change.copy_allocations;
+  const original = Math.max(change.old_copies ?? 0, 0);
+  const moved = change.new_copies == null ? original : Math.max(change.new_copies, 0);
+  const rows: AddressAllocation[] = [];
+  if (moved) rows.push({
+    kind: 'changed', copies: moved,
+    name: change.new_name || change.old_name,
+    phone: change.new_phone || change.old_phone,
+    address: change.new_address || change.old_address,
+    start_date: addressStartDate(change, change.effective_start_month),
+  });
+  const remaining = Math.max(original - moved, 0);
+  if (remaining) rows.push({
+    kind: 'pending', copies: remaining,
+    name: change.old_name, phone: change.old_phone, address: change.old_address,
+    start_date: addressStartDate(change, change.original_start_month),
+  });
+  return rows;
 }
 
 const currencyFormatter = new Intl.NumberFormat('zh-CN', {

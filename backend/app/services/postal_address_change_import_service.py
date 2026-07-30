@@ -116,6 +116,8 @@ def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
         postal_delivery_id = rec[0] if rec else None
         order_id = rec[1] if rec else None
         routed = pc.routed_label(ac.handling)
+        old_copies = pc.to_int_or_none(ac.old_copies_raw)
+        new_copies = pc.to_int_or_none(ac.new_copies_raw)
         data = {
             "postal_delivery_id": postal_delivery_id,
             "order_id": order_id,
@@ -125,11 +127,15 @@ def build_address_change_preview(db: Session, rows) -> AddrImportPreview:
             "old_name": ac.old_name or None,
             "old_phone": ac.old_phone or None,
             "old_address": pc.compose_address(ac.old_province, ac.old_city, ac.old_district, ac.old_detail) or None,
-            "old_copies": pc.to_int_or_none(ac.old_copies_raw),
+            "old_copies": old_copies,
             "new_name": ac.new_name or None,
             "new_phone": ac.new_phone or None,
             "new_address": ac.new_address or None,
-            "new_copies": pc.to_int_or_none(ac.new_copies_raw),
+            "new_copies": new_copies,
+            "unresolved_copies": (
+                max(old_copies - new_copies, 0)
+                if old_copies is not None and new_copies is not None else 0
+            ),
             "original_start_month": ac.original_start_month or None,
             "effective_start_month": ac.effective_start_month or None,
             "handling": ac.handling or None,

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
+  Alert,
   Card,
   Checkbox,
   DatePicker,
@@ -33,6 +34,7 @@ import {
   InboxOutlined,
   PlusOutlined,
   UploadOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -57,19 +59,23 @@ import {
   getAddressChange,
   getComplaintDetail,
   getFollowUp,
+  generatePostalRenewals,
+  linkExactPostalDeliveries,
   listDeliveries,
+  listPostalRenewals,
   listTickets,
   previewAddressChangeImport,
   previewComplaintImport,
   previewFollowUpImport,
   previewPostalImport,
+  resolveAddressChangePending,
   updateAddressChange,
   updateComplaint,
   updateDelivery,
   updateFollowUp,
 } from '../api/postal';
 import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives';
-import { coverageStatus, EXPIRING_DAYS } from './orderUtils';
+import { addressChangeAllocations, coverageStatus, EXPIRING_DAYS } from './orderUtils';
 import type {
   AddrImportRow,
   ComplaintImportPreview,
@@ -86,6 +92,7 @@ import type {
   PostalImportDecision,
   PostalImportPreview,
   PostalImportRow,
+  PostalRenewalRow,
   SimpleImportPreview,
   Ticket,
   TicketType,
@@ -498,6 +505,126 @@ function DeliveriesTab() {
   );
 }
 
+/** 待续投：按目标期月核对订单权益与邮局投递覆盖。 */
+function RenewalsTab() {
+  const now = dayjs();
+  const defaultMonth = (now.month() === 0 ? now : now.add(1, 'year').startOf('year')).format('YYYY-MM');
+  const [targetMonth, setTargetMonth] = useState(defaultMonth);
+  const [selected, setSelected] = useState<number[]>([]);
+  const { isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ['postalRenewals', targetMonth],
+    queryFn: () => listPostalRenewals(targetMonth).then((r) => r.data),
+  });
+  const generateMut = useMutation({
+    mutationFn: () => generatePostalRenewals(targetMonth, selected),
+    onSuccess: ({ data }) => {
+      message.success(`已生成 ${data.created_count} 条投递记录${data.skipped_count ? `，跳过 ${data.skipped_count} 条` : ''}`);
+      setSelected([]);
+      qc.invalidateQueries({ queryKey: ['postalRenewals'] });
+      qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+  const linkMut = useMutation({
+    mutationFn: linkExactPostalDeliveries,
+    onSuccess: ({ data }) => {
+      message.success(`已补齐 ${data.linked} 条来源订单关联${data.unresolved ? `，另有 ${data.unresolved} 条需人工核对` : ''}`);
+      qc.invalidateQueries({ queryKey: ['postalRenewals'] });
+      qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+  const summary = q.data?.summary;
+  const columns: TableColumnsType<PostalRenewalRow> = [
+    { title: '状态', dataIndex: 'status', width: 100, render: (status) => status === 'pending'
+      ? <Tag color="orange">待生成</Tag>
+      : <Tag color="red">待补关联</Tag> },
+    { title: '来源订单', key: 'order', width: 180, render: (_: unknown, row) => (
+      <Space direction="vertical" size={0}>
+        <Button type="link" className="postal-inline-link" onClick={() => navigate(`/orders/${row.order_id}`)}>{row.order_code || `订单 #${row.order_id}`}</Button>
+        <Text type="secondary" className="postal-cell-secondary">{row.external_order_no || '无来源单号'}</Text>
+      </Space>
+    ) },
+    { title: '收报人', key: 'recipient', width: 150, render: (_: unknown, row) => (
+      <Space direction="vertical" size={0}>
+        <Text strong>{row.recipient_name}</Text>
+        <Text type="secondary" className="postal-cell-secondary">{row.recipient_phone || '未记录电话'} · {row.copies}份</Text>
+      </Space>
+    ) },
+    { title: '当前投递段', key: 'previous', width: 170, render: (_: unknown, row) => (
+      <Space direction="vertical" size={0}>
+        <Text>{row.previous_delivery_no || '尚无投递记录'}</Text>
+        <Text type="secondary" className="postal-cell-secondary">截止 {row.previous_end_date || '—'}</Text>
+      </Space>
+    ) },
+    { title: '订单剩余权益', key: 'entitlement', width: 210, render: (_: unknown, row) => (
+      <Text>{row.entitlement_start_date} — {row.entitlement_end_date}</Text>
+    ) },
+    { title: '建议新投递段', key: 'proposed', width: 220, render: (_: unknown, row) => (
+      <Space direction="vertical" size={0}>
+        <Text strong>{row.proposed_start_date} — {row.proposed_end_date}</Text>
+        <Text type="secondary" className="postal-cell-secondary">{row.product} · ¥{row.proposed_amount}</Text>
+      </Space>
+    ) },
+  ];
+  return (
+    <>
+      <PageHeader
+        title="待续投"
+        description="按目标期月核对订单权益，防止跨年投递断档"
+        actions={<Space>
+          {isAdmin && <Button onClick={() => linkMut.mutate()} loading={linkMut.isPending}>补齐现有来源关联</Button>}
+          {isAdmin && <Button type="primary" disabled={!selected.length} loading={generateMut.isPending} onClick={() => generateMut.mutate()}>
+            生成所选投递记录{selected.length ? `（${selected.length}）` : ''}
+          </Button>}
+        </Space>}
+      />
+      <Flex className="postal-toolbar" align="center" gap={12} wrap>
+        <Text strong>目标期月</Text>
+        <DatePicker picker="month" allowClear={false} value={dayjs(`${targetMonth}-01`)} onChange={(value) => {
+          if (value) { setTargetMonth(value.format('YYYY-MM')); setSelected([]); }
+        }} />
+        <Text type="secondary">系统比较“订单应投月份”和“现有邮局记录已覆盖月份”</Text>
+      </Flex>
+      <Flex gap={12} wrap className="postal-renewal-stats">
+        {[
+          ['待续投来源订单', summary?.pending_order_count ?? 0],
+          ['待续投明细', summary?.pending_detail_count ?? 0],
+          ['待续投份数', summary?.pending_copies ?? 0],
+          ['该月已覆盖', summary?.covered_count ?? 0],
+        ].map(([label, value]) => <Card size="small" key={label} className="postal-renewal-stat"><Text type="secondary">{label}</Text><strong>{value}</strong></Card>)}
+      </Flex>
+      {(summary?.needs_link_count ?? 0) > 0 && (
+        <Card size="small" className="postal-renewal-warning">
+          <Text type="danger">有 {summary?.needs_link_count} 条同源投递记录尚未正式关联，已阻止重复生成；请先“补齐现有来源关联”。</Text>
+        </Card>
+      )}
+      <Card className="postal-table-card" styles={{ body: { padding: 0 } }}>
+        <div className="postal-summary">
+          {targetMonth} 共识别 <b>{summary?.candidate_count ?? 0}</b> 条应投明细，尚需生成 <b>{summary?.pending_detail_count ?? 0}</b> 条
+        </div>
+        <Table<PostalRenewalRow>
+          rowKey="fulfillment_target_id"
+          columns={columns}
+          dataSource={q.data?.rows ?? []}
+          loading={q.isLoading}
+          size="small"
+          scroll={{ x: 1100 }}
+          rowSelection={isAdmin ? {
+            selectedRowKeys: selected,
+            onChange: (keys) => setSelected(keys.map(Number)),
+            getCheckboxProps: (row) => ({ disabled: row.status !== 'pending' }),
+          } : undefined}
+          pagination={false}
+        />
+      </Card>
+    </>
+  );
+}
+
 /** 通用导入弹窗（改地址 / 回访 / 收款发票共用：counts import/duplicate/linked + 可配置列） */
 function SimpleImportModal<T extends object>(props: {
   open: boolean; onClose: () => void; title: string; hint: string; unit: string; linkedLabel: string;
@@ -738,7 +865,7 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
             <h3><span aria-hidden>💼</span>订单来源与业务</h3>
             <div className="postal-detail-grid">
               <div className="postal-detail-field"><span>来源系统订单</span><strong>{record.order_id
-                ? <Button type="link" className="postal-inline-link" onClick={() => navigate(`/orders/${record.order_id}`)}>{`订单 #${record.order_id}`}</Button>
+                ? <Button type="link" className="postal-inline-link" onClick={() => navigate(`/orders/${record.order_id}`)}>{record.order_code || `订单 #${record.order_id}`}</Button>
                 : <Tag>未关联</Tag>}</strong></div>
               <div className="postal-detail-field"><span>订单来源</span><strong>{record.source_channel || '未记录'}</strong></div>
               <div className="postal-detail-field"><span>来源单号</span><strong className={!record.external_order_no ? 'muted' : ''}>{record.external_order_no || '未记录'}</strong></div>
@@ -1379,6 +1506,7 @@ function ticketStatusTag(t: Ticket) {
     return m ? <Tag color={m.color}>{m.label}</Tag> : <Text type="secondary">—</Text>;
   }
   if (t.type === 'address') {
+    if (t.status === 'recipient_pending') return <Tag color="red">{t.pending_copies}份收件人未确认</Tag>;
     if (t.status === 'applied') return <Tag color="green">已应用</Tag>;
     if (t.status === 'unmatched') return <Tag>未匹配</Tag>;
     return <Tag color="orange">待应用</Tag>;
@@ -1392,6 +1520,9 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
 }) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolveForm] = Form.useForm();
+  const resolveKind = Form.useWatch<'changed' | 'retained'>('kind', resolveForm);
   const open = addressId != null;
   const q = useQuery({
     queryKey: ['postalAddrDetail', addressId],
@@ -1407,34 +1538,97 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
     },
     onError: (e) => message.error(errText(e)),
   });
+  const resolveMut = useMutation({
+    mutationFn: (values: any) => resolveAddressChangePending(addressId as number, {
+      ...values,
+      start_date: values.start_date ? values.start_date.format('YYYY-MM-DD') : null,
+    }),
+    onSuccess: () => {
+      message.success('剩余份数去向已确认');
+      setResolveOpen(false);
+      resolveForm.resetFields();
+      qc.invalidateQueries({ queryKey: ['postalTickets'] });
+      qc.invalidateQueries({ queryKey: ['postalAddrDetail', addressId] });
+    },
+    onError: (e) => message.error(errText(e)),
+  });
   const a = q.data;
+  const allocations = a ? addressChangeAllocations(a) : [];
+  const pendingCopies = Math.max(
+    a?.unresolved_copies ?? 0,
+    allocations.filter((row) => row.kind === 'pending').reduce((sum, row) => sum + row.copies, 0),
+  );
+  const changedAllocations = allocations.filter((row) => row.kind === 'changed');
+  const remainderAllocations = allocations.filter((row) => row.kind !== 'changed');
+  const movedCopies = changedAllocations.reduce((sum, row) => sum + row.copies, 0);
+  const remainingCopies = remainderAllocations.reduce((sum, row) => sum + row.copies, 0);
+  const changedRecipient = changedAllocations.length === 1
+    ? changedAllocations[0]?.name || a?.new_name || '新收件信息'
+    : `${changedAllocations.length}个收件人`;
+  const retainedRecipient = remainderAllocations.length === 1
+    ? remainderAllocations[0]?.name || a?.old_name || '原收件信息'
+    : `${remainderAllocations.length}个原信息去向`;
+  const hasCopyFlow = movedCopies > 0 && remainingCopies > 0;
   const sourceYear = a?.external_order_no?.match(/^(\d{4})-/)?.[1]
     || (a?.change_date ? dayjs(a.change_date).format('YYYY') : null);
+  const sourceStart = a?.original_start_month && sourceYear
+    ? `${sourceYear}-${a.original_start_month.slice(0, 2)}-${a.original_start_month.slice(2, 4)}`
+    : a?.original_start_month || null;
+  const openResolve = () => {
+    resolveForm.setFieldsValue({ kind: 'changed', copies: pendingCopies });
+    setResolveOpen(true);
+  };
   const extra = a && (readOnly || a.applied_to_order
     ? <Text type="secondary">{a.applied_to_order ? '已应用 · 只读' : '只读查看'}</Text>
     : isAdmin ? <Button icon={<EditOutlined />} onClick={() => onEdit(a)}>编辑</Button> : null);
   const content = !a ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <div className="diff-row" style={{ display: 'flex', gap: 12 }}>
-        <Card size="small" title="变更前" style={{ flex: 1, background: 'var(--color-bg-subtle)' }}>
-          <div>{a.old_name || '—'}{a.old_phone ? ` / ${a.old_phone}` : ''}</div>
-          <div style={{ color: 'var(--color-text-tertiary)' }}>{a.old_address || '—'}</div>
-          {a.old_copies != null && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>份数 {a.old_copies}</div>}
-        </Card>
-        <Card size="small" title="变更后" style={{ flex: 1, background: 'var(--color-success-soft)', borderColor: 'var(--color-success)' }}>
-          <div>{a.new_name || a.old_name || '—'}{(a.new_phone || a.old_phone) ? ` / ${a.new_phone || a.old_phone}` : ''}</div>
-          <div style={{ color: 'var(--color-success-text)' }}>{a.new_address || a.old_address || '—'}</div>
-          {(a.new_copies ?? a.old_copies) != null && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>份数 {a.new_copies ?? a.old_copies}</div>}
-        </Card>
-      </div>
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      {pendingCopies > 0 && a.applied_to_order && (
+        <Alert type="error" showIcon message={`仍有 ${pendingCopies} 份收件人未确认`}
+          description={`当前暂按${a.old_name || '原收件人'}原信息投递，请尽快确认最终收件人。`} />
+      )}
+      <section className="address-allocation-section">
+        <div className="address-allocation-heading"><strong>份数去向</strong><span>每一份都有独立收件人与起投时间</span></div>
+        <div className="address-allocation-source">
+          <span className="address-allocation-avatar original">{a.old_name?.slice(0, 1) || '原'}</span>
+          <div><strong>变更前 · {a.old_name || '原收件人'}</strong><small>{a.old_phone || '无电话'} · {a.old_address || '无地址'}</small><small>原起投时间：{sourceStart || '—'}</small></div>
+          <b>共 {a.old_copies ?? '—'} 份</b>
+        </div>
+        <div className="address-allocation-arrow">↓</div>
+        <div className="address-allocation-list">
+          {allocations.map((row, index) => (
+            <div className={`address-allocation-row ${row.kind}`} key={`${row.kind}-${index}`}>
+              <span className="address-allocation-avatar">{row.kind === 'pending' ? '!' : row.name?.slice(0, 1) || '收'}</span>
+              <div className="address-allocation-main">
+                <strong>{row.kind === 'pending' ? '收件人待确认' : row.name || '未填写收件人'}
+                  <Tag color={row.kind === 'pending' ? 'red' : row.kind === 'retained' ? 'green' : 'purple'}>
+                    {row.kind === 'pending' ? '强提醒' : row.kind === 'retained' ? '保留原信息' : '已变更'}
+                  </Tag>
+                </strong>
+                <small>{row.kind === 'pending' ? `当前暂按${a.old_name || '原收件人'}原姓名、电话和地址投递` : `${row.phone || '无电话'} · ${row.address || '无地址'}`}</small>
+                <small className="start">起投时间：{row.kind === 'pending' ? `待确认；当前暂按 ${row.start_date || sourceStart || '原时间'} 投递` : row.start_date || '—'}</small>
+              </div>
+              <b>{row.copies}份</b>
+            </div>
+          ))}
+        </div>
+        {pendingCopies > 0 && a.applied_to_order && (
+          <div className="address-allocation-action"><span>待确认份数暂时正常投递，但最终收件人尚未闭环。</span>
+            {isAdmin && <Button danger type="primary" size="small" onClick={openResolve}>发起补充变更</Button>}
+          </div>
+        )}
+        <div className={`address-allocation-progress ${pendingCopies ? 'pending' : 'confirmed'}`}>
+          <span>去向确认进度</span><div><i style={{ width: `${a.old_copies ? Math.max(0, (a.old_copies - pendingCopies) / a.old_copies * 100) : 100}%` }} /></div>
+          <b>{pendingCopies ? `待确认 ${pendingCopies}份` : '全部确认'}</b>
+        </div>
+      </section>
       <Descriptions size="small" column={1} bordered items={[
         { key: 'date', label: '变更登记时间', children: a.change_date ? dayjs(a.change_date).format('YYYY-MM-DD HH:mm') : '—' },
-        { key: 'st', label: '起月日', children: `${a.original_start_month || '—'} → ${a.effective_start_month || '—'}` },
         { key: 'h', label: '处理情况', children: a.handling || a.routed_label || '—' },
         { key: 'r', label: '关联读者', children: readerTag(a.postal_delivery_id) },
         { key: 'no', label: '编号', children: a.external_order_no || '—' },
         { key: 'ap', label: '应用状态', children: a.applied_to_order
-            ? <Tag color="green">已应用{a.order_id ? '·已同步履约订单' : '·仅名册'}</Tag>
+            ? <Tag color={pendingCopies ? 'red' : 'green'}>{pendingCopies ? `已应用 · ${pendingCopies}份待确认` : `已应用${a.order_id ? '·已同步履约订单' : '·仅名册'}`}</Tag>
             : (a.postal_delivery_id ? <Tag color="orange">待应用</Tag> : <Tag>未匹配（未关联读者）</Tag>) },
         { key: 'notes', label: '备注', children: a.notes || '—' },
       ]} />
@@ -1495,7 +1689,32 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
           </div>
         </div>
 
-        <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>紫色文字为本次实际变更内容，右侧资料与当前投递详情一致</span></div>
+        {hasCopyFlow ? (
+          <>
+            <div className="address-source-copy-flow">
+              <div className="address-source-copy-title"><strong>份数流向</strong><small>每一份都应有明确去向</small></div>
+              <div className="address-source-copy-total">原记录<b>共 {a.old_copies ?? movedCopies + remainingCopies} 份</b></div>
+              <div className="address-source-copy-results">
+                <div className="address-source-copy-item moved"><span>已转出</span><strong>{changedRecipient} · {movedCopies}份</strong></div>
+                <div className="address-source-copy-plus">+</div>
+                <div className={`address-source-copy-item ${pendingCopies > 0 ? 'pending' : 'retained'}`}>
+                  <span>{pendingCopies > 0 ? '剩余' : '原信息保留'}</span>
+                  <strong>{pendingCopies > 0
+                    ? `${remainingCopies}份 · 去向待确认`
+                    : `${retainedRecipient} · ${remainingCopies}份`}</strong>
+                </div>
+              </div>
+            </div>
+            <div className={`address-source-copy-note ${pendingCopies > 0 ? 'pending' : 'confirmed'}`}>
+              <span aria-hidden>{pendingCopies > 0 ? '⚠' : '✓'}</span>
+              <span>{pendingCopies > 0
+                ? `原始变更记录未说明剩余${remainingCopies}份去向，不能自动判定为原地址保留或取消`
+                : `剩余${remainingCopies}份继续沿用${retainedRecipient}原姓名、电话和地址，本次未发生变更`}</span>
+            </div>
+          </>
+        ) : (
+          <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>紫色文字为本次实际变更内容，右侧资料与当前投递详情一致</span></div>
+        )}
       </section>
 
       <section className="complaint-form-section address-source-processing">
@@ -1506,6 +1725,30 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
         </div>
       </section>
     </div>
+  );
+  const resolveDialog = (
+    <Modal title="补充确认剩余份数去向" width={620} centered open={resolveOpen}
+      onCancel={() => { setResolveOpen(false); resolveForm.resetFields(); }}
+      footer={<><Button onClick={() => setResolveOpen(false)}>取消</Button><Button type="primary" loading={resolveMut.isPending} onClick={() => resolveForm.submit()}>确认并生成补充变更</Button></>}>
+      <Alert type="error" showIcon message={`当前 ${pendingCopies} 份仍按${a?.old_name || '原收件人'}原信息正常投递，提交后红色提醒自动解除。`} />
+      <Form form={resolveForm} layout="vertical" onFinish={(values) => resolveMut.mutate(values)} className="address-resolve-form">
+        <Form.Item name="copies" hidden><InputNumber /></Form.Item>
+        <Form.Item name="kind" label="最终去向" rules={[{ required: true }]}>
+          <Radio.Group className="address-resolve-options">
+            <Radio value="retained"><strong>确认继续由{a?.old_name || '原收件人'}接收</strong><small>最终归属不变，保留原姓名、电话、地址和起投时间</small></Radio>
+            <Radio value="changed"><strong>变更为其他收件人</strong><small>补充新的姓名、电话、地址和起投时间</small></Radio>
+          </Radio.Group>
+        </Form.Item>
+        {resolveKind === 'changed' && (
+          <div className="address-resolve-grid">
+            <Form.Item name="name" label="姓名" rules={[{ required: true, message: '请填写姓名' }]}><Input /></Form.Item>
+            <Form.Item name="phone" label="电话"><Input /></Form.Item>
+            <Form.Item name="start_date" label="起投时间" rules={[{ required: true, message: '请选择起投时间' }]}><DatePicker style={{ width: '100%' }} /></Form.Item>
+            <Form.Item name="address" label="地址" rules={[{ required: true, message: '请填写地址' }]} className="wide"><Input /></Form.Item>
+          </div>
+        )}
+      </Form>
+    </Modal>
   );
   if (modal) return (
     <><Modal
@@ -1523,6 +1766,7 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
           <span className={`complaint-form-status ${a.applied_to_order ? 'status-resolved' : 'status-address'}`}>
             {a.applied_to_order ? '已应用' : '待应用'}
           </span>
+          {pendingCopies > 0 && <span className="address-source-review-status">份数待核对</span>}
         </div>
       ) : '收件信息变更记录'}
       width={900}
@@ -1550,7 +1794,7 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
         title="收件信息变更工单"
         description={a ? `${a.old_name || a.new_name || '未记录收报人'} · 编号 ${a.external_order_no || '未记录'}` : '查看修改前后信息'}
         tone="purple"
-        status={a ? <StatusPill tone={a.applied_to_order ? 'success' : a.postal_delivery_id ? 'warning' : 'neutral'}>{a.applied_to_order ? '已应用' : a.postal_delivery_id ? '待应用' : '未匹配'}</StatusPill> : undefined}
+        status={a ? <StatusPill tone={pendingCopies ? 'danger' : a.applied_to_order ? 'success' : a.postal_delivery_id ? 'warning' : 'neutral'}>{pendingCopies ? `${pendingCopies}份未确认` : a.applied_to_order ? '已应用' : a.postal_delivery_id ? '待应用' : '未匹配'}</StatusPill> : undefined}
       />
     )} size={560} open={open} onClose={onClose} destroyOnHidden extra={extra} rootClassName="app-drawer-root"
       footer={(
@@ -1560,7 +1804,7 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
         </div>
       )}>
       {content}
-    </Drawer></>
+    </Drawer>{resolveDialog}</>
   );
 }
 
@@ -1615,6 +1859,7 @@ function TicketsTab() {
   const [year, setYear] = useState<number | undefined>();
   const [status, setStatus] = useState<string | undefined>();
   const [applied, setApplied] = useState<boolean | undefined>();
+  const [recipientPending, setRecipientPending] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
@@ -1637,10 +1882,11 @@ function TicketsTab() {
   const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
 
   const q = useQuery({
-    queryKey: ['postalTickets', { type, year, status, applied, search, page }],
+    queryKey: ['postalTickets', { type, year, status, applied, recipientPending, search, page }],
     queryFn: () => listTickets({
       type, year, status: type === 'complaint' ? status : undefined,
       applied: type === 'address' ? applied : undefined,
+      recipient_pending: recipientPending || undefined,
       search: search.trim() || undefined, page, page_size: PAGE_SIZE,
     }).then((r) => r.data),
   });
@@ -1722,7 +1968,7 @@ function TicketsTab() {
       <Space direction="vertical" size={0} style={{ maxWidth: 520 }}>
         <Text ellipsis>{v || '—'}</Text>
         <Text type="secondary" className="postal-cell-secondary">
-          {r.postal_delivery_id ? '已关联投递明细' : '未关联投递明细'}{r.handling_count != null ? ` · 已处理 ${r.handling_count} 次` : ''}
+          {r.allocation_summary || (r.postal_delivery_id ? '已关联投递明细' : '未关联投递明细')}{r.handling_count != null ? ` · 已处理 ${r.handling_count} 次` : ''}
         </Text>
       </Space>
     ) },
@@ -1793,7 +2039,7 @@ function TicketsTab() {
         <Radio.Group
           optionType="button" buttonStyle="solid" options={typeOptions}
           value={type ?? 'all'}
-          onChange={(e) => { const v = e.target.value; setType(v === 'all' ? undefined : v); setStatus(undefined); setApplied(undefined); setPage(1); }}
+          onChange={(e) => { const v = e.target.value; setType(v === 'all' ? undefined : v); setStatus(undefined); setApplied(undefined); setRecipientPending(false); setPage(1); }}
         />
         <Input.Search allowClear placeholder="搜索读者或编号" style={{ width: 240 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
@@ -1806,6 +2052,12 @@ function TicketsTab() {
           <Select allowClear placeholder="应用状态" style={{ width: 130 }} value={applied} onChange={(v) => { setApplied(v); setPage(1); }}
             options={[{ label: '已应用', value: true }, { label: '未应用', value: false }]} />
         )}
+        {(type === 'address' || type == null) && (sm?.address_recipient_pending ?? 0) > 0 && (
+          <Button danger type={recipientPending ? 'primary' : 'default'} icon={<WarningOutlined />}
+            onClick={() => { setRecipientPending((value) => !value); setPage(1); }}>
+            收件人未确认 {sm?.address_recipient_pending}
+          </Button>
+        )}
       </Flex>
 
       <Card className="postal-table-card" styles={{ body: { padding: 0 } }}>
@@ -1813,6 +2065,7 @@ function TicketsTab() {
           rowKey={(r) => `${r.type}-${r.id}`}
           columns={cols}
           dataSource={data?.rows ?? []}
+          rowClassName={(record) => record.status === 'recipient_pending' ? 'postal-ticket-row-pending' : ''}
           loading={q.isLoading}
           size="small"
           pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }}
@@ -1864,6 +2117,7 @@ function TicketsTab() {
 
 const POST_TABS = [
   { key: 'deliveries', label: '投递明细', component: DeliveriesTab },
+  { key: 'renewals', label: '待续投', component: RenewalsTab },
   { key: 'tickets', label: '邮局工单', component: TicketsTab },
 ] as const;
 

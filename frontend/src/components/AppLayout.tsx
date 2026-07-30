@@ -79,7 +79,7 @@ export default function AppLayout() {
               {isBusinessHome
                 ? '具体业务菜单已收进各业务中心，首页不再平铺全部功能。'
                 : postalContext
-                  ? '投递明细、订报转投和邮局工单统一归属邮局管理。'
+                  ? '投递明细、待续投、订报转投和邮局工单统一归属邮局管理。'
                   : `当前只显示“${center?.title}”下的功能，减少无关菜单干扰。`}
             </div>
           </div>

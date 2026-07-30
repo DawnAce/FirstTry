@@ -8,6 +8,9 @@ export interface PostalDelivery {
   year: number;
   delivery_no: string;
   order_id: number | null;
+  order_item_id: number | null;
+  fulfillment_target_id: number | null;
+  order_code: string | null;
   external_order_no: string | null;
   recipient_name: string;
   recipient_phone: string | null;
@@ -34,6 +37,7 @@ export type DeliveryStatusFilter = 'pending' | 'active' | 'expiring' | 'complete
 export interface DeliveryListOut { rows: PostalDelivery[]; total: number; summary: { total_copies: number; unit_count: number; missing_unit_count: number; nearest_expiry_date: string | null } }
 
 export interface DeliveryFilters {
+  order_id?: number;
   year?: number;
   channel?: string;
   distribution_unit_id?: number;
@@ -46,6 +50,64 @@ export interface DeliveryFilters {
 
 export function listDeliveries(f: DeliveryFilters): Promise<AxiosResponse<DeliveryListOut>> {
   return api.get('/postal/deliveries', { params: f });
+}
+
+// --- 跨年续投 -------------------------------------------------------------
+
+export interface PostalRenewalRow {
+  status: 'pending' | 'needs_link';
+  order_id: number;
+  order_code: string | null;
+  external_order_no: string | null;
+  order_item_id: number;
+  fulfillment_target_id: number;
+  recipient_name: string;
+  recipient_phone: string | null;
+  recipient_address: string;
+  product: string;
+  copies: number;
+  entitlement_start_date: string;
+  entitlement_end_date: string;
+  previous_delivery_id: number | null;
+  previous_delivery_no: string | null;
+  previous_end_date: string | null;
+  proposed_start_date: string;
+  proposed_end_date: string;
+  proposed_amount: string;
+  overlap_delivery_id: number | null;
+  overlap_delivery_no: string | null;
+}
+
+export interface PostalRenewalListOut {
+  target_month: string;
+  rows: PostalRenewalRow[];
+  total: number;
+  summary: {
+    candidate_count: number;
+    pending_order_count: number;
+    pending_detail_count: number;
+    pending_copies: number;
+    covered_count: number;
+    needs_link_count: number;
+  };
+}
+
+export function listPostalRenewals(targetMonth: string): Promise<AxiosResponse<PostalRenewalListOut>> {
+  return api.get('/postal/renewals', { params: { target_month: targetMonth } });
+}
+
+export function generatePostalRenewals(
+  targetMonth: string,
+  fulfillmentTargetIds: number[],
+): Promise<AxiosResponse<{ created_count: number; skipped_count: number; linked_existing_count: number }>> {
+  return api.post('/postal/renewals/generate', {
+    target_month: targetMonth,
+    fulfillment_target_ids: fulfillmentTargetIds,
+  });
+}
+
+export function linkExactPostalDeliveries(): Promise<AxiosResponse<{ linked: number; unresolved: number; examined: number }>> {
+  return api.post('/postal/deliveries/link-exact');
 }
 
 export type PostalImportDecision = 'import' | 'duplicate' | 'unresolved';
@@ -167,6 +229,17 @@ export function commitComplaintImport(sessionId: string): Promise<AxiosResponse<
 
 // --- 改地址工单 (P3) -------------------------------------------------------
 
+export type AddressAllocationKind = 'changed' | 'retained' | 'pending';
+
+export interface AddressAllocation {
+  kind: AddressAllocationKind;
+  copies: number;
+  name: string | null;
+  phone: string | null;
+  address: string | null;
+  start_date: string | null;
+}
+
 export interface PostalAddressChange {
   id: number;
   postal_delivery_id: number | null;
@@ -183,6 +256,8 @@ export interface PostalAddressChange {
   new_copies: number | null;
   original_start_month: string | null;
   effective_start_month: string | null;
+  copy_allocations: AddressAllocation[] | null;
+  unresolved_copies: number;
   handling: string | null;
   routed_label: string | null;
   applied_to_order: boolean;
@@ -224,6 +299,16 @@ export function applyAddressChange(id: number): Promise<AxiosResponse<PostalAddr
 }
 export function getAddressChange(id: number): Promise<AxiosResponse<PostalAddressChange>> {
   return api.get(`/postal/tickets/${id}`);
+}
+export function resolveAddressChangePending(id: number, body: {
+  kind: 'changed' | 'retained';
+  copies: number;
+  name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  start_date?: string | null;
+}): Promise<AxiosResponse<PostalAddressChange>> {
+  return api.post(`/postal/address-changes/${id}/resolve-pending`, body);
 }
 
 // --- 回访 (P3) -------------------------------------------------------------
@@ -284,12 +369,14 @@ export interface Ticket {
   status: string | null;            // 投诉三态；改地址 applied/pending/unmatched；回访 null
   handling_count: number | null;
   applied_to_order: boolean | null;
+  pending_copies: number;
+  allocation_summary: string | null;
 }
 
 export interface TicketListOut {
   rows: Ticket[];
   total: number;
-  summary: { complaint: number; address: number; follow: number };
+  summary: { complaint: number; address: number; follow: number; address_recipient_pending: number };
 }
 
 export function listTickets(f: {
@@ -297,6 +384,7 @@ export function listTickets(f: {
   year?: number;
   status?: string;
   applied?: boolean;
+  recipient_pending?: boolean;
   postal_delivery_id?: number;
   search?: string;
   page?: number;
@@ -413,6 +501,7 @@ export interface AddressChangePayload {
   new_copies?: number | null;
   original_start_month?: string | null;
   effective_start_month?: string | null;
+  copy_allocations?: AddressAllocation[] | null;
   handling?: string | null;
   notes?: string | null;
 }

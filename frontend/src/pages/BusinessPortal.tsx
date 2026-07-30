@@ -206,6 +206,7 @@ export function BusinessCenterPortal() {
 
 const postalDescriptions: Record<string, string> = {
   '投递明细': '查询订单形成的邮局投递台账',
+  '待续投': '核对目标月份缺口并生成跨年投递段',
   '订报转投': '生成并交接邮局订报数据',
   '邮局工单': '处理缺报、改址等邮局投递异常',
 };
@@ -214,9 +215,9 @@ export function PostalPortal() {
   const navigate = useNavigate();
   return (
     <div className="business-portal-page">
-      <header className="business-page-heading"><h1>邮局管理</h1><p>管理邮局渠道下的订报数据生成、投递台账与异常工单。</p><span>左侧仅显示邮局管理下的子功能</span></header>
-      <div className="business-flow"><div><b>订单生效</b><small>订单管理</small></div><span>→</span><div><b>订报转投</b><small>生成邮局数据</small></div><span>→</span><div><b>邮局交接</b><small>渠道投递</small></div><span>→</span><div><b>投递明细</b><small>跟踪台账</small></div><span>→</span><div><b>邮局工单</b><small>异常处理</small></div></div>
-      <div className="business-section-heading"><div><h2>邮局业务功能</h2><p>投递明细、订报转投和邮局工单同属邮局管理</p></div></div>
+      <header className="business-page-heading"><h1>邮局管理</h1><p>管理邮局渠道下的订报生成、跨年续投、投递台账与异常工单。</p><span>左侧仅显示邮局管理下的子功能</span></header>
+      <div className="business-flow"><div><b>订单生效</b><small>订单管理</small></div><span>→</span><div><b>缺口核对</b><small>待续投</small></div><span>→</span><div><b>订报转投</b><small>生成邮局数据</small></div><span>→</span><div><b>投递明细</b><small>跟踪台账</small></div><span>→</span><div><b>邮局工单</b><small>异常处理</small></div></div>
+      <div className="business-section-heading"><div><h2>邮局业务功能</h2><p>投递明细、待续投、订报转投和邮局工单同属邮局管理</p></div></div>
       <div className="business-module-grid">
         {postalFunctions.map((item) => <button className="business-module-card" key={item.path} onClick={() => navigate(item.path)}><span>{item.icon}</span><div><b>{item.title}</b><p>{postalDescriptions[item.title]}</p></div><i>›</i></button>)}
       </div>

@@ -15,6 +15,7 @@ from app.models import Order, Partner, PostalComplaintStatus, PostalDelivery, Us
 from app.upload import read_upload
 from app.schemas.postal import (
     AddressChangeCreateIn,
+    AddressAllocationResolveIn,
     AddressChangeListOut,
     AddressChangeOut,
     AddressChangeUpdateIn,
@@ -34,6 +35,10 @@ from app.schemas.postal import (
     HandlingCreateIn,
     HandlingRecordOut,
     PostalCommitIn,
+    PostalExactLinkOut,
+    PostalRenewalGenerateIn,
+    PostalRenewalGenerateOut,
+    PostalRenewalListOut,
     TicketListOut,
     TicketOut,
     TicketDetailOut,
@@ -47,6 +52,7 @@ from app.services import postal_complaint_service as complaint_svc
 from app.services import postal_delivery_import_service as import_svc
 from app.services import postal_delivery_service as delivery_svc
 from app.services import postal_follow_up_import_service as follow_import_svc
+from app.services import postal_renewal_service as renewal_svc
 from app.services import postal_ticket_service as ticket_svc
 
 router = APIRouter(prefix="/api/postal", tags=["postal"])
@@ -60,6 +66,7 @@ def list_tickets(
     year: Optional[int] = None,
     status: Optional[str] = None,
     applied: Optional[bool] = None,
+    recipient_pending: Optional[bool] = None,
     postal_delivery_id: Optional[int] = None,
     search: Optional[str] = None,
     page: int = 1,
@@ -71,6 +78,7 @@ def list_tickets(
         raise HTTPException(status_code=400, detail=f"未知工单类型：{type}")
     rows, total, summary = ticket_svc.list_tickets(
         db, type=type, year=year, status=status, applied=applied,
+        recipient_pending=recipient_pending,
         postal_delivery_id=postal_delivery_id,
         search=search, page=page, page_size=page_size,
     )
@@ -86,6 +94,7 @@ def _partner_name(db: Session, partner_id) -> Optional[str]:
 def _delivery_out(db: Session, rec) -> DeliveryOut:
     out = DeliveryOut.model_validate(rec)
     out.distribution_unit_name = _partner_name(db, rec.distribution_unit_id)
+    out.order_code = db.query(Order.order_code).filter(Order.id == rec.order_id).scalar() if rec.order_id else None
     return out
 
 
@@ -332,6 +341,7 @@ def import_commit(
 
 @router.get("/deliveries", response_model=DeliveryListOut)
 def list_deliveries(
+    order_id: Optional[int] = None,
     year: Optional[int] = None,
     channel: Optional[str] = None,
     distribution_unit_id: Optional[int] = None,
@@ -344,7 +354,7 @@ def list_deliveries(
     _user: User = Depends(get_current_user),
 ):
     rows, total = delivery_svc.list_deliveries(
-        db, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
+        db, order_id=order_id, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
         month=month, status=status, search=search, page=page, page_size=page_size,
     )
     ids = {r.distribution_unit_id for r in rows if r.distribution_unit_id}
@@ -352,16 +362,55 @@ def list_deliveries(
         {pid: n for pid, n in db.query(Partner.id, Partner.name).filter(Partner.id.in_(ids)).all()}
         if ids else {}
     )
+    linked_order_ids = {r.order_id for r in rows if r.order_id}
+    order_codes = (
+        {oid: code for oid, code in db.query(Order.id, Order.order_code).filter(Order.id.in_(linked_order_ids)).all()}
+        if linked_order_ids else {}
+    )
     out = []
     for r in rows:
         o = DeliveryOut.model_validate(r)
         o.distribution_unit_name = names.get(r.distribution_unit_id)
+        o.order_code = order_codes.get(r.order_id)
         out.append(o)
     summary = delivery_svc.summarize_deliveries(
-        db, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
+        db, order_id=order_id, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
         month=month, status=status, search=search,
     )
     return DeliveryListOut(rows=out, total=total, summary=summary)
+
+
+@router.post("/deliveries/link-exact", response_model=PostalExactLinkOut)
+def link_exact_deliveries(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    return renewal_svc.link_exact_deliveries(db)
+
+
+@router.get("/renewals", response_model=PostalRenewalListOut)
+def list_renewals(
+    target_month: str,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    return renewal_svc.list_renewals(db, target_month)
+
+
+@router.post("/renewals/generate", response_model=PostalRenewalGenerateOut)
+def generate_renewals(
+    body: PostalRenewalGenerateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    result = renewal_svc.generate_renewals(
+        db,
+        target_month=body.target_month,
+        fulfillment_target_ids=body.fulfillment_target_ids,
+        operator_id=getattr(user, "id", None),
+    )
+    result["created"] = [_delivery_out(db, delivery) for delivery in result["created"]]
+    return result
 
 
 @router.post("/deliveries", response_model=DeliveryOut, status_code=201)
@@ -539,6 +588,21 @@ def list_address_changes(
 @router.post("/address-changes/{change_id}/apply", response_model=AddressChangeOut)
 def apply_address_change(change_id: int, db: Session = Depends(get_db), user: User = Depends(require_admin)):
     return change_svc.apply_address_change(db, change_id, operator_id=getattr(user, "id", None))
+
+
+@router.post("/address-changes/{change_id}/resolve-pending", response_model=AddressChangeOut)
+def resolve_address_change_pending(
+    change_id: int,
+    body: AddressAllocationResolveIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    return change_svc.resolve_address_allocation(
+        db,
+        change_id,
+        body.model_dump(),
+        operator_id=getattr(user, "id", None),
+    )
 
 
 @router.get("/address-changes/{change_id}", response_model=AddressChangeOut)

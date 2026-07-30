@@ -23,6 +23,7 @@ EXPIRING_DAYS = 30
 def _deliveries_query(
     db: Session,
     *,
+    order_id: Optional[int] = None,
     year: Optional[int] = None,
     channel: Optional[str] = None,
     distribution_unit_id: Optional[int] = None,
@@ -31,6 +32,8 @@ def _deliveries_query(
     search: Optional[str] = None,
 ):
     q = db.query(PostalDelivery).filter(PostalDelivery.is_archived.is_(False))
+    if order_id:
+        q = q.filter(PostalDelivery.order_id == order_id)
     if year:
         q = q.filter(PostalDelivery.year == year)
     if channel and channel.strip():
@@ -91,6 +94,7 @@ def _deliveries_query(
 def list_deliveries(
     db: Session,
     *,
+    order_id: Optional[int] = None,
     year: Optional[int] = None,
     channel: Optional[str] = None,
     distribution_unit_id: Optional[int] = None,
@@ -101,7 +105,7 @@ def list_deliveries(
     page_size: int = 50,
 ) -> Tuple[List[PostalDelivery], int]:
     q = _deliveries_query(
-        db, year=year, channel=channel,
+        db, order_id=order_id, year=year, channel=channel,
         distribution_unit_id=distribution_unit_id, month=month, status=status, search=search,
     )
     total = q.count()
@@ -122,6 +126,7 @@ def list_deliveries(
 def summarize_deliveries(
     db: Session,
     *,
+    order_id: Optional[int] = None,
     year: Optional[int] = None,
     channel: Optional[str] = None,
     distribution_unit_id: Optional[int] = None,
@@ -131,7 +136,7 @@ def summarize_deliveries(
 ) -> dict:
     """概览行：合计份数 / 投递单位数 / 未填投递单位条数（同筛选口径）。"""
     q = _deliveries_query(
-        db, year=year, channel=channel,
+        db, order_id=order_id, year=year, channel=channel,
         distribution_unit_id=distribution_unit_id, month=month, status=status, search=search,
     )
     total_copies = q.with_entities(func.coalesce(func.sum(PostalDelivery.copies), 0)).scalar() or 0
