@@ -1918,10 +1918,11 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 #### 前端设计系统与 Storybook
 - `frontend/src/theme.tsx` 是 Ant Design token 与 CSS variables 的唯一主题入口；生产应用和 Storybook 均通过 `DesignSystemProvider` 使用同一套配置。
 - 登录页使用 `Login.tsx` + `Login.css` 实现无边框全屏双栏布局，960px 以下切换为单栏；认证接口、表单校验、密码显隐和提交状态继续复用现有 Ant Design 与认证上下文。
-- `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard` 和 `StatusPill`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。
+- `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard`、`StatusPill` 和 `DrawerTitle`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。
 - 印数管理各模块标题以“报数流程”为视觉基准，统一字号、字重、颜色和行高；次要文本及成功/警告状态文字使用主题中的高对比度语义色。
 - 普通 DOM/CSS 使用 `var(--color-*)` 等语义变量；Canvas/ECharts 等不能直接消费 CSS 的渲染器通过 `theme.useToken()` 取得当前主题色。
 - 所有 Ant Design `Modal` 在 `frontend/src/index.css` 统一复用“邮局工单”弹窗的遮罩、容器、标题、表单和操作栏样式；新增弹窗直接使用 `Modal`，仅在业务布局确有差异时添加局部类名。
+- 所有 Ant Design `Drawer` 使用 `app-drawer-root` 共享“投递明细详情”视觉：结构化标题（图标 / 主副标题 / 状态）、浅灰内容底、白色信息卡及固定底部操作栏。当前客户详情、发货操作日志、订单导入详情、邮局投递 / 工单和订报转投共 10 个抽屉均已接入；宽度继续按表单或表格内容保留业务差异。
 - 报数编辑页 `ReportEditor.tsx` 使用分区卡片式表单：临时加印、完整报数类别与右侧实时汇总在同一工作区内联动；实际版数继续使用原生 `InputNumber` 编辑，保存、确认、作废、导出、删除和发货等既有业务流程不变。页面专属响应式样式位于 `ReportEditor.css`。
 - Storybook 顶部工具栏可统一切换亮/暗主题、舒适/紧凑密度和圆润/克制圆角。新增或迁移业务页面时应补代表性 Story，并检查这些全局组合。
 - 邮局投递明细的字号、控件高度和信息密度以“发行计划 → 印数管理”为基准；通用值应在 `theme.tsx`、共享组件或 `index.css` 中修改，Storybook 负责复用这些配置做预览验证，不作为独立样式源。当前交互稿保存在 `docs/preview/postal-*.html`。

@@ -60,6 +60,7 @@ import {
 } from '../api/exports';
 import dayjs from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
+import { DrawerTitle, StatusPill } from '../components/UiPrimitives';
 
 const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '库房留存', '报社留存'] as const;
 const SUB_CHANNEL_OPTIONS = ['监管', '政府'] as const;
@@ -119,6 +120,7 @@ export default function LogisticsIssueDetail() {
   const [logDrawerOpen, setLogDrawerOpen] = useState(false);
   const [logRecordId, setLogRecordId] = useState<number | null>(null);
   const [logRecordName, setLogRecordName] = useState<string>('');
+  const [actionMenuRecordId, setActionMenuRecordId] = useState<number | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [expandedRowKeys, setExpandedRowKeys] = useState<Key[]>([]);
   const [batchDeadline, setBatchDeadline] = useState<dayjs.Dayjs | null>(null);
@@ -218,6 +220,7 @@ export default function LogisticsIssueDetail() {
   });
 
   const handleShowLogs = (record: ShippingDetail) => {
+    setActionMenuRecordId(null);
     setLogRecordId(record.id);
     setLogRecordName(record.name);
     setLogDrawerOpen(true);
@@ -478,6 +481,8 @@ export default function LogisticsIssueDetail() {
           <Popover
             trigger="click"
             placement="bottomRight"
+            open={actionMenuRecordId === record.id}
+            onOpenChange={(open) => setActionMenuRecordId(open ? record.id : null)}
             content={
               <div className="zto-action-menu">
                 <Button type="text" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)}>操作日志</Button>
@@ -861,17 +866,33 @@ export default function LogisticsIssueDetail() {
       </Modal>
 
       <Drawer
-        title={`操作日志 — ${logRecordName}`}
+        title={(
+          <DrawerTitle
+            icon="🕘"
+            title="操作日志"
+            description={logRecordName || '发货明细'}
+            status={<StatusPill tone="neutral">{logsLoading ? '加载中' : `${operationLogs.length} 条记录`}</StatusPill>}
+          />
+        )}
         open={logDrawerOpen}
         onClose={() => { setLogDrawerOpen(false); setLogRecordId(null); }}
-        width={480}
+        size={480}
+        rootClassName="app-drawer-root"
+        footer={(
+          <div className="app-drawer-footer">
+            <span className="app-drawer-footer-tip"><b>✓</b>按发生时间展示新增、编辑与删除记录</span>
+            <Button type="primary" onClick={() => { setLogDrawerOpen(false); setLogRecordId(null); }}>关闭</Button>
+          </div>
+        )}
       >
-        {logsLoading ? (
-          <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>加载中...</div>
-        ) : operationLogs.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>暂无操作日志</div>
-        ) : (
-          <Timeline
+        <div className="app-drawer-panel">
+          <h3><span aria-hidden>🧾</span>变更记录</h3>
+          {logsLoading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>加载中...</div>
+          ) : operationLogs.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>暂无操作日志</div>
+          ) : (
+            <Timeline
             items={operationLogs.map((log: OperationLog) => {
               const actionLabels: Record<string, string> = { create: '新增', update: '编辑', delete: '删除' };
               const actionColors: Record<string, string> = { create: 'green', update: 'blue', delete: 'red' };
@@ -920,8 +941,9 @@ export default function LogisticsIssueDetail() {
                 ),
               };
             })}
-          />
-        )}
+            />
+          )}
+        </div>
       </Drawer>
     </div>
   );

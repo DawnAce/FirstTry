@@ -59,6 +59,54 @@
   background: currentColor;
 }
 
+.ui-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+.ui-drawer-title-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 43px;
+  width: 43px;
+  height: 43px;
+  border-radius: 12px;
+  color: var(--tone-color);
+  background: var(--tone-soft);
+  font-size: 21px;
+}
+
+.ui-drawer-title-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.ui-drawer-title-copy > strong {
+  display: block;
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: #182230;
+  font-size: 19px;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ui-drawer-title-copy > div {
+  overflow: hidden;
+  color: #7c8798;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ui-drawer-title-status {
+  flex: none;
+}
+
 .ui-tone-neutral { --tone-color: var(--color-text-secondary); --tone-soft: var(--color-bg-muted); }
 .ui-tone-info { --tone-color: var(--color-accent); --tone-soft: var(--color-accent-soft); }
 .ui-tone-success { --tone-color: var(--color-success-text); --tone-soft: var(--color-success-soft); }
@@ -154,5 +202,10 @@
   .ui-page-header-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .ui-drawer-title-icon,
+  .ui-drawer-title-status {
+    display: none;
   }
 }

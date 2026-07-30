@@ -41,6 +41,27 @@ export function StatusPill({ children, tone = 'neutral', icon, dot = !icon, clas
   )
 }
 
+type DrawerTitleProps = {
+  title: ReactNode
+  description?: ReactNode
+  icon: ReactNode
+  status?: ReactNode
+  tone?: SemanticTone
+}
+
+export function DrawerTitle({ title, description, icon, status, tone = 'info' }: DrawerTitleProps) {
+  return (
+    <div className={`ui-drawer-title ui-tone-${tone}`}>
+      <span className="ui-drawer-title-icon" aria-hidden>{icon}</span>
+      <div className="ui-drawer-title-copy">
+        <strong>{title}</strong>
+        {description && <div>{description}</div>}
+      </div>
+      {status && <div className="ui-drawer-title-status">{status}</div>}
+    </div>
+  )
+}
+
 type MetricCardProps = {
   label: ReactNode
   value: ReactNode

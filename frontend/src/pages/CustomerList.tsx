@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Drawer, Input, Space, Table, Tag, Typography } from 'antd';
+import { Button, Card, Drawer, Input, Space, Table, Tag, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
 import {
   customerQueryKeys,
@@ -21,7 +21,7 @@ import {
   publicationLabel,
   statusLabel,
 } from './orderUtils';
-import { PageHeader } from '../components/UiPrimitives';
+import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives';
 
 const { Text } = Typography;
 const PAGE_SIZE = 20;
@@ -212,20 +212,30 @@ export default function CustomerList() {
       />
 
       <Drawer
-        width={820}
+        size={820}
         open={selected !== null}
         onClose={() => setSelected(null)}
+        rootClassName="app-drawer-root"
         title={
-          selected
-            ? `收报人：${selected.recipient_name}${
-                selected.recipient_phone ? ` · ${selected.recipient_phone}` : ''
-              }`
-            : ''
+          <DrawerTitle
+            icon="👤"
+            title={selected?.recipient_name ?? '收报人详情'}
+            description={selected?.recipient_phone || '未记录联系电话'}
+            status={<StatusPill tone="success">在订收报人</StatusPill>}
+          />
         }
+        footer={(
+          <div className="app-drawer-footer">
+            <span className="app-drawer-footer-tip"><b>✓</b>订单明细按当前有效履约目标汇总</span>
+            <Button type="primary" onClick={() => setSelected(null)}>返回列表</Button>
+          </div>
+        )}
       >
         {selected && (
-          <>
-            <Space size="large" wrap style={{ marginBottom: 12 }}>
+          <div className="app-drawer-stack">
+            <div className="app-drawer-hero">
+              <span className="app-drawer-avatar">{selected.recipient_name.slice(0, 1)}</span>
+              <Space size="large" wrap>
               <Text>
                 在订份数：
                 <Text strong>
@@ -244,7 +254,8 @@ export default function CustomerList() {
                   pubs={detailQuery.data?.publications ?? selected.publications}
                 />
               </Text>
-            </Space>
+              </Space>
+            </div>
             <Table<CustomerOrderLine>
               rowKey={(r) => String(r.target_id)}
               size="small"
@@ -254,7 +265,7 @@ export default function CustomerList() {
               pagination={false}
               locale={{ emptyText: '暂无在订履约明细' }}
             />
-          </>
+          </div>
         )}
       </Drawer>
     </div>

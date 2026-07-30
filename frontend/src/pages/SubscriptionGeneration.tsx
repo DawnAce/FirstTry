@@ -18,7 +18,7 @@ import {
 import type {
   Artifact, BatchStatus, ImportStatus, ImportVersion, IssueLevel, SubRecord, ValidationIssue,
 } from '../api/subscription';
-import { PageHeader } from '../components/UiPrimitives';
+import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives';
 
 const { Title, Text } = Typography;
 
@@ -115,7 +115,21 @@ function IssuesDrawer({ versionId, open, onClose }: { versionId: number | null; 
     { title: '说明', dataIndex: 'message' },
   ];
   return (
-    <Drawer title="校验问题" width={720} open={open} onClose={onClose} destroyOnClose>
+    <Drawer title={(
+      <DrawerTitle
+        icon="⚠️"
+        title="校验问题"
+        description={`来源版本 ${versionId ? `#${versionId}` : '未选择'} · 按来源行定位`}
+        tone="warning"
+        status={<StatusPill tone={(q.data?.length ?? 0) > 0 ? 'warning' : 'success'}>{q.isLoading ? '加载中' : `${q.data?.length ?? 0} 条`}</StatusPill>}
+      />
+    )} size={720} open={open} onClose={onClose} destroyOnHidden rootClassName="app-drawer-root"
+      footer={(
+        <div className="app-drawer-footer">
+          <span className="app-drawer-footer-tip"><b>✓</b>按来源、行号和字段核对原始文件</span>
+          <Button type="primary" onClick={onClose}>关闭</Button>
+        </div>
+      )}>
       <Table<ValidationIssue> rowKey="id" size="small" loading={q.isLoading}
         columns={cols} dataSource={q.data ?? []} pagination={{ pageSize: 20 }} />
     </Drawer>
@@ -141,7 +155,20 @@ function RecordsDrawer({ versionId, open, onClose }: { versionId: number | null;
     { title: '来源', dataIndex: 'source_file_role', width: 56, render: (v) => (v ? <Tag>{v}</Tag> : '—') },
   ];
   return (
-    <Drawer title="解析明细（只读）" width={980} open={open} onClose={onClose} destroyOnClose>
+    <Drawer title={(
+      <DrawerTitle
+        icon="📋"
+        title="解析明细"
+        description={`来源版本 ${versionId ? `#${versionId}` : '未选择'} · 只读预览`}
+        status={<StatusPill tone="info">{q.isLoading ? '加载中' : `${q.data?.length ?? 0} 条记录`}</StatusPill>}
+      />
+    )} size={980} open={open} onClose={onClose} destroyOnHidden rootClassName="app-drawer-root"
+      footer={(
+        <div className="app-drawer-footer">
+          <span className="app-drawer-footer-tip"><b>✓</b>展示当前版本解析出的全部投递记录</span>
+          <Button type="primary" onClick={onClose}>关闭</Button>
+        </div>
+      )}>
       <Table<SubRecord> rowKey="id" size="small" loading={q.isLoading}
         columns={cols} dataSource={q.data ?? []}
         pagination={{ pageSize: 50, showTotal: (t) => `共 ${t} 条` }} />
