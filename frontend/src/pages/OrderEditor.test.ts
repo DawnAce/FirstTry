@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractFormValidation } from './OrderEditor';
+import { extractFormValidation } from './OrderEditor.validation';
 
 describe('extractFormValidation', () => {
   it('keeps the concrete message and field path returned by Ant Design', () => {
