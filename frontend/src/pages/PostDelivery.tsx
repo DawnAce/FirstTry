@@ -691,7 +691,7 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
             <div className="postal-reader-avatar">{record.recipient_name.slice(0, 1)}</div>
             <div className="postal-detail-reader-copy">
               <strong>{record.recipient_name}</strong>
-              <span>{record.recipient_phone || '未记录电话'}　·　{record.product || '未记录产品'}</span>
+              <span>{record.recipient_phone || '未记录电话'} · {record.product || '未记录产品'}</span>
             </div>
             <span className="postal-detail-reader-linked">✓ 读者已关联</span>
           </div>
