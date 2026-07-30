@@ -2729,6 +2729,60 @@ body {
   font-size: 12px;
 }
 
+.postal-delivery-number {
+  color: var(--color-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.postal-reader-cell,
+.postal-address-cell {
+  min-width: 0;
+}
+
+.postal-reader-name {
+  font-size: 15px;
+}
+
+.postal-reader-phone {
+  color: #667085;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.postal-address-cell {
+  max-width: 420px;
+}
+
+.postal-distribution-unit {
+  font-weight: 500;
+}
+
+.postal-unit-missing {
+  margin-inline-end: 0;
+  border-radius: 999px;
+}
+
+.postal-source-pill {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  overflow: hidden;
+  color: #475467;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-radius: 5px;
+  background: #f2f4f7;
+}
+
+.postal-table-card .ant-table-small .ant-table-tbody > tr > td {
+  padding: 12px 14px;
+  vertical-align: middle;
+}
+
 .postal-expiry-countdown {
   color: var(--color-warning-text);
   font-size: 12px;

@@ -521,7 +521,7 @@ FirstTry/
 
 「发行履约 → 邮局管理」现有 3 个三级入口：①**投递明细**（`/post-delivery/deliveries`，纯台账/查询）②**订报转投**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表/分送表/zip，给邮局的名单只来自这里）③**邮局工单**（`/post-delivery/tickets`，投诉/收件信息变更/回访三合一，按类型筛选）。「收款发票」已迁到「财务管理」，作为财务管理第三个 Tab「邮局收款」（见 §4.16 迁移说明）。
 
-**前端布局（2026-07 初代正式稿）**：`PostDelivery.tsx` 的投递明细和邮局工单共用统一的标题、操作、筛选和紧凑表格层级；投递记录详情和新增 / 编辑使用 Ant Design `Drawer`，避免离开列表上下文。投递明细可直接按订阅状态筛选；“即将到期”使用含首尾的 30 天窗口，显示剩余天数及汇总并按止订日升序排列。详情抽屉显示投递状态，并通过 `GET /tickets?type=address&applied=true&postal_delivery_id=...` 加载已应用的信息修改来源；来源详情使用只读 `Modal`，不暴露编辑 / 应用操作。`SubscriptionGeneration.tsx` 取消常驻左侧批次栏，改为顶部批次选择器；批次页按三步进度、摘要卡、不可变版本流水和折叠后的地区产物组织。“重新上传来源”是页面内三步工作区（上传 → 校验及与当前版本汇总对比 → 激活），只有最终确认使用 `Popconfirm`；明细和校验问题继续使用只读宽抽屉。
+**前端布局（2026-07 初代正式稿）**：`PostDelivery.tsx` 的投递明细和邮局工单共用统一的标题、操作、筛选和紧凑表格层级；投递明细将编号 / 收报人、投递单位 / 订单来源分别拆列，便于快速扫描，投递记录详情和新增 / 编辑使用 Ant Design `Drawer`，避免离开列表上下文。投递明细可直接按订阅状态筛选；“即将到期”使用含首尾的 30 天窗口，显示剩余天数及汇总并按止订日升序排列。详情抽屉显示投递状态，并通过 `GET /tickets?type=address&applied=true&postal_delivery_id=...` 加载已应用的信息修改来源；来源详情使用只读 `Modal`，不暴露编辑 / 应用操作。`SubscriptionGeneration.tsx` 取消常驻左侧批次栏，改为顶部批次选择器；批次页按三步进度、摘要卡、不可变版本流水和折叠后的地区产物组织。“重新上传来源”是页面内三步工作区（上传 → 校验及与当前版本汇总对比 → 激活），只有最终确认使用 `Popconfirm`；明细和校验问题继续使用只读宽抽屉。
 
 **投诉表单布局（2026-07）**：`ComplaintFormModal` 继续复用原 Ant Design `Form` 和保存接口，仅将字段重排为“投诉信息 / 联系人信息 / 处理信息”三个语义区；年度、编号、来源平台提升为标题元信息，姓名、电话、地址合并为联系人信息。弹窗桌面宽度 780px，下半区双列并在窄屏回退单列，内容高度随视口受限并仅在确有溢出时滚动。
 
@@ -535,7 +535,7 @@ FirstTry/
 
 > **重构说明（2026-07）**：早先版本把邮局每行做成 `post_office` 订单（`create_imported_order`），会污染订单列表/客户管理、并与电商真实订单双算。现改为独立的 `PostalDelivery` 投递记录层——不再造订单；邮局记录不进订单列表/客户管理；有平台订单号且平台对得上才挂真实订单（读者明细本身无平台订单号 → 多数 `order_id=NULL`，独立）。**注：本系统无独立客户资料表**，订单收报人真值在 `FulfillmentTarget`。
 
-**投递记录 `postal_delivery`（迁移 `b5d7f9a1c3e6`，照 `shipping_details`）**：`(year, delivery_no)` 唯一（`delivery_no`=编号去前导零）；`order_id`/`order_item_id`/`fulfillment_target_id` 全可空（SET NULL，将来挂真实订单用）；`external_order_no`（平台订单号，将来补）；`source_type`（`historical_import`/`order_generated`/`manual`）；收报人（姓名/电话/省市区/详细地址/邮编）；`product`（认不出留原文，不强求刊物枚举）；`copies`/`amount`/`coverage_start_date`/`coverage_end_date`；`source_channel`（渠道/平台）；`distribution_unit_id`→`partners`（投递单位，落在本表，原表未填则留空、不推断）；`salesperson`/`remittance_name`/`remittance_date`/`notes`。
+**投递记录 `postal_delivery`（迁移 `b5d7f9a1c3e6`，照 `shipping_details`）**：`(year, delivery_no)` 唯一（`delivery_no`=编号去前导零），组合展示为投递编号并供邮局工单关联；`order_id`/`order_item_id`/`fulfillment_target_id` 全可空（SET NULL，仅在存在真实订单时作内部关联）；`external_order_no` 是来源单号，与订单管理同名字段统一指原平台订单号；`source_channel` 是订单来源（平台）；`source_type` 是录入方式（`historical_import`/`order_generated`/`manual`）。其余字段包括收报人（姓名/电话/省市区/详细地址/邮编）、`product`（认不出留原文，不强求刊物枚举）、`copies`/`amount`/`coverage_start_date`/`coverage_end_date`、`distribution_unit_id`→`partners`（投递单位，原表未填则留空、不推断）、`salesperson`/`remittance_name`/`remittance_date`/`notes`。本次仅统一 UI 术语和展示，无数据库迁移。
 
 **月度起投明细批次（已移除，PR#77）**：早先的「月度起投明细」层（`postal_delivery_batches` / `postal_delivery_rows` 两表 + `postal_batch_service.generate_batch` 冻结成行 + `/api/postal/batches*` 端点 + 前端 BatchesTab）**整层已删除**。迁移 `c3d5e7f9a1b3` 删除两表；删表前先用 `backend/scripts/export_postal_snapshot.py` 把两表导成 json 归档。给邮局的名单改由「订报转投」（`/post-delivery/subscription`）独立产出。：`postal_order_import_parser`（按表头解析「邮局读者明细」，零改动）+ `postal_delivery_import_service`（映射→`PostalDelivery`，不造订单；`(year, delivery_no)` 去重；投递单位有则挂 `Partner(distribution)` 无则空；产品留原文）。**投递明细**：`postal_delivery_service.list_deliveries`（年度/渠道/投递单位/起投月/搜索筛选）——邮局记录不进订单列表，这里是完整名册的家。投递明细列表另返回 `summary` 聚合（合计份数·未填单位数）供页面顶部「概览行」使用。
 
