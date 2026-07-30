@@ -473,6 +473,22 @@ function showValidationErrors(errors: string[]): void {
   });
 }
 
+interface FormErrorField {
+  name: Array<string | number>;
+  errors: string[];
+}
+
+export function extractFormValidation(error: unknown): {
+  fields: FormErrorField[];
+  messages: string[];
+} {
+  const fields =
+    error && typeof error === 'object' && Array.isArray((error as { errorFields?: unknown }).errorFields)
+      ? (error as { errorFields: FormErrorField[] }).errorFields
+      : [];
+  return { fields, messages: fields.flatMap((field) => field.errors) };
+}
+
 function extractApiError(err: unknown): string {
   if (err && typeof err === 'object') {
     const anyErr = err as {
@@ -565,6 +581,31 @@ export default function OrderEditor() {
     }
   };
 
+  const handleFormValidationFailure = (error: unknown) => {
+    const { fields, messages } = extractFormValidation(error);
+    const firstField = fields[0];
+    if (firstField?.name.length === 1 && firstField.name[0] === 'items') {
+      document.getElementById('order-items-section')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    } else if (firstField) {
+      form.scrollToField(firstField.name, {
+        behavior: 'smooth',
+        block: 'center',
+        focus: true,
+      });
+    }
+
+    if (messages.length === 1) {
+      message.warning(messages[0]);
+    } else if (messages.length > 1) {
+      showValidationErrors(messages);
+    } else {
+      message.warning('请检查表单中标红的字段');
+    }
+  };
+
   /**
    * Persists base fields (and items on create). Returns the resulting order id
    * if successful, otherwise null. Caller handles navigation / messaging.
@@ -611,8 +652,8 @@ export default function OrderEditor() {
     let values: OrderFormValues;
     try {
       values = await form.validateFields();
-    } catch {
-      message.warning('请先修正表单错误');
+    } catch (error) {
+      handleFormValidationFailure(error);
       return;
     }
     setSubmitting(true);
@@ -635,8 +676,8 @@ export default function OrderEditor() {
     let values: OrderFormValues;
     try {
       values = await form.validateFields();
-    } catch {
-      message.warning('请先修正表单错误');
+    } catch (error) {
+      handleFormValidationFailure(error);
       return;
     }
     setSubmitting(true);
@@ -916,7 +957,7 @@ export default function OrderEditor() {
           </Row>
         </Card>
 
-        <Card title="订单明细" size="small" style={{ marginBottom: 16 }}>
+        <Card id="order-items-section" title="订单明细" size="small" style={{ marginBottom: 16 }}>
           {!itemsReadOnly && (
             <Alert
               type="info"
