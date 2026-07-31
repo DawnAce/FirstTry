@@ -37,6 +37,7 @@ from app.api.postal import router as postal_router
 from app.api.postal_finance import router as postal_finance_router
 from app.api.subscription import router as subscription_router
 from app.api.search import router as search_router
+from app.api.report_sources import router as report_sources_router
 from app.auth import get_current_user, require_admin
 from app.models import Issue, PublicationSchedule, ReportEntry
 from app.services.issue_service import build_issue_out, PRINT_TOTAL_EXCLUDED_SUBS
@@ -83,6 +84,7 @@ app.include_router(postal_router, dependencies=[Depends(get_current_user)])
 app.include_router(postal_finance_router, dependencies=[Depends(get_current_user)])
 app.include_router(subscription_router, dependencies=[Depends(get_current_user)])
 app.include_router(search_router, dependencies=[Depends(get_current_user)])
+app.include_router(report_sources_router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/api/health")

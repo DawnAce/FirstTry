@@ -4,6 +4,7 @@ from sqlalchemy import desc, func
 from app.models import PublicationSchedule, Issue, ReportEntry, ReportItemTemplate
 from app.schemas.issue import IssueOut
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
+from app.services.report_source_service import apply_confirmed_source_bases_to_issue
 
 
 # Sub-categories excluded from an issue's headline print total.
@@ -224,6 +225,12 @@ def create_issue_with_data(db: Session, issue_number: int, publish_date: date, n
                 is_variable=tmpl.is_variable,
             )
             db.add(new_entry)
+
+    # Entries must exist before confirmed source values can be overlaid.  This
+    # is especially important for a Chengdu monthly image reviewed before later
+    # issues in that month are created.
+    db.flush()
+    apply_confirmed_source_bases_to_issue(db, issue)
 
     db.commit()
     db.refresh(issue)

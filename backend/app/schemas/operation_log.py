@@ -22,6 +22,8 @@ ACTION_LABELS: dict[str, str] = {
     "delete_issue": "删除期数",
     "normalize_addresses": "批量规整收件地址",
     "import_history": "导入历史数据",
+    "upload_source": "上传报数来源文件",
+    "confirm_source": "确认来源识别与映射",
 }
 
 
