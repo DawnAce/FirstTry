@@ -10,6 +10,7 @@ from app.models import (
     IssueStatus,
     ReportEntry,
     ReportRevision,
+    ReportSourceItem,
     ShippingDetail,
     TempPrintDetail,
     User,
@@ -218,6 +219,19 @@ def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = De
             errors.append({"field": f"{e.category}/{e.sub_category}", "message": "必填变动项为空", "level": "error"})
         if e.value is not None and e.value < 0:
             errors.append({"field": f"{e.category}/{e.sub_category}", "message": "数值不能为负数", "level": "error"})
+
+    pending_sources = (
+        db.query(ReportSourceItem)
+        .filter(
+            ReportSourceItem.issue_number == issue.issue_number,
+            ReportSourceItem.source_status != "confirmed",
+        )
+        .all()
+    )
+    for source in pending_sources:
+        label = source.source_label or f"{source.category}/{source.sub_category}"
+        message = "渠道数据仍待确认" if source.source_status == "channel_pending" else "来源识别仍待核对"
+        errors.append({"field": label, "message": message, "level": "error"})
 
     if errors:
         raise HTTPException(status_code=422, detail=errors)

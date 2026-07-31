@@ -10,7 +10,11 @@ import {
   Input,
   Timeline,
   Select,
+  Alert,
+  Drawer,
+  Upload,
 } from 'antd';
+import type { UploadFile } from 'antd';
 import {
   CheckOutlined,
   DownloadOutlined,
@@ -20,6 +24,9 @@ import {
   DeleteOutlined,
   SendOutlined,
   WarningOutlined,
+  InboxOutlined,
+  PaperClipOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import { getIssue, updateIssue, deleteIssue } from '../api/issues';
 import {
@@ -32,6 +39,24 @@ import { getReport, updateReport, confirmReport, revokeReport, getRevisions, get
 import type { RevisionRecord } from '../api/reports';
 import { useAuth } from '../contexts/AuthContext';
 import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton';
+import { DrawerTitle, StatusPill } from '../components/UiPrimitives';
+import {
+  confirmReportSource,
+  downloadReportSource,
+  getIssueReportSources,
+  updateReportSourceShipping,
+  uploadReportSource,
+} from '../api/reportSources';
+import type {
+  ReportSourceAdjustmentKind,
+  ReportSourceChannel,
+  ReportSourceDocumentType,
+  ReportSourceDocument,
+  ReportSourceItem,
+  ReportSourceStatus,
+  ReportSourceSuggestion,
+  ReportSourceUpload,
+} from '../api/reportSources';
 import { sortVisibleSocialUseEntries } from './reportOrder';
 import { formatIssueReportTitle } from './reportTitle';
 import './ReportEditor.css';
@@ -56,6 +81,27 @@ const categoryFrequency: Record<string, string> = {
   chengdu: '每月',
   guotumao: '每年',
 };
+
+const sourceChannels: ReportSourceChannel[] = ['postal', 'retail', 'guangzhou', 'chengdu'];
+
+const sourceSubCategory: Record<ReportSourceChannel, string> = {
+  postal: '本市',
+  retail: '东部',
+  guangzhou: '订阅',
+  chengdu: '成都杂志铺',
+};
+
+const sourceStatusOptions: { label: string; value: ReportSourceStatus }[] = [
+  { label: '已人工核对', value: 'confirmed' },
+  { label: '渠道待确认', value: 'channel_pending' },
+  { label: 'OCR待核对', value: 'pending_review' },
+];
+
+const adjustmentKindOptions: { label: string; value: ReportSourceAdjustmentKind }[] = [
+  { label: '追加订数（结算+补发）', value: 'billable_addition' },
+  { label: '补损重发（只补发）', value: 'replacement' },
+  { label: '冲减（减少结算）', value: 'reduction' },
+];
 
 // Items hidden from social_use display (shown separately or managed by temp print details)
 const EXTRA_ITEMS = ['临时加印', '临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'];
@@ -100,6 +146,18 @@ export default function ReportEditor() {
   const [tempDetailsLoaded, setTempDetailsLoaded] = useState(false);
   const tempDetailsRef = useRef<TempPrintDetail[]>([]);
   const tempDetailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sourceDrawerOpen, setSourceDrawerOpen] = useState(false);
+  const [sourceChannel, setSourceChannel] = useState<ReportSourceChannel>('postal');
+  const [sourceDocumentType, setSourceDocumentType] = useState<ReportSourceDocumentType>('weekly');
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [sourcePreview, setSourcePreview] = useState<ReportSourceUpload | null>(null);
+  const [sourceSuggestions, setSourceSuggestions] = useState<ReportSourceSuggestion[]>([]);
+  const [sourceUploading, setSourceUploading] = useState(false);
+  const [sourceConfirming, setSourceConfirming] = useState(false);
+  const [shippingItem, setShippingItem] = useState<ReportSourceItem | null>(null);
+  const [shippingQuantity, setShippingQuantity] = useState(0);
+  const [shippingTracking, setShippingTracking] = useState('');
+  const [shippingSaving, setShippingSaving] = useState(false);
 
   const { data: issue, isLoading: issueLoading } = useQuery({
     queryKey: ['issue', issueId],
@@ -114,6 +172,15 @@ export default function ReportEditor() {
     queryKey: ['report', issueId],
     queryFn: async () => {
       const res = await getReport(Number(issueId));
+      return res.data;
+    },
+    enabled: !!issueId,
+  });
+
+  const { data: sourceSummary, isLoading: sourceLoading } = useQuery({
+    queryKey: ['reportSources', issueId],
+    queryFn: async () => {
+      const res = await getIssueReportSources(Number(issueId));
       return res.data;
     },
     enabled: !!issueId,
@@ -397,6 +464,187 @@ export default function ReportEditor() {
     }
   };
 
+  const resetSourceDrawer = () => {
+    setSourceFile(null);
+    setSourcePreview(null);
+    setSourceSuggestions([]);
+    setSourceUploading(false);
+    setSourceConfirming(false);
+  };
+
+  const openSourceDrawer = (channel: ReportSourceChannel) => {
+    resetSourceDrawer();
+    setSourceChannel(channel);
+    setSourceDocumentType(channel === 'chengdu' ? 'monthly' : 'weekly');
+    setSourceDrawerOpen(true);
+  };
+
+  const openSourceReview = (document: ReportSourceDocument) => {
+    resetSourceDrawer();
+    setSourceChannel(document.channel);
+    setSourceDocumentType(document.document_type);
+    const suggestions: ReportSourceSuggestion[] = document.items.map(item => ({
+      issue_number: item.issue_number,
+      source_period: null,
+      item_kind: item.item_kind,
+      category: item.category as ReportSourceChannel,
+      sub_category: item.sub_category,
+      source_label: item.source_label,
+      source_quantity: item.source_quantity,
+      applied_quantity: item.applied_quantity,
+      source_status: item.source_status,
+      adjustment_kind: item.adjustment_kind,
+      confidence: null,
+      notes: item.notes,
+    }));
+    setSourcePreview({ ...document, suggestions, duplicate: false });
+    setSourceSuggestions(suggestions);
+    setSourceDrawerOpen(true);
+  };
+
+  const handleSourceChannelChange = (channel: ReportSourceChannel) => {
+    resetSourceDrawer();
+    setSourceChannel(channel);
+    setSourceDocumentType(channel === 'chengdu' ? 'monthly' : 'weekly');
+  };
+
+  const handleSourceUpload = async () => {
+    if (!sourceFile || !issue) return;
+    setSourceUploading(true);
+    try {
+      const response = await uploadReportSource(
+        sourceFile,
+        sourceChannel,
+        issue.issue_number,
+        sourceDocumentType,
+      );
+      if (response.data.duplicate && response.data.extraction_status === 'confirmed') {
+        message.info('这份文件已经归档并确认，无需重复上传');
+        setSourceDrawerOpen(false);
+        resetSourceDrawer();
+        queryClient.invalidateQueries({ queryKey: ['reportSources', issueId] });
+        return;
+      }
+      setSourcePreview(response.data);
+      setSourceSuggestions(response.data.suggestions.map(suggestion => ({
+        ...suggestion,
+        issue_number: suggestion.issue_number ?? issue.issue_number,
+      })));
+      queryClient.invalidateQueries({ queryKey: ['reportSources', issueId] });
+      message.success(response.data.duplicate ? '已找到同一来源文件，请继续完成核对' : '来源文件已归档，识别结果待核对');
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '来源文件上传失败');
+    } finally {
+      setSourceUploading(false);
+    }
+  };
+
+  const updateSourceSuggestion = <K extends keyof ReportSourceSuggestion>(
+    index: number,
+    key: K,
+    value: ReportSourceSuggestion[K],
+  ) => {
+    setSourceSuggestions(current => current.map((suggestion, suggestionIndex) => (
+      suggestionIndex === index ? { ...suggestion, [key]: value } : suggestion
+    )));
+  };
+
+  const addSourceSuggestion = () => {
+    if (!issue) return;
+    setSourceSuggestions(current => [...current, {
+      issue_number: issue.issue_number,
+      source_period: null,
+      item_kind: sourceDocumentType === 'adjustment' ? 'adjustment' : 'base',
+      category: sourceChannel,
+      sub_category: sourceSubCategory[sourceChannel],
+      source_label: '人工补录',
+      source_quantity: null,
+      applied_quantity: null,
+      source_status: 'pending_review',
+      adjustment_kind: sourceDocumentType === 'adjustment' ? 'billable_addition' : null,
+      confidence: null,
+      notes: 'OCR未识别，人工补录',
+    }]);
+  };
+
+  const handleSourceConfirm = async () => {
+    if (!sourcePreview) return;
+    if (sourceSuggestions.length === 0) {
+      message.warning('请至少添加一条来源明细');
+      return;
+    }
+    if (sourceSuggestions.some(suggestion => !suggestion.issue_number)) {
+      message.warning('请补全所有明细的刊期');
+      return;
+    }
+    if (sourceSuggestions.some(suggestion => suggestion.source_status === 'pending_review')) {
+      message.warning('仍有 OCR 待核对项，请逐行确认状态');
+      return;
+    }
+    setSourceConfirming(true);
+    try {
+      await confirmReportSource(sourcePreview.id, sourceSuggestions.map(suggestion => ({
+        issue_number: suggestion.issue_number!,
+        item_kind: suggestion.item_kind,
+        category: suggestion.category,
+        sub_category: suggestion.sub_category,
+        source_label: suggestion.source_label,
+        source_quantity: suggestion.source_quantity,
+        applied_quantity: suggestion.item_kind === 'base' ? suggestion.applied_quantity : null,
+        source_status: suggestion.source_status,
+        adjustment_kind: suggestion.item_kind === 'adjustment' ? suggestion.adjustment_kind : null,
+        notes: suggestion.notes,
+      })));
+      const updatedReport = await getReport(Number(issueId));
+      setEntries(updatedReport.data.entries);
+      entriesRef.current = updatedReport.data.entries;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['reportSources', issueId] }),
+        queryClient.invalidateQueries({ queryKey: ['report', issueId] }),
+      ]);
+      message.success('来源识别与刊期映射已确认');
+      setSourceDrawerOpen(false);
+      resetSourceDrawer();
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '确认来源失败');
+    } finally {
+      setSourceConfirming(false);
+    }
+  };
+
+  const handleSourceDownload = async (documentId: number, filename: string) => {
+    try {
+      await downloadReportSource(documentId, filename);
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '下载来源文件失败');
+    }
+  };
+
+  const openShippingModal = (item: ReportSourceItem) => {
+    setShippingItem(item);
+    setShippingQuantity(item.shipped_quantity);
+    setShippingTracking(item.tracking_no || '');
+  };
+
+  const handleShippingSave = async () => {
+    if (!shippingItem) return;
+    setShippingSaving(true);
+    try {
+      await updateReportSourceShipping(shippingItem.id, {
+        shipped_quantity: shippingQuantity,
+        tracking_no: shippingTracking.trim() || null,
+        shipped_at: shippingQuantity > 0 ? new Date().toISOString() : null,
+      });
+      queryClient.invalidateQueries({ queryKey: ['reportSources', issueId] });
+      message.success('补发登记已保存');
+      setShippingItem(null);
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '补发登记失败');
+    } finally {
+      setShippingSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
@@ -445,6 +693,33 @@ export default function ReportEditor() {
     (count, group) => count + group.items.filter(name => entries.some(entry => entry.sub_category === name)).length,
     mainSocialEntries.length + bindingEntries.length,
   );
+  const sourceChannelSummaries = Object.fromEntries(
+    (sourceSummary?.channels ?? []).map(channel => [channel.channel, channel]),
+  );
+  const currentSourceItems = (sourceSummary?.documents ?? []).flatMap(document =>
+    document.items.filter(item => item.issue_number === issue.issue_number),
+  );
+  const sourcePendingCount = currentSourceItems.filter(item => item.source_status !== 'confirmed').length;
+  const sourceAdjustmentItems = currentSourceItems.filter(
+    item => item.item_kind === 'adjustment' && item.shipping_delta > 0,
+  );
+
+  const sourceStateForChannel = (channel: ReportSourceChannel) => {
+    const documents = (sourceSummary?.documents ?? []).filter(document => document.channel === channel);
+    const items = documents.flatMap(document =>
+      document.items.filter(item => item.issue_number === issue.issue_number),
+    );
+    if (items.some(item => item.source_status === 'pending_review')) {
+      return { label: 'OCR待核对', tone: 'warning' as const, documents, items };
+    }
+    if (items.some(item => item.source_status === 'channel_pending')) {
+      return { label: '渠道待确认', tone: 'warning' as const, documents, items };
+    }
+    if (documents.length > 0) {
+      return { label: '已归档', tone: 'success' as const, documents, items };
+    }
+    return { label: '缺来源', tone: 'neutral' as const, documents, items };
+  };
 
   const renderEntryControl = (entry: ReportEntry) => isConfirmed ? (
     <span className="report-editor-static-count">{formatCount(entry.value)}</span>
@@ -705,17 +980,33 @@ export default function ReportEditor() {
                     const categoryEntries = groupedEntries[category];
                     const frequency = categoryFrequency[category];
                     const categoryTotal = calculateCategoryTotal(categoryEntries);
+                    const categorySourceSummary = sourceChannelSummaries[category];
+                    const adjustmentDelta = categorySourceSummary?.settlement_delta ?? 0;
                     return (
                       <details className="report-editor-channel" open key={category}>
                         <summary>
                           <span className="report-editor-chevron">⌄</span>
                           <strong>{categoryLabels[category]}</strong>
                           {frequency && <span className={`report-editor-pill ${frequency === '每周' ? '' : 'is-orange'}`}>{frequency}</span>}
+                          {category === 'chengdu' && adjustmentDelta !== 0 && (
+                            <span className="report-editor-pill is-orange">
+                              后续 {adjustmentDelta > 0 ? '+' : ''}{formatCount(adjustmentDelta)}
+                            </span>
+                          )}
                           <small>{categoryEntries.length} 个项目</small>
                           <b>{formatCount(categoryTotal)} 份</b>
                         </summary>
                         <div className="report-editor-channel-body">
                           {categoryEntries.map(entry => renderMiniField(entry))}
+                          {category === 'chengdu' && categorySourceSummary && (
+                            categorySourceSummary.settlement_delta !== 0 || categorySourceSummary.shipping_delta > 0
+                          ) && (
+                            <div className="report-editor-source-adjustment-strip">
+                              <span><small>锁定印数</small><b>{formatCount(categoryTotal)} 份</b></span>
+                              <span><small>结算数量</small><b>{formatCount(categorySourceSummary.settlement_total)} 份</b></span>
+                              <span><small>补发待发</small><b>{formatCount(categorySourceSummary.pending_shipping)} 份</b></span>
+                            </div>
+                          )}
                         </div>
                       </details>
                     );
@@ -764,36 +1055,110 @@ export default function ReportEditor() {
               </section>
             </div>
 
-            <aside className="report-editor-section report-editor-summary">
-              <div className="report-editor-section-head">
-                <span className="report-editor-section-icon" aria-hidden="true">∑</span>
-                <h2>本期汇总</h2>
-                <span className="report-editor-pill">实时</span>
-              </div>
-              <div className="report-editor-summary-total">
-                <small>当前总印数</small>
-                <strong>{formatCount(total)}</strong><span>份</span>
-              </div>
-              {destinationSummary.length > 0 && (
-                <ul className="report-editor-summary-list">
-                  {destinationSummary.map(item => (
-                    <li key={item.destination}><span>{item.destination}</span><b>{formatCount(item.total)} 份</b></li>
-                  ))}
-                </ul>
-              )}
-              {shippingCheck && (
-                <div className={`report-editor-check-card ${shippingCheck.is_match ? 'is-success' : ''}`}>
-                  <strong>{shippingCheck.is_match ? '✓ 中通份数一致' : '⚠ 1 项待处理'}</strong>
-                  {shippingCheck.is_match
-                    ? `报数与发货明细均为 ${formatCount(shippingCheck.report_zt_total)} 份。`
-                    : `中通报数与发货明细存在 ${formatCount(Math.abs(shippingCheck.delta))} 份差值，完成发货明细后即可确认。`}
+            <div className="report-editor-side-column">
+              <aside className="report-editor-section report-editor-summary">
+                <div className="report-editor-section-head">
+                  <span className="report-editor-section-icon" aria-hidden="true">∑</span>
+                  <h2>本期汇总</h2>
+                  <span className="report-editor-pill">实时</span>
                 </div>
-              )}
-              <div className="report-editor-progress">
-                <div><span>报数项目完整度</span><b>{completionPercent}%</b></div>
-                <span><i style={{ width: `${completionPercent}%` }} /></span>
-              </div>
-            </aside>
+                <div className="report-editor-summary-total">
+                  <small>当前总印数</small>
+                  <strong>{formatCount(total)}</strong><span>份</span>
+                </div>
+                {destinationSummary.length > 0 && (
+                  <ul className="report-editor-summary-list">
+                    {destinationSummary.map(item => (
+                      <li key={item.destination}><span>{item.destination}</span><b>{formatCount(item.total)} 份</b></li>
+                    ))}
+                  </ul>
+                )}
+                {shippingCheck && (
+                  <div className={`report-editor-check-card ${shippingCheck.is_match ? 'is-success' : ''}`}>
+                    <strong>{shippingCheck.is_match ? '✓ 中通份数一致' : '⚠ 1 项待处理'}</strong>
+                    {shippingCheck.is_match
+                      ? `报数与发货明细均为 ${formatCount(shippingCheck.report_zt_total)} 份。`
+                      : `中通报数与发货明细存在 ${formatCount(Math.abs(shippingCheck.delta))} 份差值，完成发货明细后即可确认。`}
+                  </div>
+                )}
+                <div className="report-editor-progress">
+                  <div><span>报数项目完整度</span><b>{completionPercent}%</b></div>
+                  <span><i style={{ width: `${completionPercent}%` }} /></span>
+                </div>
+              </aside>
+
+              <aside className="report-editor-section report-editor-sources">
+                <div className="report-editor-section-head">
+                  <span className="report-editor-section-icon" aria-hidden="true"><PaperClipOutlined /></span>
+                  <h2>数据来源与调整</h2>
+                  {sourcePendingCount > 0
+                    ? <span className="report-editor-pill is-orange">{sourcePendingCount} 项待处理</span>
+                    : <span className="report-editor-pill">已关联 {sourceSummary?.document_count ?? 0} 份</span>}
+                </div>
+                {sourceLoading ? (
+                  <div className="report-editor-source-loading"><Spin size="small" /></div>
+                ) : (
+                  <div className="report-editor-source-groups">
+                    {sourceChannels.map(channel => {
+                      const state = sourceStateForChannel(channel);
+                      return (
+                        <div className="report-editor-source-group" key={channel}>
+                          <div className="report-editor-source-group-head">
+                            <strong>{categoryLabels[channel]}</strong>
+                            <StatusPill tone={state.tone}>{state.label}</StatusPill>
+                            <Button type="link" size="small" onClick={() => openSourceDrawer(channel)}>
+                              {state.documents.length > 0 ? '追加' : '上传'}
+                            </Button>
+                          </div>
+                          {state.documents.length > 0 ? (
+                            <div className="report-editor-source-files">
+                              {state.documents.map(document => (
+                                <div key={document.id}>
+                                  <button
+                                    type="button"
+                                    onClick={() => { void handleSourceDownload(document.id, document.original_filename); }}
+                                    title={`下载 ${document.original_filename}`}
+                                  >
+                                    <FileSearchOutlined />
+                                    <span>{document.display_name}</span>
+                                    <small>{Math.max(1, Math.round(document.size / 1024))} KB</small>
+                                  </button>
+                                  {document.items.some(item => item.source_status !== 'confirmed') && (
+                                    <Button size="small" type="link" onClick={() => openSourceReview(document)}>核对</Button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <small className="report-editor-source-empty">尚未关联本期原始文件</small>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {sourceAdjustmentItems.length > 0 && (
+                  <div className="report-editor-adjustment-list">
+                    <strong>补发执行</strong>
+                    {sourceAdjustmentItems.map(item => (
+                      <div key={item.id}>
+                        <span>{item.source_label || '成都杂志铺补发'}</span>
+                        <small>应发 {item.shipping_delta} · 已发 {item.shipped_quantity}</small>
+                        <Button size="small" onClick={() => openShippingModal(item)}>登记</Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Button
+                  block
+                  className="report-editor-source-primary"
+                  icon={<PaperClipOutlined />}
+                  onClick={() => openSourceDrawer('postal')}
+                >
+                  上传原始来源 / 补发凭证
+                </Button>
+              </aside>
+            </div>
           </div>
 
           {confirmationSummary && (
@@ -878,6 +1243,270 @@ export default function ReportEditor() {
           onChange={(event) => setRevokeReason(event.target.value)}
           autoSize={{ minRows: 2 }}
         />
+      </Modal>
+
+      <Drawer
+        title={(
+          <DrawerTitle
+            icon="📎"
+            title="原始来源文件与识别"
+            description={`第 ${issue.issue_number} 期 · 文件先归档，再由你确认识别结果`}
+            tone="info"
+            status={(
+              <StatusPill tone={sourcePreview ? 'warning' : 'neutral'}>
+                {sourcePreview ? 'OCR待核对' : '等待上传'}
+              </StatusPill>
+            )}
+          />
+        )}
+        open={sourceDrawerOpen}
+        onClose={() => {
+          setSourceDrawerOpen(false);
+          resetSourceDrawer();
+        }}
+        size={720}
+        rootClassName="app-drawer-root report-source-drawer-root"
+        footer={(
+          <div className="app-drawer-footer">
+            <span className="app-drawer-footer-tip">
+              <b>✓</b>
+              {sourcePreview
+                ? '只有人工确认后的数据才会写入；待确认值会继续提醒'
+                : '支持 PDF、JPG、JPEG、PNG，原文件只归档一份'}
+            </span>
+            <Button onClick={() => {
+              setSourceDrawerOpen(false);
+              resetSourceDrawer();
+            }}>关闭</Button>
+            {sourcePreview ? (
+              <Button type="primary" loading={sourceConfirming} onClick={() => { void handleSourceConfirm(); }}>
+                确认识别与映射
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                loading={sourceUploading}
+                disabled={!sourceFile}
+                onClick={() => { void handleSourceUpload(); }}
+              >
+                上传并识别
+              </Button>
+            )}
+          </div>
+        )}
+      >
+        <div className="report-source-drawer">
+          {(!sourcePreview || sourceFile) && <section className="report-source-panel">
+            <h3><span aria-hidden>①</span>来源类型</h3>
+            <div className="report-source-type-grid">
+              <label>
+                渠道
+                <Select<ReportSourceChannel>
+                  value={sourceChannel}
+                  disabled={Boolean(sourcePreview)}
+                  options={sourceChannels.map(channel => ({ value: channel, label: categoryLabels[channel] }))}
+                  onChange={handleSourceChannelChange}
+                />
+              </label>
+              <label>
+                文件用途
+                <Select<ReportSourceDocumentType>
+                  value={sourceDocumentType}
+                  disabled={Boolean(sourcePreview)}
+                  options={[
+                    { value: 'weekly', label: '每周原始报数' },
+                    { value: 'monthly', label: '每月整月报数' },
+                    { value: 'adjustment', label: '后续补发 / 冲减凭证' },
+                  ]}
+                  onChange={value => {
+                    setSourceDocumentType(value);
+                    setSourcePreview(null);
+                    setSourceSuggestions([]);
+                  }}
+                />
+              </label>
+            </div>
+          </section>}
+
+          <section className="report-source-panel">
+            <h3><span aria-hidden>②</span>上传原始文件</h3>
+            <Upload.Dragger
+              maxCount={1}
+              accept=".pdf,.jpg,.jpeg,.png"
+              disabled={Boolean(sourcePreview)}
+              beforeUpload={file => {
+                setSourceFile(file);
+                setSourcePreview(null);
+                setSourceSuggestions([]);
+                return false;
+              }}
+              onRemove={() => {
+                setSourceFile(null);
+                setSourcePreview(null);
+                setSourceSuggestions([]);
+              }}
+              fileList={sourceFile ? [{ uid: 'report-source', name: sourceFile.name } as UploadFile] : []}
+            >
+              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+              <p className="ant-upload-text">点击或拖拽当期来源文件</p>
+              <p className="ant-upload-hint">上传后自动识别数字、日期和刊期；原文件同步归档</p>
+            </Upload.Dragger>
+          </section>
+
+          {sourcePreview && (
+            <section className="report-source-panel">
+              <div className="report-source-review-head">
+                <h3><span aria-hidden>③</span>核对识别结果</h3>
+                <Button size="small" icon={<PlusOutlined />} onClick={addSourceSuggestion}>人工补一行</Button>
+              </div>
+              <div className="report-source-file-meta">
+                <PaperClipOutlined />
+                <span>{sourcePreview.display_name}</span>
+                <small>原名：{sourcePreview.original_filename}</small>
+              </div>
+              {(sourcePreview.extraction_json?.warnings?.length ?? 0) > 0 && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  title="识别结果需要重点核对"
+                  description={(
+                    <ul>
+                      {sourcePreview.extraction_json?.warnings?.map(warning => <li key={warning}>{warning}</li>)}
+                    </ul>
+                  )}
+                />
+              )}
+              {sourceSuggestions.length === 0 ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  title="没有识别出结构化数字"
+                  description="文件已经安全归档，请点击“人工补一行”录入刊期和份数。"
+                />
+              ) : (
+                <div className="report-source-review-list">
+                  {sourceSuggestions.map((suggestion, index) => (
+                    <div className="report-source-review-row" key={`${suggestion.source_period || suggestion.issue_number}-${suggestion.sub_category}-${index}`}>
+                      <div className="report-source-review-row-head">
+                        <strong>{suggestion.source_label || suggestion.sub_category}</strong>
+                        {suggestion.confidence != null && (
+                          <small>OCR {Math.round(suggestion.confidence * 100)}%</small>
+                        )}
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          aria-label={`删除第${index + 1}条来源明细`}
+                          onClick={() => setSourceSuggestions(current => current.filter((_, rowIndex) => rowIndex !== index))}
+                        />
+                      </div>
+                      <div className="report-source-review-fields">
+                        <label>
+                          对应期号
+                          <InputNumber
+                            controls={false}
+                            precision={0}
+                            value={suggestion.issue_number}
+                            onChange={value => updateSourceSuggestion(index, 'issue_number', value)}
+                          />
+                        </label>
+                        <label>
+                          项目
+                          <Input
+                            value={suggestion.sub_category}
+                            onChange={event => updateSourceSuggestion(index, 'sub_category', event.target.value)}
+                          />
+                        </label>
+                        <label>
+                          来源数字
+                          <InputNumber
+                            controls={false}
+                            precision={0}
+                            min={0}
+                            value={suggestion.source_quantity}
+                            onChange={value => updateSourceSuggestion(index, 'source_quantity', value)}
+                          />
+                        </label>
+                        {suggestion.item_kind === 'base' ? (
+                          <label>
+                            写入份数
+                            <InputNumber
+                              controls={false}
+                              precision={0}
+                              min={0}
+                              value={suggestion.applied_quantity}
+                              onChange={value => updateSourceSuggestion(index, 'applied_quantity', value)}
+                            />
+                          </label>
+                        ) : (
+                          <label className="is-wide">
+                            调整性质
+                            <Select
+                              value={suggestion.adjustment_kind}
+                              options={adjustmentKindOptions}
+                              onChange={value => updateSourceSuggestion(index, 'adjustment_kind', value)}
+                            />
+                          </label>
+                        )}
+                        <label className="is-wide">
+                          核对状态
+                          <Select
+                            value={suggestion.source_status}
+                            options={sourceStatusOptions}
+                            onChange={value => updateSourceSuggestion(index, 'source_status', value)}
+                          />
+                        </label>
+                      </div>
+                      {suggestion.notes && <p>{suggestion.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {sourcePreview.extraction_json?.raw_text && (
+                <details className="report-source-raw-text">
+                  <summary>查看 OCR 原始文字</summary>
+                  <pre>{sourcePreview.extraction_json.raw_text}</pre>
+                </details>
+              )}
+            </section>
+          )}
+        </div>
+      </Drawer>
+
+      <Modal
+        title="登记补发执行"
+        open={Boolean(shippingItem)}
+        onCancel={() => setShippingItem(null)}
+        onOk={() => { void handleShippingSave(); }}
+        confirmLoading={shippingSaving}
+        okText="保存登记"
+        cancelText="取消"
+      >
+        {shippingItem && (
+          <div className="report-source-shipping-form">
+            <Alert
+              type="info"
+              showIcon
+              title={shippingItem.source_label || '补发调整'}
+              description={`应补发 ${shippingItem.shipping_delta} 份；结算变化 ${shippingItem.settlement_delta >= 0 ? '+' : ''}${shippingItem.settlement_delta} 份。`}
+            />
+            <label>
+              已补发份数
+              <InputNumber
+                min={0}
+                max={shippingItem.shipping_delta}
+                precision={0}
+                value={shippingQuantity}
+                onChange={value => setShippingQuantity(value ?? 0)}
+              />
+            </label>
+            <label>
+              快递单号 / 备注
+              <Input value={shippingTracking} onChange={event => setShippingTracking(event.target.value)} />
+            </label>
+          </div>
+        )}
       </Modal>
     </div>
   );

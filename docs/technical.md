@@ -31,6 +31,7 @@ FirstTry/
 │   │   │   ├── issues.py       # 期数管理
 │   │   │   ├── recipients.py   # 物流管理
 │   │   │   ├── reports.py      # 报数数据
+│   │   │   ├── report_sources.py # 报数原始来源、OCR确认、补发执行
 │   │   │   ├── schedule.py     # 刊期查询、年度刊期 PDF 上传预览与提交
 │   │   │   ├── shipping.py     # 发货管理
 │   │   │   ├── shipping_details.py # ZTO-MF CRUD
@@ -44,6 +45,7 @@ FirstTry/
 │   │   │   ├── report_entry.py
 │   │   │   ├── report_item_template.py
 │   │   │   ├── report_revision.py  # 作废记录
+│   │   │   ├── report_source.py    # 来源文档及跨刊期映射 / 调整
 │   │   │   ├── shipping_record.py
 │   │   │   ├── shipping_detail.py  # ZTO-MF
 │   │   │   ├── operation_log.py   # 操作日志
@@ -52,7 +54,8 @@ FirstTry/
 │   │   │   └── user.py         # 用户模型
 │   │   ├── schemas/            # Pydantic 模式
 │   │   │   ├── auth.py         # 认证模式
-│   │   │   └── publication_schedule_upload.py # 刊期上传预览/提交模式
+│   │   │   ├── publication_schedule_upload.py # 刊期上传预览/提交模式
+│   │   │   └── report_source.py # 来源识别、确认、汇总模式
 │   │   ├── seeds/              # 种子数据
 │   │   │   ├── publication_schedule_2026.py
 │   │   │   ├── report_templates.py
@@ -65,6 +68,8 @@ FirstTry/
 │   │   │   ├── publication_schedule_upload_service.py # 刊期上传存储与提交
 │   │   │   ├── raw_report_import_service.py    # 原始印数多工作表解析
 │   │   │   ├── original_zto_shipping_import_service.py # 原始中通多工作表解析
+│   │   │   ├── report_source_ocr.py        # 渠道模板 OCR 与保守校验
+│   │   │   └── report_source_service.py    # 归档、映射、结算与补发台账
 │   │   ├── templates/          # Excel 模板
 │   │   ├── auth.py             # JWT 认证工具
 │   │   ├── config.py           # 配置管理
@@ -78,7 +83,8 @@ FirstTry/
 │   │   └── preview.tsx        # Storybook 全局装饰器与主题/密度/圆角工具栏
 │   ├── src/
 │   │   ├── api/                # API 客户端
-│   │   │   └── auth.ts         # 认证 API
+│   │   │   ├── auth.ts         # 认证 API
+│   │   │   └── reportSources.ts # 原始来源与调整 API
 │   │   ├── components/         # 通用组件
 │   │   │   └── AppLayout.tsx  # 全局布局：顶部导航栏（搜索、通知、帮助、用户）+ 当前业务中心的 Emoji 上下文导航
 │   │   │   └── UiPrimitives.tsx # 页面标题、指标卡和状态标签等共享 UI 模式
@@ -97,8 +103,8 @@ FirstTry/
 │   │   │   ├── Recipients.tsx     # 物流管理子菜单（/recipients「ZTO-MF」、/recipients?tab=recipients「收件人」两标签）
 │   │   │   ├── PostDelivery.tsx    # 邮局管理页（/post-delivery）— 投递明细 / 邮局工单；订报转投在 /post-delivery/subscription
 │   │   │   ├── ProductCatalog.tsx  # 商品管理页（/products，营销与交易门户入口）
-│   │   │   ├── ReportEditor.tsx  # 报数编辑页：分区表单、分类折叠、实时汇总及状态操作
-│   │   │   ├── ReportEditor.css  # 报数编辑页的卡片式响应布局与视觉样式
+│   │   │   ├── ReportEditor.tsx  # 报数编辑页：分区表单、来源归档/OCR、补发结算及状态操作
+│   │   │   ├── ReportEditor.css  # 报数编辑页与来源核对抽屉的响应式样式
 │   │   │   ├── ReportEditor.stories.tsx # 报数编辑页完整草稿态 Story
 │   │   │   ├── ShippingPreview.tsx
 │   │   │   └── Templates.tsx    # 报数模板页（/templates，从印数管理页进入）
@@ -233,6 +239,51 @@ FirstTry/
 - 北京报零（`retail`）→ 北京市报刊零售公司
 - 合订本（`binding`）→ 印厂
 - 其他类别 → 中通物流公司
+
+### 3.5A report_source_documents（报数原始来源文档）
+
+保存不可变的 PDF / 图片凭证。文件通过通用附件服务写入 `uploads/report_sources/`，数据库只保存相对路径；同一渠道内以 SHA-256 去重。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INT | 主键 |
+| channel | VARCHAR(50) | `postal` / `retail` / `guangzhou` / `chengdu` |
+| document_type | VARCHAR(30) | `weekly` / `monthly` / `adjustment` |
+| original_filename | VARCHAR(255) | 用户上传时的文件名 |
+| display_name | VARCHAR(255) | 系统生成的规范显示名 |
+| stored_path | VARCHAR(500) | 原文件相对存储路径 |
+| mime_type / size / sha256 | VARCHAR / INT | 文件元数据与去重摘要 |
+| source_date | DATE | 从文件名或内容识别的来源日期 |
+| extraction_status | VARCHAR(30) | `pending_review` / `reviewed` / `confirmed` |
+| extraction_json | JSON | OCR 原文、置信度、警告和建议映射 |
+| uploaded_by | INT | 上传用户 |
+
+OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr_onnxruntime`。单个 PDF 最多 12 页。解析器按稳定渠道模板执行算术校验；异常或低可信结果返回 `pending_review`，上传归档本身仍成功，OCR 不会直接写入报数。
+
+### 3.5B report_source_items（来源刊期映射与调整）
+
+将一份原始凭证关联到一个或多个期号。`issue_number` 有意不设外键：成都月度文件可以在未来 `issues` 行创建前，先关联刊期表中的期号；删除并重建期次也不会破坏凭证。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| document_id / issue_number | INT | 来源文档与业务期号 |
+| item_kind | VARCHAR(20) | `base` 基础报数或 `adjustment` 后续调整 |
+| category / sub_category | VARCHAR | 对应报数渠道和项目 |
+| source_quantity | INT | 原文件中的数量 |
+| applied_quantity | INT | 人工确认后拟写入基础报数的数量 |
+| source_status | VARCHAR(30) | `pending_review` / `channel_pending` / `confirmed` |
+| adjustment_kind | VARCHAR(30) | `billable_addition` / `replacement` / `reduction` |
+| settlement_delta | INT | 结算增减；补损重发为 0 |
+| shipping_delta / shipped_quantity | INT | 应补发与已补发数量 |
+| tracking_no / shipped_at | VARCHAR / DATETIME | 补发执行信息 |
+
+写入规则：
+
+1. 只有人工确认、`item_kind=base` 且目标期仍为草稿的 `applied_quantity` 才可更新 `report_entries`。
+2. 创建新期时，`apply_confirmed_source_bases_to_issue()` 在条目初始化后覆盖对应的已确认月度 / 周度来源值；待确认值不会带入。
+3. 已确认期的来源确认永不回写 `report_entries`。后续调整只生成结算与补发增量。
+4. 成都汇总为 `settlement_total = base_quantity + settlement_delta`，`pending_shipping = max(0, shipping_delta - shipped_quantity)`。
+5. `report_source_documents` 删除时级联删除映射；删除原文件仅管理员可执行，并同步清理附件。
 
 ### 3.6 recipients（收件人）
 管理所有收件人信息。
@@ -1052,6 +1103,32 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
   ...
 ]
 ```
+
+#### POST /api/report-sources/upload
+
+上传并归档来源文件，同时返回 OCR 建议。`multipart/form-data` 字段：`file`、`channel`、可选 `issue_number`、`document_type`、`source_date`。支持 PDF、JPG、JPEG、PNG；响应中的 `suggestions` 只能作为人工核对初值。相同渠道和 SHA-256 的文件返回已有文档并标记 `duplicate=true`。
+
+#### POST /api/report-sources/{document_id}/confirm
+
+用人工核对后的 `items` 替换该文档的刊期映射。基础项可写入尚未确认的 `report_entries`；调整项根据 `adjustment_kind` 生成结算 / 补发增量。已确认报数不会被回写。上传与确认分别写入 `operation_logs` 的 `upload_source`、`confirm_source` 操作。
+
+#### GET /api/report-sources/issues/{issue_id}
+
+返回某期关联的全部原始文档和渠道汇总，包括基础数量、结算增量 / 合计、应补发 / 已补发 / 待补发及待确认数量。报数编辑页右侧「数据来源与调整」使用此接口。
+
+#### GET /api/report-sources/{document_id}/download
+
+下载归档原文件。路径必须通过附件服务解析，数据库路径无效或文件丢失时返回 404。
+
+#### PATCH /api/report-sources/items/{item_id}/shipping
+
+登记调整项的已补发数量、快递单号和发出时间。`shipped_quantity` 必须在 0 到 `shipping_delta` 之间，基础来源项不可登记。
+
+#### DELETE /api/report-sources/{document_id}
+
+管理员删除来源文档、全部刊期映射和对应附件。
+
+**确认报数联动**：`POST /api/issues/{issue_id}/report/confirm` 会查询该期 `report_source_items`；存在非 `confirmed` 来源项时返回 422，防止关闭抽屉后遗漏 OCR / 渠道待确认数据。
 
 ### 4.6 物流管理
 

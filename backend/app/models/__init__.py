@@ -15,6 +15,7 @@ from app.models.shipping_detail import (
 )
 from app.models.operation_log import OperationLog
 from app.models.issue_audit_snapshot import IssueAuditSnapshot
+from app.models.report_source import ReportSourceDocument, ReportSourceItem
 from app.models.publication_schedule_upload import (
     PublicationScheduleUpload,
     PublicationScheduleUploadStatus,
@@ -95,6 +96,7 @@ __all__ = [
     "ShippingDetail", "ShippingDetailSourceType", "ShippingDetailSyncStatus",
     "OperationLog",
     "IssueAuditSnapshot",
+    "ReportSourceDocument", "ReportSourceItem",
     "PublicationScheduleUpload",
     "PublicationScheduleUploadStatus",
     # Order management (V1.1)
