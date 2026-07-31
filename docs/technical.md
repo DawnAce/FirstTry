@@ -571,9 +571,9 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr
 
 ### 3.17 邮局管理（投递记录层 + 邮局工单）
 
-「发行履约 → 邮局管理」现有 3 个三级入口：①**投递明细**（`/post-delivery/deliveries`，纯台账/查询）②**订报转投**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表/分送表/zip，给邮局的名单只来自这里）③**邮局工单**（`/post-delivery/tickets`，投诉/收件信息变更/回访三合一，按类型筛选）。「收款发票」已迁到「财务管理」，作为财务管理第三个 Tab「邮局收款」（见 §4.16 迁移说明）。
+「发行履约 → 邮局管理」现有 4 个三级入口：①**投递明细**（`/post-delivery/deliveries`，纯台账/查询）②**待续投**（`/post-delivery/renewals`，核对订单邮局权益与投递段缺口）③**订报转投**（`/post-delivery/subscription`，唯一产出「给邮局文件」——汇总表/分送表/zip，给邮局的名单只来自这里）④**邮局工单**（`/post-delivery/tickets`，投诉/收件信息变更/回访三合一，按类型筛选）。「收款发票」已迁到「财务管理」，作为财务管理第三个 Tab「邮局收款」（见 §4.16 迁移说明）。
 
-**前端布局（2026-07 初代正式稿）**：`PostDelivery.tsx` 的投递明细和邮局工单共用统一的标题、操作、筛选和紧凑表格层级；投递明细将编号 / 收报人、投递单位 / 订单来源分别拆列，便于快速扫描，投递记录详情和新增 / 编辑使用 Ant Design `Drawer`，避免离开列表上下文。投递明细可直接按订阅状态筛选；“即将到期”使用含首尾的 30 天窗口，显示剩余天数及汇总并按止订日升序排列。详情抽屉显示投递状态，并通过 `GET /tickets?type=address&applied=true&postal_delivery_id=...` 加载已应用的信息修改来源；来源详情使用只读 `Modal`，不暴露编辑 / 应用操作。`SubscriptionGeneration.tsx` 取消常驻左侧批次栏，改为顶部批次选择器；批次页按三步进度、摘要卡、不可变版本流水和折叠后的地区产物组织。“重新上传来源”是页面内三步工作区（上传 → 校验及与当前版本汇总对比 → 激活），只有最终确认使用 `Popconfirm`；明细和校验问题继续使用只读宽抽屉。
+**前端布局（2026-07 初代正式稿）**：`PostDelivery.tsx` 的投递明细、待续投和邮局工单共用统一的标题、操作、筛选和紧凑表格层级；投递明细将编号 / 收报人、投递单位 / 订单来源分别拆列，便于快速扫描，投递记录详情和新增 / 编辑使用 Ant Design `Drawer`，避免离开列表上下文。投递明细可直接按订阅状态筛选；“即将到期”使用含首尾的 30 天窗口，显示剩余天数及汇总并按止订日升序排列。详情抽屉显示投递状态，并通过 `GET /tickets?type=address&applied=true&postal_delivery_id=...` 加载已应用的信息修改来源；来源详情使用独立只读 `Modal`，保留底层详情抽屉供对照，不暴露编辑 / 应用操作。部分份数变更时，弹窗按 `copy_allocations` 展示“已转出 + 原信息保留 / 去向待确认”，并依据 `unresolved_copies` 显示“份数待核对”。`SubscriptionGeneration.tsx` 取消常驻左侧批次栏，改为顶部批次选择器；批次页按三步进度、摘要卡、不可变版本流水和折叠后的地区产物组织。“重新上传来源”是页面内三步工作区（上传 → 校验及与当前版本汇总对比 → 激活），只有最终确认使用 `Popconfirm`；明细和校验问题继续使用只读宽抽屉。
 
 **投诉表单布局（2026-07）**：`ComplaintFormModal` 继续复用原 Ant Design `Form` 和保存接口，仅将字段重排为“投诉信息 / 联系人信息 / 处理信息”三个语义区；年度、编号、来源平台提升为标题元信息，姓名、电话、地址合并为联系人信息。弹窗桌面宽度 780px，下半区双列并在窄屏回退单列，内容高度随视口受限并仅在确有溢出时滚动。
 
@@ -598,7 +598,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr
 **投诉工单（P2）**：投诉 `编号`(去前导零) + `年度` 经 `postal_common.delivery_map` → `postal_delivery`（`postal_delivery_id` 可空 SET NULL；关联的投递记录挂了真实订单才继承 `order_id`；匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；状态为 open/in_progress/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。
 
 **收件信息变更 + 回访（P3）**：均按 编号+年度 关联投递记录；历史独立表已由 PR-E 迁入 `postal_tickets`。
-- **收件信息变更**：导入按编号(去零)，结合表头年度、变更登记年度及原姓名 / 电话定位 `postal_delivery`，兼容跨年改址和沿用旧表头的混合年度历史表；`change_date` 为 `DateTime`（迁移 `b7d9f1a3c5e8`；历史日期保留为当天 `00:00`），处理情况归一 `routed_label`（XX局）；**「应用变更」** `apply_address_change` 把新姓名/电话/地址/份数写回**投递记录**并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——若该读者挂了真实订单则同步当前 `FulfillmentTarget`（=同步履约订单），详情标注「已应用·已同步履约订单」或「已应用·仅名册」；未关联投递记录（`postal_delivery_id` 空）→ 400。应用后工单永久只读，更新/删除均以行锁复查并返回 409；再次更正必须新建工单，避免审计记录与已写入信息失配。导入备注附加 `来源:邮局年改地址!第N行`。
+- **收件信息变更**：导入按编号(去零)，结合表头年度、变更登记年度及原姓名 / 电话定位 `postal_delivery`，兼容跨年改址和沿用旧表头的混合年度历史表；`change_date` 为 `DateTime`（迁移 `b7d9f1a3c5e8`；历史日期保留为当天 `00:00`），处理情况归一 `routed_label`（XX局）；迁移 `a6c8e0f2b4d6` 新增 JSON `copy_allocations` 与整数 `unresolved_copies`，完整保存“变更后收件人 / 原信息保留 / 去向待确认”的份数分配。**「应用变更」** `apply_address_change` 把新姓名/电话/地址/份数写回**投递记录**并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——若该读者挂了真实订单则同步当前 `FulfillmentTarget`（=同步履约订单），详情标注「已应用·已同步履约订单」或「已应用·仅名册」；未关联投递记录（`postal_delivery_id` 空）→ 400。应用后工单永久只读，更新/删除均以行锁复查并返回 409；剩余去向通过 `/tickets/{id}/pending/resolve` 生成补充变更闭环，再次更正必须新建工单，避免审计记录与已写入信息失配。导入备注附加 `来源:邮局年改地址!第N行`。
 - **回访**：迁移 `e3f5a7c9b1d4` 新增 `communication_content`，手工记录拆为沟通内容与结果；历史 Excel 的 `batch_label` 仅作导入兼容。若回访先于投诉创建，补建同编号投诉时会自动把独立回访并入投诉时间线。
 - 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/`order_map`/`delivery_map`）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`；前端统一使用 `/api/postal/tickets*` 完成列表、详情、CRUD、应用、处理和导入。旧 `/complaints`、`/address-changes`、`/follow-ups` 路径仅作部署兼容。
 
