@@ -37,6 +37,7 @@ from app.models import (
 from app.models.fulfillment_target import ShippingChannel
 from app.models.order_item import (
     BillingType,
+    DeliveryMethod,
     FulfillmentType,
     OrderItemStatus,
     Publication,
@@ -534,8 +535,10 @@ class _FakeCountMaxDb:
         count=43,
         latest: Optional[date] = date(2026, 12, 31),
         shipping_details=None,
+        count_values=None,
     ):
         self.count = count
+        self.count_values = list(count_values or [])
         self.latest = latest
         self.shipping_details = list(shipping_details or [])
 
@@ -556,7 +559,8 @@ class _FakeCountMaxDb:
                 return self_inner._value
 
         if "count" in text:
-            return _Q(self.count)
+            value = self.count_values.pop(0) if self.count_values else self.count
+            return _Q(value)
         if "max" in text:
             return _Q(self.latest)
         return _Q(None)
@@ -627,6 +631,43 @@ def test_compute_progress_synced_count_matches_linked_shipping_details():
     item = _make_subscription_item(expected_at_creation=42)
     progress = order_service.compute_fulfillment_progress(db, item)
     assert progress.synced_count == 2
+
+
+def test_compute_progress_post_office_counts_issues_published_as_of_today():
+    db = _FakeCountMaxDb(
+        count_values=[49, 1],
+        latest=date(2027, 7, 26),
+    )
+    item = _make_subscription_item(expected_at_creation=49)
+    item.delivery_method = DeliveryMethod.post_office
+    item.coverage_start_date = date(2026, 8, 3)
+    item.coverage_end_date = date(2027, 7, 26)
+
+    progress = order_service.compute_fulfillment_progress(
+        db,
+        item,
+        as_of=date(2026, 8, 3),
+    )
+
+    assert progress.current_expected == 49
+    assert progress.shipped_count == 1
+    assert progress.synced_count == 0
+
+
+def test_compute_progress_post_office_is_zero_before_first_covered_issue():
+    db = _FakeCountMaxDb(count_values=[49], latest=date(2027, 7, 26))
+    item = _make_subscription_item(expected_at_creation=49)
+    item.delivery_method = DeliveryMethod.post_office
+    item.coverage_start_date = date(2026, 8, 3)
+    item.coverage_end_date = date(2027, 7, 26)
+
+    progress = order_service.compute_fulfillment_progress(
+        db,
+        item,
+        as_of=date(2026, 8, 2),
+    )
+
+    assert progress.shipped_count == 0
 
 
 def test_compute_progress_drift_none_when_baseline_missing():

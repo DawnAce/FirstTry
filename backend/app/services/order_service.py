@@ -34,7 +34,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
@@ -48,11 +48,17 @@ from app.models import (
     OrderStatus,
     Payment,
     PostalDelivery,
+    PublicationSchedule,
     Refund,
     ShippingDetail,
 )
 from app.models.fulfillment_target import ShippingChannel
-from app.models.order_item import OrderItemStatus, SubscriptionTerm
+from app.models.order_item import (
+    DeliveryMethod,
+    OrderItemStatus,
+    Publication,
+    SubscriptionTerm,
+)
 from app.models.shipping_detail import (
     ShippingDetailSourceType,
     ShippingDetailSyncStatus,
@@ -1215,13 +1221,15 @@ def get_order_detail(db: Session, order_id: int) -> Order:
 def compute_fulfillment_progress(
     db: Session,
     order_item: OrderItem,
+    *,
+    as_of: Optional[date] = None,
 ) -> FulfillmentProgress:
     """Snapshot per-item fulfillment progress.
 
     Computes ``current_expected`` against the live schedule, derives
-    ``drift`` from ``expected_issues_at_creation``, and counts linked
-    ``shipping_details`` rows for ``synced_count``. 休刊-skip count
-    (``skipped_count``) remains a V1.3 placeholder.
+    ``drift`` from ``expected_issues_at_creation``. 中通按已同步、已发的
+    ``shipping_details`` 统计；邮局投递按截至 ``as_of`` 已出刊的期数统计
+    履约进度。休刊-skip count remains a V1.3 placeholder.
     """
     expected_at_creation = order_item.expected_issues_at_creation
     current_expected = compute_expected_issues(
@@ -1234,12 +1242,20 @@ def compute_fulfillment_progress(
     drift = None
     if expected_at_creation is not None and current_expected is not None:
         drift = current_expected - expected_at_creation
-    linked = db.query(ShippingDetail).filter(
-        ShippingDetail.order_id == order_item.order_id,
-        ShippingDetail.order_item_id == order_item.id,
-    )
-    synced_count = linked.count()
-    shipped_count = linked.filter(ShippingDetail.shipped_at.isnot(None)).count()
+    if order_item.delivery_method == DeliveryMethod.post_office:
+        synced_count = 0
+        shipped_count = _count_published_postal_issues(
+            db,
+            order_item,
+            as_of=as_of or date.today(),
+        )
+    else:
+        linked = db.query(ShippingDetail).filter(
+            ShippingDetail.order_id == order_item.order_id,
+            ShippingDetail.order_item_id == order_item.id,
+        )
+        synced_count = linked.count()
+        shipped_count = linked.filter(ShippingDetail.shipped_at.isnot(None)).count()
     return FulfillmentProgress(
         expected_at_creation=expected_at_creation,
         current_expected=current_expected,
@@ -1247,6 +1263,43 @@ def compute_fulfillment_progress(
         synced_count=synced_count,
         shipped_count=shipped_count,
         skipped_count=0,
+    )
+
+
+def _count_published_postal_issues(
+    db: Session,
+    order_item: OrderItem,
+    *,
+    as_of: date,
+) -> int:
+    """Count newspaper issues whose publication date has arrived.
+
+    邮局没有逐期 ``shipping_details``，所以中国经营报等周报以刊期表为
+    履约事实来源。商学院目前只有月份刊历、没有精确出刊日，暂不在这里
+    推断，以免把“进入月份”误判为“已经出刊”。
+    """
+    coverage_start = order_item.coverage_start_date
+    coverage_end = order_item.coverage_end_date
+    if (
+        coverage_start is None
+        or coverage_end is None
+        or order_item.publication == Publication.business_school
+    ):
+        return 0
+
+    cutoff = min(as_of, coverage_end)
+    if cutoff < coverage_start:
+        return 0
+
+    return (
+        db.query(func.count(PublicationSchedule.id))
+        .filter(
+            PublicationSchedule.publish_date >= coverage_start,
+            PublicationSchedule.publish_date <= cutoff,
+            PublicationSchedule.issue_number.isnot(None),
+        )
+        .scalar()
+        or 0
     )
 
 
