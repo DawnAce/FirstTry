@@ -51,7 +51,7 @@ const order: OrderOut = {
     expected_issues_at_creation: 49,
     status: 'active',
     notes: null,
-    progress: { expected_at_creation: 49, current_expected: 49, drift: 0, synced_count: 0, shipped_count: 0, skipped_count: 0 },
+    progress: { expected_at_creation: 49, current_expected: 49, drift: 0, synced_count: 0, shipped_count: 1, skipped_count: 0 },
     allocations: [{
       id: 301,
       version_no: 1,
@@ -163,6 +163,12 @@ type Story = StoryObj<typeof meta>
 
 export const Overview: Story = {
   name: '订单详情总览',
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('1 / 49 期')).toBeVisible()
+    await expect(canvas.getByText('已履约')).toBeVisible()
+    await expect(await canvas.findByText('已关联 · 1 条')).toBeVisible()
+    await expect(canvas.getByText(/邮局投递 · 履约中/)).toBeVisible()
+  },
 }
 
 export const AddressChangeFlow: Story = {

@@ -370,7 +370,7 @@ class FulfillmentProgress(BaseModel):
     current_expected: Optional[int]
     drift: Optional[int]
     synced_count: int
-    # 已发数：关联到本明细且 shipped_at 非空的发货明细行数。缺口 = synced_count − shipped_count。
+    # 履约数：中通为 shipped_at 非空的发货行；邮局为截至今日已出刊的覆盖期数。
     shipped_count: int = 0
     skipped_count: int
 

@@ -264,7 +264,7 @@ export default function OrderDetail() {
   const progressSummary = computeOrderProgress(order.items);
   const termSummary = computeOrderTermSummary(order.items);
   const progressPercent = progressSummary.expected > 0
-    ? Math.min(100, Math.round((progressSummary.shipped / progressSummary.expected) * 100))
+    ? Math.min(100, Math.round((progressSummary.fulfilled / progressSummary.expected) * 100))
     : 0;
 
   const handleVoidClick = () => {
@@ -470,11 +470,18 @@ export default function OrderDetail() {
       </section>
 
       <section className="order-detail-progress-strip" aria-label="订单履约进度">
-        <div><strong>履约进度</strong><span>{progressSummary.deliveryLabel} · {progressSummary.shipped > 0 ? '履约中' : '尚未开始'}</span></div>
+        <div><strong>履约进度</strong><span>{progressSummary.deliveryLabel} · {progressSummary.fulfilled > 0 ? '履约中' : '尚未开始'}</span></div>
         <div className="order-detail-progress-track"><i style={{ width: `${progressPercent}%` }} /></div>
         <div className="order-detail-progress-values">
-          <span><small>已发</small><strong>{progressSummary.shipped} / {progressSummary.expected || '-'} 期</strong></span>
-          <span><small>已同步</small><strong>{progressSummary.synced} 期</strong></span>
+          <span><small>{progressSummary.postalOnly ? '已履约' : '已发'}</small><strong>{progressSummary.fulfilled} / {progressSummary.expected || '-'} 期</strong></span>
+          {progressSummary.postalOnly ? (
+            <span>
+              <small>邮局投递</small>
+              <strong>{postalDeliveriesQuery.isLoading ? '-' : postalDeliveriesQuery.data?.total ? `已关联 · ${postalDeliveriesQuery.data.total} 条` : '未关联'}</strong>
+            </span>
+          ) : (
+            <span><small>已同步</small><strong>{progressSummary.synced} 期</strong></span>
+          )}
         </div>
       </section>
 
@@ -787,12 +794,14 @@ function computeOrderProgress(items: OrderItemOut[]) {
     0,
   );
   const synced = items.reduce((sum, item) => sum + item.progress.synced_count, 0);
-  const shipped = items.reduce((sum, item) => sum + item.progress.shipped_count, 0);
+  const fulfilled = items.reduce((sum, item) => sum + item.progress.shipped_count, 0);
+  const postalOnly = items.length > 0 && items.every((item) => item.delivery_method === 'post_office');
   const deliveryLabels = [...new Set(items.map((item) => deliveryMethodLabel(item.delivery_method)).filter((label) => label !== '-'))];
   return {
     expected,
     synced,
-    shipped,
+    fulfilled,
+    postalOnly,
     deliveryLabel: deliveryLabels.length === 1 ? deliveryLabels[0] : deliveryLabels.length > 1 ? '多种投递方式' : '待配置投递',
   };
 }
