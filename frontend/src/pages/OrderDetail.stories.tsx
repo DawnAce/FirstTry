@@ -66,7 +66,8 @@ const order: OrderOut = {
         recipient_address: '北京市朝阳区建国路 88 号',
         recipient_postal_code: '100022',
         quantity: 1,
-        shipping_channel: 'post_office',
+        // 历史目标可能仍保留默认快递渠道；详情应以订单明细的投递方式为准。
+        shipping_channel: 'zto_outsource',
         effective_from_issue: null,
         effective_until_issue: null,
         status: 'active',
@@ -133,10 +134,10 @@ const createdChange = {
 }
 
 const events: OrderEventOut[] = [
-  { id: 4, event_type: 'synced_to_shipping', payload_json: { delivery_no: '6352' }, operator_id: null, created_at: '2026-07-30T15:43:00' },
+  { id: 4, event_type: 'synced_to_shipping', payload_json: { issue_number: 2655, created_count: 1, updated_count: 0 }, operator_id: null, created_at: '2026-07-30T15:43:00' },
   { id: 3, event_type: 'confirmed', payload_json: { order_code: 'ORD-2026-000001' }, operator_id: 1, created_at: '2026-07-30T15:42:14' },
   { id: 2, event_type: 'modified', payload_json: { diff: { paid_amount: { from: '0.00', to: '240.00' } } }, operator_id: 1, created_at: '2026-07-20T14:36:00' },
-  { id: 1, event_type: 'created', payload_json: { source_platform: '微信小程序' }, operator_id: 1, created_at: '2026-07-20T14:34:00' },
+  { id: 1, event_type: 'created', payload_json: { entry_method: 'manual', items_count: 1 }, operator_id: 1, created_at: '2026-07-20T14:34:00' },
 ]
 
 const meta = {
@@ -180,6 +181,8 @@ export const Overview: Story = {
     await expect(await planPanel.findByText('当前履约方案')).toBeVisible()
     await expect(planPanel.getByText('目标份数')).toBeVisible()
     await expect(planPanel.getByText('1 份')).toBeVisible()
+    await expect(planPanel.getByText('邮局投递')).toBeVisible()
+    await expect(planPanel.queryByText('中通快递')).not.toBeInTheDocument()
     await userEvent.click(canvas.getByRole('tab', { name: /收款记录/ }))
     await expect(await within(canvas.getByRole('tabpanel')).findByText('收款流水 #1')).toBeVisible()
     await userEvent.click(canvas.getByRole('tab', { name: /关联快递/ }))
@@ -187,7 +190,10 @@ export const Overview: Story = {
     await userEvent.click(canvas.getByRole('tab', { name: /关联邮局/ }))
     await expect(await within(canvas.getByRole('tabpanel')).findByText('邮局投递 #6352')).toBeVisible()
     await userEvent.click(canvas.getByRole('tab', { name: /事件流/ }))
-    await expect(await within(canvas.getByRole('tabpanel')).findByText('确认', { exact: true })).toBeVisible()
+    const eventsPanel = within(canvas.getByRole('tabpanel'))
+    await expect(await eventsPanel.findByText('确认', { exact: true })).toBeVisible()
+    await expect(eventsPanel.getByText('录入方式：手工录入 · 订单明细：1 条')).toBeVisible()
+    await expect(eventsPanel.queryByText('查看完整数据')).not.toBeInTheDocument()
   },
 }
 

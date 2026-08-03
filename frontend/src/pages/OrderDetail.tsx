@@ -7,7 +7,6 @@ import {
   Badge,
   Button,
   Card,
-  Collapse,
   DatePicker,
   Empty,
   Form,
@@ -1415,8 +1414,8 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
                         <p>{target.recipient_address || '未记录投递地址'}</p>
                       </div>
                       <div className="order-detail-delivery-config">
-                        <span><MailOutlined /></span>
-                        <div><small>投递方式</small><strong>{target.shipping_channel === 'post_office' ? '邮局投递' : '中通快递'}</strong></div>
+                        <span>{item.delivery_method === 'post_office' ? <MailOutlined /> : <TruckOutlined />}</span>
+                        <div><small>投递方式</small><strong>{deliveryMethodLabel(item.delivery_method)}</strong></div>
                         <i />
                         <div><small>目标份数</small><strong>{target.quantity} 份</strong></div>
                       </div>
@@ -1894,9 +1893,12 @@ function eventTimelineColor(eventType: OrderEventOut['event_type']): string {
     case 'split':
       return 'orange';
     case 'voided':
+    case 'cancelled':
+    case 'refunded':
     case 'shipping_sync_conflict':
       return 'red';
     case 'synced_to_shipping':
+    case 'payment_recorded':
       return 'green';
     default:
       return 'gray';
@@ -1905,7 +1907,6 @@ function eventTimelineColor(eventType: OrderEventOut['event_type']): string {
 
 function EventCard({ event, latest }: { event: OrderEventOut; latest: boolean }) {
   const summary = summarizeEventPayload(event.payload_json);
-  const hasPayload = event.payload_json && Object.keys(event.payload_json).length > 0;
   return (
     <article className={`order-detail-event-entry ${latest ? 'is-latest' : ''}`}>
       <span className={`order-detail-event-icon is-${eventTimelineColor(event.event_type)}`}>{eventGlyph(event.event_type)}</span>
@@ -1913,17 +1914,6 @@ function EventCard({ event, latest }: { event: OrderEventOut; latest: boolean })
         <div className="order-detail-event-head"><strong>{eventTypeLabel(event.event_type)}</strong><time>{formatOrderTimestamp(event.created_at)}</time></div>
         {summary && <p>{summary}</p>}
         <small>{event.operator_id != null ? `操作者 #${event.operator_id}` : '系统自动处理'}</small>
-        {hasPayload && (
-          <Collapse
-            ghost
-            size="small"
-            items={[{
-              key: 'payload',
-              label: <span className="order-detail-event-payload-label">查看完整数据</span>,
-              children: <pre className="order-detail-event-payload">{JSON.stringify(event.payload_json, null, 2)}</pre>,
-            }]}
-          />
-        )}
       </div>
     </article>
   );
@@ -1935,6 +1925,12 @@ function eventGlyph(eventType: OrderEventOut['event_type']): ReactNode {
       return <CheckCircleOutlined />;
     case 'synced_to_shipping':
       return <SyncOutlined />;
+    case 'payment_recorded':
+      return <DollarOutlined />;
+    case 'refunded':
+      return <RollbackOutlined />;
+    case 'cancelled':
+      return <CloseCircleOutlined />;
     case 'modified':
     case 'allocation_updated':
     case 'target_added':
@@ -1951,11 +1947,64 @@ function eventGlyph(eventType: OrderEventOut['event_type']): ReactNode {
 
 function summarizeEventPayload(payload: Record<string, unknown> | null): string | null {
   if (!payload) return null;
-  if (typeof payload.reason === 'string') return `原因：${payload.reason}`;
-  if (typeof payload.order_code === 'string') return `订单编码：${payload.order_code}`;
+  const details: string[] = [];
+  if (typeof payload.order_code === 'string') details.push(`订单编码：${payload.order_code}`);
+  if (typeof payload.entry_method === 'string') details.push(`录入方式：${eventEntryMethodLabel(payload.entry_method)}`);
+  if (typeof payload.items_count === 'number') details.push(`订单明细：${payload.items_count} 条`);
+  if (typeof payload.delivery_no === 'string') details.push(`投递编号：${payload.delivery_no}`);
+  if (typeof payload.issue_number === 'number') details.push(`期号：第 ${payload.issue_number} 期`);
+  if (typeof payload.created_count === 'number') details.push(`新增快递明细：${payload.created_count} 条`);
+  if (typeof payload.updated_count === 'number') details.push(`更新快递明细：${payload.updated_count} 条`);
+  if (typeof payload.conflict_count === 'number') details.push(`冲突：${payload.conflict_count} 条`);
+  if (typeof payload.amount === 'string' || typeof payload.amount === 'number') details.push(`金额：${formatCurrency(payload.amount)}`);
+  if (typeof payload.method === 'string' && payload.method) details.push(`方式：${payload.method}`);
+  if (typeof payload.reason === 'string' && payload.reason) details.push(`原因：${payload.reason}`);
   if (payload.diff && typeof payload.diff === 'object') {
     const keys = Object.keys(payload.diff as Record<string, unknown>);
-    if (keys.length > 0) return `变更字段：${keys.join(', ')}`;
+    if (keys.length > 0) details.push(`变更内容：${keys.map(orderEventFieldLabel).join('、')}`);
   }
-  return null;
+  if (payload.field_diff && typeof payload.field_diff === 'object') {
+    const keys = Object.keys(payload.field_diff as Record<string, unknown>);
+    if (keys.length > 0) details.push(`明细变更：${keys.map(orderEventFieldLabel).join('、')}`);
+  }
+  if (typeof payload.effective_from_issue === 'number') details.push(`生效期号：第 ${payload.effective_from_issue} 期`);
+  if (typeof payload.change_reason === 'string' && payload.change_reason) details.push(`变更原因：${payload.change_reason}`);
+  return details.length > 0 ? details.join(' · ') : '系统已记录本次操作';
+}
+
+const ORDER_EVENT_FIELD_LABELS: Record<string, string> = {
+  payer_name: '付款主体',
+  payer_contact: '付款主体联系方式',
+  external_order_no: '来源单号',
+  source_platform: '来源平台',
+  source_store: '来源店铺',
+  payment_method: '付款方式',
+  payment_collector: '收款经办人',
+  total_amount: '订单总额',
+  paid_amount: '已付金额',
+  invoice_required: '开票需求',
+  invoice_title: '发票抬头',
+  invoice_tax_no: '纳税人识别号',
+  invoice_recipient_email: '发票邮箱',
+  notes: '备注',
+  publication: '刊物',
+  fulfillment_type: '履约类型',
+  delivery_method: '投递方式',
+  coverage_start_date: '覆盖开始日期',
+  coverage_end_date: '覆盖结束日期',
+  total_quantity: '每期总份数',
+  unit_price: '单价',
+};
+
+function orderEventFieldLabel(field: string): string {
+  return ORDER_EVENT_FIELD_LABELS[field] ?? '订单信息';
+}
+
+function eventEntryMethodLabel(value: string): string {
+  switch (value) {
+    case 'manual': return '手工录入';
+    case 'excel_import': return '电商导入';
+    case 'api_sync': return '接口同步';
+    default: return '系统录入';
+  }
 }

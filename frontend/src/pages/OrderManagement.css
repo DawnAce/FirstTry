@@ -1363,24 +1363,6 @@
 .order-detail-event-card > p { margin: 0; color: #56657a; font-size: 12px; }
 .order-detail-event-card > small { color: #8794a6; font-size: 11px; }
 
-.order-detail-event-card .ant-collapse-header {
-  min-height: 0 !important;
-  padding: 3px 0 !important;
-}
-
-.order-detail-event-payload-label { color: #738198; font-size: 11px; }
-
-.order-detail-event-payload {
-  max-height: 240px;
-  overflow: auto;
-  margin: 0;
-  padding: 9px;
-  border-radius: 6px;
-  color: #465469;
-  background: #f4f7fb;
-  font-size: 11px;
-}
-
 .order-detail-side-column {
   display: grid;
   gap: 14px;
