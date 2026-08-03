@@ -396,6 +396,7 @@ export function listTickets(f: {
   applied?: boolean;
   recipient_pending?: boolean;
   postal_delivery_id?: number;
+  order_id?: number;
   search?: string;
   page?: number;
   page_size?: number;
