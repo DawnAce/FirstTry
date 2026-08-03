@@ -72,7 +72,10 @@ export type OrderEventType =
   | 'item_removed'
   | 'item_modified'
   | 'synced_to_shipping'
-  | 'shipping_sync_conflict';
+  | 'shipping_sync_conflict'
+  | 'refunded'
+  | 'cancelled'
+  | 'payment_recorded';
 
 // =============================================================================
 // Inputs (sent to backend)

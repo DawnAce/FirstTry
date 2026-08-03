@@ -194,6 +194,9 @@ const EVENT_TYPE_LABELS: Record<OrderEventType, string> = {
   item_modified: '修改明细',
   synced_to_shipping: '同步至快递',
   shipping_sync_conflict: '快递同步冲突',
+  refunded: '退款',
+  cancelled: '取消订单',
+  payment_recorded: '记录收款',
 };
 
 export function eventTypeLabel(value: OrderEventType): string {

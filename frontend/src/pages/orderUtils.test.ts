@@ -156,6 +156,9 @@ describe('eventTypeLabel', () => {
     expect(eventTypeLabel('item_modified')).toBe('修改明细');
     expect(eventTypeLabel('synced_to_shipping')).toBe('同步至快递');
     expect(eventTypeLabel('shipping_sync_conflict')).toBe('快递同步冲突');
+    expect(eventTypeLabel('refunded')).toBe('退款');
+    expect(eventTypeLabel('cancelled')).toBe('取消订单');
+    expect(eventTypeLabel('payment_recorded')).toBe('记录收款');
   });
 });
 
