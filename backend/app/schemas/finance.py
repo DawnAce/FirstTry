@@ -78,6 +78,7 @@ class InvoiceOrdersOut(BaseModel):
     total: int                      # 当前筛选后行数
     pending_count: int              # 待开票总数（不受筛选影响）
     needs_red_reversal_count: int   # 需冲红总数（不受筛选影响）
+    issued_count: int               # 已开票总数（不受筛选影响）
 
 
 # --------------------------------------------------------------------------- #

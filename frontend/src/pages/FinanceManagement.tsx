@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
-  Card,
   DatePicker,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
+  Progress,
   Select,
   Space,
   Switch,
@@ -20,9 +20,15 @@ import {
   message,
 } from 'antd';
 import {
+  CheckCircleOutlined,
+  DeleteOutlined,
   DownloadOutlined,
+  EyeOutlined,
+  FileTextOutlined,
+  InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RollbackOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
@@ -53,7 +59,8 @@ import type {
 import { listPartners, partnerQueryKeys } from '../api/contracts';
 import { useAuth } from '../contexts/AuthContext';
 import PostalReceiptsPanel from './PostalReceipts';
-import { PageHeader } from '../components/UiPrimitives';
+import { PageHeader, StatusPill } from '../components/UiPrimitives';
+import './FinanceManagement.css';
 
 const { Text } = Typography;
 
@@ -66,12 +73,6 @@ const INVOICE_STATE_LABELS: Record<InvoiceState, string> = {
   issued: '已开票',
   needs_red_reversal: '需冲红',
 };
-const INVOICE_STATE_COLORS: Record<InvoiceState, string> = {
-  pending: 'orange',
-  issued: 'green',
-  needs_red_reversal: 'red',
-};
-
 const SETTLEMENT_STATUS_OPTIONS: Array<{ label: string; value: SettlementStatus }> = [
   { label: '待结算', value: 'pending' },
   { label: '已打款', value: 'paid' },
@@ -117,6 +118,7 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
   const [status, setStatus] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<InvoiceOrderRow | null>(null);
+  const [viewing, setViewing] = useState<InvoiceOrderRow | null>(null);
 
   const params = { status, q: search || undefined };
   const ordersQuery = useQuery({
@@ -136,7 +138,7 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
   });
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteInvoice(id),
-    onSuccess: () => { message.success('已删除发票登记'); invalidate(); },
+    onSuccess: () => { message.success('已删除发票登记'); invalidate(); setViewing(null); },
     onError: (err) => message.error(apiError(err, '删除失败')),
   });
 
@@ -168,92 +170,122 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
 
   const columns: TableColumnsType<InvoiceOrderRow> = [
     {
-      title: '订单', key: 'order',
+      title: '订单 / 付款方', key: 'order', width: 185,
       render: (_: unknown, r) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Space size={4}>
-            <Text strong>{r.order_code || `#${r.order_id}`}</Text>
+            <Text strong className="finance-order-code">{r.order_code || `#${r.order_id}`}</Text>
             {r.order_voided && <Tag>已作废</Tag>}
           </Space>
-          <Text type="secondary" style={{ fontSize: 12 }}>{r.payer_name}</Text>
+          <Text type="secondary" className="finance-cell-secondary">{r.payer_name}</Text>
         </Space>
       ),
     },
     { title: '下单日', dataIndex: 'order_date', key: 'order_date', width: 110 },
-    { title: '应收', dataIndex: 'total_amount', key: 'total_amount', width: 100, align: 'right', render: (v: string) => `¥${v}` },
     {
-      title: '开票进度', key: 'invoice_progress', width: 130,
+      title: '应开金额', key: 'amount', width: 120,
       render: (_: unknown, r) => (
-        <Space direction="vertical" size={0}>
-          <Text>已开 ¥{r.normal_invoiced_amount}</Text>
-          <Text type={Number(r.remaining_invoice_amount) > 0 ? 'warning' : 'secondary'}>
-            待开 ¥{r.remaining_invoice_amount}
+        <Space orientation="vertical" size={0}>
+          <Text strong>¥{r.total_amount}</Text>
+          <Text type={Number(r.refunded_amount) > 0 ? 'danger' : 'secondary'} className="finance-cell-secondary">
+            已退款 ¥{r.refunded_amount}
           </Text>
         </Space>
       ),
     },
     {
-      title: '已退款', dataIndex: 'refunded_amount', key: 'refunded_amount', width: 100, align: 'right',
-      render: (v: string) => (Number(v) > 0 ? <Text type="danger">¥{v}</Text> : <Text type="secondary">—</Text>),
+      title: '开票进度', key: 'invoice_progress', width: 185,
+      render: (_: unknown, r) => (
+        <div className="finance-invoice-progress">
+          <div className="finance-invoice-progress-copy">
+            <Text>已开 ¥{r.normal_invoiced_amount}</Text>
+            <Text type="secondary">{Math.min(100, Math.round(Number(r.normal_invoiced_amount) / Math.max(Number(r.total_amount), 0.01) * 100))}%</Text>
+          </div>
+          <Progress
+            percent={Math.min(100, Number(r.normal_invoiced_amount) / Math.max(Number(r.total_amount), 0.01) * 100)}
+            showInfo={false}
+            size="small"
+            status={Number(r.normal_invoiced_amount) > Number(r.total_amount) ? 'exception' : 'normal'}
+          />
+          <Text type={Number(r.remaining_invoice_amount) > 0 ? 'warning' : 'secondary'} className="finance-cell-secondary">
+            待开 ¥{r.remaining_invoice_amount}
+          </Text>
+        </div>
+      ),
     },
-    { title: '开票抬头', dataIndex: 'invoice_title', key: 'invoice_title', render: (v) => v || <Text type="secondary">—</Text> },
     {
-      title: '已开发票', key: 'invoices',
-      render: (_: unknown, r) =>
-        r.invoices.length === 0 ? (
-          <Text type="secondary">—</Text>
-        ) : (
-          <Space size={4} wrap>
-            {r.invoices.map((inv) => {
-              const tag = (
-                <Tag color={inv.invoice_type === 'red_reversal' ? 'red' : 'blue'}>
+      title: '开票信息', key: 'invoice_info',
+      render: (_: unknown, r) => (
+        <Space orientation="vertical" size={2} className="finance-invoice-info">
+          <Text>{r.invoice_title || '未填写开票抬头'}</Text>
+          <Text type="secondary" className="finance-cell-secondary">{r.invoice_recipient_email || '未填写接收邮箱'}</Text>
+          {r.invoices.length > 0 && (
+            <Space size={4} wrap>
+              {r.invoices.map((inv) => (
+                <Tag key={inv.id} color={inv.invoice_type === 'red_reversal' ? 'red' : 'blue'}>
                   {INVOICE_TYPE_LABELS[inv.invoice_type]}{inv.invoice_no ? ` ${inv.invoice_no}` : ''}
                 </Tag>
-              );
-              return isAdmin ? (
-                <Popconfirm
-                  key={inv.id} title="删除该发票登记？" okText="删除" cancelText="取消"
-                  okButtonProps={{ danger: true }} onConfirm={() => deleteMutation.mutate(inv.id)}
-                >
-                  <span style={{ cursor: 'pointer' }}>{tag}</span>
-                </Popconfirm>
-              ) : (
-                <span key={inv.id}>{tag}</span>
-              );
-            })}
-          </Space>
-        ),
+              ))}
+            </Space>
+          )}
+        </Space>
+      ),
     },
     {
-      title: '状态', dataIndex: 'invoice_state', key: 'invoice_state', width: 90,
-      render: (v: InvoiceState) => <Tag color={INVOICE_STATE_COLORS[v]}>{INVOICE_STATE_LABELS[v]}</Tag>,
+      title: '状态', dataIndex: 'invoice_state', key: 'invoice_state', width: 105,
+      render: (v: InvoiceState) => (
+        <StatusPill tone={v === 'issued' ? 'success' : v === 'needs_red_reversal' ? 'danger' : 'warning'}>
+          {INVOICE_STATE_LABELS[v]}
+        </StatusPill>
+      ),
     },
-    ...(isAdmin
-      ? [{
-          title: '操作', key: 'actions', width: 180, fixed: 'right' as const,
-          render: (_: unknown, r: InvoiceOrderRow) => (
-            <Space size={4}>
-              {Number(r.remaining_invoice_amount) > 0 && (
+    {
+      title: '操作', key: 'actions', width: isAdmin ? 205 : 105, fixed: 'right' as const,
+      render: (_: unknown, r: InvoiceOrderRow) => (
+        <Space size={4}>
+          {isAdmin && Number(r.remaining_invoice_amount) > 0 && (
                 <Button type="link" size="small" onClick={() => openRegister(r, 'normal')}>
                   {Number(r.normal_invoiced_amount) > 0 ? '继续开票' : '登记发票'}
                 </Button>
-              )}
-              {r.needs_red_reversal && (
-                <Button type="link" size="small" danger onClick={() => openRegister(r, 'red_reversal')}>登记红冲</Button>
-              )}
-              {Number(r.remaining_invoice_amount) === 0 && !r.needs_red_reversal && <Text type="secondary">—</Text>}
-            </Space>
-          ),
-        } as TableColumnsType<InvoiceOrderRow>[number]]
-      : []),
+          )}
+          {isAdmin && r.needs_red_reversal && (
+            <Button type="link" size="small" danger onClick={() => openRegister(r, 'red_reversal')}>登记红冲</Button>
+          )}
+          {r.invoices.length > 0 && (
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setViewing(r)}>查看记录</Button>
+          )}
+          {!isAdmin && r.invoices.length === 0 && <Text type="secondary">—</Text>}
+        </Space>
+      ),
+    },
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
-        <Space wrap>
+    <div className="finance-invoice-panel">
+      <section className="finance-overview" aria-label="发票概览">
+        <div className="finance-overview-item finance-overview-item-info">
+          <span className="finance-overview-icon"><FileTextOutlined /></span>
+          <div><Text type="secondary">待开票</Text><strong>{ordersQuery.data?.pending_count ?? 0}</strong></div>
+        </div>
+        <div className="finance-overview-item finance-overview-item-warning">
+          <span className="finance-overview-icon"><RollbackOutlined /></span>
+          <div><Text type="secondary">需冲红</Text><strong>{ordersQuery.data?.needs_red_reversal_count ?? 0}</strong></div>
+        </div>
+        <div className="finance-overview-item finance-overview-item-success">
+          <span className="finance-overview-icon"><CheckCircleOutlined /></span>
+          <div><Text type="secondary">已开票订单</Text><strong>{ordersQuery.data?.issued_count ?? 0}</strong></div>
+        </div>
+      </section>
+
+      <div className="finance-context-banner">
+        <InfoCircleOutlined />
+        <Text><Text strong>开票规则：</Text>支持分次开票，累计金额达到订单应开金额后自动完成；退款订单单独提示冲红。</Text>
+      </div>
+
+      <div className="finance-toolbar">
+        <div className="finance-toolbar-filters">
           <Select
-            allowClear placeholder="按状态筛选" style={{ width: 150 }}
+            allowClear placeholder="全部状态" className="finance-filter-status"
             value={status}
             onChange={(v) => setStatus(v)}
             options={[
@@ -262,31 +294,26 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
               { label: '已开票', value: 'issued' },
             ]}
           />
-          <Input.Search placeholder="搜索 订单号 / 付款方" allowClear style={{ width: 220 }} onSearch={setSearch} />
-          {ordersQuery.data && (
-            <Text type="secondary">
-              待开票 <Text strong>{ordersQuery.data.pending_count}</Text> · 需冲红{' '}
-              <Text strong type={ordersQuery.data.needs_red_reversal_count > 0 ? 'danger' : undefined}>
-                {ordersQuery.data.needs_red_reversal_count}
-              </Text>
-            </Text>
-          )}
-        </Space>
+          <Input.Search placeholder="搜索订单号 / 付款方" allowClear className="finance-filter-search" onSearch={setSearch} />
+          <Text type="secondary">共 {ordersQuery.data?.total ?? 0} 条订单</Text>
+        </div>
         <Button icon={<ReloadOutlined />} onClick={() => ordersQuery.refetch()} loading={ordersQuery.isFetching}>刷新</Button>
       </div>
 
       <Table<InvoiceOrderRow>
+        className="finance-data-table"
         rowKey="order_id"
         size="small"
         loading={ordersQuery.isLoading}
         columns={columns}
         dataSource={ordersQuery.data?.rows ?? []}
         pagination={false}
-        scroll={{ x: 1230 }}
+        scroll={{ x: 1120 }}
         locale={{ emptyText: '暂无需处理的发票（需开票订单 / 已登记发票的订单会出现在此）' }}
       />
 
       <Modal
+        className="finance-form-modal"
         title={target ? `登记发票 · ${target.order_code || `#${target.order_id}`}（${target.payer_name}）` : ''}
         open={target !== null}
         onCancel={() => setTarget(null)}
@@ -345,6 +372,46 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={viewing ? `发票记录 · ${viewing.order_code || `#${viewing.order_id}`}（${viewing.payer_name}）` : '发票记录'}
+        open={viewing !== null}
+        onCancel={() => setViewing(null)}
+        footer={<Button onClick={() => setViewing(null)}>关闭</Button>}
+        width={680}
+        destroyOnHidden
+      >
+        <div className="finance-record-summary">
+          <div><Text type="secondary">订单应开</Text><strong>¥{viewing?.total_amount ?? '0.00'}</strong></div>
+          <div><Text type="secondary">累计已开</Text><strong>¥{viewing?.normal_invoiced_amount ?? '0.00'}</strong></div>
+          <div><Text type="secondary">剩余待开</Text><strong>¥{viewing?.remaining_invoice_amount ?? '0.00'}</strong></div>
+        </div>
+        <div className="finance-record-list">
+          {viewing?.invoices.map((inv) => (
+            <div className="finance-record-item" key={inv.id}>
+              <Tag color={inv.invoice_type === 'red_reversal' ? 'red' : 'blue'}>{INVOICE_TYPE_LABELS[inv.invoice_type]}</Tag>
+              <div className="finance-record-main">
+                <Text strong>{inv.amount == null ? '金额未填写' : `¥${inv.amount}`}</Text>
+                <Text type="secondary">
+                  {inv.invoice_no ? `发票号 ${inv.invoice_no}` : '未填写发票号'} · {inv.issued_date || '未填写开票日期'}
+                </Text>
+              </div>
+              {isAdmin && (
+                <Popconfirm
+                  title="删除该发票登记？"
+                  description="删除后会重新计算订单开票进度。"
+                  okText="删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => deleteMutation.mutate(inv.id)}
+                >
+                  <Button danger type="text" icon={<DeleteOutlined />} loading={deleteMutation.isPending}>删除</Button>
+                </Popconfirm>
+              )}
+            </div>
+          ))}
+        </div>
       </Modal>
     </div>
   );
@@ -520,23 +587,28 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
-        <Space wrap>
+    <div className="finance-settlement-panel">
+      <div className="finance-context-banner">
+        <InfoCircleOutlined />
+        <Text><Text strong>结算归档：</Text>按合作渠道和结算周期登记打款、进项发票与附件，形成完整对账记录。</Text>
+      </div>
+      <div className="finance-toolbar">
+        <div className="finance-toolbar-filters">
           <Select
-            allowClear placeholder="按渠道筛选" style={{ width: 180 }}
+            allowClear placeholder="按渠道筛选" className="finance-filter-partner"
             options={partnerOptions}
             value={filters.partner_id}
             onChange={(v) => setFilters((f) => ({ ...f, partner_id: v }))}
           />
           <Select
-            allowClear placeholder="按状态筛选" style={{ width: 140 }}
+            allowClear placeholder="按状态筛选" className="finance-filter-status"
             options={SETTLEMENT_STATUS_OPTIONS}
             value={filters.status}
             onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
           />
-          <Input.Search placeholder="搜索 周期 / 进项发票号" allowClear style={{ width: 220 }} onSearch={(v) => setFilters((f) => ({ ...f, q: v || undefined }))} />
-        </Space>
+          <Input.Search placeholder="搜索周期 / 进项发票号" allowClear className="finance-filter-search" onSearch={(v) => setFilters((f) => ({ ...f, q: v || undefined }))} />
+          <Text type="secondary">共 {listQuery.data?.length ?? 0} 条记录</Text>
+        </div>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => listQuery.refetch()} loading={listQuery.isFetching}>刷新</Button>
           {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增结算</Button>}
@@ -544,6 +616,7 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       <Table<Settlement>
+        className="finance-data-table"
         rowKey="id"
         size="small"
         loading={listQuery.isLoading}
@@ -611,23 +684,22 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
 export default function FinanceManagement() {
   const { isAdmin } = useAuth();
   return (
-    <div>
-      <PageHeader title="财务管理" description="处理收款、开票与渠道结算" />
-      <Card size="small" style={{ marginBottom: 12 }}>
-        <Text type="secondary">
-          <Text strong>订单发票</Text>：跟踪每张订单是否已开票、退款是否需要冲红；
-          <Text strong>渠道结算</Text>：登记与合作渠道的对账打款、是否按时、进项发票，并归档结算单；
-          <Text strong>邮局收款</Text>：邮局渠道（小程序 / APP / 淘宝）的收款开票与挂单。
-          （应收 / 欠款汇总见「活动订单统计」。{isAdmin ? '可登记/编辑/上传。' : '仅管理员可编辑，您可查看与下载。'}）
-        </Text>
-      </Card>
-      <Tabs
-        items={[
-          { key: 'invoices', label: '订单发票', children: <InvoicesPanel isAdmin={isAdmin} /> },
-          { key: 'settlements', label: '渠道结算', children: <SettlementsPanel isAdmin={isAdmin} /> },
-          { key: 'postal-receipts', label: '邮局收款', children: <PostalReceiptsPanel /> },
-        ]}
+    <div className="finance-page">
+      <PageHeader
+        title="财务工作台"
+        description="集中处理订单发票、渠道结算与邮局回款"
+        actions={<Text type="secondary">{isAdmin ? '管理员 · 可登记与维护' : '只读模式'}</Text>}
       />
+      <section className="finance-workspace">
+        <Tabs
+          className="finance-workspace-tabs"
+          items={[
+            { key: 'invoices', label: '订单发票', children: <InvoicesPanel isAdmin={isAdmin} /> },
+            { key: 'settlements', label: '渠道结算', children: <SettlementsPanel isAdmin={isAdmin} /> },
+            { key: 'postal-receipts', label: '邮局收款', children: <PostalReceiptsPanel /> },
+          ]}
+        />
+      </section>
     </div>
   );
 }

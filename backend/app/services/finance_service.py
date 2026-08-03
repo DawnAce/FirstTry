@@ -57,6 +57,7 @@ def list_invoice_orders(
     rows: list[InvoiceOrderRow] = []
     pending_count = 0
     needs_red_count = 0
+    issued_count = 0
     for o in orders:
         invs = by_order.get(o.id, [])
         normal_invs = [i for i in invs if i.invoice_type == InvoiceType.normal]
@@ -98,6 +99,8 @@ def list_invoice_orders(
             pending_count += 1
         if needs_red:
             needs_red_count += 1
+        if state == "issued":
+            issued_count += 1
 
         rows.append(
             InvoiceOrderRow(
@@ -140,4 +143,5 @@ def list_invoice_orders(
         total=len(rows),
         pending_count=pending_count,
         needs_red_reversal_count=needs_red_count,
+        issued_count=issued_count,
     )

@@ -26,7 +26,7 @@ const invoiceOrders = {
       invoice_state: 'needs_red_reversal', needs_red_reversal: true, order_voided: false,
     },
   ],
-  total: 2, pending_count: 1, needs_red_reversal_count: 1,
+  total: 2, pending_count: 1, needs_red_reversal_count: 1, issued_count: 0,
 }
 
 const settlements = [
@@ -57,7 +57,7 @@ const meta = {
     docs: {
       description: {
         component:
-          '财务管理：「订单发票」工作台（待开票/已开票/需冲红）+「渠道结算」（对账打款/进项发票/附件归档）。写操作按 isAdmin 显隐。演示 管理员/操作员（只读）/空/登记发票弹窗/切到结算页。',
+          '财务工作台：「订单发票」工作台（待开票/已开票/需冲红）+「渠道结算」（对账打款/进项发票/附件归档）。写操作按 isAdmin 显隐，发票记录对登录用户可读。演示 管理员/操作员（只读）/空/登记发票弹窗/发票记录/切到结算页。',
       },
     },
   },
@@ -100,6 +100,20 @@ export const RegisterInvoice: Story = {
   },
 }
 
+// 交互：打开记录弹窗，查看已登记发票的金额与票号
+export const ViewInvoiceRecords: Story = {
+  name: '查看发票记录',
+  parameters: { auth: operatorAuth, msw: { handlers: dataHandlers } },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole('button', { name: /查看记录/ }))
+    const dialog = await within(document.body).findByRole('dialog')
+    await waitFor(() => expect(dialog).toBeVisible())
+    await expect((await within(dialog).findAllByText('¥240.00')).length).toBeGreaterThan(0)
+    await expect(await within(dialog).findByText(/发票号 INV-2002/)).toBeVisible()
+    expect(within(dialog).queryByRole('button', { name: /删除/ })).toBeNull()
+  },
+}
+
 // 交互：切到「渠道结算」页签，结算行渲染
 export const SettlementsTab: Story = {
   name: '渠道结算页签',
@@ -117,7 +131,7 @@ export const Empty: Story = {
     auth: adminAuth,
     msw: {
       handlers: [
-        http.get('/api/invoices/orders', () => HttpResponse.json({ rows: [], total: 0, pending_count: 0, needs_red_reversal_count: 0 })),
+        http.get('/api/invoices/orders', () => HttpResponse.json({ rows: [], total: 0, pending_count: 0, needs_red_reversal_count: 0, issued_count: 0 })),
         http.get('/api/settlements', () => HttpResponse.json([])),
         http.get('/api/partners', () => HttpResponse.json([])),
       ],
