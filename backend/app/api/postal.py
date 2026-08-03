@@ -68,6 +68,7 @@ def list_tickets(
     applied: Optional[bool] = None,
     recipient_pending: Optional[bool] = None,
     postal_delivery_id: Optional[int] = None,
+    order_id: Optional[int] = None,
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
@@ -79,7 +80,7 @@ def list_tickets(
     rows, total, summary = ticket_svc.list_tickets(
         db, type=type, year=year, status=status, applied=applied,
         recipient_pending=recipient_pending,
-        postal_delivery_id=postal_delivery_id,
+        postal_delivery_id=postal_delivery_id, order_id=order_id,
         search=search, page=page, page_size=page_size,
     )
     return TicketListOut(rows=[TicketOut(**r) for r in rows], total=total, summary=summary)

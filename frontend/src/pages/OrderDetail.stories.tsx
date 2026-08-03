@@ -1,0 +1,187 @@
+import type { Meta, StoryObj } from '@storybook/react-vite'
+import { withRouter, reactRouterParameters } from 'storybook-addon-remix-react-router'
+import { http, HttpResponse } from 'msw'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import type { OrderOut } from '../api/orders'
+import OrderDetail from './OrderDetail'
+
+const order: OrderOut = {
+  id: 96,
+  order_code: 'ORD-2026-000001',
+  external_order_no: '2026071622202732603212',
+  order_date: '2026-07-20',
+  entry_method: 'manual',
+  source_platform: '微信小程序',
+  source_store: 'CBJ+',
+  campaign: null,
+  payer_name: '宋女士',
+  payer_contact: '13800008821',
+  payment_method: 'wechat',
+  payment_collector: '卢娅丽',
+  total_amount: '240.00',
+  paid_amount: '240.00',
+  invoice_required: true,
+  invoice_title: '悦心堂（济南）医养有限公司历下分公司',
+  invoice_tax_no: '91370102MAE3DH6U68',
+  invoice_recipient_email: '380903801@qq.com',
+  status: 'active',
+  commercial_status: null,
+  refunded_amount: '0.00',
+  outstanding_amount: '0.00',
+  notes: null,
+  created_at: '2026-07-20T14:34:00',
+  updated_at: '2026-07-20T14:36:00',
+  refunds: [],
+  payments: [{ id: 1, amount: '240.00', method: '微信', collected_at: '2026-07-20', notes: null, operator_id: 1, created_at: '2026-07-20T14:36:00' }],
+  items: [{
+    id: 201,
+    publication: 'cbj',
+    publication_format: 'paper',
+    fulfillment_type: 'subscription',
+    billing_type: 'paid',
+    subscription_term: 'one_year',
+    delivery_method: 'post_office',
+    term_start_month: '2026-08',
+    coverage_start_date: '2026-08-03',
+    coverage_end_date: '2027-07-26',
+    issue_number: null,
+    total_quantity: 1,
+    unit_price: '240.00',
+    subtotal: '240.00',
+    expected_issues_at_creation: 49,
+    status: 'active',
+    notes: null,
+    progress: { expected_at_creation: 49, current_expected: 49, drift: 0, synced_count: 0, shipped_count: 0, skipped_count: 0 },
+    allocations: [{
+      id: 301,
+      version_no: 1,
+      effective_from_issue: null,
+      effective_until_issue: null,
+      change_reason: null,
+      created_at: '2026-07-20T14:34:00',
+      targets: [{
+        id: 401,
+        recipient_name: '宋女士',
+        recipient_phone: '13800008821',
+        recipient_address: '北京市朝阳区建国路 88 号',
+        recipient_postal_code: '100022',
+        quantity: 1,
+        shipping_channel: 'post_office',
+        effective_from_issue: null,
+        effective_until_issue: null,
+        status: 'active',
+        notes: null,
+      }],
+    }],
+  }],
+}
+
+const delivery = {
+  id: 501,
+  year: 2026,
+  delivery_no: '6352',
+  order_id: 96,
+  order_item_id: 201,
+  fulfillment_target_id: 401,
+  order_code: 'ORD-2026-000001',
+  external_order_no: '2026071622202732603212',
+  recipient_name: '宋女士',
+  recipient_phone: '13800008821',
+  recipient_province: '北京市',
+  recipient_city: '北京市',
+  recipient_district: '朝阳区',
+  recipient_address: '北京市朝阳区建国路 88 号',
+  recipient_postal_code: '100022',
+  product: '中国经营报',
+  copies: 1,
+  amount: '240.00',
+  coverage_start_date: '2026-08-03',
+  coverage_end_date: '2027-07-26',
+  source_channel: '微信小程序',
+  distribution_unit_id: null,
+  distribution_unit_name: null,
+  salesperson: null,
+  remittance_name: null,
+  source_type: 'order_generated',
+  link_status: 'linked',
+  link_message: null,
+}
+
+const createdChange = {
+  id: 601,
+  postal_delivery_id: 501,
+  order_id: 96,
+  external_order_no: '2026-6352',
+  change_date: '2026-08-03T10:24:00',
+  old_name: '宋女士',
+  old_phone: '13800008821',
+  old_address: '北京市朝阳区建国路 88 号',
+  old_copies: 1,
+  new_name: '宋女士',
+  new_phone: '13800008821',
+  new_address: '北京市海淀区中关村大街 27 号',
+  new_copies: 1,
+  original_start_month: '0803',
+  effective_start_month: '0810',
+  copy_allocations: null,
+  unresolved_copies: 0,
+  handling: null,
+  routed_label: null,
+  applied_to_order: false,
+  applied_at: null,
+  notes: '客户搬家',
+}
+
+const meta = {
+  title: '页面/营销与交易/订单详情',
+  component: OrderDetail,
+  tags: ['ai-generated'],
+  decorators: [withRouter],
+  parameters: {
+    layout: 'fullscreen',
+    auth: { user: { username: 'admin', role: 'admin' }, isAdmin: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} },
+    reactRouter: reactRouterParameters({
+      routing: { path: '/orders/:id' },
+      location: { pathParams: { id: '96' } },
+    }),
+    msw: {
+      handlers: [
+        http.get('/api/orders/96', () => HttpResponse.json(order)),
+        http.get('/api/orders/96/events', () => HttpResponse.json([])),
+        http.get('/api/postal/deliveries', () => HttpResponse.json({ rows: [delivery], total: 1, summary: { total_copies: 1, unit_count: 0, missing_unit_count: 1, nearest_expiry_date: null } })),
+        http.get('/api/postal/tickets', () => HttpResponse.json({ rows: [], total: 0, summary: { complaint: 0, address: 0, follow: 0, address_recipient_pending: 0 } })),
+        http.post('/api/postal/tickets', async ({ request }) => HttpResponse.json({ ...createdChange, ...await request.json() as object }, { status: 201 })),
+        http.get('/api/postal/tickets/601', () => HttpResponse.json(createdChange)),
+        http.post('/api/postal/tickets/601/apply', () => HttpResponse.json({ ...createdChange, applied_to_order: true, applied_at: '2026-08-03T10:36:00' })),
+      ],
+    },
+  },
+} satisfies Meta<typeof OrderDetail>
+
+export default meta
+type Story = StoryObj<typeof meta>
+
+export const Overview: Story = {
+  name: '订单详情总览',
+}
+
+export const AddressChangeFlow: Story = {
+  name: '地址变更流程入口',
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('ORD-2026-000001')).toBeVisible()
+    await expect(await canvas.findByText('北京市朝阳区建国路 88 号')).toBeVisible()
+    await userEvent.click(await canvas.findByRole('button', { name: /修改收件信息/ }))
+    const body = within(document.body)
+    await waitFor(() => expect(body.getByRole('dialog')).toBeVisible())
+    const dialog = within(body.getByRole('dialog'))
+    await expect(dialog.getByText('新建收件信息变更')).toBeVisible()
+    await expect(dialog.getByText('保存后生成待应用工单，不会立即覆盖当前地址')).toBeVisible()
+    await userEvent.type(dialog.getByLabelText('新投递地址'), '北京市海淀区中关村大街 27 号')
+    await userEvent.type(dialog.getByLabelText('变更原因'), '客户搬家')
+    await userEvent.click(dialog.getByRole('button', { name: '创建变更工单' }))
+    const detailTitle = await body.findByText('收件信息变更工单 #601')
+    await waitFor(() => expect(detailTitle).toBeVisible())
+    const detailDialog = within(detailTitle.closest('[role="dialog"]') as HTMLElement)
+    await expect(detailDialog.getByRole('button', { name: '确认完成并应用' })).toBeVisible()
+  },
+}

@@ -486,6 +486,55 @@ def test_unified_tickets_list(client):
     assert client.get("/api/postal/tickets?type=xxx").status_code == 400
 
 
+def test_unified_tickets_can_filter_by_order(client):
+    delivery = client.post("/api/postal/deliveries", json={
+        "year": 2026, "delivery_no": "399", "recipient_name": "订单读者",
+        "recipient_address": "北京市原地址",
+    }).json()
+
+    db_override = app.dependency_overrides[get_db]()
+    db = next(db_override)
+    try:
+        linked_order = Order(
+            order_date=date(2026, 1, 1),
+            entry_method=OrderEntryMethod.manual,
+            source_platform="微信小程序",
+            payer_name="订单读者",
+        )
+        other_order = Order(
+            order_date=date(2026, 1, 2),
+            entry_method=OrderEntryMethod.manual,
+            source_platform="淘宝",
+            payer_name="其他读者",
+        )
+        db.add_all([linked_order, other_order])
+        db.flush()
+        linked_order_id = linked_order.id
+        other_order_id = other_order.id
+        db.query(PostalDelivery).filter(PostalDelivery.id == delivery["id"]).update(
+            {"order_id": linked_order_id}
+        )
+        db.commit()
+    finally:
+        db_override.close()
+
+    created = client.post("/api/postal/tickets", json={
+        "type": "address", "year": 2026, "delivery_no": "399",
+        "change_date": "2026-08-03", "old_name": "订单读者",
+        "old_address": "北京市原地址", "new_address": "北京市新地址",
+    })
+    assert created.status_code == 201, created.text
+
+    linked = client.get("/api/postal/tickets", params={
+        "type": "address", "order_id": linked_order_id,
+    }).json()
+    assert linked["total"] == 1
+    assert linked["rows"][0]["id"] == created.json()["id"]
+    assert client.get("/api/postal/tickets", params={
+        "type": "address", "order_id": other_order_id,
+    }).json()["total"] == 0
+
+
 def test_unified_ticket_crud_merges_follow_up_into_complaint_timeline(client):
     complaint = client.post("/api/postal/tickets", json={
         "type": "complaint",
