@@ -45,6 +45,9 @@ export interface InvoiceOrderRow {
   invoice_required: boolean;
   invoice_title: string | null;
   invoice_tax_no: string | null;
+  invoice_recipient_email: string | null;
+  normal_invoiced_amount: string;
+  remaining_invoice_amount: string;
   invoices: Invoice[];
   invoice_state: InvoiceState;
   needs_red_reversal: boolean;

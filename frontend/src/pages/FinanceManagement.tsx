@@ -113,6 +113,7 @@ interface InvoiceFormValues {
 function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [form] = Form.useForm<InvoiceFormValues>();
+  const selectedInvoiceType = Form.useWatch('invoice_type', form);
   const [status, setStatus] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<InvoiceOrderRow | null>(null);
@@ -144,7 +145,7 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
     form.resetFields();
     form.setFieldsValue({
       invoice_type: type,
-      amount: Number(type === 'red_reversal' ? row.refunded_amount : row.total_amount),
+      amount: Number(type === 'red_reversal' ? row.refunded_amount : row.remaining_invoice_amount),
       buyer_title: row.invoice_title ?? undefined,
       tax_no: row.invoice_tax_no ?? undefined,
       issued_date: dayjs(),
@@ -180,6 +181,17 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
     },
     { title: '下单日', dataIndex: 'order_date', key: 'order_date', width: 110 },
     { title: '应收', dataIndex: 'total_amount', key: 'total_amount', width: 100, align: 'right', render: (v: string) => `¥${v}` },
+    {
+      title: '开票进度', key: 'invoice_progress', width: 130,
+      render: (_: unknown, r) => (
+        <Space direction="vertical" size={0}>
+          <Text>已开 ¥{r.normal_invoiced_amount}</Text>
+          <Text type={Number(r.remaining_invoice_amount) > 0 ? 'warning' : 'secondary'}>
+            待开 ¥{r.remaining_invoice_amount}
+          </Text>
+        </Space>
+      ),
+    },
     {
       title: '已退款', dataIndex: 'refunded_amount', key: 'refunded_amount', width: 100, align: 'right',
       render: (v: string) => (Number(v) > 0 ? <Text type="danger">¥{v}</Text> : <Text type="secondary">—</Text>),
@@ -221,10 +233,15 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
           title: '操作', key: 'actions', width: 180, fixed: 'right' as const,
           render: (_: unknown, r: InvoiceOrderRow) => (
             <Space size={4}>
-              <Button type="link" size="small" onClick={() => openRegister(r, 'normal')}>登记发票</Button>
+              {Number(r.remaining_invoice_amount) > 0 && (
+                <Button type="link" size="small" onClick={() => openRegister(r, 'normal')}>
+                  {Number(r.normal_invoiced_amount) > 0 ? '继续开票' : '登记发票'}
+                </Button>
+              )}
               {r.needs_red_reversal && (
                 <Button type="link" size="small" danger onClick={() => openRegister(r, 'red_reversal')}>登记红冲</Button>
               )}
+              {Number(r.remaining_invoice_amount) === 0 && !r.needs_red_reversal && <Text type="secondary">—</Text>}
             </Space>
           ),
         } as TableColumnsType<InvoiceOrderRow>[number]]
@@ -265,7 +282,7 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
         columns={columns}
         dataSource={ordersQuery.data?.rows ?? []}
         pagination={false}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1230 }}
         locale={{ emptyText: '暂无需处理的发票（需开票订单 / 已登记发票的订单会出现在此）' }}
       />
 
@@ -288,8 +305,24 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
             </Form.Item>
           </Space>
           <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="amount" label="金额" style={{ width: 160 }}>
-              <InputNumber prefix="¥" style={{ width: '100%' }} />
+            <Form.Item
+              name="amount"
+              label="开票金额"
+              style={{ width: 160 }}
+              rules={[{ required: true, message: '请输入开票金额' }]}
+              extra={selectedInvoiceType === 'normal' && target
+                ? `本次最多可开 ¥${target.remaining_invoice_amount}`
+                : undefined}
+            >
+              <InputNumber
+                prefix="¥"
+                min={0.01}
+                max={selectedInvoiceType === 'normal' && target
+                  ? Number(target.remaining_invoice_amount)
+                  : undefined}
+                precision={2}
+                style={{ width: '100%' }}
+              />
             </Form.Item>
             <Form.Item name="issued_date" label="开票日期" style={{ width: 180 }}>
               <DatePicker style={{ width: '100%' }} />
@@ -300,6 +333,13 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
           </Form.Item>
           <Form.Item name="tax_no" label="税号">
             <Input />
+          </Form.Item>
+          <Form.Item label="发票接收邮箱">
+            <Input
+              value={target?.invoice_recipient_email ?? ''}
+              placeholder="订单中未填写发票接收邮箱"
+              readOnly
+            />
           </Form.Item>
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} />

@@ -9,6 +9,7 @@
 * ``DELETE /api/invoices/{id}`` —— 删除发票登记
 """
 
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import Invoice, Order, User
+from app.models import Invoice, InvoiceType, Order, User
 from app.schemas.finance import (
     InvoiceCreate,
     InvoiceOrdersOut,
@@ -26,6 +27,41 @@ from app.schemas.finance import (
 from app.services import finance_service
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
+
+
+def _validate_normal_amount(
+    db: Session,
+    order: Order,
+    amount: Optional[Decimal],
+    *,
+    exclude_invoice_id: Optional[int] = None,
+) -> None:
+    """正票可分次登记，但累计金额不能超过订单应开金额。"""
+    if amount is None or amount <= 0:
+        raise HTTPException(status_code=400, detail="开票金额必须大于 0")
+
+    query = db.query(Invoice).filter(
+        Invoice.order_id == order.id,
+        Invoice.invoice_type == InvoiceType.normal,
+    )
+    if exclude_invoice_id is not None:
+        query = query.filter(Invoice.id != exclude_invoice_id)
+    existing = query.all()
+    if any(invoice.amount is None for invoice in existing):
+        raise HTTPException(
+            status_code=400,
+            detail="该订单已有未填写金额的正票，请先删除或补全原记录",
+        )
+
+    already_invoiced = sum((invoice.amount or Decimal("0") for invoice in existing), Decimal("0"))
+    remaining = max(Decimal(str(order.total_amount or 0)) - already_invoiced, Decimal("0"))
+    if remaining == 0:
+        raise HTTPException(status_code=400, detail="该订单已足额开票，不能继续登记正票")
+    if amount > remaining:
+        raise HTTPException(
+            status_code=400,
+            detail=f"开票金额超过待开金额 ¥{remaining:.2f}",
+        )
 
 
 @router.get("/orders", response_model=InvoiceOrdersOut)
@@ -48,8 +84,12 @@ def create_invoice(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    if db.query(Order).filter(Order.id == data.order_id).first() is None:
+    # 锁订单行，避免两个并发请求同时按相同的待开金额通过校验。
+    order = db.query(Order).filter(Order.id == data.order_id).with_for_update().first()
+    if order is None:
         raise HTTPException(status_code=400, detail=f"订单 {data.order_id} 不存在")
+    if data.invoice_type == InvoiceType.normal:
+        _validate_normal_amount(db, order, data.amount)
     invoice = Invoice(**data.model_dump(), created_by=admin.id)
     db.add(invoice)
     db.commit()
@@ -67,7 +107,13 @@ def update_invoice(
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if invoice is None:
         raise HTTPException(status_code=404, detail=f"发票 {invoice_id} 不存在")
-    for field, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    next_type = updates.get("invoice_type", invoice.invoice_type)
+    next_amount = updates.get("amount", invoice.amount)
+    if next_type == InvoiceType.normal:
+        order = db.query(Order).filter(Order.id == invoice.order_id).with_for_update().first()
+        _validate_normal_amount(db, order, next_amount, exclude_invoice_id=invoice.id)
+    for field, value in updates.items():
         setattr(invoice, field, value)
     db.commit()
     db.refresh(invoice)

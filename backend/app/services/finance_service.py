@@ -2,6 +2,7 @@
 
 以**订单为中心**回答用户的两个问题：哪些订单还没开票（待开票）、哪些订单退了款需要把发票冲红
 （需冲红）。口径：看「需开票(invoice_required) 或 已登记过发票」的订单；
+正票允许分次登记，正票累计金额小于订单应开金额时仍为待开票，达到应开金额后才是已开票；
 ``needs_red_reversal`` = 已有正票(normal) + ``order.refunded_amount`` > 0 + **已冲红累计额 < 退款累计额**
 （按金额而非「有没有红冲」，以覆盖追加退款 / 部分冲红；红冲未填金额时保守视为已覆盖）。
 作废单不清退款 / 不删正票，故 ``active`` + ``void`` 一并查，但 void 单仅在「仍需冲红」时保留
@@ -58,7 +59,17 @@ def list_invoice_orders(
     needs_red_count = 0
     for o in orders:
         invs = by_order.get(o.id, [])
-        has_normal = any(i.invoice_type == InvoiceType.normal for i in invs)
+        normal_invs = [i for i in invs if i.invoice_type == InvoiceType.normal]
+        has_normal = bool(normal_invs)
+        order_total = _money(o.total_amount)
+        # 旧数据允许正票不填金额；这种记录无法计算剩余金额，沿用原口径视为已足额开票。
+        normal_amount_unknown = any(i.amount is None for i in normal_invs)
+        if normal_amount_unknown:
+            normal_invoiced = order_total
+        else:
+            normal_invoiced = sum((_money(i.amount) for i in normal_invs), Decimal("0.00"))
+        remaining_invoice = max(order_total - normal_invoiced, Decimal("0.00"))
+        fully_invoiced = has_normal and (normal_amount_unknown or remaining_invoice == 0)
         red_invs = [i for i in invs if i.invoice_type == InvoiceType.red_reversal]
         refunded = _money(o.refunded_amount)
         # 「是否需冲红」按金额口径：已冲红累计 ≥ 当前累计退款 即视为已覆盖。
@@ -76,10 +87,10 @@ def list_invoice_orders(
         if is_void and not needs_red:
             continue
 
-        if not has_normal:
-            state = "pending"
-        elif needs_red:
+        if needs_red:
             state = "needs_red_reversal"
+        elif not fully_invoiced:
+            state = "pending"
         else:
             state = "issued"
 
@@ -94,11 +105,14 @@ def list_invoice_orders(
                 order_code=o.order_code,
                 payer_name=o.payer_name,
                 order_date=o.order_date,
-                total_amount=_money(o.total_amount),
+                total_amount=order_total,
                 refunded_amount=refunded,
                 invoice_required=o.invoice_required,
                 invoice_title=o.invoice_title,
                 invoice_tax_no=o.invoice_tax_no,
+                invoice_recipient_email=o.invoice_recipient_email,
+                normal_invoiced_amount=normal_invoiced,
+                remaining_invoice_amount=remaining_invoice,
                 invoices=[InvoiceOut.model_validate(i) for i in invs],
                 invoice_state=state,
                 needs_red_reversal=needs_red,

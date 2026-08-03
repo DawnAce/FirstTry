@@ -12,13 +12,16 @@ const invoiceOrders = {
     {
       order_id: 1, order_code: 'CBJ-2026-0001', payer_name: '北京某公司', order_date: '2026-06-01',
       total_amount: '360.00', refunded_amount: '0.00', invoice_required: true,
-      invoice_title: '北京某公司', invoice_tax_no: '91110000XXXXXX', invoices: [],
+      invoice_title: '北京某公司', invoice_tax_no: '91110000XXXXXX',
+      invoice_recipient_email: 'billing@example.com', invoices: [],
+      normal_invoiced_amount: '0.00', remaining_invoice_amount: '360.00',
       invoice_state: 'pending', needs_red_reversal: false, order_voided: false,
     },
     {
       order_id: 2, order_code: 'CBJ-2026-0002', payer_name: '上海某单位', order_date: '2026-05-20',
       total_amount: '240.00', refunded_amount: '60.00', invoice_required: true,
-      invoice_title: '上海某单位', invoice_tax_no: null,
+      invoice_title: '上海某单位', invoice_tax_no: null, invoice_recipient_email: null,
+      normal_invoiced_amount: '240.00', remaining_invoice_amount: '0.00',
       invoices: [{ id: 10, order_id: 2, invoice_type: 'normal', invoice_no: 'INV-2002', amount: '240.00', issued_date: '2026-05-21', buyer_title: '上海某单位', tax_no: null, notes: null, created_at: TS, updated_at: TS }],
       invoice_state: 'needs_red_reversal', needs_red_reversal: true, order_voided: false,
     },
@@ -69,7 +72,8 @@ export const Loaded: Story = {
   parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('CBJ-2026-0001')).toBeVisible()
-    expect((await canvas.findAllByRole('button', { name: /登记发票/ })).length).toBeGreaterThan(0)
+    expect((await canvas.findAllByRole('button', { name: /登记发票/ })).length).toBe(1)
+    await expect(await canvas.findByText('待开 ¥360.00')).toBeVisible()
   },
 }
 
@@ -92,6 +96,7 @@ export const RegisterInvoice: Story = {
     await userEvent.click(buttons[0])
     const dialog = await within(document.body).findByRole('dialog')
     await waitFor(() => expect(dialog).toBeVisible())
+    await expect(await within(dialog).findByDisplayValue('billing@example.com')).toBeVisible()
   },
 }
 

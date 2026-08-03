@@ -25,8 +25,8 @@ class InvoiceType(str, enum.Enum):
 class Invoice(Base):
     """订单发票登记（开票 + 退款冲红追踪）。
 
-    只做登记 / 追踪，不生成发票文件。一张订单通常一条 ``normal``；发生退款且已开票时再登记一条
-    ``red_reversal`` 表示冲红。某订单「是否需要冲红」由 ``finance_service`` 推导
+    只做登记 / 追踪，不生成发票文件。一张订单可分次登记多条 ``normal``，但正票累计金额不得超过
+    订单应开金额；发生退款且已开票时再登记 ``red_reversal`` 表示冲红。某订单「是否需要冲红」由 ``finance_service`` 推导
     （已有 normal + ``order.refunded_amount`` > 0 + 尚无 red_reversal），不存字段。
     """
 
