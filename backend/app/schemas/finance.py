@@ -45,6 +45,8 @@ class InvoiceUpdate(BaseModel):
 
 class InvoiceOut(InvoiceBase):
     id: int
+    attachment_filename: Optional[str] = None
+    has_attachment: bool = False
     created_at: datetime
     updated_at: datetime
 

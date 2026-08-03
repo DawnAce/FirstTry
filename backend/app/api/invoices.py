@@ -7,12 +7,18 @@
 * ``POST /api/invoices``        —— 登记一条发票（正票 / 红冲）
 * ``PUT  /api/invoices/{id}``   —— 修改发票登记
 * ``DELETE /api/invoices/{id}`` —— 删除发票登记
+* ``POST /api/invoices/{id}/attachment`` —— 上传 / 替换电子发票（选填）
+* ``GET  /api/invoices/{id}/attachment`` —— 预览 / 下载电子发票
+* ``DELETE /api/invoices/{id}/attachment`` —— 删除电子发票附件
 """
 
+import mimetypes
+from contextlib import suppress
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
@@ -25,8 +31,20 @@ from app.schemas.finance import (
     InvoiceUpdate,
 )
 from app.services import finance_service
+from app.services import attachment_service
+from app.upload import read_upload
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
+
+ATTACHMENT_CATEGORY = "invoices"
+ALLOWED_SUFFIXES = {".pdf", ".jpg", ".jpeg", ".png"}
+
+
+def _get_or_404(db: Session, invoice_id: int) -> Invoice:
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if invoice is None:
+        raise HTTPException(status_code=404, detail=f"发票 {invoice_id} 不存在")
+    return invoice
 
 
 def _validate_normal_amount(
@@ -104,9 +122,7 @@ def update_invoice(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if invoice is None:
-        raise HTTPException(status_code=404, detail=f"发票 {invoice_id} 不存在")
+    invoice = _get_or_404(db, invoice_id)
     updates = data.model_dump(exclude_unset=True)
     next_type = updates.get("invoice_type", invoice.invoice_type)
     next_amount = updates.get("amount", invoice.amount)
@@ -126,8 +142,83 @@ def delete_invoice(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if invoice is None:
-        raise HTTPException(status_code=404, detail=f"发票 {invoice_id} 不存在")
+    invoice = _get_or_404(db, invoice_id)
+    stored_path = invoice.attachment_path
     db.delete(invoice)
     db.commit()
+    attachment_service.delete_file(stored_path)
+
+
+# --------------------------------------------------------------------------- #
+# 电子发票附件（选填）
+# --------------------------------------------------------------------------- #
+@router.post("/{invoice_id}/attachment", response_model=InvoiceOut)
+async def upload_attachment(
+    invoice_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    invoice = _get_or_404(db, invoice_id)
+    filename = (file.filename or "").strip() or "invoice"
+    suffix = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    if suffix not in ALLOWED_SUFFIXES:
+        raise HTTPException(status_code=400, detail="仅支持 PDF / JPG / PNG")
+
+    content = await read_upload(file, label="电子发票")
+    old_path = invoice.attachment_path
+    stored_path = attachment_service.store_file(ATTACHMENT_CATEGORY, filename, content)
+    invoice.attachment_path = stored_path
+    invoice.attachment_filename = filename
+    try:
+        db.commit()
+    except Exception:
+        with suppress(Exception):
+            db.rollback()
+        attachment_service.delete_file(stored_path)
+        raise
+    db.refresh(invoice)
+    if old_path and old_path != stored_path:
+        attachment_service.delete_file(old_path)
+    return invoice
+
+
+@router.get("/{invoice_id}/attachment")
+def download_attachment(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    invoice = _get_or_404(db, invoice_id)
+    if not invoice.attachment_path:
+        raise HTTPException(status_code=404, detail="该发票记录没有电子发票附件")
+    try:
+        path = attachment_service.resolve_path(invoice.attachment_path)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="附件路径无效")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="电子发票文件丢失")
+    filename = invoice.attachment_filename or path.name
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type=media_type,
+        content_disposition_type="inline",
+    )
+
+
+@router.delete("/{invoice_id}/attachment", response_model=InvoiceOut)
+def delete_attachment(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    invoice = _get_or_404(db, invoice_id)
+    old_path = invoice.attachment_path
+    invoice.attachment_path = None
+    invoice.attachment_filename = None
+    db.commit()
+    db.refresh(invoice)
+    attachment_service.delete_file(old_path)
+    return invoice

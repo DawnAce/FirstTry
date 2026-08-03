@@ -22,7 +22,7 @@ const invoiceOrders = {
       total_amount: '240.00', refunded_amount: '60.00', invoice_required: true,
       invoice_title: '上海某单位', invoice_tax_no: null, invoice_recipient_email: null,
       normal_invoiced_amount: '240.00', remaining_invoice_amount: '0.00',
-      invoices: [{ id: 10, order_id: 2, invoice_type: 'normal', invoice_no: 'INV-2002', amount: '240.00', issued_date: '2026-05-21', buyer_title: '上海某单位', tax_no: null, notes: null, created_at: TS, updated_at: TS }],
+      invoices: [{ id: 10, order_id: 2, invoice_type: 'normal', invoice_no: 'INV-2002', amount: '240.00', issued_date: '2026-05-21', buyer_title: '上海某单位', tax_no: null, attachment_filename: '电子发票.png', has_attachment: true, notes: null, created_at: TS, updated_at: TS }],
       invoice_state: 'needs_red_reversal', needs_red_reversal: true, order_voided: false,
     },
   ],
@@ -44,6 +44,10 @@ const operatorAuth = { user: { id: 2, username: 'op', role: 'operator' }, isAdmi
 
 const dataHandlers = [
   http.get('/api/invoices/orders', () => HttpResponse.json(invoiceOrders)),
+  http.get('/api/invoices/:invoiceId/attachment', () => new HttpResponse(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="100%" height="100%" fill="#fff"/><text x="50%" y="50%" text-anchor="middle" font-size="32">电子发票预览</text></svg>',
+    { headers: { 'Content-Type': 'image/svg+xml' } },
+  )),
   http.get('/api/settlements', () => HttpResponse.json(settlements)),
   http.get('/api/partners', () => HttpResponse.json(partners)),
 ]
@@ -97,6 +101,7 @@ export const RegisterInvoice: Story = {
     const dialog = await within(document.body).findByRole('dialog')
     await waitFor(() => expect(dialog).toBeVisible())
     await expect(await within(dialog).findByDisplayValue('billing@example.com')).toBeVisible()
+    await expect(await within(dialog).findByText('电子发票（选填）')).toBeVisible()
   },
 }
 
@@ -104,13 +109,17 @@ export const RegisterInvoice: Story = {
 export const ViewInvoiceRecords: Story = {
   name: '查看发票记录',
   parameters: { auth: operatorAuth, msw: { handlers: dataHandlers } },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const page = within(canvasElement.ownerDocument.body)
     await userEvent.click(await canvas.findByRole('button', { name: /查看记录/ }))
-    const dialog = await within(document.body).findByRole('dialog')
+    const dialog = await page.findByRole('dialog')
     await waitFor(() => expect(dialog).toBeVisible())
     await expect((await within(dialog).findAllByText('¥240.00')).length).toBeGreaterThan(0)
     await expect(await within(dialog).findByText(/发票号 INV-2002/)).toBeVisible()
+    await expect(await within(dialog).findByText('电子发票.png')).toBeVisible()
     expect(within(dialog).queryByRole('button', { name: /删除/ })).toBeNull()
+    await expect(await within(dialog).findByRole('button', { name: /预览/ })).toBeVisible()
+    await expect(await within(dialog).findByRole('button', { name: /下载/ })).toBeVisible()
   },
 }
 

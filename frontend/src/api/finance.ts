@@ -18,6 +18,8 @@ export interface Invoice {
   issued_date: string | null;
   buyer_title: string | null;
   tax_no: string | null;
+  attachment_filename: string | null;
+  has_attachment: boolean;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -122,6 +124,28 @@ export function updateInvoice(id: number, body: InvoiceUpdatePayload): Promise<A
 }
 export function deleteInvoice(id: number): Promise<AxiosResponse<void>> {
   return api.delete(`/invoices/${id}`);
+}
+export function uploadInvoiceAttachment(id: number, file: File): Promise<AxiosResponse<Invoice>> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api.post(`/invoices/${id}/attachment`, fd);
+}
+export function getInvoiceAttachment(id: number): Promise<AxiosResponse<Blob>> {
+  return api.get(`/invoices/${id}/attachment`, { responseType: 'blob' });
+}
+export function deleteInvoiceAttachment(id: number): Promise<AxiosResponse<Invoice>> {
+  return api.delete(`/invoices/${id}/attachment`);
+}
+export async function downloadInvoiceAttachment(invoice: Invoice): Promise<void> {
+  const res = await getInvoiceAttachment(invoice.id);
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = invoice.attachment_filename ?? `invoice-${invoice.id}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // --- 渠道结算 CRUD + 附件 ---

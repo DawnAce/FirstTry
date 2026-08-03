@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -31,24 +31,29 @@ import {
   RollbackOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import type { TableColumnsType } from 'antd';
+import type { TableColumnsType, UploadFile } from 'antd';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import {
   createInvoice,
   createSettlement,
   deleteInvoice,
+  deleteInvoiceAttachment,
   deleteSettlement,
   deleteSettlementAttachment,
+  downloadInvoiceAttachment,
   downloadSettlementAttachment,
   getInvoiceOrders,
+  getInvoiceAttachment,
   invoiceQueryKeys,
   listSettlements,
   settlementQueryKeys,
   updateSettlement,
+  uploadInvoiceAttachment,
   uploadSettlementAttachment,
 } from '../api/finance';
 import type {
+  Invoice,
   InvoiceOrderRow,
   InvoiceState,
   InvoiceType,
@@ -66,6 +71,7 @@ const { Text } = Typography;
 
 // 与后端 MAX_ATTACHMENT_BYTES 对齐，前端先行拦截超大文件。
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const INVOICE_ATTACHMENT_ACCEPT = '.pdf,.jpg,.jpeg,.png';
 
 const INVOICE_TYPE_LABELS: Record<InvoiceType, string> = { normal: '正票', red_reversal: '红冲' };
 const INVOICE_STATE_LABELS: Record<InvoiceState, string> = {
@@ -98,6 +104,19 @@ function apiError(err: unknown, fallback: string) {
 }
 const money = (v: string | null) => (v == null ? '—' : `¥${v}`);
 
+function validateInvoiceAttachment(file: File): boolean {
+  const suffix = file.name.includes('.') ? `.${file.name.split('.').pop()?.toLowerCase()}` : '';
+  if (!['.pdf', '.jpg', '.jpeg', '.png'].includes(suffix)) {
+    message.error('电子发票仅支持 PDF / JPG / PNG');
+    return false;
+  }
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    message.error('电子发票不能超过 20MB');
+    return false;
+  }
+  return true;
+}
+
 // =========================================================================== //
 // 订单发票 Tab（以订单为中心的工作台）
 // =========================================================================== //
@@ -119,6 +138,17 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<InvoiceOrderRow | null>(null);
   const [viewing, setViewing] = useState<InvoiceOrderRow | null>(null);
+  const [pendingInvoiceFile, setPendingInvoiceFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<{
+    invoice: Invoice;
+    filename: string;
+    url: string;
+    kind: 'pdf' | 'image';
+  } | null>(null);
+
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview.url);
+  }, [preview]);
 
   const params = { status, q: search || undefined };
   const ordersQuery = useQuery({
@@ -128,11 +158,28 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
 
   const createMutation = useMutation({
-    mutationFn: (body: Parameters<typeof createInvoice>[0]) => createInvoice(body),
-    onSuccess: () => {
-      message.success('发票已登记');
+    mutationFn: async ({ body, file }: {
+      body: Parameters<typeof createInvoice>[0];
+      file: File | null;
+    }) => {
+      const invoice = (await createInvoice(body)).data;
+      if (!file) return { attachmentError: null };
+      try {
+        await uploadInvoiceAttachment(invoice.id, file);
+        return { attachmentError: null };
+      } catch (attachmentError) {
+        return { attachmentError };
+      }
+    },
+    onSuccess: ({ attachmentError }) => {
+      if (attachmentError) {
+        message.warning(`发票已登记，但电子发票上传失败：${apiError(attachmentError, '请稍后在发票记录中补传')}`);
+      } else {
+        message.success(pendingInvoiceFile ? '发票和电子发票已保存' : '发票已登记');
+      }
       invalidate();
       setTarget(null);
+      setPendingInvoiceFile(null);
     },
     onError: (err) => message.error(apiError(err, '登记失败')),
   });
@@ -141,9 +188,48 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
     onSuccess: () => { message.success('已删除发票登记'); invalidate(); setViewing(null); },
     onError: (err) => message.error(apiError(err, '删除失败')),
   });
+  const replaceViewedInvoice = (updated: Invoice) => {
+    setViewing((current) => current ? {
+      ...current,
+      invoices: current.invoices.map((invoice) => invoice.id === updated.id ? updated : invoice),
+    } : current);
+  };
+  const attachmentUploadMutation = useMutation({
+    mutationFn: ({ invoice, file }: { invoice: Invoice; file: File }) =>
+      uploadInvoiceAttachment(invoice.id, file),
+    onSuccess: (response) => {
+      replaceViewedInvoice(response.data);
+      invalidate();
+      message.success('电子发票已保存');
+    },
+    onError: (err) => message.error(apiError(err, '电子发票上传失败')),
+  });
+  const attachmentDeleteMutation = useMutation({
+    mutationFn: (invoice: Invoice) => deleteInvoiceAttachment(invoice.id),
+    onSuccess: (response) => {
+      replaceViewedInvoice(response.data);
+      invalidate();
+      message.success('电子发票附件已删除');
+    },
+    onError: (err) => message.error(apiError(err, '删除电子发票失败')),
+  });
+  const attachmentPreviewMutation = useMutation({
+    mutationFn: async (invoice: Invoice) => ({ invoice, blob: (await getInvoiceAttachment(invoice.id)).data }),
+    onSuccess: ({ invoice, blob }) => {
+      const filename = invoice.attachment_filename ?? `invoice-${invoice.id}`;
+      const kind = filename.toLowerCase().endsWith('.pdf') || blob.type === 'application/pdf' ? 'pdf' : 'image';
+      setPreview({ invoice, filename, url: URL.createObjectURL(blob), kind });
+    },
+    onError: (err) => message.error(apiError(err, '电子发票预览失败')),
+  });
+  const attachmentDownloadMutation = useMutation({
+    mutationFn: (invoice: Invoice) => downloadInvoiceAttachment(invoice),
+    onError: (err) => message.error(apiError(err, '电子发票下载失败')),
+  });
 
   const openRegister = (row: InvoiceOrderRow, type: InvoiceType) => {
     setTarget(row);
+    setPendingInvoiceFile(null);
     form.resetFields();
     form.setFieldsValue({
       invoice_type: type,
@@ -157,15 +243,25 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
   const submit = (v: InvoiceFormValues) => {
     if (!target) return;
     createMutation.mutate({
-      order_id: target.order_id,
-      invoice_type: v.invoice_type,
-      invoice_no: v.invoice_no || null,
-      amount: v.amount ?? null,
-      issued_date: v.issued_date ? v.issued_date.format('YYYY-MM-DD') : null,
-      buyer_title: v.buyer_title || null,
-      tax_no: v.tax_no || null,
-      notes: v.notes || null,
+      file: pendingInvoiceFile,
+      body: {
+        order_id: target.order_id,
+        invoice_type: v.invoice_type,
+        invoice_no: v.invoice_no || null,
+        amount: v.amount ?? null,
+        issued_date: v.issued_date ? v.issued_date.format('YYYY-MM-DD') : null,
+        buyer_title: v.buyer_title || null,
+        tax_no: v.tax_no || null,
+        notes: v.notes || null,
+      },
     });
+  };
+
+  const uploadRecordAttachment = (invoice: Invoice, file: File) => {
+    if (validateInvoiceAttachment(file)) {
+      attachmentUploadMutation.mutate({ invoice, file });
+    }
+    return Upload.LIST_IGNORE;
   };
 
   const columns: TableColumnsType<InvoiceOrderRow> = [
@@ -316,7 +412,7 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
         className="finance-form-modal"
         title={target ? `登记发票 · ${target.order_code || `#${target.order_id}`}（${target.payer_name}）` : ''}
         open={target !== null}
-        onCancel={() => setTarget(null)}
+        onCancel={() => { setTarget(null); setPendingInvoiceFile(null); }}
         onOk={() => form.submit()}
         okText="保存"
         confirmLoading={createMutation.isPending}
@@ -368,6 +464,28 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
               readOnly
             />
           </Form.Item>
+          <Form.Item
+            label="电子发票（选填）"
+            extra="支持 PDF、JPG、PNG，最大 20MB；不上传也可以正常保存，之后可在发票记录中补传。"
+          >
+            <Upload
+              accept={INVOICE_ATTACHMENT_ACCEPT}
+              maxCount={1}
+              beforeUpload={(file) => {
+                if (!validateInvoiceAttachment(file)) return Upload.LIST_IGNORE;
+                setPendingInvoiceFile(file);
+                return false;
+              }}
+              onRemove={() => { setPendingInvoiceFile(null); }}
+              fileList={pendingInvoiceFile ? [{
+                uid: 'invoice-attachment',
+                name: pendingInvoiceFile.name,
+                status: 'done',
+              } as UploadFile] : []}
+            >
+              <Button icon={<UploadOutlined />}>选择电子发票</Button>
+            </Upload>
+          </Form.Item>
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} />
           </Form.Item>
@@ -379,7 +497,7 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
         open={viewing !== null}
         onCancel={() => setViewing(null)}
         footer={<Button onClick={() => setViewing(null)}>关闭</Button>}
-        width={680}
+        width={760}
         destroyOnHidden
       >
         <div className="finance-record-summary">
@@ -396,6 +514,83 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
                 <Text type="secondary">
                   {inv.invoice_no ? `发票号 ${inv.invoice_no}` : '未填写发票号'} · {inv.issued_date || '未填写开票日期'}
                 </Text>
+                <div className="finance-record-attachment">
+                  {inv.has_attachment ? (
+                    <>
+                      <span className="finance-record-file">
+                        <FileTextOutlined />
+                        <Text ellipsis={{ tooltip: inv.attachment_filename }}>
+                          {inv.attachment_filename || '电子发票'}
+                        </Text>
+                      </span>
+                      <Space size={0} wrap>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<EyeOutlined />}
+                          loading={attachmentPreviewMutation.isPending && attachmentPreviewMutation.variables?.id === inv.id}
+                          onClick={() => attachmentPreviewMutation.mutate(inv)}
+                        >预览</Button>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          loading={attachmentDownloadMutation.isPending && attachmentDownloadMutation.variables?.id === inv.id}
+                          onClick={() => attachmentDownloadMutation.mutate(inv)}
+                        >下载</Button>
+                        {isAdmin && (
+                          <Upload
+                            accept={INVOICE_ATTACHMENT_ACCEPT}
+                            showUploadList={false}
+                            beforeUpload={(file) => uploadRecordAttachment(inv, file)}
+                          >
+                            <Button
+                              type="link"
+                              size="small"
+                              icon={<UploadOutlined />}
+                              loading={attachmentUploadMutation.isPending && attachmentUploadMutation.variables?.invoice.id === inv.id}
+                            >替换</Button>
+                          </Upload>
+                        )}
+                        {isAdmin && (
+                          <Popconfirm
+                            title="删除电子发票附件？"
+                            description="只删除文件，不会删除这条开票记录。"
+                            okText="删除附件"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true }}
+                            onConfirm={() => attachmentDeleteMutation.mutate(inv)}
+                          >
+                            <Button
+                              type="link"
+                              size="small"
+                              danger
+                              loading={attachmentDeleteMutation.isPending && attachmentDeleteMutation.variables?.id === inv.id}
+                            >删除附件</Button>
+                          </Popconfirm>
+                        )}
+                      </Space>
+                    </>
+                  ) : (
+                    <>
+                      <Text type="secondary" className="finance-record-no-file">未上传电子发票</Text>
+                      {isAdmin && (
+                        <Upload
+                          accept={INVOICE_ATTACHMENT_ACCEPT}
+                          showUploadList={false}
+                          beforeUpload={(file) => uploadRecordAttachment(inv, file)}
+                        >
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<UploadOutlined />}
+                            loading={attachmentUploadMutation.isPending && attachmentUploadMutation.variables?.invoice.id === inv.id}
+                          >补传</Button>
+                        </Upload>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
               {isAdmin && (
                 <Popconfirm
@@ -406,11 +601,37 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
                   okButtonProps={{ danger: true }}
                   onConfirm={() => deleteMutation.mutate(inv.id)}
                 >
-                  <Button danger type="text" icon={<DeleteOutlined />} loading={deleteMutation.isPending}>删除</Button>
+                  <Button className="finance-record-delete" danger type="text" icon={<DeleteOutlined />} loading={deleteMutation.isPending}>删除记录</Button>
                 </Popconfirm>
               )}
             </div>
           ))}
+        </div>
+      </Modal>
+
+      <Modal
+        title={preview ? `电子发票预览 · ${preview.filename}` : '电子发票预览'}
+        open={preview !== null}
+        onCancel={() => setPreview(null)}
+        width={920}
+        destroyOnHidden
+        footer={preview ? (
+          <Space>
+            <Button
+              icon={<DownloadOutlined />}
+              loading={attachmentDownloadMutation.isPending}
+              onClick={() => attachmentDownloadMutation.mutate(preview.invoice)}
+            >下载保存</Button>
+            <Button type="primary" onClick={() => setPreview(null)}>关闭</Button>
+          </Space>
+        ) : null}
+      >
+        <div className="finance-invoice-preview">
+          {preview?.kind === 'pdf' ? (
+            <iframe src={preview.url} title={preview.filename} />
+          ) : preview ? (
+            <img src={preview.url} alt={preview.filename} />
+          ) : null}
         </div>
       </Modal>
     </div>
