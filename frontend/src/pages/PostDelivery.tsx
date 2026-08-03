@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -58,8 +58,10 @@ import {
   deleteFollowUp,
   getAddressChange,
   getComplaintDetail,
+  getDelivery,
   getFollowUp,
   generatePostalRenewals,
+  linkExactPostalDelivery,
   linkExactPostalDeliveries,
   listDeliveries,
   listPostalRenewals,
@@ -373,6 +375,7 @@ function ComplaintImportModal({ open, onClose }: { open: boolean; onClose: () =>
 
 /** Tab：投递明细（全部投递记录） */
 function DeliveriesTab() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [year, setYear] = useState<number | undefined>();
   const [month, setMonth] = useState<number | undefined>();
   const [channel, setChannel] = useState<string | undefined>();
@@ -388,9 +391,42 @@ function DeliveriesTab() {
   const PAGE_SIZE = 50;
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
+  const requestedDeliveryId = Number(searchParams.get('delivery_id')) || null;
+  const deepLinkQ = useQuery({
+    queryKey: ['postalDelivery', requestedDeliveryId],
+    queryFn: () => getDelivery(requestedDeliveryId as number).then((r) => r.data),
+    enabled: requestedDeliveryId != null,
+  });
+  const setDetailUrl = (record: PostalDelivery | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (record) next.set('delivery_id', String(record.id));
+    else next.delete('delivery_id');
+    setSearchParams(next, { replace: true });
+    setDetail(record);
+  };
   const deleteMut = useMutation({
     mutationFn: (id: number) => deleteDelivery(id),
     onSuccess: () => { message.success('已删除投递记录'); qc.invalidateQueries({ queryKey: ['postalDeliveries'] }); },
+    onError: (e) => message.error(errText(e)),
+  });
+  const linkMut = useMutation({
+    mutationFn: (id: number) => linkExactPostalDelivery(id),
+    onSuccess: ({ data }) => {
+      setDetail(data);
+      qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
+      qc.invalidateQueries({ queryKey: ['postalDelivery', data.id] });
+      if (data.order_id) message.success('已关联来源订单');
+      else message.warning(data.link_message || '当前记录暂时无法唯一关联来源订单');
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+  const bulkLinkMut = useMutation({
+    mutationFn: linkExactPostalDeliveries,
+    onSuccess: ({ data }) => {
+      qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
+      qc.invalidateQueries({ queryKey: ['postalDelivery'] });
+      message.success(`已补齐 ${data.linked} 条来源订单关联${data.unresolved ? `，另有 ${data.unresolved} 条需人工核对` : ''}`);
+    },
     onError: (e) => message.error(errText(e)),
   });
 
@@ -439,7 +475,7 @@ function DeliveriesTab() {
       r.source_channel ? <span className="postal-source-pill">{r.source_channel}</span> : <Text type="secondary">—</Text>
     ) },
     { title: '操作', key: 'act', width: 72, align: 'right', render: (_: unknown, r) => (
-      <Button type="link" size="small" onClick={() => setDetail(r)}>查看</Button>
+      <Button type="link" size="small" onClick={() => setDetailUrl(r)}>查看</Button>
     ) },
   ];
 
@@ -449,6 +485,7 @@ function DeliveriesTab() {
         title="投递明细"
         description={`投递记录 ${(q.data?.total ?? 0).toLocaleString()} 条`}
         actions={<Space>
+          {isAdmin && <Button loading={bulkLinkMut.isPending} onClick={() => bulkLinkMut.mutate()}>补齐来源关联</Button>}
           <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入</Button>
           {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增记录</Button>}
         </Space>}
@@ -494,10 +531,12 @@ function DeliveriesTab() {
           pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条投递记录`, showSizeChanger: false }} />
       </Card>
       <ReaderImportModal open={importOpen} onClose={() => setImportOpen(false)} />
-      <DeliveryDetailDrawer record={detail} isAdmin={isAdmin} deleting={deleteMut.isPending}
-        onClose={() => setDetail(null)}
-        onEdit={(record) => { setDetail(null); setEditing(record); setFormOpen(true); }}
-        onDelete={(record) => deleteMut.mutate(record.id, { onSuccess: () => setDetail(null) })}
+      <DeliveryDetailDrawer record={detail ?? deepLinkQ.data ?? null} isAdmin={isAdmin} deleting={deleteMut.isPending}
+        linking={linkMut.isPending}
+        onClose={() => setDetailUrl(null)}
+        onEdit={(record) => { setDetailUrl(null); setEditing(record); setFormOpen(true); }}
+        onDelete={(record) => deleteMut.mutate(record.id, { onSuccess: () => setDetailUrl(null) })}
+        onRetryLink={(record) => linkMut.mutate(record.id)}
         onOpenAddressChange={setSourceChangeId} />
       <AddressDetailDrawer addressId={sourceChangeId} readOnly modal onClose={() => setSourceChangeId(null)} onEdit={() => {}} />
       <DeliveryFormDrawer open={formOpen} editing={editing} unitOpts={unitOpts} onClose={() => { setFormOpen(false); setEditing(null); }} />
@@ -709,8 +748,11 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
       };
       return editing ? updateDelivery(editing.id, body) : createDelivery(body);
     },
-    onSuccess: () => {
-      message.success(editing ? '投递记录已更新' : '投递记录已新增');
+    onSuccess: ({ data }) => {
+      const saved = editing ? '投递记录已更新' : '投递记录已新增';
+      if (data.order_id) message.success(`${saved}，并已自动关联来源订单`);
+      else if (data.external_order_no) message.warning(`${saved}；${data.link_message || '暂时无法唯一关联来源订单'}`);
+      else message.success(saved);
       qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
       onClose();
     },
@@ -729,7 +771,7 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
     )} open={open} onClose={onClose} rootClassName="app-drawer-root"
       size={720} destroyOnHidden footer={(
         <div className="app-drawer-footer">
-          <span className="app-drawer-footer-tip"><b>✓</b>保存后立即更新投递明细与关联工单</span>
+          <span className="app-drawer-footer-tip"><b>✓</b>保存后会按来源单号自动尝试关联订单</span>
           <Button onClick={onClose}>取消</Button>
           <Button type="primary" loading={saveMut.isPending} onClick={() => form.submit()}>保存</Button>
         </div>
@@ -777,13 +819,15 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
   );
 }
 
-function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDelete, onOpenAddressChange }: {
+function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onEdit, onDelete, onRetryLink, onOpenAddressChange }: {
   record: PostalDelivery | null;
   isAdmin: boolean;
   deleting: boolean;
+  linking: boolean;
   onClose: () => void;
   onEdit: (record: PostalDelivery) => void;
   onDelete: (record: PostalDelivery) => void;
+  onRetryLink: (record: PostalDelivery) => void;
   onOpenAddressChange: (id: number) => void;
 }) {
   const navigate = useNavigate();
@@ -811,7 +855,12 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
       />
     )} open={record != null} onClose={onClose} size={720} destroyOnHidden
       rootClassName="app-drawer-root"
-      extra={isAdmin && record ? <Button icon={<EditOutlined />} onClick={() => onEdit(record)}>编辑记录</Button> : null}
+      extra={isAdmin && record ? <Space>
+        {!record.order_id && record.external_order_no && (
+          <Button loading={linking} onClick={() => onRetryLink(record)}>尝试关联</Button>
+        )}
+        <Button icon={<EditOutlined />} onClick={() => onEdit(record)}>编辑记录</Button>
+      </Space> : null}
       footer={record ? (
         <div className="complaint-form-footer">
           <span className="complaint-form-save-tip"><b>✓</b>投诉、信息修改和回访均通过投递编号关联</span>
@@ -874,7 +923,9 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, onClose, onEdit, onDe
               <div className="postal-detail-field"><span>汇款名</span><strong className={!record.remittance_name ? 'muted' : ''}>{record.remittance_name || '未填写'}</strong></div>
               <div className="postal-detail-field"><span>录入方式</span><strong>{source ? <Tag color={source.color}>{source.label}</Tag> : '未记录'}</strong></div>
             </div>
-            <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>来源单号是原平台单号；“来源系统订单”表示已经补齐内部正式关联。</span></div>
+            <div className="complaint-form-source-note"><span aria-hidden>💡</span><span>{record.order_id
+              ? '来源单号已与订单管理建立正式关联，可点击来源系统订单跳转。'
+              : record.link_message || '来源单号是原平台单号；保存后系统会自动尝试关联。'}</span></div>
           </section>
         </div>
       )}

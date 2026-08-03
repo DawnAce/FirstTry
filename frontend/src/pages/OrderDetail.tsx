@@ -1121,7 +1121,11 @@ function PostalDeliveriesTab({ orderId }: { orderId: number }) {
     queryFn: () => listDeliveries({ order_id: orderId, page_size: 200 }).then((r) => r.data),
   });
   const columns: TableColumnsType<PostalDelivery> = [
-    { title: '投递编号', key: 'number', width: 140, render: (_: unknown, row) => `${row.year}-${row.delivery_no}` },
+    { title: '投递编号', key: 'number', width: 140, render: (_: unknown, row) => (
+      <Button type="link" className="postal-inline-link" onClick={() => navigate(`/post-delivery/deliveries?delivery_id=${row.id}`)}>
+        {row.year}-{row.delivery_no}
+      </Button>
+    ) },
     { title: '收报人', key: 'recipient', width: 160, render: (_: unknown, row) => (
       <Space direction="vertical" size={0}>
         <Text strong>{row.recipient_name}</Text>

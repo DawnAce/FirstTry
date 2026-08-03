@@ -156,7 +156,7 @@ def summarize_deliveries(
 # --- 手工 CRUD --------------------------------------------------------
 
 def create_delivery(db: Session, payload: dict, operator_id: Optional[int] = None) -> PostalDelivery:
-    """手工新增一条投递记录（source_type=manual、不挂订单）。(year, delivery_no) 重复 → 409。"""
+    """手工新增一条投递记录；来源单号可唯一匹配时立即挂订单。"""
     d = dict(payload)
     year = d["year"]
     raw_no = d.get("delivery_no") or ""
@@ -164,6 +164,7 @@ def create_delivery(db: Session, payload: dict, operator_id: Optional[int] = Non
     if not no:
         raise HTTPException(status_code=400, detail="编号必须为数字且不能为空")
     d["delivery_no"] = no
+    d["external_order_no"] = (d.get("external_order_no") or "").strip() or None
     exists = (
         db.query(PostalDelivery.id)
         .filter(PostalDelivery.year == year, PostalDelivery.delivery_no == no)
@@ -176,6 +177,10 @@ def create_delivery(db: Session, payload: dict, operator_id: Optional[int] = Non
     d["created_by"] = operator_id
     rec = PostalDelivery(**d)
     db.add(rec)
+    db.flush()
+    from app.services.postal_renewal_service import try_link_delivery_exact
+
+    try_link_delivery_exact(db, rec)
     db.commit()
     db.refresh(rec)
     return rec
@@ -186,6 +191,9 @@ def update_delivery(db: Session, delivery_id: int, patch: dict) -> PostalDeliver
     if rec is None:
         raise HTTPException(status_code=404, detail=f"投递记录 {delivery_id} 不存在")
     patch = dict(patch)
+    source_no_changed = "external_order_no" in patch
+    if source_no_changed:
+        patch["external_order_no"] = (patch.get("external_order_no") or "").strip() or None
     if "delivery_no" in patch:
         raw = patch["delivery_no"] or ""
         no = pc.norm_no(raw)
@@ -212,6 +220,16 @@ def update_delivery(db: Session, delivery_id: int, patch: dict) -> PostalDeliver
             raise HTTPException(status_code=409, detail=f"编号 {new_year}-{new_no} 已存在")
     for k, v in patch.items():
         setattr(rec, k, v)
+    if source_no_changed:
+        # 来源单号是正式关联的业务键；修改或清空后不能保留旧订单关系。
+        rec.order_id = None
+        rec.order_item_id = None
+        rec.fulfillment_target_id = None
+    db.flush()
+    from app.services.postal_renewal_service import try_link_delivery_exact
+
+    if rec.order_id is None:
+        try_link_delivery_exact(db, rec)
     db.commit()
     db.refresh(rec)
     return rec

@@ -30,6 +30,8 @@ export interface PostalDelivery {
   salesperson: string | null;
   remittance_name: string | null;
   source_type: 'historical_import' | 'order_generated' | 'manual' | 'subscription_generated' | null;
+  link_status: string | null;
+  link_message: string | null;
 }
 
 export type DeliveryStatusFilter = 'pending' | 'active' | 'expiring' | 'completed';
@@ -50,6 +52,10 @@ export interface DeliveryFilters {
 
 export function listDeliveries(f: DeliveryFilters): Promise<AxiosResponse<DeliveryListOut>> {
   return api.get('/postal/deliveries', { params: f });
+}
+
+export function getDelivery(id: number): Promise<AxiosResponse<PostalDelivery>> {
+  return api.get(`/postal/deliveries/${id}`);
 }
 
 // --- 跨年续投 -------------------------------------------------------------
@@ -108,6 +114,10 @@ export function generatePostalRenewals(
 
 export function linkExactPostalDeliveries(): Promise<AxiosResponse<{ linked: number; unresolved: number; examined: number }>> {
   return api.post('/postal/deliveries/link-exact');
+}
+
+export function linkExactPostalDelivery(id: number): Promise<AxiosResponse<PostalDelivery>> {
+  return api.post(`/postal/deliveries/${id}/link-exact`);
 }
 
 export type PostalImportDecision = 'import' | 'duplicate' | 'unresolved';

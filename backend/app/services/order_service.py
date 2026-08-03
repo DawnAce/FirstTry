@@ -47,6 +47,7 @@ from app.models import (
     OrderItem,
     OrderStatus,
     Payment,
+    PostalDelivery,
     Refund,
     ShippingDetail,
 )
@@ -473,6 +474,9 @@ def create_order_draft(
         },
         operator_id=created_by,
     )
+    from app.services.postal_renewal_service import link_deliveries_for_order
+
+    link_deliveries_for_order(db, order)
     db.commit()
     db.refresh(order)
     return order
@@ -567,6 +571,9 @@ def create_imported_order(
         },
         operator_id=operator_id,
     )
+    from app.services.postal_renewal_service import link_deliveries_for_order
+
+    link_deliveries_for_order(db, order)
     db.flush()
     return order
 
@@ -610,6 +617,9 @@ def confirm_order(
         payload={"order_code": order.order_code},
         operator_id=operator_id,
     )
+    from app.services.postal_renewal_service import link_deliveries_for_order
+
+    link_deliveries_for_order(db, order)
     db.commit()
     db.refresh(order)
     return order
@@ -637,6 +647,8 @@ def update_order(
 
     diff: dict = {}
     for field, new_val in update_dict.items():
+        if field == "external_order_no":
+            new_val = (new_val or "").strip() or None
         if is_active and field not in ACTIVE_EDITABLE_FIELDS:
             raise HTTPException(
                 status_code=422,
@@ -661,6 +673,17 @@ def update_order(
             payload={"diff": diff},
             operator_id=operator_id,
         )
+        if "external_order_no" in diff:
+            for delivery in db.query(PostalDelivery).filter(
+                PostalDelivery.order_id == order.id
+            ).all():
+                if delivery.external_order_no != order.external_order_no:
+                    delivery.order_id = None
+                    delivery.order_item_id = None
+                    delivery.fulfillment_target_id = None
+        from app.services.postal_renewal_service import link_deliveries_for_order
+
+        link_deliveries_for_order(db, order)
     db.commit()
     db.refresh(order)
     return order
@@ -1156,6 +1179,9 @@ def update_order_items(
                 operator_id,
             )
 
+    from app.services.postal_renewal_service import link_deliveries_for_order
+
+    link_deliveries_for_order(db, order)
     db.commit()
     db.refresh(order)
     return order
