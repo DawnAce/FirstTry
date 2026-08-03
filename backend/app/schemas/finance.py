@@ -62,6 +62,9 @@ class InvoiceOrderRow(BaseModel):
     invoice_required: bool
     invoice_title: Optional[str] = None
     invoice_tax_no: Optional[str] = None
+    invoice_recipient_email: Optional[str] = None
+    normal_invoiced_amount: Decimal
+    remaining_invoice_amount: Decimal
     invoices: List[InvoiceOut]
     # pending(待开票) | issued(已开票) | needs_red_reversal(需冲红)
     invoice_state: str

@@ -64,7 +64,7 @@ def client():
         Base.metadata.drop_all(bind=engine)
 
 
-def _order(db, *, invoice_required=False, refunded=0, total=100, code=None):
+def _order(db, *, invoice_required=False, refunded=0, total=100, code=None, invoice_email=None):
     o = Order(
         order_date=date(2026, 6, 1),
         entry_method=OrderEntryMethod.excel_import,
@@ -74,6 +74,7 @@ def _order(db, *, invoice_required=False, refunded=0, total=100, code=None):
         paid_amount=Decimal(str(total)),
         refunded_amount=Decimal(str(refunded)),
         invoice_required=invoice_required,
+        invoice_recipient_email=invoice_email,
         order_code=code,
     )
     db.add(o)
@@ -86,7 +87,7 @@ def _order(db, *, invoice_required=False, refunded=0, total=100, code=None):
 # --------------------------------------------------------------------------- #
 def test_invoice_workbench_states(client):
     db = client.session_factory()
-    a = _order(db, invoice_required=True, code="A")              # pending
+    a = _order(db, invoice_required=True, code="A", invoice_email="billing@example.com")  # pending
     b = _order(db, invoice_required=True, code="B")              # 开正票 → issued
     c = _order(db, invoice_required=True, refunded=50, code="C")  # 正票 + 退款 → 需冲红
     d = _order(db, invoice_required=True, refunded=50, code="D")  # 正票 + 红冲 → issued
@@ -96,7 +97,7 @@ def test_invoice_workbench_states(client):
     db.close()
 
     for oid, no in [(b_id, "B-001"), (c_id, "C-001"), (d_id, "D-001")]:
-        r = client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": no})
+        r = client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": no, "amount": 100})
         assert r.status_code == 201, r.text
     assert client.post("/api/invoices", json={"order_id": d_id, "invoice_type": "red_reversal", "invoice_no": "D-002"}).status_code == 201
 
@@ -104,7 +105,12 @@ def test_invoice_workbench_states(client):
     by = {r["order_id"]: r for r in data["rows"]}
     assert set(by) == {a_id, b_id, c_id, d_id}          # E 被排除
     assert by[a_id]["invoice_state"] == "pending"
+    assert by[a_id]["invoice_recipient_email"] == "billing@example.com"
+    assert by[a_id]["normal_invoiced_amount"] == "0.00"
+    assert by[a_id]["remaining_invoice_amount"] == "100.00"
     assert by[b_id]["invoice_state"] == "issued"
+    assert by[b_id]["normal_invoiced_amount"] == "100.00"
+    assert by[b_id]["remaining_invoice_amount"] == "0.00"
     assert by[c_id]["invoice_state"] == "needs_red_reversal"
     assert by[c_id]["needs_red_reversal"] is True
     assert by[d_id]["invoice_state"] == "issued"
@@ -121,7 +127,61 @@ def test_invoice_workbench_states(client):
 
 
 def test_create_invoice_requires_existing_order(client):
-    assert client.post("/api/invoices", json={"order_id": 999}).status_code == 400
+    assert client.post("/api/invoices", json={"order_id": 999, "amount": 100}).status_code == 400
+
+
+def test_normal_invoice_can_be_split_but_cannot_exceed_order_total(client):
+    db = client.session_factory()
+    o = _order(db, invoice_required=True, total=240, code="SPLIT")
+    db.commit()
+    oid = o.id
+    db.close()
+
+    first = client.post(
+        "/api/invoices",
+        json={"order_id": oid, "invoice_type": "normal", "amount": 100},
+    )
+    assert first.status_code == 201, first.text
+    row = client.get("/api/invoices/orders").json()["rows"][0]
+    assert row["invoice_state"] == "pending"
+    assert row["normal_invoiced_amount"] == "100.00"
+    assert row["remaining_invoice_amount"] == "140.00"
+
+    over = client.post(
+        "/api/invoices",
+        json={"order_id": oid, "invoice_type": "normal", "amount": 141},
+    )
+    assert over.status_code == 400
+    assert over.json()["detail"] == "开票金额超过待开金额 ¥140.00"
+
+    second = client.post(
+        "/api/invoices",
+        json={"order_id": oid, "invoice_type": "normal", "amount": 140},
+    )
+    assert second.status_code == 201, second.text
+    row = client.get("/api/invoices/orders").json()["rows"][0]
+    assert row["invoice_state"] == "issued"
+    assert row["normal_invoiced_amount"] == "240.00"
+    assert row["remaining_invoice_amount"] == "0.00"
+
+    duplicate = client.post(
+        "/api/invoices",
+        json={"order_id": oid, "invoice_type": "normal", "amount": 1},
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "该订单已足额开票，不能继续登记正票"
+
+
+def test_normal_invoice_requires_positive_amount(client):
+    db = client.session_factory()
+    o = _order(db, invoice_required=True, total=240)
+    db.commit()
+    oid = o.id
+    db.close()
+
+    missing = client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal"})
+    assert missing.status_code == 400
+    assert missing.json()["detail"] == "开票金额必须大于 0"
 
 
 def test_invoice_delete_flips_state_back_to_pending(client):
@@ -131,7 +191,7 @@ def test_invoice_delete_flips_state_back_to_pending(client):
     oid = o.id
     db.close()
 
-    inv = client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": "X-1"}).json()
+    inv = client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": "X-1", "amount": 100}).json()
     assert client.get("/api/invoices/orders").json()["rows"][0]["invoice_state"] == "issued"
     assert client.delete(f"/api/invoices/{inv['id']}").status_code == 204
     assert client.get("/api/invoices/orders").json()["rows"][0]["invoice_state"] == "pending"
@@ -145,7 +205,7 @@ def test_invoice_writes_require_admin(client):
     db.close()
     client.set_user(OPERATOR)
     assert client.get("/api/invoices/orders").status_code == 200
-    assert client.post("/api/invoices", json={"order_id": oid}).status_code == 403
+    assert client.post("/api/invoices", json={"order_id": oid, "amount": 100}).status_code == 403
 
 
 def test_needs_red_reversal_uses_amount_not_boolean(client):
@@ -156,7 +216,7 @@ def test_needs_red_reversal_uses_amount_not_boolean(client):
     oid = o.id
     db.close()
 
-    client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": "R-N"})
+    client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": "R-N", "amount": 100})
     client.post("/api/invoices", json={"order_id": oid, "invoice_type": "red_reversal", "invoice_no": "R-R", "amount": 100})
     by = {r["order_id"]: r for r in client.get("/api/invoices/orders").json()["rows"]}
     assert by[oid]["invoice_state"] == "issued"  # 冲红 100 覆盖退款 100
@@ -175,7 +235,7 @@ def test_partial_red_reversal_still_needs_more(client):
     db.commit()
     oid = o.id
     db.close()
-    client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": "P-N"})
+    client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": "P-N", "amount": 100})
     client.post("/api/invoices", json={"order_id": oid, "invoice_type": "red_reversal", "invoice_no": "P-R", "amount": 50})
     by = {r["order_id"]: r for r in client.get("/api/invoices/orders").json()["rows"]}
     assert by[oid]["invoice_state"] == "needs_red_reversal"  # 只冲了 50 < 退款 100
@@ -189,7 +249,7 @@ def test_voided_order_with_unreversed_invoice_stays_visible(client):
     db.commit()
     oid, vp_id = o.id, vp.id
     db.close()
-    client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": "V-N"})
+    client.post("/api/invoices", json={"order_id": oid, "invoice_type": "normal", "invoice_no": "V-N", "amount": 100})
 
     db = client.session_factory()
     for x in (oid, vp_id):
