@@ -510,6 +510,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr
 - `alembic/versions/c7e3a9b1d2f4_add_order_management_v1_1.py`：建表 + 索引
 - `alembic/versions/d8a1f4e7b9c2_normalize_order_source_type_to_manual.py`：PR-A 数据规范化（全部 `source_type` 写为 `manual`）
 - `alembic/versions/e9b3c5d7f1a4_add_invoice_tax_no_and_email.py`：把"发票抬头"单字段拆出 `invoice_tax_no`（纳税人识别号 VARCHAR(64)）、`invoice_recipient_email`（电子发票送达邮箱 VARCHAR(128)）两个新列，便于后续生成 / 推送电子发票
+- `alembic/versions/c0e2f4a6b8d1_add_invoice_attachments.py`：为 `invoices` 增加可空的 `attachment_filename` / `attachment_path`，每条分次开票记录可独立归档一份电子发票；文件落 `backend/uploads/invoices/`，仅经鉴权接口读取
 - `alembic/versions/f4a8c2d9e6b1_add_order_item_subscription_pricing_fields.py`：为 `order_items` 新增 `subscription_term`、`delivery_method`、`term_start_month` 三个订阅定价字段
 
 ### 3.16 商品库（products）+ 电商订单导入（CBJ 小程序）
@@ -1775,6 +1776,20 @@ draft ──confirm──> active ──void──> void
 **前端跳转**（顶栏 AutoComplete 选中项）：订单 → 详情页；期数 → 报数页；收报人 / 商品 → 对应列表页并带上搜索词。
 
 > 附带修复：收报人列表「姓名搜索」此前失效（前端传 `name`、后端 `/api/recipients` 只认 `search`），PR#42 已统一为 `search` 参数。
+
+### 4.18 财务管理 · 订单发票
+
+订单发票接口位于 `backend/app/api/invoices.py`，统一前缀 `/api/invoices`。工作台读取、电子发票预览 / 下载对所有登录用户开放；登记、修改、删除以及附件上传 / 替换 / 删除要求管理员权限。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/invoices/orders` | 订单发票工作台，返回待开票 / 需冲红 / 已开票统计及每单发票记录 |
+| `POST` / `PUT` / `DELETE` | `/api/invoices[/{id}]` | 发票登记、修改、删除；正票支持分次登记且累计不得超过订单金额 |
+| `POST` | `/api/invoices/{id}/attachment` | 可选上传或替换电子发票，支持 PDF / JPG / PNG，最大 20MB |
+| `GET` | `/api/invoices/{id}/attachment` | 鉴权读取电子发票，供页面预览或下载保存 |
+| `DELETE` | `/api/invoices/{id}/attachment` | 只删除电子发票文件，保留开票记录 |
+
+附件复用 `attachment_service` 落盘与路径穿越防护；数据库只存原始文件名和相对路径。替换附件或删除发票记录时会清理旧文件。附件完全选填：先登记、不传文件，以及登记后补传均受支持。
 
 
 发货明细的生成遵循以下优先级规则：

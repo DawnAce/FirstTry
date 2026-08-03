@@ -197,6 +197,16 @@
   line-height: 1.45;
 }
 
+.finance-form-modal .ant-form-item {
+  margin-bottom: 14px;
+}
+
+.finance-form-modal .ant-form-item-extra {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .finance-record-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -230,7 +240,7 @@
 
 .finance-record-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--color-border);
@@ -244,11 +254,71 @@
   min-width: 0;
 }
 
-.finance-record-main .ant-typography:last-child {
+.finance-record-main > .ant-typography:nth-child(2) {
   overflow: hidden;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.finance-record-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 5px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--color-divider);
+}
+
+.finance-record-file {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 230px;
+  color: var(--color-accent);
+}
+
+.finance-record-file .ant-typography {
+  min-width: 0;
+  color: inherit;
+  font-size: 12px;
+}
+
+.finance-record-no-file {
+  font-size: 12px;
+}
+
+.finance-record-delete {
+  margin-top: -4px;
+}
+
+.finance-invoice-preview {
+  display: grid;
+  place-items: center;
+  min-height: 480px;
+  max-height: 68vh;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-subtle);
+}
+
+.finance-invoice-preview iframe {
+  width: 100%;
+  height: 68vh;
+  min-height: 480px;
+  border: 0;
+  border-radius: inherit;
+  background: #fff;
+}
+
+.finance-invoice-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 68vh;
+  object-fit: contain;
 }
 
 .finance-settlement-panel .finance-data-table {
@@ -315,5 +385,15 @@
   .finance-record-item {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  .finance-record-attachment {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .finance-invoice-preview,
+  .finance-invoice-preview iframe {
+    min-height: 420px;
   }
 }

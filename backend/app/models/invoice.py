@@ -27,7 +27,8 @@ class Invoice(Base):
 
     只做登记 / 追踪，不生成发票文件。一张订单可分次登记多条 ``normal``，但正票累计金额不得超过
     订单应开金额；发生退款且已开票时再登记 ``red_reversal`` 表示冲红。某订单「是否需要冲红」由 ``finance_service`` 推导
-    （已有 normal + ``order.refunded_amount`` > 0 + 尚无 red_reversal），不存字段。
+    （已有 normal + ``order.refunded_amount`` > 0 + 尚无 red_reversal），不存字段。每条登记可选归档
+    一份电子发票附件，文件通过鉴权接口读取，不做静态暴露。
     """
 
     __tablename__ = "invoices"
@@ -49,6 +50,8 @@ class Invoice(Base):
     issued_date = Column(Date, nullable=True)
     buyer_title = Column(Text, nullable=True)   # 开票抬头
     tax_no = Column(String(64), nullable=True)  # 税号
+    attachment_filename = Column(String(255), nullable=True)
+    attachment_path = Column(String(500), nullable=True)
     notes = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
@@ -60,3 +63,7 @@ class Invoice(Base):
     )
 
     order = relationship("Order")
+
+    @property
+    def has_attachment(self) -> bool:
+        return bool(self.attachment_path)

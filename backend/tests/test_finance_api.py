@@ -143,6 +143,8 @@ def test_normal_invoice_can_be_split_but_cannot_exceed_order_total(client):
         json={"order_id": oid, "invoice_type": "normal", "amount": 100},
     )
     assert first.status_code == 201, first.text
+    assert first.json()["has_attachment"] is False  # 电子发票附件为选填
+    assert first.json()["attachment_filename"] is None
     row = client.get("/api/invoices/orders").json()["rows"][0]
     assert row["invoice_state"] == "pending"
     assert row["normal_invoiced_amount"] == "100.00"
@@ -207,6 +209,89 @@ def test_invoice_writes_require_admin(client):
     client.set_user(OPERATOR)
     assert client.get("/api/invoices/orders").status_code == 200
     assert client.post("/api/invoices", json={"order_id": oid, "amount": 100}).status_code == 403
+
+
+def test_invoice_optional_attachment_upload_preview_replace_and_delete(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
+    db = client.session_factory()
+    o = _order(db, invoice_required=True, total=240, code="FILE")
+    db.commit()
+    oid = o.id
+    db.close()
+
+    created = client.post(
+        "/api/invoices",
+        json={"order_id": oid, "invoice_type": "normal", "amount": 240},
+    )
+    assert created.status_code == 201, created.text
+    invoice_id = created.json()["id"]
+    assert created.json()["has_attachment"] is False
+
+    uploaded = client.post(
+        f"/api/invoices/{invoice_id}/attachment",
+        files={"file": ("电子发票.pdf", b"%PDF first", "application/pdf")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    assert uploaded.json()["has_attachment"] is True
+    assert uploaded.json()["attachment_filename"] == "电子发票.pdf"
+    first_path = next((tmp_path / "uploads" / "invoices").iterdir())
+
+    # 登录用户均可预览 / 下载，写操作仍仅管理员可用。
+    client.set_user(OPERATOR)
+    downloaded = client.get(f"/api/invoices/{invoice_id}/attachment")
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"%PDF first"
+    assert downloaded.headers["content-type"].startswith("application/pdf")
+    assert client.delete(f"/api/invoices/{invoice_id}/attachment").status_code == 403
+
+    client.set_user(ADMIN)
+    replaced = client.post(
+        f"/api/invoices/{invoice_id}/attachment",
+        files={"file": ("新版发票.png", b"PNG second", "image/png")},
+    )
+    assert replaced.status_code == 200
+    assert replaced.json()["attachment_filename"] == "新版发票.png"
+    assert not first_path.exists()
+
+    removed = client.delete(f"/api/invoices/{invoice_id}/attachment")
+    assert removed.status_code == 200
+    assert removed.json()["has_attachment"] is False
+    assert client.get(f"/api/invoices/{invoice_id}/attachment").status_code == 404
+
+
+def test_invoice_attachment_rejects_unsupported_file(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
+    db = client.session_factory()
+    o = _order(db, invoice_required=True, total=100)
+    db.commit()
+    oid = o.id
+    db.close()
+    invoice_id = client.post("/api/invoices", json={"order_id": oid, "amount": 100}).json()["id"]
+
+    response = client.post(
+        f"/api/invoices/{invoice_id}/attachment",
+        files={"file": ("发票.exe", b"bad", "application/octet-stream")},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "仅支持 PDF / JPG / PNG"
+
+
+def test_delete_invoice_removes_attachment_file(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
+    db = client.session_factory()
+    o = _order(db, invoice_required=True, total=100)
+    db.commit()
+    oid = o.id
+    db.close()
+    invoice_id = client.post("/api/invoices", json={"order_id": oid, "amount": 100}).json()["id"]
+    client.post(
+        f"/api/invoices/{invoice_id}/attachment",
+        files={"file": ("待删除发票.pdf", b"%PDF cleanup", "application/pdf")},
+    )
+    stored_file = next((tmp_path / "uploads" / "invoices").iterdir())
+
+    assert client.delete(f"/api/invoices/{invoice_id}").status_code == 204
+    assert not stored_file.exists()
 
 
 def test_needs_red_reversal_uses_amount_not_boolean(client):
