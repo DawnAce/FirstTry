@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,7 +7,6 @@ import {
   Badge,
   Button,
   Card,
-  Col,
   Collapse,
   DatePicker,
   Empty,
@@ -14,22 +14,22 @@ import {
   Input,
   InputNumber,
   Modal,
-  Row,
   Select,
   Space,
   Spin,
-  Statistic,
   Table,
   Tabs,
   Tag,
-  Timeline,
   Tooltip,
   Typography,
   message,
 } from 'antd';
 import {
+  ApartmentOutlined,
   ArrowLeftOutlined,
+  CheckCircleOutlined,
   CheckOutlined,
+  ClockCircleOutlined,
   CloseCircleOutlined,
   DollarOutlined,
   EditOutlined,
@@ -37,9 +37,15 @@ import {
   FileTextOutlined,
   HistoryOutlined,
   InboxOutlined,
+  InfoCircleOutlined,
+  LinkOutlined,
+  MailOutlined,
   RollbackOutlined,
   StopOutlined,
+  SyncOutlined,
+  TruckOutlined,
   UserOutlined,
+  WalletOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import dayjs from 'dayjs';
@@ -263,6 +269,8 @@ export default function OrderDetail() {
   const headerCoverage = computeOrderCoverage(order.items);
   const progressSummary = computeOrderProgress(order.items);
   const termSummary = computeOrderTermSummary(order.items);
+  const allocationCount = order.items.reduce((sum, item) => sum + item.allocations.length, 0);
+  const ledgerCount = order.payments.length + order.refunds.length;
   const progressPercent = progressSummary.expected > 0
     ? Math.min(100, Math.round((progressSummary.fulfilled / progressSummary.expected) * 100))
     : 0;
@@ -325,63 +333,6 @@ export default function OrderDetail() {
       notes: paymentNotes.trim() || null,
     });
   };
-
-  const paymentColumns: TableColumnsType<PaymentOut> = [
-    { title: '到账日期', dataIndex: 'collected_at', key: 'collected_at', width: 120 },
-    {
-      title: '金额',
-      dataIndex: 'amount',
-      key: 'amount',
-      width: 120,
-      align: 'right',
-      render: (v: string) => <Text type="success">{formatCurrency(v)}</Text>,
-    },
-    {
-      title: '方式',
-      dataIndex: 'method',
-      key: 'method',
-      width: 120,
-      render: (v: string | null) => v ?? '-',
-    },
-    {
-      title: '备注',
-      dataIndex: 'notes',
-      key: 'notes',
-      render: (v: string | null) => v ?? '-',
-    },
-  ];
-
-  const refundColumns: TableColumnsType<RefundOut> = [
-    { title: '退款日期', dataIndex: 'refunded_at', key: 'refunded_at', width: 120 },
-    {
-      title: '金额',
-      dataIndex: 'amount',
-      key: 'amount',
-      width: 120,
-      align: 'right',
-      render: (v: string) => <Text type="danger">{formatCurrency(v)}</Text>,
-    },
-    {
-      title: '范围',
-      key: 'scope',
-      width: 220,
-      render: (_: unknown, r) => {
-        if (r.order_item_id == null && r.stop_from_issue == null) {
-          return <Tag>整单 / 纯退钱</Tag>;
-        }
-        const parts: string[] = [];
-        if (r.order_item_id != null) parts.push(`明细 #${r.order_item_id}`);
-        if (r.stop_from_issue != null) parts.push(`第 ${r.stop_from_issue} 期起停发`);
-        return parts.join('；');
-      },
-    },
-    {
-      title: '原因',
-      dataIndex: 'reason',
-      key: 'reason',
-      render: (v: string | null) => v ?? '-',
-    },
-  ];
 
   return (
     <div className="order-page order-detail-page">
@@ -493,7 +444,7 @@ export default function OrderDetail() {
             items={[
               {
                 key: 'items',
-                label: '订单内容',
+                label: <DetailTabLabel icon={<InboxOutlined />} label="订单内容" />,
                 children: (
                   <ItemsTab
                     items={order.items}
@@ -507,34 +458,37 @@ export default function OrderDetail() {
               },
               {
                 key: 'allocations',
-                label: '履约方案',
+                label: <DetailTabLabel icon={<ApartmentOutlined />} label="履约方案" count={allocationCount} />,
                 children: <AllocationsTab items={order.items} />,
               },
               {
                 key: 'payments',
-                label: '收款记录',
+                label: <DetailTabLabel icon={<WalletOutlined />} label="收款记录" count={ledgerCount} />,
                 children: (
                   <PaymentLedgerTab
                     payments={order.payments}
                     refunds={order.refunds}
-                    paymentColumns={paymentColumns}
-                    refundColumns={refundColumns}
+                    totalAmount={order.total_amount}
+                    paidAmount={order.paid_amount}
+                    outstandingAmount={order.outstanding_amount}
+                    canRecordPayment={order.status === 'active'}
+                    onRecordPayment={openPaymentModal}
                   />
                 ),
               },
               {
                 key: 'shipping',
-                label: '关联快递',
-                children: <ShippingSyncTab orderId={order.id} />,
+                label: <DetailTabLabel icon={<TruckOutlined />} label="关联快递" />,
+                children: <ShippingSyncTab orderId={order.id} items={order.items} />,
               },
               {
                 key: 'postal',
-                label: '关联邮局',
+                label: <DetailTabLabel icon={<MailOutlined />} label="关联邮局" count={postalDeliveriesQuery.data?.total} />,
                 children: <PostalDeliveriesTab orderId={order.id} />,
               },
               {
                 key: 'events',
-                label: '事件流',
+                label: <DetailTabLabel icon={<HistoryOutlined />} label="事件流" count={eventsQuery.data?.length} />,
                 children: (
                   <EventsTab
                     events={eventsQuery.data ?? []}
@@ -779,6 +733,66 @@ export default function OrderDetail() {
 // Helpers
 // =============================================================================
 
+function DetailTabLabel({
+  icon,
+  label,
+  count,
+}: {
+  icon: ReactNode;
+  label: string;
+  count?: number;
+}) {
+  return (
+    <span className="order-detail-tab-label">
+      {icon}
+      <span>{label}</span>
+      {count != null && count > 0 && <em>{count}</em>}
+    </span>
+  );
+}
+
+function TabSectionHeader({
+  kicker,
+  title,
+  description,
+  action,
+  status,
+}: {
+  kicker: string;
+  title: string;
+  description: string;
+  action?: ReactNode;
+  status?: ReactNode;
+}) {
+  return (
+    <header className="order-detail-tab-heading">
+      <div><span>{kicker}</span><h2>{title}</h2><p>{description}</p></div>
+      {(action || status) && <aside>{status}{action}</aside>}
+    </header>
+  );
+}
+
+function TabEmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="order-detail-tab-empty">
+      <span>{icon}</span>
+      <strong>{title}</strong>
+      <p>{description}</p>
+      {action}
+    </div>
+  );
+}
+
 function computeOrderCoverage(items: OrderItemOut[]): string {
   const dates = items
     .flatMap((it) => [it.coverage_start_date, it.coverage_end_date])
@@ -1015,31 +1029,88 @@ function TargetsList({
 function PaymentLedgerTab({
   payments,
   refunds,
-  paymentColumns,
-  refundColumns,
+  totalAmount,
+  paidAmount,
+  outstandingAmount,
+  canRecordPayment,
+  onRecordPayment,
 }: {
   payments: PaymentOut[];
   refunds: RefundOut[];
-  paymentColumns: TableColumnsType<PaymentOut>;
-  refundColumns: TableColumnsType<RefundOut>;
+  totalAmount: string;
+  paidAmount: string;
+  outstandingAmount: string;
+  canRecordPayment: boolean;
+  onRecordPayment: () => void;
 }) {
-  if (payments.length === 0 && refunds.length === 0) {
-    return <Empty description="暂无收款或退款记录" />;
-  }
   return (
-    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-      {payments.length > 0 && (
-        <Card className="order-detail-ledger-card" size="small" title={`收款台账（${payments.length}）`}>
-          <Table<PaymentOut> rowKey="id" size="small" pagination={false} columns={paymentColumns} dataSource={payments} />
-        </Card>
+    <section className="order-detail-tab-section">
+      <TabSectionHeader
+        kicker="PAYMENT LEDGER"
+        title="收款记录"
+        description="订单应收、实收与退款流水集中核对。"
+        action={canRecordPayment ? (
+          <Button type="primary" icon={<DollarOutlined />} onClick={onRecordPayment}>记一笔收款</Button>
+        ) : null}
+      />
+
+      <div className="order-detail-ledger-summary">
+        <div><span>订单应收</span><strong>{formatCurrency(totalAmount)}</strong></div>
+        <div><span>累计已收</span><strong className="is-positive">{formatCurrency(paidAmount)}</strong></div>
+        <div><span>待收金额</span><strong className={Number(outstandingAmount) > 0 ? 'is-negative' : 'is-positive'}>{formatCurrency(outstandingAmount)}</strong></div>
+        <div><span>账款状态</span><strong><i className={`order-detail-soft-status ${Number(outstandingAmount) > 0 ? 'is-warning' : 'is-success'}`}>{Number(outstandingAmount) > 0 ? '待收款' : '已付清'}</i></strong></div>
+      </div>
+
+      <div className="order-detail-ticket-list">
+        {payments.map((payment) => (
+          <article className="order-detail-work-ticket is-blue" key={`payment-${payment.id}`}>
+            <div className="order-detail-ledger-entry">
+              <span className="order-detail-entry-icon is-success"><CheckOutlined /></span>
+              <div>
+                <small>收款流水 #{payment.id}</small>
+                <strong>{payment.method || '未记录方式'} · {formatCurrency(payment.amount)}</strong>
+                <p>{payment.collected_at} · {payment.operator_id != null ? `操作人 #${payment.operator_id}` : '未记录操作人'}{payment.notes ? ` · ${payment.notes}` : ''}</p>
+              </div>
+              <i className="order-detail-soft-status is-success">已到账</i>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {payments.length === 0 && <TabEmptyState icon={<WalletOutlined />} title="暂无收款记录" description="记录收款后会在这里形成完整流水。" />}
+
+      <div className="order-detail-subsection-title">
+        <span><RollbackOutlined />退款记录</span><small>{refunds.length} 条</small>
+      </div>
+      {refunds.length > 0 ? (
+        <div className="order-detail-ticket-list">
+          {refunds.map((refund) => (
+            <article className="order-detail-work-ticket is-red" key={`refund-${refund.id}`}>
+              <div className="order-detail-ledger-entry">
+                <span className="order-detail-entry-icon is-refund"><RollbackOutlined /></span>
+                <div>
+                  <small>退款流水 #{refund.id}</small>
+                  <strong>{formatCurrency(refund.amount)} · {refundScopeLabel(refund)}</strong>
+                  <p>{refund.refunded_at}{refund.reason ? ` · ${refund.reason}` : ''}</p>
+                </div>
+                <i className="order-detail-soft-status is-danger">已退款</i>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="order-detail-inline-empty"><RollbackOutlined /><span><strong>暂无退款记录</strong><small>发生退款后会在这里保留完整流水。</small></span></div>
       )}
-      {refunds.length > 0 && (
-        <Card className="order-detail-ledger-card" size="small" title={`退款台账（${refunds.length}）`}>
-          <Table<RefundOut> rowKey="id" size="small" pagination={false} columns={refundColumns} dataSource={refunds} />
-        </Card>
-      )}
-    </Space>
+    </section>
   );
+}
+
+function refundScopeLabel(refund: RefundOut): string {
+  if (refund.order_item_id == null && refund.stop_from_issue == null) return '整单退款';
+  const parts: string[] = [];
+  if (refund.order_item_id != null) parts.push(`明细 #${refund.order_item_id}`);
+  if (refund.stop_from_issue != null) parts.push(`第 ${refund.stop_from_issue} 期起停发`);
+  return parts.join(' · ');
 }
 
 interface AddressChangeFormValues {
@@ -1293,105 +1364,93 @@ function formatEffectiveDate(change: PostalAddressChange): string {
 // Tab 2: Allocation versions (flattened across all items)
 // =============================================================================
 
-interface AllocationRow {
-  key: string;
-  itemIndex: number;
-  itemLabel: string;
-  version_no: number;
-  effective_from_issue: number | null;
-  effective_until_issue: number | null;
-  change_reason: string | null;
-  created_at: string;
-  target_count: number;
-}
-
 function AllocationsTab({ items }: { items: OrderItemOut[] }) {
-  const rows = useMemo<AllocationRow[]>(() => {
-    const out: AllocationRow[] = [];
-    items.forEach((item, idx) => {
-      item.allocations.forEach((alloc) => {
-        out.push({
-          key: `${item.id}-${alloc.id}`,
-          itemIndex: idx,
-          itemLabel: `明细 ${idx + 1}（${fulfillmentTypeLabel(item.fulfillment_type)}）`,
-          version_no: alloc.version_no,
-          effective_from_issue: alloc.effective_from_issue,
-          effective_until_issue: alloc.effective_until_issue,
-          change_reason: alloc.change_reason,
-          created_at: alloc.created_at,
-          target_count: alloc.targets.length,
-        });
-      });
-    });
-    return out;
-  }, [items]);
-
-  const columns: TableColumnsType<AllocationRow> = [
-    { title: '明细', dataIndex: 'itemLabel', key: 'itemLabel', width: 200 },
-    {
-      title: '版本号',
-      dataIndex: 'version_no',
-      key: 'version_no',
-      width: 90,
-      render: (v: number) => <Tag color="blue">v{v}</Tag>,
-    },
-    {
-      title: '生效起期号',
-      dataIndex: 'effective_from_issue',
-      key: 'effective_from_issue',
-      width: 110,
-      render: (v: number | null) => v ?? '-',
-    },
-    {
-      title: '生效止期号',
-      dataIndex: 'effective_until_issue',
-      key: 'effective_until_issue',
-      width: 110,
-      render: (v: number | null) => v ?? '-',
-    },
-    {
-      title: '目标数',
-      dataIndex: 'target_count',
-      key: 'target_count',
-      width: 90,
-      align: 'right',
-    },
-    {
-      title: '变更原因',
-      dataIndex: 'change_reason',
-      key: 'change_reason',
-      render: (v: string | null) => v ?? '-',
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 170,
-      render: (v: string) => v.replace('T', ' ').slice(0, 19),
-    },
-  ];
-
-  if (rows.length === 0) {
-    return <Empty description="尚无分配方案" />;
+  const allocationCount = items.reduce((sum, item) => sum + item.allocations.length, 0);
+  if (allocationCount === 0) {
+    return <TabEmptyState icon={<ApartmentOutlined />} title="尚无履约方案" description="确认订单后会在这里生成首个履约版本。" />;
   }
 
   return (
-    <>
-      <Alert
-        type="info"
-        title="每条明细的履约方案按版本追踪。修改目标（收件人）时会自动创建新版本，旧版本保留历史记录。"
-        showIcon
-        style={{ marginBottom: 12 }}
+    <section className="order-detail-tab-section">
+      <TabSectionHeader
+        kicker="FULFILLMENT PLAN"
+        title="履约方案"
+        description="按版本记录履约目标变化，当前生效版本优先展示。"
+        action={<Button icon={<ClockCircleOutlined />}>查看版本说明</Button>}
       />
-      <Table<AllocationRow>
-        rowKey="key"
-        size="small"
-        columns={columns}
-        dataSource={rows}
-        pagination={false}
-      />
-    </>
+      <div className="order-detail-tab-notice"><InfoCircleOutlined /><span>修改收件目标时自动生成新版本，历史版本永久保留，不覆盖原记录。</span></div>
+
+      <div className="order-detail-ticket-list">
+        {items.flatMap((item, itemIndex) => {
+          const allocations = [...item.allocations].sort((a, b) => b.version_no - a.version_no);
+          return allocations.map((allocation, allocationIndex) => {
+            const current = allocationIndex === 0;
+            return (
+              <article className={`order-detail-work-ticket ${current ? 'is-green' : 'is-muted'}`} key={`${item.id}-${allocation.id}`}>
+                <div className="order-detail-ticket-head">
+                  <div>
+                    <strong>{current ? '当前履约方案' : `历史履约方案 V${allocation.version_no}`}</strong>
+                    <span>明细 {itemIndex + 1} · {publicationLabel(item.publication)}{item.subscription_term ? ` · ${subscriptionTermLabel(item.subscription_term)}` : ''}</span>
+                  </div>
+                  <div><i className={`order-detail-soft-status ${current ? 'is-success' : 'is-neutral'}`}>{current ? '当前生效' : '历史版本'}</i><b className="order-detail-version-badge">V{allocation.version_no}</b></div>
+                </div>
+
+                <div className="order-detail-plan-facts">
+                  <div><span>生效范围</span><strong>{allocationEffectiveRange(allocation)}</strong></div>
+                  <div><span>履约目标</span><strong>{allocation.targets.length} 位收报人</strong></div>
+                  <div><span>变更原因</span><strong>{allocationReasonLabel(allocation.change_reason)}</strong></div>
+                  <div><span>创建时间</span><strong>{formatOrderTimestamp(allocation.created_at)}</strong></div>
+                </div>
+
+                <div className="order-detail-subsection-title">
+                  <span><UserOutlined />履约目标</span><small>共 {allocation.targets.length} 位</small>
+                </div>
+                <div className="order-detail-plan-targets">
+                  {allocation.targets.map((target) => (
+                    <div className="order-detail-plan-target" key={target.id}>
+                      <span className="order-detail-target-avatar">{target.recipient_name.slice(0, 1)}</span>
+                      <div className="order-detail-plan-target-main">
+                        <small>收报人 / 联系电话</small>
+                        <strong>{target.recipient_name} · {target.recipient_phone || '未记录电话'}</strong>
+                        <p>{target.recipient_address || '未记录投递地址'}</p>
+                      </div>
+                      <div className="order-detail-delivery-config">
+                        <span><MailOutlined /></span>
+                        <div><small>投递方式</small><strong>{target.shipping_channel === 'post_office' ? '邮局投递' : '中通快递'}</strong></div>
+                        <i />
+                        <div><small>目标份数</small><strong>{target.quantity} 份</strong></div>
+                      </div>
+                      {target.status !== 'active' && <i className="order-detail-soft-status is-warning">{targetStatusLabel(target.status)}</i>}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="order-detail-version-foot">
+                  <span></span><div><strong>V{allocation.version_no} {allocationReasonLabel(allocation.change_reason)}</strong><small>{formatOrderTimestamp(allocation.created_at)}</small></div><i className="order-detail-soft-status is-neutral">{current ? '当前版本' : '历史记录'}</i>
+                </div>
+              </article>
+            );
+          });
+        })}
+      </div>
+    </section>
   );
+}
+
+function allocationEffectiveRange(allocation: FulfillmentAllocationOut): string {
+  if (allocation.effective_from_issue == null && allocation.effective_until_issue == null) return '全订阅周期';
+  const start = allocation.effective_from_issue == null ? '首期' : `第 ${allocation.effective_from_issue} 期`;
+  const end = allocation.effective_until_issue == null ? '订阅结束' : `第 ${allocation.effective_until_issue} 期`;
+  return `${start} ~ ${end}`;
+}
+
+function allocationReasonLabel(reason: string | null): string {
+  if (!reason || reason === 'initial') return '初始方案';
+  return reason;
+}
+
+function formatOrderTimestamp(value: string): string {
+  return value.replace('T', ' ').slice(0, 16);
 }
 
 // =============================================================================
@@ -1404,44 +1463,58 @@ function PostalDeliveriesTab({ orderId }: { orderId: number }) {
     queryKey: ['postalDeliveries', 'order', orderId],
     queryFn: () => listDeliveries({ order_id: orderId, page_size: 200 }).then((r) => r.data),
   });
-  const columns: TableColumnsType<PostalDelivery> = [
-    { title: '投递编号', key: 'number', width: 140, render: (_: unknown, row) => (
-      <Button type="link" className="postal-inline-link" onClick={() => navigate(`/post-delivery/deliveries?delivery_id=${row.id}`)}>
-        {row.year}-{row.delivery_no}
-      </Button>
-    ) },
-    { title: '收报人', key: 'recipient', width: 160, render: (_: unknown, row) => (
-      <Space direction="vertical" size={0}>
-        <Text strong>{row.recipient_name}</Text>
-        <Text type="secondary">{row.recipient_phone || '未记录电话'} · {row.copies}份</Text>
-      </Space>
-    ) },
-    { title: '年度投递段', key: 'coverage', render: (_: unknown, row) => `${row.coverage_start_date || '—'} — ${row.coverage_end_date || '—'}` },
-    { title: '分段金额', dataIndex: 'amount', width: 110, render: (amount: string | null) => amount == null ? '—' : `¥${amount}` },
-    { title: '来源', key: 'source', width: 110, render: (_: unknown, row) => row.source_type === 'order_generated' ? <Tag color="blue">订单生成</Tag> : <Tag>名册补链</Tag> },
-  ];
   if (!q.isLoading && !q.data?.rows.length) {
     return (
-      <Card>
-        <Empty description="尚无正式关联的邮局投递记录；历史名册可在“待续投”中补齐来源关联。">
-          <Button type="primary" onClick={() => navigate('/post-delivery/renewals')}>前往待续投</Button>
-        </Empty>
-      </Card>
+      <section className="order-detail-tab-section">
+        <TabSectionHeader kicker="POSTAL LINK" title="关联邮局" description="当前订单关联的邮局投递记录与有效覆盖期。" />
+        <TabEmptyState
+          icon={<MailOutlined />}
+          title="尚无正式关联的邮局投递记录"
+          description="历史名册可在待续投中补齐来源关联。"
+          action={<Button type="primary" onClick={() => navigate('/post-delivery/renewals')}>前往待续投</Button>}
+        />
+      </section>
     );
   }
   return (
-    <Card
-      size="small"
-      title={`邮局年度投递段（${q.data?.total ?? 0}）`}
-      extra={<Button type="link" onClick={() => navigate('/post-delivery/deliveries')}>打开投递明细</Button>}
-    >
-      <Table<PostalDelivery> rowKey="id" size="small" loading={q.isLoading} pagination={false} columns={columns} dataSource={q.data?.rows ?? []} />
-    </Card>
+    <section className="order-detail-tab-section">
+      <TabSectionHeader
+        kicker="POSTAL LINK"
+        title="关联邮局"
+        description="当前订单关联的邮局投递记录与有效覆盖期。"
+        action={<Button icon={<LinkOutlined />} onClick={() => navigate('/post-delivery/deliveries')}>打开投递明细</Button>}
+        status={<i className="order-detail-soft-status is-success">已关联 {q.data?.total ?? 0} 条</i>}
+      />
+      {q.isLoading ? <div className="order-detail-tab-loading"><Spin /></div> : (
+        <div className="order-detail-ticket-list">
+          {(q.data?.rows ?? []).map((row) => (
+            <article className="order-detail-work-ticket is-blue" key={row.id}>
+              <div className="order-detail-ticket-head">
+                <div><strong>邮局投递 #{row.delivery_no}</strong><span>{row.year} 年度投递段 · {row.source_type === 'order_generated' ? '订单自动生成' : '历史名册补链'}</span></div>
+                <i className="order-detail-soft-status is-success">关联正常</i>
+              </div>
+              <div className="order-detail-plan-facts">
+                <div><span>收报人</span><strong>{row.recipient_name}</strong></div>
+                <div><span>覆盖期</span><strong>{row.coverage_start_date || '—'} ~ {row.coverage_end_date || '—'}</strong></div>
+                <div><span>产品 / 份数</span><strong>{row.product || '未记录产品'} · {row.copies} 份</strong></div>
+                <div><span>来源渠道</span><strong>{row.source_channel || '未记录来源'}</strong></div>
+              </div>
+              <div className="order-detail-postal-address">
+                <EnvironmentOutlined />
+                <div><small>当前有效投递地址</small><strong>{row.recipient_address}</strong><span>{row.recipient_phone || '未记录电话'}{row.amount != null ? ` · 分段金额 ¥${row.amount}` : ''}</span></div>
+                <Button type="link" onClick={() => navigate(`/post-delivery/deliveries?delivery_id=${row.id}`)}>查看投递详情</Button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
-function ShippingSyncTab({ orderId }: { orderId: number }) {
+function ShippingSyncTab({ orderId, items }: { orderId: number; items: OrderItemOut[] }) {
   const queryClient = useQueryClient();
+  const postalOnly = items.length > 0 && items.every((item) => item.delivery_method === 'post_office');
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number | null>(null);
   const selectedIssueNumberRef = useRef<number | null>(null);
   const [preview, setPreview] = useState<OrderShippingSyncPreview | null>(null);
@@ -1603,9 +1676,20 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
     { title: '原因', dataIndex: 'reason', key: 'reason', render: nullableText },
   ];
 
+  if (postalOnly) {
+    return (
+      <section className="order-detail-tab-section">
+        <TabSectionHeader kicker="EXPRESS LINK" title="关联快递" description="查看订单按期同步到中通发货明细的结果。" status={<i className="order-detail-soft-status is-neutral">本单不适用</i>} />
+        <TabEmptyState icon={<TruckOutlined />} title="本订单采用邮局投递" description="不会生成中通快递发货明细；如投递方式调整，关联记录将在此处按期展示。" />
+      </section>
+    );
+  }
+
   return (
-    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-      <Card size="small">
+    <section className="order-detail-tab-section">
+      <TabSectionHeader kicker="EXPRESS LINK" title="关联快递" description="选择刊期预览并同步订单履约目标到中通发货明细。" />
+      <div className="order-detail-sync-stack">
+      <Card size="small" className="order-detail-sync-controls">
         <Space wrap>
           <Select<number>
             style={{ width: 220 }}
@@ -1661,30 +1745,17 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
       )}
 
       {summary && (
-        <Row gutter={12}>
-          <Col span={4}>
-            <Statistic title="候选" value={summary.candidates} />
-          </Col>
-          <Col span={4}>
-            <Statistic title="待新建" value={summary.to_create} />
-          </Col>
-          <Col span={4}>
-            <Statistic title="待更新" value={summary.to_update} />
-          </Col>
-          <Col span={4}>
-            <Statistic title="已跳过" value={summary.skipped} />
-          </Col>
-          <Col span={4}>
-            <Statistic
-              title="冲突"
-              value={summary.conflicts}
-              valueStyle={hasConflicts ? { color: 'var(--color-danger)' } : undefined}
-            />
-          </Col>
-        </Row>
+        <div className="order-detail-sync-summary">
+          <div><span>候选</span><strong>{summary.candidates}</strong></div>
+          <div><span>待新建</span><strong>{summary.to_create}</strong></div>
+          <div><span>待更新</span><strong>{summary.to_update}</strong></div>
+          <div><span>已跳过</span><strong>{summary.skipped}</strong></div>
+          <div className={hasConflicts ? 'is-conflict' : ''}><span>冲突</span><strong>{summary.conflicts}</strong></div>
+        </div>
       )}
 
       <Table<OrderShippingSyncItem>
+        className="order-detail-sync-table"
         rowKey={(row, index) =>
           `${row.action}-${row.order_item_id ?? 'item'}-${row.fulfillment_target_id ?? 'target'}-${index}`
         }
@@ -1695,7 +1766,8 @@ function ShippingSyncTab({ orderId }: { orderId: number }) {
         pagination={false}
         locale={{ emptyText: '请选择期号并生成同步预览' }}
       />
-    </Space>
+      </div>
+    </section>
   );
 }
 
@@ -1784,35 +1856,26 @@ interface EventsTabProps {
 }
 
 function EventsTab({ events, loading, error }: EventsTabProps) {
-  if (error) {
-    return <Alert type="error" showIcon title="加载事件失败" description={error} />;
-  }
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-        <Spin />
-      </div>
-    );
-  }
-  if (events.length === 0) {
-    return <Empty description="暂无事件记录" />;
-  }
   const sorted = [...events].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
   return (
-    <Timeline
-      mode="left"
-      items={sorted.map((evt) => ({
-        color: eventTimelineColor(evt.event_type),
-        label: (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {evt.created_at.replace('T', ' ').slice(0, 19)}
-          </Text>
-        ),
-        children: <EventCard event={evt} />,
-      }))}
-    />
+    <section className="order-detail-tab-section">
+      <TabSectionHeader
+        kicker="ORDER EVENTS"
+        title="事件流"
+        description="按时间追溯订单、收款、履约与信息变更。"
+        status={events.length > 0 ? <i className="order-detail-soft-status is-blue">{events.length} 条记录</i> : null}
+      />
+      {error && <Alert type="error" showIcon title="加载事件失败" description={error} />}
+      {loading && <div className="order-detail-tab-loading"><Spin /></div>}
+      {!loading && !error && events.length === 0 && <TabEmptyState icon={<HistoryOutlined />} title="暂无事件记录" description="订单发生操作后会在这里形成可追溯记录。" />}
+      {!loading && !error && sorted.length > 0 && (
+        <div className="order-detail-event-stream">
+          {sorted.map((event, index) => <EventCard key={event.id} event={event} latest={index === 0} />)}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1840,51 +1903,50 @@ function eventTimelineColor(eventType: OrderEventOut['event_type']): string {
   }
 }
 
-function EventCard({ event }: { event: OrderEventOut }) {
+function EventCard({ event, latest }: { event: OrderEventOut; latest: boolean }) {
   const summary = summarizeEventPayload(event.payload_json);
   const hasPayload = event.payload_json && Object.keys(event.payload_json).length > 0;
   return (
-    <Card size="small" style={{ marginBottom: 8 }}>
-      <Space size="small" style={{ marginBottom: 4 }}>
-        <Tag color={eventTimelineColor(event.event_type)}>
-          {eventTypeLabel(event.event_type)}
-        </Tag>
-        {event.operator_id != null && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            操作者 #{event.operator_id}
-          </Text>
-        )}
-      </Space>
-      {summary && <div style={{ marginBottom: 4 }}>{summary}</div>}
-      {hasPayload && (
-        <Collapse
-          ghost
-          size="small"
-          items={[
-            {
+    <article className={`order-detail-event-entry ${latest ? 'is-latest' : ''}`}>
+      <span className={`order-detail-event-icon is-${eventTimelineColor(event.event_type)}`}>{eventGlyph(event.event_type)}</span>
+      <div className="order-detail-event-card">
+        <div className="order-detail-event-head"><strong>{eventTypeLabel(event.event_type)}</strong><time>{formatOrderTimestamp(event.created_at)}</time></div>
+        {summary && <p>{summary}</p>}
+        <small>{event.operator_id != null ? `操作者 #${event.operator_id}` : '系统自动处理'}</small>
+        {hasPayload && (
+          <Collapse
+            ghost
+            size="small"
+            items={[{
               key: 'payload',
-              label: <Text type="secondary" style={{ fontSize: 12 }}>查看完整数据</Text>,
-              children: (
-                <pre
-                  style={{
-                    margin: 0,
-                    padding: 8,
-                    background: 'var(--color-bg-subtle)',
-                    fontSize: 12,
-                    borderRadius: 4,
-                    overflow: 'auto',
-                    maxHeight: 240,
-                  }}
-                >
-                  {JSON.stringify(event.payload_json, null, 2)}
-                </pre>
-              ),
-            },
-          ]}
-        />
-      )}
-    </Card>
+              label: <span className="order-detail-event-payload-label">查看完整数据</span>,
+              children: <pre className="order-detail-event-payload">{JSON.stringify(event.payload_json, null, 2)}</pre>,
+            }]}
+          />
+        )}
+      </div>
+    </article>
   );
+}
+
+function eventGlyph(eventType: OrderEventOut['event_type']): ReactNode {
+  switch (eventType) {
+    case 'confirmed':
+      return <CheckCircleOutlined />;
+    case 'synced_to_shipping':
+      return <SyncOutlined />;
+    case 'modified':
+    case 'allocation_updated':
+    case 'target_added':
+    case 'target_replaced':
+    case 'target_suspended':
+      return <EditOutlined />;
+    case 'created':
+    case 'imported':
+      return <FileTextOutlined />;
+    default:
+      return <ClockCircleOutlined />;
+  }
 }
 
 function summarizeEventPayload(payload: Record<string, unknown> | null): string | null {
