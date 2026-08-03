@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
@@ -27,6 +27,7 @@ import {
 } from 'antd';
 import {
   ArrowLeftOutlined,
+  CheckOutlined,
   CloseCircleOutlined,
   DollarOutlined,
   EditOutlined,
@@ -87,6 +88,7 @@ import {
   targetStatusColor,
   targetStatusLabel,
 } from './orderUtils';
+import './OrderManagement.css';
 
 const { Title, Text } = Typography;
 
@@ -95,6 +97,8 @@ export default function OrderDetail() {
   const params = useParams<{ id: string }>();
   const orderId = params.id ? Number(params.id) : NaN;
   const navigate = useNavigate();
+  const location = useLocation();
+  const justActivated = Boolean((location.state as { justActivated?: boolean } | null)?.justActivated);
   const queryClient = useQueryClient();
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidReason, setVoidReason] = useState('');
@@ -345,34 +349,40 @@ export default function OrderDetail() {
   ];
 
   return (
-    <div>
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-        }}
-      >
-        <Space size="middle">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
+    <div className="order-page order-detail-page">
+      {justActivated && (
+        <section className="order-detail-success">
+          <div className="order-detail-success-icon"><CheckOutlined /></div>
+          <div>
+            <h3>订单已创建并生效</h3>
+            <p>{order.order_code ?? `订单 #${order.id}`} · 履约方案已同步生成</p>
+          </div>
+          <Button onClick={() => navigate('/orders/new')}>再建一单</Button>
+        </section>
+      )}
+
+      <header className="order-page-header">
+        <div className="order-page-heading">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
             返回列表
           </Button>
-          <Title level={3} style={{ margin: 0 }}>
-            {order.order_code ?? `订单 #${order.id}`}
-          </Title>
-          <Badge status={statusBadgeColor(order.status)} text={statusLabel(order.status)} />
-          {order.commercial_status && (
-            <Tag color={commercialStatusColor(order.commercial_status)}>
-              {commercialStatusLabel(order.commercial_status)}
-            </Tag>
-          )}
-          <Tag icon={<InboxOutlined />} color="default">
-            {entryMethodLabel(order.entry_method)}
-          </Tag>
-        </Space>
-        <Space>
+          <div>
+            <div className="order-title-line">
+              <h1>{order.order_code ?? `订单 #${order.id}`}</h1>
+              <Badge status={statusBadgeColor(order.status)} text={statusLabel(order.status)} />
+              {order.commercial_status && (
+                <Tag color={commercialStatusColor(order.commercial_status)}>
+                  {commercialStatusLabel(order.commercial_status)}
+                </Tag>
+              )}
+              <Tag icon={<InboxOutlined />}>{entryMethodLabel(order.entry_method)}</Tag>
+            </div>
+            <p>
+              {order.source_platform ?? '未知平台'} · {order.source_store ?? '未知店铺'} · {order.external_order_no ?? '无来源单号'}
+            </p>
+          </div>
+        </div>
+        <div className="order-detail-actions">
           {canEditOrder(order.status) && (
             <Button
               icon={<EditOutlined />}
@@ -408,41 +418,20 @@ export default function OrderDetail() {
               作废
             </Button>
           )}
-        </Space>
-      </div>
+        </div>
+      </header>
 
-      {/* Summary card */}
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Row gutter={24}>
-          <Col span={6}>
-            <Statistic title="付款主体" value={order.payer_name} valueStyle={{ fontSize: 18 }} />
-          </Col>
-          <Col span={6}>
-            <Statistic
-              title="下单日期"
-              value={order.order_date}
-              valueStyle={{ fontSize: 18 }}
-            />
-          </Col>
-          <Col span={6}>
-            <Statistic
-              title="覆盖期"
-              value={headerCoverage}
-              valueStyle={{ fontSize: 18 }}
-            />
-          </Col>
-          <Col span={6}>
-            <Statistic
-              title="订单总金额"
-              value={formatCurrency(order.total_amount)}
-              valueStyle={{ fontSize: 18, color: 'var(--color-accent)' }}
-            />
-          </Col>
-        </Row>
+      <Card className="order-detail-surface">
+        <div className="order-detail-kpis">
+          <div className="order-detail-kpi"><span>付款主体</span><strong>{order.payer_name}</strong></div>
+          <div className="order-detail-kpi"><span>下单日期</span><strong>{order.order_date}</strong></div>
+          <div className="order-detail-kpi"><span>覆盖期</span><strong>{headerCoverage}</strong></div>
+          <div className="order-detail-kpi is-amount"><span>订单总金额</span><strong>{formatCurrency(order.total_amount)}</strong></div>
+        </div>
         <Descriptions
+          className="order-detail-meta"
           column={3}
           size="small"
-          style={{ marginTop: 16 }}
           labelStyle={{ width: 100 }}
         >
           <Descriptions.Item label="来源平台">
@@ -516,9 +505,8 @@ export default function OrderDetail() {
         </Descriptions>
       </Card>
 
-      {/* Payment ledger */}
       {order.payments.length > 0 && (
-        <Card size="small" title="收款台账" style={{ marginBottom: 16 }}>
+        <Card className="order-detail-tab-card" size="small" title="收款台账">
           <Table<PaymentOut>
             rowKey="id"
             size="small"
@@ -529,9 +517,8 @@ export default function OrderDetail() {
         </Card>
       )}
 
-      {/* Refund ledger */}
       {order.refunds.length > 0 && (
-        <Card size="small" title="退款台账" style={{ marginBottom: 16 }}>
+        <Card className="order-detail-tab-card" size="small" title="退款台账">
           <Table<RefundOut>
             rowKey="id"
             size="small"
@@ -542,8 +529,8 @@ export default function OrderDetail() {
         </Card>
       )}
 
-      {/* Tabs */}
       <Tabs
+        className="order-detail-tabs"
         defaultActiveKey="items"
         items={[
           {
@@ -797,6 +784,7 @@ function ItemCard({ item, index }: { item: OrderItemOut; index: number }) {
 
   return (
     <Card
+      className="order-detail-tab-card"
       size="small"
       title={
         <Space size="small">
@@ -824,8 +812,8 @@ function ItemCard({ item, index }: { item: OrderItemOut; index: number }) {
             ))}
         </div>
       )}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={16}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} xl={16}>
           <Descriptions column={3} size="small" labelStyle={{ width: 90 }}>
             <Descriptions.Item label="覆盖期">
               {formatCoverage(item.coverage_start_date, item.coverage_end_date)}
@@ -854,7 +842,7 @@ function ItemCard({ item, index }: { item: OrderItemOut; index: number }) {
             <Descriptions.Item label="备注">{item.notes ?? '-'}</Descriptions.Item>
           </Descriptions>
         </Col>
-        <Col span={8}>
+        <Col xs={24} xl={8}>
           <ProgressPanel item={item} />
         </Col>
       </Row>
@@ -872,8 +860,8 @@ function ProgressPanel({ item }: { item: OrderItemOut }) {
   const driftValue = progress.drift;
   return (
     <Card
+      className="order-progress-card"
       size="small"
-      style={{ background: 'var(--color-bg-subtle)' }}
       title={
         <Text type="secondary" style={{ fontSize: 12 }}>
           履约进度
