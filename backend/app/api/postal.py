@@ -95,6 +95,7 @@ def _delivery_out(db: Session, rec) -> DeliveryOut:
     out = DeliveryOut.model_validate(rec)
     out.distribution_unit_name = _partner_name(db, rec.distribution_unit_id)
     out.order_code = db.query(Order.order_code).filter(Order.id == rec.order_id).scalar() if rec.order_id else None
+    out.link_status, out.link_message, _, _, _ = renewal_svc.diagnose_exact_delivery_link(db, rec)
     return out
 
 
@@ -372,6 +373,7 @@ def list_deliveries(
         o = DeliveryOut.model_validate(r)
         o.distribution_unit_name = names.get(r.distribution_unit_id)
         o.order_code = order_codes.get(r.order_id)
+        o.link_status, o.link_message, _, _, _ = renewal_svc.diagnose_exact_delivery_link(db, r)
         out.append(o)
     summary = delivery_svc.summarize_deliveries(
         db, order_id=order_id, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
@@ -380,12 +382,45 @@ def list_deliveries(
     return DeliveryListOut(rows=out, total=total, summary=summary)
 
 
+@router.get("/deliveries/{delivery_id}", response_model=DeliveryOut)
+def get_delivery(
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    rec = db.query(PostalDelivery).filter(
+        PostalDelivery.id == delivery_id,
+        PostalDelivery.is_archived.is_(False),
+    ).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"投递记录 {delivery_id} 不存在")
+    return _delivery_out(db, rec)
+
+
 @router.post("/deliveries/link-exact", response_model=PostalExactLinkOut)
 def link_exact_deliveries(
     db: Session = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     return renewal_svc.link_exact_deliveries(db)
+
+
+@router.post("/deliveries/{delivery_id}/link-exact", response_model=DeliveryOut)
+def link_exact_delivery(
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    rec = db.query(PostalDelivery).filter(
+        PostalDelivery.id == delivery_id,
+        PostalDelivery.is_archived.is_(False),
+    ).first()
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"投递记录 {delivery_id} 不存在")
+    renewal_svc.try_link_delivery_exact(db, rec)
+    db.commit()
+    db.refresh(rec)
+    return _delivery_out(db, rec)
 
 
 @router.get("/renewals", response_model=PostalRenewalListOut)

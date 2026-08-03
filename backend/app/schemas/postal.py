@@ -72,6 +72,8 @@ class DeliveryOut(BaseModel):
     salesperson: Optional[str] = None
     remittance_name: Optional[str] = None
     source_type: Optional[PostalDeliverySourceType] = None
+    link_status: Optional[str] = None
+    link_message: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

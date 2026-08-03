@@ -1,7 +1,6 @@
 """邮局跨年续投：补齐订单关联、识别目标月份缺口并生成下一投递段。"""
 
 from calendar import monthrange
-from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterable, Optional
@@ -93,10 +92,60 @@ def _unique_target(
     return targets[0] if len(targets) == 1 else None
 
 
+def diagnose_exact_delivery_link(
+    db: Session,
+    delivery: PostalDelivery,
+) -> tuple[str, str, Optional[Order], Optional[OrderItem], Optional[FulfillmentTarget]]:
+    """Explain whether one delivery can be linked without making a fuzzy guess."""
+    if delivery.order_id:
+        return "linked", "已关联来源订单", None, None, None
+
+    external_order_no = (delivery.external_order_no or "").strip()
+    if not external_order_no:
+        return "missing_source_no", "未填写来源单号", None, None, None
+
+    orders = db.query(Order).filter(Order.external_order_no == external_order_no).all()
+    if not orders:
+        return "order_not_found", "来源单号尚未匹配到订单", None, None, None
+    if len(orders) != 1:
+        return "order_not_unique", "来源单号匹配到多张订单，需人工核对", None, None, None
+
+    order = orders[0]
+    items = [
+        item
+        for item in order.items
+        if item.status == OrderItemStatus.active
+        and item.fulfillment_type == FulfillmentType.subscription
+        and item.delivery_method == DeliveryMethod.post_office
+    ]
+    if not items:
+        return "item_not_found", "订单没有有效的邮局订阅明细", order, None, None
+    if len(items) != 1:
+        return "item_not_unique", "订单存在多条邮局订阅明细，需人工核对", order, None, None
+
+    item = items[0]
+    target = _unique_target(delivery, _latest_targets_for_item(db, item.id))
+    if target is None:
+        return "target_not_unique", "无法唯一确定订单收件人，需人工核对", order, item, None
+    return "ready", "可自动关联来源订单", order, item, target
+
+
+def try_link_delivery_exact(db: Session, delivery: PostalDelivery) -> tuple[str, str]:
+    """Link one delivery when the strict diagnosis resolves one exact target."""
+    status, message, order, item, target = diagnose_exact_delivery_link(db, delivery)
+    if status != "ready":
+        return status, message
+    delivery.order_id = order.id
+    delivery.order_item_id = item.id
+    delivery.fulfillment_target_id = target.id
+    return "linked", "已自动关联来源订单"
+
+
 def link_exact_deliveries(
     db: Session,
     *,
     delivery_ids: Optional[Iterable[int]] = None,
+    external_order_nos: Optional[Iterable[str]] = None,
     commit: bool = True,
 ) -> dict:
     """仅凭唯一外部订单号及唯一收件目标补正式关联，模糊项保持未关联。"""
@@ -109,39 +158,18 @@ def link_exact_deliveries(
     ids = list(delivery_ids or [])
     if ids:
         q = q.filter(PostalDelivery.id.in_(ids))
+    external_filter = [value for value in (external_order_nos or []) if value]
+    if external_filter:
+        q = q.filter(PostalDelivery.external_order_no.in_(external_filter))
     deliveries = q.order_by(PostalDelivery.id).all()
-    external_nos = {delivery.external_order_no for delivery in deliveries}
-    orders_by_external: dict[str, list[Order]] = defaultdict(list)
-    if external_nos:
-        for order in db.query(Order).filter(Order.external_order_no.in_(external_nos)).all():
-            orders_by_external[order.external_order_no].append(order)
 
     linked = 0
     unresolved = 0
     for delivery in deliveries:
-        orders = orders_by_external.get(delivery.external_order_no, [])
-        if len(orders) != 1:
+        status, _ = try_link_delivery_exact(db, delivery)
+        if status != "linked":
             unresolved += 1
             continue
-        order = orders[0]
-        items = [
-            item
-            for item in order.items
-            if item.status == OrderItemStatus.active
-            and item.fulfillment_type == FulfillmentType.subscription
-            and item.delivery_method == DeliveryMethod.post_office
-        ]
-        if len(items) != 1:
-            unresolved += 1
-            continue
-        item = items[0]
-        target = _unique_target(delivery, _latest_targets_for_item(db, item.id))
-        if target is None:
-            unresolved += 1
-            continue
-        delivery.order_id = order.id
-        delivery.order_item_id = item.id
-        delivery.fulfillment_target_id = target.id
         linked += 1
 
     if commit:
@@ -149,6 +177,18 @@ def link_exact_deliveries(
     else:
         db.flush()
     return {"linked": linked, "unresolved": unresolved, "examined": len(deliveries)}
+
+
+def link_deliveries_for_order(db: Session, order: Order) -> dict:
+    """Back-link existing deliveries after an order becomes matchable."""
+    if not order.external_order_no:
+        return {"linked": 0, "unresolved": 0, "examined": 0}
+    db.flush()
+    return link_exact_deliveries(
+        db,
+        external_order_nos=[order.external_order_no],
+        commit=False,
+    )
 
 
 def _renewal_candidates(
