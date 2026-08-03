@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { withRouter, reactRouterParameters } from 'storybook-addon-remix-react-router'
 import { http, HttpResponse } from 'msw'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
-import type { OrderOut } from '../api/orders'
+import type { OrderEventOut, OrderOut } from '../api/orders'
 import OrderDetail from './OrderDetail'
 
 const order: OrderOut = {
@@ -132,6 +132,13 @@ const createdChange = {
   notes: '客户搬家',
 }
 
+const events: OrderEventOut[] = [
+  { id: 4, event_type: 'synced_to_shipping', payload_json: { delivery_no: '6352' }, operator_id: null, created_at: '2026-07-30T15:43:00' },
+  { id: 3, event_type: 'confirmed', payload_json: { order_code: 'ORD-2026-000001' }, operator_id: 1, created_at: '2026-07-30T15:42:14' },
+  { id: 2, event_type: 'modified', payload_json: { diff: { paid_amount: { from: '0.00', to: '240.00' } } }, operator_id: 1, created_at: '2026-07-20T14:36:00' },
+  { id: 1, event_type: 'created', payload_json: { source_platform: '微信小程序' }, operator_id: 1, created_at: '2026-07-20T14:34:00' },
+]
+
 const meta = {
   title: '页面/营销与交易/订单详情',
   component: OrderDetail,
@@ -147,7 +154,7 @@ const meta = {
     msw: {
       handlers: [
         http.get('/api/orders/96', () => HttpResponse.json(order)),
-        http.get('/api/orders/96/events', () => HttpResponse.json([])),
+        http.get('/api/orders/96/events', () => HttpResponse.json(events)),
         http.get('/api/postal/deliveries', () => HttpResponse.json({ rows: [delivery], total: 1, summary: { total_copies: 1, unit_count: 0, missing_unit_count: 1, nearest_expiry_date: null } })),
         http.get('/api/postal/tickets', () => HttpResponse.json({ rows: [], total: 0, summary: { complaint: 0, address: 0, follow: 0, address_recipient_pending: 0 } })),
         http.post('/api/postal/tickets', async ({ request }) => HttpResponse.json({ ...createdChange, ...await request.json() as object }, { status: 201 })),
@@ -168,6 +175,19 @@ export const Overview: Story = {
     await expect(canvas.getByText('已履约')).toBeVisible()
     await expect(await canvas.findByText('已关联 · 1 条')).toBeVisible()
     await expect(canvas.getByText(/邮局投递 · 履约中/)).toBeVisible()
+    await userEvent.click(canvas.getByRole('tab', { name: /履约方案/ }))
+    const planPanel = within(canvas.getByRole('tabpanel'))
+    await expect(await planPanel.findByText('当前履约方案')).toBeVisible()
+    await expect(planPanel.getByText('目标份数')).toBeVisible()
+    await expect(planPanel.getByText('1 份')).toBeVisible()
+    await userEvent.click(canvas.getByRole('tab', { name: /收款记录/ }))
+    await expect(await within(canvas.getByRole('tabpanel')).findByText('收款流水 #1')).toBeVisible()
+    await userEvent.click(canvas.getByRole('tab', { name: /关联快递/ }))
+    await expect(await within(canvas.getByRole('tabpanel')).findByText('本订单采用邮局投递')).toBeVisible()
+    await userEvent.click(canvas.getByRole('tab', { name: /关联邮局/ }))
+    await expect(await within(canvas.getByRole('tabpanel')).findByText('邮局投递 #6352')).toBeVisible()
+    await userEvent.click(canvas.getByRole('tab', { name: /事件流/ }))
+    await expect(await within(canvas.getByRole('tabpanel')).findByText('确认', { exact: true })).toBeVisible()
   },
 }
 
