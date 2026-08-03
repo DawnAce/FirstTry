@@ -1,7 +1,7 @@
 # 订单管理 — 全景概览
 
 > 一页看懂整个订单管理模块:建单 → 建模 → 生命周期 → 商品库 → 履约发货 → 财务 → 统计 → 列表运营。
-> 思维导图用 Mermaid,GitHub / 支持 Mermaid 的 Markdown 预览里会渲染成脑图。最后更新:2026-07-05。
+> 思维导图用 Mermaid,GitHub / 支持 Mermaid 的 Markdown 预览里会渲染成脑图。最后更新:2026-08-03。
 
 ## 思维导图
 
@@ -10,6 +10,9 @@ mindmap
   root((订单管理))
     建单入口
       手工建单 OrderEditor
+        单页快速录入
+        实时订单摘要
+        可选信息折叠
       电商导入 CBJ+淘宝
         上传 预览 提交
         商品解析 套餐拆分
@@ -71,7 +74,7 @@ mindmap
 
 | 板块 | 能力 | 关键实现 |
 |---|---|---|
-| **建单入口** | 手工建单/编辑(明细+履约目标+定价预览) | `OrderEditor.tsx`、`order_service.create_order_draft` |
+| **建单入口** | 单页快速建单/编辑（明细+履约目标+定价预览+实时摘要） | `OrderEditor.tsx`、`order_service.create_order_draft` |
 | | 电商导入(CBJ 小程序 + 淘宝,自动识别平台) | `cbj_order_import_service`、`taobao_order_import_parser`、上传→预览→提交 |
 | **数据模型** | 4 层订单树 + append-only 审计 + 退款/收款台账 | `Order→OrderItem→FulfillmentAllocation→FulfillmentTarget`、`OrderEvent`、`refunds`、`payment_collections` |
 | | 双状态:内部 `OrderStatus` + 平台 `commercial_status` | `models/order.py` |
@@ -121,8 +124,8 @@ mindmap
 | 页面 | 路由 | 作用 |
 |---|---|---|
 | 订单列表 | `/orders` | 搜索/排序/筛选/批量/导出/行内确认/作废 |
-| 订单详情 | `/orders/:id` | 明细/履约进度/收款退款台账/金额区/发货同步 Tab/事件流;退款·取消·收款·同步全部期 按钮 |
-| 订单编辑 | `/orders/new`、`/orders/:id/edit` | 手工建单/改单 |
+| 订单详情 | `/orders/:id` | 邮局工单风格的摘要/明细/履约进度/收款退款台账/发货同步 Tab/事件流 |
+| 订单编辑 | `/orders/new`、`/orders/:id/edit` | 单页快速建单/改单；来源与已付信息必填，发票/备注折叠，右侧实时摘要 |
 | 电商导入 | `/orders/import` | CBJ/淘宝 上传→预览→导入 |
 | 按期排发 | `/orders/dispatch` | 漏期报表 + 一键排发 + 本期对账(应发/已发/缺口)+ 标已发 |
 | 活动订单统计 | `/analytics` | 按活动/按期/商学院发行量/欠款汇总 |

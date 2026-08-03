@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
   DatePicker,
   Divider,
   Form,
@@ -28,9 +29,13 @@ import {
   ArrowLeftOutlined,
   CheckOutlined,
   DeleteOutlined,
+  FileTextOutlined,
+  LinkOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
   SaveOutlined,
+  ShoppingOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
@@ -63,8 +68,8 @@ import {
   statusLabel,
 } from './orderUtils';
 import { extractFormValidation } from './OrderEditor.validation';
+import './OrderManagement.css';
 
-const { Title } = Typography;
 const { TextArea } = Input;
 
 // 「录入方式」（entry_method）前端表单完全隐藏，后端手工录入入口固定写 'manual'。
@@ -233,18 +238,18 @@ function buildBlankTarget(): TargetFormValues {
 
 function buildBlankItem(): ItemFormValues {
   const start = dayjs().startOf('month');
-  const [s, e] = computeCoverageRange('half_year', start);
+  const [s, e] = computeCoverageRange('one_year', start);
   return {
     publication: 'cbj',
     fulfillment_type: 'subscription',
     billing_type: 'paid',
     coverage_range: [s, e],
-    subscription_term: 'half_year',
-    delivery_method: 'zto_mf',
+    subscription_term: 'one_year',
+    delivery_method: 'post_office',
     start_month: start,
     issue_number: null,
     total_quantity: 1,
-    unit_price: 195,
+    unit_price: 240,
     notes: null,
     targets: [buildBlankTarget()],
   };
@@ -255,9 +260,8 @@ function buildInitialValues(): Partial<OrderFormValues> {
     order_date: dayjs(),
     payer_name: '',
     invoice_required: false,
-    total_amount: 0,
-    paid_amount: 0,
-    items: [],
+    total_amount: 240,
+    items: [buildBlankItem()],
   };
 }
 
@@ -518,6 +522,11 @@ export default function OrderEditor() {
 
   // 来源平台变化时联动来源店铺：1:1 自动填默认值；切到未识别平台 / 清空则清掉店铺
   const sourcePlatform = Form.useWatch<string | null | undefined>('source_platform', form);
+  const watchedPayer = Form.useWatch<string | undefined>('payer_name', form);
+  const watchedPaidAmount = Form.useWatch<number | null | undefined>('paid_amount', form);
+  const watchedTotalAmount = Form.useWatch<number | null | undefined>('total_amount', form);
+  const watchedItems = Form.useWatch<ItemFormValues[] | undefined>('items', form);
+  const watchedInvoiceRequired = Form.useWatch<boolean | undefined>('invoice_required', form);
   const storeOptions = useMemo(
     () =>
       sourcePlatform
@@ -532,6 +541,33 @@ export default function OrderEditor() {
       form.setFieldValue('source_store', null);
     }
   };
+
+  const computedTotalAmount = useMemo(
+    () =>
+      (watchedItems ?? []).reduce(
+        (sum, item) =>
+          sum + (Number(item?.total_quantity) || 0) * (Number(item?.unit_price) || 0),
+        0,
+      ),
+    [watchedItems],
+  );
+  const summaryItem = watchedItems?.[0];
+  const summaryTargetCount = (watchedItems ?? []).reduce(
+    (sum, item) => sum + (item?.targets?.length ?? 0),
+    0,
+  );
+  const summaryQuantity = (watchedItems ?? []).reduce(
+    (sum, item) => sum + (Number(item?.total_quantity) || 0),
+    0,
+  );
+
+  useEffect(() => {
+    if (isActive || isVoid) return;
+    const current = Number(form.getFieldValue('total_amount')) || 0;
+    if (Math.abs(current - computedTotalAmount) > 0.001) {
+      form.setFieldValue('total_amount', computedTotalAmount);
+    }
+  }, [computedTotalAmount, form, isActive, isVoid]);
 
   useEffect(() => {
     if (isEditMode && detailQuery.data) {
@@ -679,7 +715,7 @@ export default function OrderEditor() {
       }
       invalidateAndRefetch(id);
       message.success('订单已确认生效');
-      navigate(`/orders/${id}`);
+      navigate(`/orders/${id}`, { state: { justActivated: true } });
     } finally {
       setSubmitting(false);
     }
@@ -709,46 +745,46 @@ export default function OrderEditor() {
     );
   }
 
+  const summaryTotal = Number(watchedTotalAmount) || computedTotalAmount;
+  const summaryCoverage = summaryItem?.coverage_range?.[0] && summaryItem.coverage_range[1]
+    ? `${summaryItem.coverage_range[0].format('YYYY-MM-DD')} 至 ${summaryItem.coverage_range[1].format('YYYY-MM-DD')}`
+    : '待选择';
+  const summaryTerm = SUBSCRIPTION_TERM_OPTIONS.find(
+    (option) => option.value === summaryItem?.subscription_term,
+  )?.label ?? '-';
+  const summaryDelivery = DELIVERY_METHOD_OPTIONS.find(
+    (option) => option.value === summaryItem?.delivery_method,
+  )?.label.replace(/（.*）/, '') ?? '-';
+
   return (
-    <div style={{ paddingBottom: 80 }}>
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-        }}
-      >
-        <Space size="middle">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
+    <div className="order-page order-editor-page">
+      <header className="order-page-header">
+        <div className="order-page-heading">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
             返回列表
           </Button>
-          <Title level={3} style={{ margin: 0 }}>
-            {headerTitle}
-          </Title>
-          {isEditMode && status && (
-            <Badge status={statusBadgeColor(status)} text={statusLabel(status)} />
-          )}
-        </Space>
-      </div>
+          <div>
+            <div className="order-title-line">
+              <h1>{headerTitle}</h1>
+              {isEditMode && status && (
+                <Badge status={statusBadgeColor(status)} text={statusLabel(status)} />
+              )}
+            </div>
+            <p>常规订单单页完成，带 * 的字段为必填；金额与覆盖期自动计算。</p>
+          </div>
+        </div>
+        <span className="order-page-status">{isEditMode ? statusLabel(status ?? 'draft') : '单页录入'}</span>
+      </header>
 
       {isVoid && (
-        <Alert
-          type="error"
-          showIcon
-          title="该订单已作废"
-          description="已作废订单不可再编辑。"
-          style={{ marginBottom: 16 }}
-        />
+        <Alert type="error" showIcon title="该订单已作废" description="已作废订单不可再编辑。" />
       )}
       {isActive && (
         <Alert
           type="info"
           showIcon
           title="正在编辑已生效订单"
-          description="生效订单的非结构字段（备注、金额等）可直接编辑。修改明细目标（收件人）将创建新版本的履约方案，需要填写生效起始期号。"
-          style={{ marginBottom: 16 }}
+          description="修改履约目标会生成新版本；请填写本次变更的生效起始期号。"
         />
       )}
 
@@ -757,314 +793,228 @@ export default function OrderEditor() {
         layout="vertical"
         disabled={isVoid}
         initialValues={buildInitialValues()}
+        className="order-editor-form"
       >
-        <Card title="订单基本信息" size="small" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item
-                name="order_date"
-                label="下单日期"
-                rules={[{ required: true, message: '请选择下单日期' }]}
-              >
-                <DatePicker
-                  style={{ width: '100%' }}
-                  disabled={isFieldDisabled('order_date', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              {/* V1.1：来源类型字段已隐藏。后端默认 manual。
-                  渠道信息走下方「来源平台」/「来源店铺」。 */}
-              <Form.Item name="source_platform" label="来源平台">
-                <Select
-                  options={SOURCE_PLATFORM_OPTIONS}
-                  placeholder="选择来源平台"
-                  allowClear
-                  onChange={(v) => handlePlatformChange(v)}
-                  disabled={isFieldDisabled('source_platform', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="source_store" label="来源店铺">
-                <Select
-                  options={storeOptions}
-                  placeholder={sourcePlatform ? '选择店铺' : '请先选择来源平台'}
-                  allowClear
-                  notFoundContent={sourcePlatform ? '该平台暂无对应店铺' : '请先选择来源平台'}
-                  disabled={!sourcePlatform || isFieldDisabled('source_store', status)}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item name="external_order_no" label="来源单号">
-                <Input
-                  maxLength={100}
-                  placeholder="电商订单号/外部单号"
-                  disabled={isFieldDisabled('external_order_no', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item
-                name="payer_name"
-                label="付款主体"
-                rules={[{ required: true, message: '请填写付款主体' }]}
-              >
-                <Input
-                  maxLength={200}
-                  placeholder="单位名称或个人姓名"
-                  disabled={isFieldDisabled('payer_name', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="payer_contact" label="付款联系人">
-                <Input
-                  maxLength={100}
-                  placeholder="姓名 / 电话"
-                  disabled={isFieldDisabled('payer_contact', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="payment_method" label="支付方式">
-                <Select
-                  allowClear
-                  options={PAYMENT_METHOD_OPTIONS}
-                  disabled={isFieldDisabled('payment_method', status)}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item name="payment_collector" label="收款经办人">
-                <Input
-                  maxLength={100}
-                  disabled={isFieldDisabled('payment_collector', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="total_amount" label="订单总金额">
-                <InputNumber
-                  style={{ width: '100%' }}
-                  min={0}
-                  precision={2}
-                  step={0.01}
-                  prefix="¥"
-                  disabled={isFieldDisabled('total_amount', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="paid_amount" label="已付金额">
-                <InputNumber
-                  style={{ width: '100%' }}
-                  min={0}
-                  precision={2}
-                  step={0.01}
-                  prefix="¥"
-                  disabled={isFieldDisabled('paid_amount', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item
-                name="invoice_required"
-                label="是否开票"
-                valuePropName="checked"
-              >
-                <Switch
-                  checkedChildren="是"
-                  unCheckedChildren="否"
-                  disabled={isFieldDisabled('invoice_required', status)}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="invoice_title" label="发票抬头">
-                <Input
-                  maxLength={200}
-                  placeholder="如：东莞农村商业银行股份有限公司"
-                  disabled={isFieldDisabled('invoice_title', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="invoice_tax_no"
-                label="纳税人识别号"
-                tooltip="统一社会信用代码（USCC，常见 18 位字母数字）。个人发票可留空。"
-              >
-                <Input
-                  maxLength={64}
-                  placeholder="如：914419007829859746"
-                  disabled={isFieldDisabled('invoice_tax_no', status)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="invoice_recipient_email"
-                label="发票接收邮箱"
-                rules={[
-                  {
-                    type: 'email',
-                    message: '请输入有效的邮箱地址',
-                  },
-                ]}
-              >
-                <Input
-                  maxLength={128}
-                  placeholder="如：finance@example.com"
-                  disabled={isFieldDisabled('invoice_recipient_email', status)}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item name="notes" label="备注">
-                <TextArea
-                  rows={2}
-                  maxLength={500}
-                  showCount
-                  disabled={isFieldDisabled('notes', status)}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+        <div className="order-editor-layout">
+          <div className="order-editor-main">
+            <Card
+              className="order-form-section"
+              title={<span><UserOutlined />客户与商品</span>}
+              extra={<span className="order-section-meta">3 项必填</span>}
+            >
+              <Row gutter={[14, 0]}>
+                <Col xs={24} md={8}>
+                  <Form.Item name="payer_name" label="付款主体" rules={[{ required: true, message: '请填写付款主体' }]}>
+                    <Input maxLength={200} placeholder="单位名称或个人姓名" disabled={isFieldDisabled('payer_name', status)} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="payer_contact" label="付款联系人">
+                    <Input maxLength={100} placeholder="姓名 / 电话" disabled={isFieldDisabled('payer_contact', status)} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="order_date" label="下单日期" rules={[{ required: true, message: '请选择下单日期' }]}>
+                    <DatePicker style={{ width: '100%' }} disabled={isFieldDisabled('order_date', status)} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
 
-        <Card id="order-items-section" title="订单明细" size="small" style={{ marginBottom: 16 }}>
-          {!itemsReadOnly && (
-            <Alert
-              type="info"
-              title={
-                <div>
-                  每条明细对应一笔履约（订阅/单期/赠阅等）；每条明细下至少 1 个履约目标。
-                  <br />
-                  <strong>份数语义</strong>：明细「总份数」与目标「份数」都指<strong>每期</strong>份数（如订阅，每订户每期 1 份 → 2 个订户即总份数 2），与覆盖期长度无关。
-                  <br />
-                  <strong>单价语义</strong>：订阅时为单订户覆盖期内的订阅费（先选「订阅期限」=半年/一年，单价标签会自动变成「半年订阅单价 / 户」等）；零售时为每份零售价。
-                </div>
-              }
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-          )}
-          {isActive && (
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col span={6}>
-                <Form.Item
-                  name="effective_from_issue"
-                  label="生效起始期号"
-                  rules={[{ required: true, message: '请填写生效起始期号' }]}
-                >
-                  <InputNumber
-                    style={{ width: '100%' }}
-                    min={1}
-                    precision={0}
-                    placeholder="如 2660"
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={18}>
-                <Form.Item name="change_reason" label="变更原因（可选）">
-                  <Input maxLength={255} placeholder="如：客户要求换地址" />
-                </Form.Item>
-              </Col>
-            </Row>
-          )}
-          <Form.List
-            name="items"
-            rules={
-              itemsReadOnly
-                ? undefined
-                : [
-                    {
-                      validator: async (_, items: ItemFormValues[]) => {
-                        if (!items || items.length === 0) {
-                          return Promise.reject(new Error('至少添加 1 条订单明细'));
-                        }
-                      },
-                    },
-                  ]
-            }
-          >
-            {(fields, { add, remove }, { errors }) => (
-              <>
-                {fields.map((field, idx) => (
-                  <ItemBlock
-                    key={field.key}
-                    field={field}
-                    index={idx}
-                    onRemove={() => remove(field.name)}
-                    disabled={itemsReadOnly}
-                  />
-                ))}
-                {!itemsReadOnly && (
-                  <Button
-                    type="dashed"
-                    block
-                    icon={<PlusOutlined />}
-                    onClick={() => add(buildBlankItem())}
+            <Card
+              className="order-form-section"
+              title={<span><LinkOutlined />来源与收款</span>}
+              extra={<span className="order-section-meta">4 项必填</span>}
+            >
+              <Row gutter={[14, 0]}>
+                <Col xs={24} md={8}>
+                  <Form.Item name="source_platform" label="来源平台" rules={[{ required: true, message: '请选择来源平台' }]}>
+                    <Select
+                      options={SOURCE_PLATFORM_OPTIONS}
+                      placeholder="选择来源平台"
+                      allowClear
+                      onChange={handlePlatformChange}
+                      disabled={isFieldDisabled('source_platform', status)}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="source_store" label="来源店铺" rules={[{ required: true, message: '请选择来源店铺' }]}>
+                    <Select
+                      options={storeOptions}
+                      placeholder={sourcePlatform ? '选择店铺' : '请先选择来源平台'}
+                      allowClear
+                      notFoundContent={sourcePlatform ? '该平台暂无对应店铺' : '请先选择来源平台'}
+                      disabled={!sourcePlatform || isFieldDisabled('source_store', status)}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="external_order_no" label="来源单号" rules={[{ required: true, message: '请填写来源单号' }]}>
+                    <Input maxLength={100} placeholder="电商订单号 / 外部单号" disabled={isFieldDisabled('external_order_no', status)} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="payment_method" label="支付方式">
+                    <Select allowClear options={PAYMENT_METHOD_OPTIONS} disabled={isFieldDisabled('payment_method', status)} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item
+                    name="paid_amount"
+                    label="已付金额"
+                    rules={[
+                      { required: true, message: '请填写已付金额' },
+                      { type: 'number', min: 0, message: '已付金额不能小于 0' },
+                    ]}
                   >
-                    添加明细
-                  </Button>
-                )}
-                <Form.ErrorList errors={errors} />
-              </>
-            )}
-          </Form.List>
-        </Card>
+                    <InputNumber style={{ width: '100%' }} min={0} precision={2} prefix="¥" disabled={isFieldDisabled('paid_amount', status)} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="payment_collector" label="收款经办人">
+                    <Input maxLength={100} placeholder="经办人姓名" disabled={isFieldDisabled('payment_collector', status)} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
 
-        <Divider />
+            <Card
+              id="order-items-section"
+              className="order-form-section order-items-section"
+              title={<span><ShoppingOutlined />订购与收件</span>}
+              extra={<span className="order-section-meta">明细、周期及履约目标</span>}
+            >
+              {isActive && (
+                <div className="order-active-change">
+                  <Row gutter={[14, 0]}>
+                    <Col xs={24} md={8}>
+                      <Form.Item name="effective_from_issue" label="生效起始期号" rules={[{ required: true, message: '请填写生效起始期号' }]}>
+                        <InputNumber style={{ width: '100%' }} min={1} precision={0} placeholder="如 2660" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={16}>
+                      <Form.Item name="change_reason" label="变更原因（可选）">
+                        <Input maxLength={255} placeholder="如：客户要求换地址" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </div>
+              )}
+              <Form.List
+                name="items"
+                rules={itemsReadOnly ? undefined : [{
+                  validator: async (_, items: ItemFormValues[]) => {
+                    if (!items || items.length === 0) return Promise.reject(new Error('至少添加 1 条订单明细'));
+                  },
+                }]}
+              >
+                {(fields, { add, remove }, { errors }) => (
+                  <>
+                    {fields.map((field, idx) => (
+                      <ItemBlock key={field.key} field={field} index={idx} onRemove={() => remove(field.name)} disabled={itemsReadOnly} />
+                    ))}
+                    {!itemsReadOnly && (
+                      <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add(buildBlankItem())}>
+                        添加订单明细
+                      </Button>
+                    )}
+                    <Form.ErrorList errors={errors} />
+                  </>
+                )}
+              </Form.List>
+            </Card>
+
+            <Collapse
+              className="order-optional-section"
+              items={[{
+                key: 'optional',
+                label: <span><FileTextOutlined />选填信息</span>,
+                extra: <span className="order-section-meta">发票、金额调整、备注</span>,
+                children: (
+                  <>
+                    <div className="order-invoice-switch">
+                      <div><strong>需要开具发票</strong><p>开启后填写发票抬头、税号和接收邮箱。</p></div>
+                      <Form.Item name="invoice_required" valuePropName="checked" noStyle>
+                        <Switch checkedChildren="是" unCheckedChildren="否" disabled={isFieldDisabled('invoice_required', status)} />
+                      </Form.Item>
+                    </div>
+                    {watchedInvoiceRequired && (
+                      <Row gutter={[14, 0]} className="order-invoice-fields">
+                        <Col xs={24} md={8}>
+                          <Form.Item name="invoice_title" label="发票抬头">
+                            <Input maxLength={200} placeholder="单位或个人名称" disabled={isFieldDisabled('invoice_title', status)} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="invoice_tax_no" label="纳税人识别号" tooltip="个人发票可留空">
+                            <Input maxLength={64} disabled={isFieldDisabled('invoice_tax_no', status)} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="invoice_recipient_email" label="发票接收邮箱" rules={[{ type: 'email', message: '请输入有效的邮箱地址' }]}>
+                            <Input maxLength={128} disabled={isFieldDisabled('invoice_recipient_email', status)} />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    )}
+                    {isActive ? (
+                      <Row gutter={[14, 0]}>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="total_amount" label="订单总金额">
+                            <InputNumber style={{ width: '100%' }} min={0} precision={2} prefix="¥" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={16}>
+                          <Form.Item name="notes" label="订单备注">
+                            <TextArea rows={2} maxLength={500} showCount />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    ) : (
+                      <>
+                        <Form.Item name="total_amount" hidden><InputNumber /></Form.Item>
+                        <Form.Item name="notes" label="订单备注">
+                          <TextArea rows={2} maxLength={500} showCount />
+                        </Form.Item>
+                      </>
+                    )}
+                  </>
+                ),
+              }]}
+            />
+          </div>
+
+          <aside className="order-summary-column">
+            <Card className="order-summary-card">
+              <div className="order-summary-hero">
+                <span>订单应收</span>
+                <strong>{formatCurrency(summaryTotal)}</strong>
+              </div>
+              <dl>
+                <div><dt>付款主体</dt><dd>{watchedPayer || '待填写'}</dd></div>
+                <div><dt>订阅期限</dt><dd>{summaryTerm}</dd></div>
+                <div><dt>覆盖期</dt><dd>{summaryCoverage}</dd></div>
+                <div><dt>投递方式</dt><dd>{summaryDelivery}</dd></div>
+                <div><dt>履约目标</dt><dd>{summaryTargetCount} 人 / {summaryQuantity} 份</dd></div>
+                <div><dt>已付金额</dt><dd>{watchedPaidAmount == null ? '待填写' : formatCurrency(watchedPaidAmount)}</dd></div>
+              </dl>
+              <div className="order-summary-check">✓ 份数与金额随订单明细自动更新</div>
+            </Card>
+          </aside>
+        </div>
       </Form>
 
-      {/* Sticky action bar */}
-      <div
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          padding: '12px 24px',
-          background: 'var(--color-card)',
-          borderTop: '1px solid var(--color-border)',
-          boxShadow: '0 -2px 8px var(--color-divider)',
-          zIndex: 10,
-          textAlign: 'right',
-        }}
-      >
-        <Space>
-          <Button onClick={() => navigate(isEditMode ? `/orders/${orderId}` : '/orders')}>
-            取消
-          </Button>
-          <Button
-            icon={<SaveOutlined />}
-            onClick={handleSaveDraft}
-            disabled={isVoid || submitting}
-            loading={submitting}
-          >
-            保存草稿
-          </Button>
-          <Button
-            type="primary"
-            icon={<CheckOutlined />}
-            onClick={handleConfirm}
-            disabled={isVoid || isActive || submitting}
-            loading={submitting}
-          >
+      <div className="order-action-bar">
+        <Button type="text" icon={<SaveOutlined />} onClick={handleSaveDraft} disabled={isVoid || submitting} loading={submitting}>
+          保存草稿
+        </Button>
+        <div>
+          <Button onClick={() => navigate(isEditMode ? `/orders/${orderId}` : '/orders')}>取消</Button>
+          <Button type="primary" icon={<CheckOutlined />} onClick={handleConfirm} disabled={isVoid || isActive || submitting} loading={submitting}>
             确认生效
           </Button>
-        </Space>
+        </div>
       </div>
     </div>
   );
@@ -1120,7 +1070,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
     : false;
   const requireIssueNumber = fulfillmentType === 'single_issue';
 
-  // 定价预览（仅用于展示套餐价参考，不用于生成覆盖期）
+  // 定价预览同时给出刊期表口径的实际覆盖期与套餐价。
   const startMonth = Form.useWatch<Dayjs | undefined | null>(
     ['items', field.name, 'start_month'],
     form,
@@ -1151,10 +1101,14 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
       !!startMonth,
   });
 
-  // 预览成功时自动填充单价（但不覆盖覆盖期，覆盖期由纯日期运算决定）
+  // 预览成功时以服务端刊期表结果回填实际覆盖期和套餐价。
   useEffect(() => {
     const preview = previewQuery.data;
     if (!preview || disabled || !requireCoverage || subscriptionTerm === 'custom') return;
+    form.setFieldValue(['items', field.name, 'coverage_range'], [
+      dayjs(preview.coverage_start_date),
+      dayjs(preview.coverage_end_date),
+    ]);
     form.setFieldValue(['items', field.name, 'unit_price'], Number(preview.unit_price));
   }, [previewQuery.data, disabled, requireCoverage, subscriptionTerm, form, field.name]);
 
@@ -1224,9 +1178,9 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
 
   return (
     <Card
+      className="order-item-card"
       size="small"
-      style={{ marginBottom: 12, background: 'var(--color-bg-subtle)' }}
-      title={`明细 ${index + 1}`}
+      title={<span>明细 {index + 1}<Tag color="purple">{fulfillmentType === 'subscription' ? '订阅' : '履约'}</Tag></span>}
       extra={
         <Button
           danger
@@ -1239,8 +1193,8 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
         </Button>
       }
     >
-      <Row gutter={12}>
-        <Col span={8}>
+      <Row gutter={[12, 0]}>
+        <Col xs={24} md={8}>
           <Form.Item
             name={[field.name, 'publication']}
             label="出版物"
@@ -1249,7 +1203,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
             <Select options={PUBLICATION_OPTIONS} disabled={disabled} />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} md={8}>
           <Form.Item
             name={[field.name, 'fulfillment_type']}
             label="履约类型"
@@ -1258,7 +1212,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
             <Select options={FULFILLMENT_TYPE_OPTIONS} disabled={disabled} />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col xs={24} md={8}>
           <Form.Item
             name={[field.name, 'billing_type']}
             label="计费类型"
@@ -1270,8 +1224,8 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
       </Row>
       {requireCoverage && (
         <>
-          <Row gutter={12}>
-            <Col span={8}>
+          <Row gutter={[12, 0]}>
+            <Col xs={24} lg={8}>
               <Form.Item
                 name={[field.name, 'subscription_term']}
                 label={
@@ -1299,7 +1253,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
                 />
               </Form.Item>
             </Col>
-            <Col span={4}>
+            <Col xs={24} sm={12} lg={6}>
               <Form.Item
                 name={[field.name, 'start_month']}
                 label="起始月份"
@@ -1314,7 +1268,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
                 />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={24} lg={10}>
               <Form.Item
                 name={[field.name, 'delivery_method']}
                 label="投递/收费方式"
@@ -1324,31 +1278,33 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item
-            name={[field.name, 'coverage_range']}
-            label="覆盖期"
-            rules={[{ required: true, message: '订阅/续订需要填写覆盖期' }]}
-          >
-            <DatePicker.RangePicker
-              style={{ width: '100%' }}
-              disabled={disabled}
-              onChange={handleCoverageRangeChange}
-            />
-          </Form.Item>
+          {subscriptionTerm === 'custom' ? (
+            <Form.Item
+              name={[field.name, 'coverage_range']}
+              label="覆盖期"
+              rules={[{ required: true, message: '订阅/续订需要填写覆盖期' }]}
+            >
+              <DatePicker.RangePicker style={{ width: '100%' }} disabled={disabled} onChange={handleCoverageRangeChange} />
+            </Form.Item>
+          ) : (
+            <Form.Item name={[field.name, 'coverage_range']} hidden>
+              <DatePicker.RangePicker />
+            </Form.Item>
+          )}
         </>
       )}
       {requireCoverage && subscriptionTerm !== 'custom' && (
         <Alert
+          className="order-pricing-preview"
           type={previewQuery.data?.schedule_incomplete ? 'warning' : 'info'}
           showIcon
           title={previewQuery.isLoading ? '正在计算套餐价...' : previewQuery.data?.price_label ?? '请选择起始月份和投递方式'}
           description={
             previewQuery.data ? (
-              <Space direction="vertical" size={2}>
-                <span>预计发货：{previewQuery.data.expected_issue_count} 期</span>
-                <span>单份套餐价：{formatCurrency(previewQuery.data.unit_price)}</span>
-                <span>每期总份数：{Number(totalQuantity) || 0}</span>
-                <span>应收小计：{formatCurrency(previewQuery.data.subtotal)}</span>
+              <Space wrap>
+                <span>覆盖期 {previewQuery.data.coverage_start_date} 至 {previewQuery.data.coverage_end_date}</span>
+                <span>· {previewQuery.data.expected_issue_count} 期</span>
+                <span>· 应收 {formatCurrency(previewQuery.data.subtotal)}</span>
                 {previewQuery.data.warning && <Typography.Text type="warning">{previewQuery.data.warning}</Typography.Text>}
               </Space>
             ) : previewQuery.isError ? (
@@ -1358,27 +1314,15 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
           style={{ marginBottom: 12 }}
         />
       )}
-      <Row gutter={12}>
-        <Col span={6}>
-          <Form.Item
-            name={[field.name, 'issue_number']}
-            label="单期期号"
-            rules={
-              requireIssueNumber
-                ? [{ required: true, message: '单期履约需填写期号' }]
-                : undefined
-            }
-          >
-            <InputNumber
-              style={{ width: '100%' }}
-              min={1}
-              precision={0}
-              placeholder={requireIssueNumber ? '必填' : '仅单期需要'}
-              disabled={disabled || !requireIssueNumber}
-            />
-          </Form.Item>
-        </Col>
-        <Col span={6}>
+      <Row gutter={[12, 0]}>
+        {requireIssueNumber && (
+          <Col xs={24} md={6}>
+            <Form.Item name={[field.name, 'issue_number']} label="单期期号" rules={[{ required: true, message: '单期履约需填写期号' }]}>
+              <InputNumber style={{ width: '100%' }} min={1} precision={0} placeholder="必填" disabled={disabled} />
+            </Form.Item>
+          </Col>
+        )}
+        <Col xs={24} md={6}>
           <Form.Item
             name={[field.name, 'total_quantity']}
             label={
@@ -1412,7 +1356,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
             />
           </Form.Item>
         </Col>
-        <Col span={6}>
+        <Col xs={24} md={6}>
           <Form.Item
             name={[field.name, 'unit_price']}
             label={
@@ -1446,7 +1390,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
             />
           </Form.Item>
         </Col>
-        <Col span={6}>
+        <Col xs={24} md={6}>
           <Form.Item
             label={
               <Space size={4}>
@@ -1491,6 +1435,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
           <>
             {targetFields.map((tf, tIdx) => (
               <Card
+                className="order-target-card"
                 key={tf.key}
                 size="small"
                 style={{ marginBottom: 8 }}
@@ -1508,8 +1453,8 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
                   </Button>
                 }
               >
-                <Row gutter={12}>
-                  <Col span={8}>
+                <Row gutter={[12, 0]}>
+                  <Col xs={24} md={8}>
                     <Form.Item
                       name={[tf.name, 'recipient_name']}
                       label="收件人"
@@ -1518,19 +1463,19 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
                       <Input maxLength={100} disabled={disabled} />
                     </Form.Item>
                   </Col>
-                  <Col span={8}>
+                  <Col xs={24} md={8}>
                     <Form.Item name={[tf.name, 'recipient_phone']} label="电话">
                       <Input maxLength={50} disabled={disabled} />
                     </Form.Item>
                   </Col>
-                  <Col span={8}>
+                  <Col xs={24} md={8}>
                     <Form.Item name={[tf.name, 'recipient_postal_code']} label="邮编">
                       <Input maxLength={20} disabled={disabled} />
                     </Form.Item>
                   </Col>
                 </Row>
-                <Row gutter={12}>
-                  <Col span={16}>
+                <Row gutter={[12, 0]}>
+                  <Col xs={24} md={16}>
                     <Form.Item
                       name={[tf.name, 'recipient_address']}
                       label="收件地址"
@@ -1539,7 +1484,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
                       <Input maxLength={500} disabled={disabled} />
                     </Form.Item>
                   </Col>
-                  <Col span={8}>
+                  <Col xs={24} md={8}>
                     <Form.Item
                       name={[tf.name, 'quantity']}
                       label={
