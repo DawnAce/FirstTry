@@ -59,6 +59,7 @@ export interface InvoiceOrdersOut {
   total: number;
   pending_count: number;
   needs_red_reversal_count: number;
+  issued_count: number;
 }
 
 export interface Settlement {

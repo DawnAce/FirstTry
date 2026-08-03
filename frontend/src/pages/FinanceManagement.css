@@ -1,0 +1,319 @@
+.finance-page .ui-page-header {
+  align-items: flex-end;
+  margin-bottom: 20px;
+}
+
+.finance-workspace {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+
+.finance-workspace-tabs > .ant-tabs-nav {
+  margin: 0 !important;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.finance-workspace-tabs > .ant-tabs-nav::before {
+  display: none;
+}
+
+.finance-workspace-tabs > .ant-tabs-nav .ant-tabs-tab {
+  padding: 15px 6px 13px;
+}
+
+.finance-workspace-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane {
+  padding: 18px;
+}
+
+.finance-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-card);
+}
+
+.finance-overview-item {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+  padding: 16px 18px;
+}
+
+.finance-overview-item + .finance-overview-item {
+  border-left: 1px solid var(--color-divider);
+}
+
+.finance-overview-item > div {
+  display: grid;
+  gap: 1px;
+}
+
+.finance-overview-item strong {
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-overview-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  font-size: 19px;
+}
+
+.finance-overview-item-info .finance-overview-icon {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.finance-overview-item-warning .finance-overview-icon {
+  color: var(--color-warning-text);
+  background: var(--color-warning-soft);
+}
+
+.finance-overview-item-success .finance-overview-icon {
+  color: var(--color-success-text);
+  background: var(--color-success-soft);
+}
+
+.finance-context-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.finance-context-banner > .anticon {
+  margin-top: 3px;
+}
+
+.finance-context-banner .ant-typography {
+  line-height: 1.6;
+}
+
+.finance-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.finance-toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.finance-filter-status {
+  width: 145px;
+}
+
+.finance-filter-partner {
+  width: 180px;
+}
+
+.finance-filter-search {
+  width: 235px;
+}
+
+.finance-data-table .ant-table {
+  border: 1px solid var(--color-divider);
+  box-shadow: none;
+}
+
+.finance-data-table .ant-table-thead > tr > th {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.finance-data-table .ant-table-tbody > tr > td {
+  padding-top: 15px !important;
+  padding-bottom: 15px !important;
+  vertical-align: middle;
+}
+
+.finance-data-table .ant-table-tbody > tr:hover > td {
+  background: var(--color-hover) !important;
+}
+
+.finance-order-code {
+  white-space: nowrap;
+}
+
+.finance-cell-secondary {
+  font-size: 12px;
+}
+
+.finance-invoice-progress {
+  min-width: 145px;
+}
+
+.finance-invoice-progress-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 3px;
+  font-size: 12px;
+}
+
+.finance-invoice-progress .ant-progress {
+  display: block;
+  line-height: 1;
+}
+
+.finance-invoice-progress .ant-progress-inner {
+  background: var(--color-bg-muted);
+}
+
+.finance-invoice-info {
+  max-width: 330px;
+}
+
+.finance-invoice-info > .ant-space-item:first-child {
+  line-height: 1.45;
+}
+
+.finance-record-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-subtle);
+}
+
+.finance-record-summary > div {
+  display: grid;
+  gap: 2px;
+  padding: 13px 15px;
+}
+
+.finance-record-summary > div + div {
+  border-left: 1px solid var(--color-divider);
+}
+
+.finance-record-summary strong {
+  color: var(--color-text-primary);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-record-list {
+  display: grid;
+  gap: 8px;
+}
+
+.finance-record-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.finance-record-main {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.finance-record-main .ant-typography:last-child {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-settlement-panel .finance-data-table {
+  margin-top: 2px;
+}
+
+@media (max-width: 900px) {
+  .finance-workspace-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane {
+    padding: 14px;
+  }
+
+  .finance-overview-item {
+    padding: 14px;
+  }
+
+  .finance-overview-icon {
+    flex-basis: 36px;
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (max-width: 720px) {
+  .finance-page .ui-page-header-actions {
+    display: none;
+  }
+
+  .finance-workspace-tabs > .ant-tabs-nav {
+    padding: 0 12px;
+  }
+
+  .finance-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-overview-item + .finance-overview-item {
+    border-top: 1px solid var(--color-divider);
+    border-left: 0;
+  }
+
+  .finance-toolbar,
+  .finance-toolbar-filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .finance-toolbar > .ant-btn,
+  .finance-toolbar > .ant-space,
+  .finance-filter-status,
+  .finance-filter-partner,
+  .finance-filter-search {
+    width: 100%;
+  }
+
+  .finance-record-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-record-summary > div + div {
+    border-top: 1px solid var(--color-divider);
+    border-left: 0;
+  }
+
+  .finance-record-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}

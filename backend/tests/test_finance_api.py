@@ -117,6 +117,7 @@ def test_invoice_workbench_states(client):
     assert len(by[d_id]["invoices"]) == 2
     assert data["pending_count"] == 1
     assert data["needs_red_reversal_count"] == 1
+    assert data["issued_count"] == 2
 
     # 状态筛选
     nr = client.get("/api/invoices/orders", params={"status": "needs_red_reversal"}).json()
