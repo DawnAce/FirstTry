@@ -16,10 +16,12 @@ import {
   Input,
   InputNumber,
   Modal,
+  Pagination,
   Popconfirm,
   Radio,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
   Timeline,
@@ -31,8 +33,11 @@ import {
   DownOutlined,
   DeleteOutlined,
   EditOutlined,
+  EnvironmentOutlined,
   HistoryOutlined,
   InboxOutlined,
+  NotificationOutlined,
+  PhoneOutlined,
   PlusOutlined,
   UploadOutlined,
   WarningOutlined,
@@ -1744,6 +1749,7 @@ function FollowUpFormModal({ open, editing, prefill, onClose, onSaved, onContinu
           year: reader.year,
           delivery_no: reader.delivery_no,
           snap_name: reader.recipient_name,
+          snap_phone: reader.recipient_phone,
         } : {}),
       });
     }
@@ -1823,6 +1829,7 @@ function FollowUpFormModal({ open, editing, prefill, onClose, onSaved, onContinu
         <Form.Item name="year" hidden><InputNumber /></Form.Item>
         <Form.Item name="delivery_no" hidden><Input /></Form.Item>
         <Form.Item name="snap_name" hidden><Input /></Form.Item>
+        <Form.Item name="snap_phone" hidden><Input /></Form.Item>
         {editing && <Form.Item name="postal_delivery_id" hidden><InputNumber /></Form.Item>}
 
         <section className="complaint-form-section complaint-form-reader">
@@ -1836,6 +1843,7 @@ function FollowUpFormModal({ open, editing, prefill, onClose, onSaved, onContinu
                     year: reader.year,
                     delivery_no: reader.delivery_no,
                     snap_name: reader.recipient_name,
+                    snap_phone: reader.recipient_phone,
                   });
                 }} />
               </Form.Item>
@@ -1898,6 +1906,20 @@ function ticketStatusTag(t: Ticket) {
     return <Tag color="orange">待应用</Tag>;
   }
   return <Text type="secondary">—</Text>;
+}
+
+function ticketTypeIcon(type: TicketType) {
+  if (type === 'complaint') return <NotificationOutlined />;
+  if (type === 'address') return <EnvironmentOutlined />;
+  return <PhoneOutlined />;
+}
+
+function formatTicketPhone(value: string | null) {
+  if (!value) return '未记录电话';
+  const digits = value.replace(/\D/g, '');
+  return digits.length === 11
+    ? `${digits.slice(0, 3)} ${digits.slice(3, 7)} ${digits.slice(7)}`
+    : value;
 }
 
 /** 收件信息变更详情抽屉：新旧对比 + 应用变更（写回投递记录，挂单则同步履约订单）。 */
@@ -2374,50 +2396,28 @@ function TicketsTab() {
     }
   };
 
-  const cols: TableColumnsType<Ticket> = [
-    { title: '读者 / 类型', key: 'reader', width: 180, render: (_: unknown, r) => (
-      <Space direction="vertical" size={0}>
-        <Text strong>{r.recipient_name || '—'}</Text>
-        <Text type="secondary" className="postal-cell-secondary">{TICKET_TYPE_META[r.type].label}{r.delivery_no ? ` · ${r.delivery_no}` : ''}</Text>
+  const renderTicketActions = (ticket: Ticket) => {
+    const isAppliedAddress = ticket.type === 'address' && ticket.applied_to_order === true;
+    return (
+      <Space size={0} className="postal-ticket-card-actions">
+        <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => openDetail(ticket)}>详情</Button>
+        {isAdmin && !isAppliedAddress && (
+          <>
+            <Button type="link" size="small" aria-label={`编辑${TICKET_TYPE_META[ticket.type].label}`} icon={<EditOutlined />} onClick={() => openEdit(ticket)} />
+            <Popconfirm
+              title={`删除该${TICKET_TYPE_META[ticket.type].label}工单？`}
+              description={ticket.type === 'complaint' ? '关联回访不会删除，将恢复为独立回访工单。' : undefined}
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => onDelete(ticket)}
+            >
+              <Button type="link" size="small" danger aria-label={`删除${TICKET_TYPE_META[ticket.type].label}`} icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </>
+        )}
       </Space>
-    ) },
-    { title: '内容', dataIndex: 'summary', ellipsis: true, render: (v: string | null, r) => (
-      <Space direction="vertical" size={0} style={{ maxWidth: 520 }}>
-        <Text ellipsis>{v || '—'}</Text>
-        <Text type="secondary" className="postal-cell-secondary">
-          {r.allocation_summary || (r.postal_delivery_id ? '已关联投递明细' : '未关联投递明细')}{r.handling_count != null ? ` · 已处理 ${r.handling_count} 次` : ''}
-        </Text>
-      </Space>
-    ) },
-    { title: '时间', dataIndex: 'ticket_date', width: 148, render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD') : '—' },
-    { title: '状态', key: 'status', width: 100, render: (_: unknown, r) => ticketStatusTag(r) },
-    {
-      title: '操作', key: 'act', width: isAdmin ? 170 : 80, render: (_: unknown, r: Ticket) => {
-        const isAppliedAddress = r.type === 'address' && r.applied_to_order === true;
-        return (
-          <Space size={0}>
-            <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => openDetail(r)}>详情</Button>
-            {isAdmin && (isAppliedAddress ? (
-              <Text type="secondary" style={{ fontSize: 12, padding: '0 7px' }}>已锁定</Text>
-            ) : (
-              <>
-                <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-                <Popconfirm
-                  title={`删除该${TICKET_TYPE_META[r.type].label}工单？`}
-                  description={r.type === 'complaint' ? '关联回访不会删除，将恢复为独立回访工单。' : undefined}
-                  okText="删除"
-                  okButtonProps={{ danger: true }}
-                  onConfirm={() => onDelete(r)}
-                >
-                  <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
-              </>
-            ))}
-          </Space>
-        );
-      },
-    },
-  ];
+    );
+  };
 
   const sm = data?.summary;
   const typeOptions = [
@@ -2452,42 +2452,93 @@ function TicketsTab() {
         </Space>}
       />
 
-      <Flex className="postal-toolbar" wrap gap={8}>
-        <Radio.Group
-          optionType="button" buttonStyle="solid" options={typeOptions}
-          value={type ?? 'all'}
-          onChange={(e) => { const v = e.target.value; setType(v === 'all' ? undefined : v); setStatus(undefined); setApplied(undefined); setRecipientPending(false); setPage(1); }}
-        />
-        <Input.Search allowClear placeholder="搜索读者或编号" style={{ width: 240 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
-        <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
-        {type === 'complaint' && (
-          <>
+      <section className="postal-ticket-filter-panel">
+        <Text strong className="postal-ticket-panel-title">筛选工单</Text>
+        <Flex className="postal-ticket-filter-controls" wrap gap={8}>
+          <Radio.Group
+            optionType="button" buttonStyle="solid" options={typeOptions}
+            value={type ?? 'all'}
+            onChange={(e) => { const v = e.target.value; setType(v === 'all' ? undefined : v); setStatus(undefined); setApplied(undefined); setRecipientPending(false); setPage(1); }}
+          />
+          <Input.Search allowClear placeholder="输入姓名、编号或电话号码" className="postal-ticket-search"
+            onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
+          <Text type="secondary" className="postal-ticket-search-note">支持电话号码模糊查找</Text>
+          <Select allowClear placeholder="年度" className="postal-ticket-year-filter" value={year} onChange={(v) => { setYear(v); setPage(1); }} options={YEAR_OPTS} />
+          {type === 'complaint' && (
             <Select allowClear placeholder="状态" style={{ width: 120 }} value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={COMPLAINT_STATUS_OPTS} />
-          </>
-        )}
-        {type === 'address' && (
-          <Select allowClear placeholder="应用状态" style={{ width: 130 }} value={applied} onChange={(v) => { setApplied(v); setPage(1); }}
-            options={[{ label: '已应用', value: true }, { label: '未应用', value: false }]} />
-        )}
-        {(type === 'address' || type == null) && (sm?.address_recipient_pending ?? 0) > 0 && (
-          <Button danger type={recipientPending ? 'primary' : 'default'} icon={<WarningOutlined />}
-            onClick={() => { setRecipientPending((value) => !value); setPage(1); }}>
-            收件人未确认 {sm?.address_recipient_pending}
-          </Button>
-        )}
-      </Flex>
+          )}
+          {type === 'address' && (
+            <Select allowClear placeholder="应用状态" style={{ width: 130 }} value={applied} onChange={(v) => { setApplied(v); setPage(1); }}
+              options={[{ label: '已应用', value: true }, { label: '未应用', value: false }]} />
+          )}
+          {(type === 'address' || type == null) && (sm?.address_recipient_pending ?? 0) > 0 && (
+            <Button danger type={recipientPending ? 'primary' : 'default'} icon={<WarningOutlined />}
+              onClick={() => { setRecipientPending((value) => !value); setPage(1); }}>
+              收件人未确认 {sm?.address_recipient_pending}
+            </Button>
+          )}
+        </Flex>
+      </section>
 
-      <Card className="postal-table-card" styles={{ body: { padding: 0 } }}>
-        <Table<Ticket>
-          rowKey={(r) => `${r.type}-${r.id}`}
-          columns={cols}
-          dataSource={data?.rows ?? []}
-          rowClassName={(record) => record.status === 'recipient_pending' ? 'postal-ticket-row-pending' : ''}
-          loading={q.isLoading}
-          size="small"
-          pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条`, showSizeChanger: false }}
-        />
-      </Card>
+      <section className="postal-ticket-list-panel">
+        <Flex align="center" justify="space-between" className="postal-ticket-list-heading">
+          <Text strong className="postal-ticket-panel-title">工单列表</Text>
+          <Text type="secondary">共 {data?.total ?? 0} 条工单</Text>
+        </Flex>
+        <Spin spinning={q.isLoading}>
+          <div className="postal-ticket-card-list">
+            {(data?.rows ?? []).map((ticket) => {
+              const associationMeta = [
+                ticket.year ? `${ticket.year}年度` : null,
+                ticket.handling_count != null ? `已处理 ${ticket.handling_count} 次` : null,
+              ].filter(Boolean).join(' · ');
+              return (
+                <article
+                  key={`${ticket.type}-${ticket.id}`}
+                  className={`postal-ticket-card type-${ticket.type}${ticket.status === 'recipient_pending' ? ' is-recipient-pending' : ''}`}
+                >
+                  <span className="postal-ticket-card-type-icon" aria-hidden>{ticketTypeIcon(ticket.type)}</span>
+                  <div className="postal-ticket-card-reader">
+                    <Text strong>{ticket.recipient_name || '—'}</Text>
+                    <Text type="secondary" className="postal-ticket-card-meta">
+                      {ticket.delivery_no || '无编号'} · {TICKET_TYPE_META[ticket.type].label}
+                    </Text>
+                  </div>
+                  <div className="postal-ticket-card-field postal-ticket-card-phone">
+                    <span>联系电话</span>
+                    <Text>{formatTicketPhone(ticket.recipient_phone)}</Text>
+                  </div>
+                  <div className="postal-ticket-card-field postal-ticket-card-association">
+                    <span>关联信息</span>
+                    <Text strong>{ticket.postal_delivery_id ? '已关联投递明细' : '未关联投递明细'}</Text>
+                    <Text type="secondary" className="postal-ticket-card-meta">{associationMeta || '—'}</Text>
+                  </div>
+                  <div className="postal-ticket-card-field postal-ticket-card-progress">
+                    <span>登记日期 / 状态</span>
+                    <Flex align="center" gap={8} wrap>
+                      <Text>{ticket.ticket_date ? dayjs(ticket.ticket_date).format('YYYY-MM-DD') : '—'}</Text>
+                      {ticketStatusTag(ticket)}
+                    </Flex>
+                  </div>
+                  {renderTicketActions(ticket)}
+                </article>
+              );
+            })}
+            {!q.isLoading && !(data?.rows.length) && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无匹配工单" />}
+          </div>
+        </Spin>
+        {(data?.total ?? 0) > 0 && (
+          <Pagination
+            className="postal-ticket-pagination"
+            current={page}
+            pageSize={PAGE_SIZE}
+            total={data?.total ?? 0}
+            onChange={setPage}
+            showTotal={(total) => `共 ${total} 条`}
+            showSizeChanger={false}
+          />
+        )}
+      </section>
 
       {/* 详情抽屉 */}
       <ComplaintHandlingDrawer complaintId={handlingId} onClose={() => setHandlingId(null)} />

@@ -22,6 +22,7 @@ class TicketOut(BaseModel):
     year: Optional[int] = None
     delivery_no: Optional[str] = None
     recipient_name: Optional[str] = None
+    recipient_phone: Optional[str] = None
     postal_delivery_id: Optional[int] = None
     order_id: Optional[int] = None
     ticket_date: Optional[Union[datetime, date]] = None
@@ -256,6 +257,7 @@ class FollowUpOut(BaseModel):
     batch_label: Optional[str] = None
     result: Optional[str] = None
     snap_name: Optional[str] = None
+    snap_phone: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -527,6 +529,7 @@ class FollowUpCreateIn(BaseModel):
     batch_label: Optional[str] = None
     result: Optional[str] = None
     snap_name: Optional[str] = None
+    snap_phone: Optional[str] = None
 
 
 class FollowUpUpdateIn(BaseModel):
@@ -537,6 +540,7 @@ class FollowUpUpdateIn(BaseModel):
     batch_label: Optional[str] = None
     result: Optional[str] = None
     snap_name: Optional[str] = None
+    snap_phone: Optional[str] = None
 
 
 # --- 收款 / 发票 ------------------------------------------------------

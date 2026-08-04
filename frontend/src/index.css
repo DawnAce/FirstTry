@@ -3096,6 +3096,233 @@ body {
   vertical-align: middle;
 }
 
+/* Postal ticket list — mirrors the sectioned create/edit modal language. */
+.postal-ticket-filter-panel,
+.postal-ticket-list-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card);
+}
+
+.postal-ticket-filter-panel {
+  padding: 14px 16px 16px;
+  margin-bottom: 14px;
+}
+
+.postal-ticket-panel-title {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.postal-ticket-filter-controls {
+  align-items: center;
+}
+
+.postal-ticket-search {
+  width: min(380px, 100%);
+}
+
+.postal-ticket-search-note {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.postal-ticket-year-filter {
+  width: 110px;
+  margin-left: auto;
+}
+
+.postal-ticket-list-panel {
+  padding: 14px 16px 12px;
+  background: #f7f9fc;
+}
+
+.postal-ticket-list-heading {
+  margin-bottom: 12px;
+}
+
+.postal-ticket-list-heading .postal-ticket-panel-title {
+  margin-bottom: 0;
+}
+
+.postal-ticket-card-list {
+  display: grid;
+  gap: 9px;
+  min-height: 96px;
+}
+
+.postal-ticket-card {
+  display: grid;
+  grid-template-columns: 42px minmax(170px, 1fr) minmax(135px, 0.7fr) minmax(210px, 1.15fr) minmax(190px, 0.9fr) max-content;
+  gap: 16px;
+  align-items: center;
+  min-height: 78px;
+  padding: 12px 14px;
+  border: 1px solid #dce4ee;
+  border-radius: 10px;
+  background: var(--color-card);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.postal-ticket-card:hover {
+  border-color: #b9d6fb;
+  box-shadow: 0 5px 16px rgba(32, 60, 96, 0.08);
+}
+
+.postal-ticket-card.is-recipient-pending {
+  border-color: #ffccc7;
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+.postal-ticket-card-type-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 10px;
+  color: #3d5f7f;
+  background: #eaf4ff;
+  font-size: 17px;
+}
+
+.postal-ticket-card.type-complaint .postal-ticket-card-type-icon {
+  color: #8a671c;
+  background: #fff7df;
+}
+
+.postal-ticket-card.type-follow .postal-ticket-card-type-icon {
+  color: #6b55a4;
+  background: #f3efff;
+}
+
+.postal-ticket-card-reader,
+.postal-ticket-card-field {
+  min-width: 0;
+}
+
+.postal-ticket-card-reader > .ant-typography,
+.postal-ticket-card-field > .ant-typography {
+  display: block;
+}
+
+.postal-ticket-card-reader > .ant-typography:first-child,
+.postal-ticket-card-association > .ant-typography:nth-child(2) {
+  margin-bottom: 4px;
+}
+
+.postal-ticket-card-meta {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.postal-ticket-card-field > span:first-child {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.postal-ticket-card-phone .ant-typography,
+.postal-ticket-card-progress .ant-typography {
+  font-variant-numeric: tabular-nums;
+}
+
+.postal-ticket-card-association > .ant-typography {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.postal-ticket-card-progress .ant-tag {
+  margin-inline-end: 0;
+}
+
+.postal-ticket-card-actions {
+  justify-self: end;
+}
+
+.postal-ticket-pagination {
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1180px) {
+  .postal-ticket-search-note {
+    display: none;
+  }
+
+  .postal-ticket-card {
+    grid-template-columns: 38px minmax(150px, 1fr) minmax(125px, 0.7fr) minmax(180px, 1fr) minmax(170px, 0.9fr) max-content;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 960px) {
+  .postal-ticket-year-filter {
+    margin-left: 0;
+  }
+
+  .postal-ticket-card {
+    grid-template-columns: 38px minmax(160px, 1fr) minmax(150px, 1fr);
+    align-items: start;
+  }
+
+  .postal-ticket-card-type-icon {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .postal-ticket-card-reader {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .postal-ticket-card-phone {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .postal-ticket-card-association {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .postal-ticket-card-progress {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .postal-ticket-card-actions {
+    grid-column: 2 / -1;
+    grid-row: 3;
+  }
+}
+
+@media (max-width: 620px) {
+  .postal-ticket-filter-panel,
+  .postal-ticket-list-panel {
+    padding-inline: 12px;
+  }
+
+  .postal-ticket-search {
+    width: 100%;
+  }
+
+  .postal-ticket-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .postal-ticket-card-reader,
+  .postal-ticket-card-phone,
+  .postal-ticket-card-association,
+  .postal-ticket-card-progress,
+  .postal-ticket-card-actions {
+    grid-column: 2;
+    grid-row: auto;
+  }
+}
+
 .postal-expiry-countdown {
   color: var(--color-warning-text);
   font-size: 12px;

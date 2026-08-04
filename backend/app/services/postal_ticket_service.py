@@ -55,12 +55,14 @@ def _row(rec: PostalTicket) -> dict:
     type_value = _type_value(rec)
     if type_value == PostalTicketType.complaint.value:
         name = rec.snap_name
+        phone = rec.snap_phone
         summary = rec.missing_issues
         status = rec.status.value if rec.status else None
         handling_count = rec.handling_count
         applied_to_order = None
     elif type_value == PostalTicketType.address.value:
         name = rec.new_name or rec.old_name
+        phone = rec.new_phone or rec.old_phone
         summary = rec.new_address
         status = _addr_status(rec)
         handling_count = None
@@ -69,6 +71,7 @@ def _row(rec: PostalTicket) -> dict:
         allocation_summary = address_allocation_summary(rec)
     else:
         name = rec.snap_name
+        phone = rec.snap_phone
         summary = rec.communication_content or rec.result
         status = None
         handling_count = None
@@ -84,6 +87,7 @@ def _row(rec: PostalTicket) -> dict:
         "year": _year_of(rec),
         "delivery_no": _delivery_no(rec.external_order_no),
         "recipient_name": name,
+        "recipient_phone": phone,
         "postal_delivery_id": rec.postal_delivery_id,
         "order_id": rec.order_id,
         "ticket_date": _ticket_date(rec),
@@ -125,11 +129,24 @@ def _base_query(
         ))
     if search and search.strip():
         s = search.strip()
+        phone_search = "".join(char for char in s if char.isdigit())
+        phone_columns = (
+            PostalTicket.snap_phone,
+            PostalTicket.old_phone,
+            PostalTicket.new_phone,
+        )
+        phone_filters = [column.contains(s) for column in phone_columns]
+        if phone_search:
+            phone_filters.extend(
+                func.replace(func.replace(column, " ", ""), "-", "").contains(phone_search)
+                for column in phone_columns
+            )
         q = q.filter(or_(
             PostalTicket.snap_name.contains(s),
             PostalTicket.old_name.contains(s),
             PostalTicket.new_name.contains(s),
             PostalTicket.external_order_no.contains(s),
+            *phone_filters,
         ))
     if postal_delivery_id is not None:
         q = q.filter(PostalTicket.postal_delivery_id == postal_delivery_id)
