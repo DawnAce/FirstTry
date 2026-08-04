@@ -144,6 +144,20 @@ const events: OrderEventOut[] = [
   { id: 1, event_type: 'created', payload_json: { entry_method: 'manual', items_count: 1 }, operator_id: 1, created_at: '2026-07-20T14:34:00' },
 ]
 
+const complaintTicket = {
+  type: 'complaint', id: 701, year: 2026, delivery_no: '6352', recipient_name: '宋女士',
+  postal_delivery_id: 501, order_id: 96, ticket_date: '2026-08-04', summary: '漏收第 3001 期',
+  status: 'in_progress', handling_count: 1, applied_to_order: null, pending_copies: 0, allocation_summary: null,
+}
+
+const makeupTask = {
+  id: 801, complaint_id: 701, order_id: 96, postal_delivery_id: 501,
+  recipient_name: '宋女士', recipient_phone: '13800008821', recipient_address: '北京市朝阳区建国路 88 号',
+  status: 'shipped', tracking_no: 'ZT20260804001', shipped_at: '2026-08-04T15:20:00', notes: '漏收补发',
+  created_by: 1, created_at: '2026-08-04T14:30:00', updated_at: '2026-08-04T15:20:00',
+  items: [{ id: 901, issue_number: 3001, quantity: 1, shipping_detail_id: 1001, shipped_at: '2026-08-04T15:20:00', shipped_quantity: 1, tracking_no: 'ZT20260804001' }],
+}
+
 const meta = {
   title: '页面/营销与交易/订单详情',
   component: OrderDetail,
@@ -162,6 +176,8 @@ const meta = {
         http.get('/api/orders/96/events', () => HttpResponse.json(events)),
         http.get('/api/postal/deliveries', () => HttpResponse.json({ rows: [delivery], total: 1, summary: { total_copies: 1, unit_count: 0, missing_unit_count: 1, nearest_expiry_date: null } })),
         http.get('/api/postal/tickets', () => HttpResponse.json({ rows: [], total: 0, summary: { complaint: 0, address: 0, follow: 0, address_recipient_pending: 0 } })),
+        http.get('/api/postal/makeups', () => HttpResponse.json({ rows: [], total: 0 })),
+        http.get('/api/issues', () => HttpResponse.json([])),
         http.post('/api/postal/tickets', async ({ request }) => HttpResponse.json({ ...createdChange, ...await request.json() as object }, { status: 201 })),
         http.get('/api/postal/tickets/601', () => HttpResponse.json(createdChange)),
         http.post('/api/postal/tickets/601/apply', () => HttpResponse.json({ ...createdChange, applied_to_order: true, applied_at: '2026-08-03T10:36:00' })),
@@ -221,5 +237,34 @@ export const AddressChangeFlow: Story = {
     await waitFor(() => expect(detailTitle).toBeVisible())
     const detailDialog = within(detailTitle.closest('[role="dialog"]') as HTMLElement)
     await expect(detailDialog.getByRole('button', { name: '确认完成并应用' })).toBeVisible()
+  },
+}
+
+export const ComplaintMakeupFlow: Story = {
+  name: '邮局投诉与中通补发闭环',
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/orders/96', () => HttpResponse.json(order)),
+        http.get('/api/orders/96/events', () => HttpResponse.json(events)),
+        http.get('/api/postal/deliveries', () => HttpResponse.json({ rows: [delivery], total: 1, summary: { total_copies: 1, unit_count: 0, missing_unit_count: 1, nearest_expiry_date: null } })),
+        http.get('/api/postal/tickets', () => HttpResponse.json({ rows: [complaintTicket], total: 1, summary: { complaint: 1, address: 0, follow: 0, address_recipient_pending: 0 } })),
+        http.get('/api/postal/makeups', () => HttpResponse.json({ rows: [makeupTask], total: 1 })),
+        http.get('/api/issues', () => HttpResponse.json([])),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('该订单存在邮局投递异常处理')).toBeVisible()
+    await expect(canvas.getByText('1 / 49 期')).toBeVisible()
+    await userEvent.click(canvas.getByRole('tab', { name: /关联快递/ }))
+    const expressPanel = within(canvas.getByRole('tabpanel'))
+    await expect(await expressPanel.findByText('投诉补发 #801')).toBeVisible()
+    await expect(expressPanel.getByText('ZT20260804001')).toBeVisible()
+    await expect(expressPanel.getByText(/原订单采用邮局投递/)).toBeVisible()
+    await userEvent.click(canvas.getByRole('tab', { name: /关联邮局/ }))
+    const postalPanel = within(canvas.getByRole('tabpanel'))
+    await expect(await postalPanel.findByText('投诉 #701 · 处理中')).toBeVisible()
+    await expect(postalPanel.getByText('中通补发 #801 · 已发出')).toBeVisible()
   },
 }

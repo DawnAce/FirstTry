@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.models.postal_delivery import PostalDeliverySourceType
 from app.models.postal_complaint import PostalComplaintStatus
+from app.models.postal_complaint_makeup import PostalComplaintMakeupStatus
 
 
 class PostalCommitIn(BaseModel):
@@ -416,6 +417,57 @@ class HandlingRecordOut(BaseModel):
 class ComplaintDetailOut(BaseModel):
     complaint: ComplaintOut
     handlings: List[HandlingRecordOut]
+
+
+class ComplaintMakeupItemIn(BaseModel):
+    issue_number: int = Field(ge=1)
+    quantity: int = Field(ge=1)
+
+
+class ComplaintMakeupCreateIn(BaseModel):
+    items: List[ComplaintMakeupItemIn] = Field(min_length=1)
+    recipient_name: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    recipient_address: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ComplaintMakeupShipIn(BaseModel):
+    tracking_no: str = Field(min_length=1, max_length=64)
+    shipped_at: Optional[datetime] = None
+
+
+class ComplaintMakeupItemOut(BaseModel):
+    id: int
+    issue_number: int
+    quantity: int
+    shipping_detail_id: Optional[int] = None
+    shipped_at: Optional[datetime] = None
+    shipped_quantity: Optional[int] = None
+    tracking_no: Optional[str] = None
+
+
+class ComplaintMakeupTaskOut(BaseModel):
+    id: int
+    complaint_id: int
+    order_id: Optional[int] = None
+    postal_delivery_id: Optional[int] = None
+    recipient_name: str
+    recipient_phone: Optional[str] = None
+    recipient_address: str
+    status: PostalComplaintMakeupStatus
+    tracking_no: Optional[str] = None
+    shipped_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+    items: List[ComplaintMakeupItemOut]
+
+
+class ComplaintMakeupListOut(BaseModel):
+    rows: List[ComplaintMakeupTaskOut]
+    total: int
 
 
 # --- 改地址工单 -------------------------------------------------------

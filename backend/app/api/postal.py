@@ -22,6 +22,10 @@ from app.schemas.postal import (
     ComplaintCreateIn,
     ComplaintDetailOut,
     ComplaintListOut,
+    ComplaintMakeupCreateIn,
+    ComplaintMakeupListOut,
+    ComplaintMakeupShipIn,
+    ComplaintMakeupTaskOut,
     ComplaintOut,
     ComplaintUpdateIn,
     DeliveryCreateIn,
@@ -49,6 +53,7 @@ from app.services import postal_address_change_import_service as addr_import_svc
 from app.services import postal_change_service as change_svc
 from app.services import postal_complaint_import_service as complaint_import_svc
 from app.services import postal_complaint_service as complaint_svc
+from app.services import postal_complaint_makeup_service as makeup_svc
 from app.services import postal_delivery_import_service as import_svc
 from app.services import postal_delivery_service as delivery_svc
 from app.services import postal_follow_up_import_service as follow_import_svc
@@ -315,6 +320,82 @@ def delete_ticket_handling(
 ):
     complaint_svc.delete_handling(db, ticket_id, handling_id)
     return _complaint_detail(db, ticket_id)
+
+
+# --- 投诉补发任务：同一任务同步显示于邮局工单、订单和 ZTO-MF -----------------
+
+@router.get("/makeups", response_model=ComplaintMakeupListOut)
+def list_makeups(
+    order_id: Optional[int] = None,
+    complaint_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    rows = makeup_svc.list_makeups(db, order_id=order_id, complaint_id=complaint_id)
+    return ComplaintMakeupListOut(rows=rows, total=len(rows))
+
+
+@router.get("/tickets/{ticket_id}/makeups", response_model=ComplaintMakeupListOut)
+def list_ticket_makeups(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    rec = ticket_svc.get_ticket(db, ticket_id)
+    type_value = rec.type.value if hasattr(rec.type, "value") else str(rec.type)
+    if type_value != "complaint":
+        raise HTTPException(status_code=409, detail="只有投诉工单可以查询补发任务")
+    rows = makeup_svc.list_makeups(db, complaint_id=ticket_id)
+    return ComplaintMakeupListOut(rows=rows, total=len(rows))
+
+
+@router.post("/tickets/{ticket_id}/makeups", response_model=ComplaintMakeupTaskOut, status_code=201)
+def create_ticket_makeup(
+    ticket_id: int,
+    body: ComplaintMakeupCreateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    return makeup_svc.create_makeup(
+        db,
+        ticket_id,
+        body.model_dump(),
+        operator_id=getattr(user, "id", None),
+    )
+
+
+@router.post("/makeups/{task_id}/ship", response_model=ComplaintMakeupTaskOut)
+def ship_makeup(
+    task_id: int,
+    body: ComplaintMakeupShipIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    return makeup_svc.ship_makeup(
+        db,
+        task_id,
+        tracking_no=body.tracking_no,
+        shipped_at=body.shipped_at,
+        operator_id=getattr(user, "id", None),
+    )
+
+
+@router.post("/makeups/{task_id}/complete", response_model=ComplaintMakeupTaskOut)
+def complete_makeup(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    return makeup_svc.complete_makeup(db, task_id, operator_id=getattr(user, "id", None))
+
+
+@router.post("/makeups/{task_id}/cancel", response_model=ComplaintMakeupTaskOut)
+def cancel_makeup(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    return makeup_svc.cancel_makeup(db, task_id, operator_id=getattr(user, "id", None))
 
 
 # --- 导入 -------------------------------------------------------------------

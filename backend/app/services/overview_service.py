@@ -24,6 +24,7 @@ from app.models import (
     OperationLog,
     PublicationSchedule,
     ShippingDetail,
+    ShippingDetailSourceType,
 )
 from app.schemas.analytics import (
     LatestUpdateOut,
@@ -104,7 +105,10 @@ def build_overview(db: Session, scope: str = "workbench", year: int | None = Non
                 func.count(ShippingDetail.id),
                 func.max(ShippingDetail.updated_at),
             )
-            .filter(ShippingDetail.issue_number.in_(issue_numbers))
+            .filter(
+                ShippingDetail.issue_number.in_(issue_numbers),
+                ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+            )
             .group_by(ShippingDetail.issue_number)
             .all()
         ):

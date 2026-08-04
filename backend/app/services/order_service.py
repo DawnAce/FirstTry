@@ -1253,6 +1253,9 @@ def compute_fulfillment_progress(
         linked = db.query(ShippingDetail).filter(
             ShippingDetail.order_id == order_item.order_id,
             ShippingDetail.order_item_id == order_item.id,
+            # Complaint makeup rows deliberately have no order-item link; the
+            # explicit item FK guard also keeps them out if legacy data is repaired.
+            ShippingDetail.complaint_makeup_item_id.is_(None),
         )
         synced_count = linked.count()
         shipped_count = linked.filter(ShippingDetail.shipped_at.isnot(None)).count()

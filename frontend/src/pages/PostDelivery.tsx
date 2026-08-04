@@ -38,17 +38,21 @@ import {
 } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
+import { getIssues } from '../api/issues';
 import { useAuth } from '../contexts/AuthContext';
 import { listPartners } from '../api/contracts';
 import {
   addComplaintHandling,
+  cancelComplaintMakeup,
   applyAddressChange,
   commitAddressChangeImport,
   commitComplaintImport,
   commitFollowUpImport,
   commitPostalImport,
+  completeComplaintMakeup,
   createAddressChange,
   createComplaint,
+  createComplaintMakeup,
   createDelivery,
   createFollowUp,
   deleteAddressChange,
@@ -64,6 +68,7 @@ import {
   linkExactPostalDelivery,
   linkExactPostalDeliveries,
   listDeliveries,
+  listComplaintMakeups,
   listPostalRenewals,
   listTickets,
   previewAddressChangeImport,
@@ -71,6 +76,7 @@ import {
   previewFollowUpImport,
   previewPostalImport,
   resolveAddressChangePending,
+  shipComplaintMakeup,
   updateAddressChange,
   updateComplaint,
   updateDelivery,
@@ -82,6 +88,7 @@ import type {
   AddrImportRow,
   ComplaintImportPreview,
   ComplaintImportRow,
+  ComplaintMakeupTask,
   DeliveryPayload,
   DeliveryStatusFilter,
   FollowImportRow,
@@ -119,6 +126,13 @@ const COMPLAINT_STATUS_OPTS = [
   { label: '处理中', value: 'in_progress' },
   { label: '已解决', value: 'resolved' },
 ];
+
+const MAKEUP_STATUS_META = {
+  ready: { label: '待发出', color: 'orange' },
+  shipped: { label: '已发出', color: 'blue' },
+  completed: { label: '已完成', color: 'green' },
+  cancelled: { label: '已取消', color: 'default' },
+} as const;
 
 const COMPLAINT_SOURCE_OPTS = ['客服中心', '发行电话接入', '同事反馈'].map((value) => ({ label: value, value }));
 
@@ -1096,11 +1110,14 @@ function ComplaintFormModal({ open, editing, prefill, unitOpts, onClose }: {
 }
 
 /** 投诉详情抽屉：详情 + 三态时间线 + 登记处理 */
-function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number | null; onClose: () => void }) {
+export function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number | null; onClose: () => void }) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const [form] = Form.useForm();
+  const [makeupForm] = Form.useForm();
+  const [shipForm] = Form.useForm();
   const [editingFollow, setEditingFollow] = useState<PostalFollowUp | null>(null);
+  const [shippingTask, setShippingTask] = useState<ComplaintMakeupTask | null>(null);
   const open = complaintId != null;
 
   const detailQ = useQuery({
@@ -1108,11 +1125,24 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
     queryFn: () => getComplaintDetail(complaintId as number).then((r) => r.data),
     enabled: open,
   });
+  const makeupsQ = useQuery({
+    queryKey: ['postalComplaintMakeups', complaintId],
+    queryFn: () => listComplaintMakeups({ complaint_id: complaintId as number }).then((r) => r.data),
+    enabled: open,
+  });
+  const issuesQ = useQuery({
+    queryKey: ['issues', 'complaint-makeup'],
+    queryFn: () => getIssues(0, 200).then((r) => r.data),
+    enabled: open && isAdmin,
+  });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['postalComplaints'] });
     qc.invalidateQueries({ queryKey: ['postalTickets'] });
     qc.invalidateQueries({ queryKey: ['postalComplaintDetail', complaintId] });
+    qc.invalidateQueries({ queryKey: ['postalComplaintMakeups', complaintId] });
+    qc.invalidateQueries({ queryKey: ['postalMakeups'] });
+    qc.invalidateQueries({ queryKey: ['shippingDetails'] });
   };
   const addMut = useMutation({
     mutationFn: (v: any) => addComplaintHandling(complaintId as number, {
@@ -1136,6 +1166,44 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
       message.error(errText(e));
     }
   };
+  const createMakeupMut = useMutation({
+    mutationFn: (values: any) => createComplaintMakeup(complaintId as number, {
+      items: values.items,
+      recipient_name: values.recipient_name,
+      recipient_phone: values.recipient_phone,
+      recipient_address: values.recipient_address,
+      notes: values.notes,
+    }),
+    onSuccess: () => {
+      message.success('中通补发任务已创建，并已同步到 ZTO-MF');
+      makeupForm.resetFields();
+      invalidate();
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+  const shipMakeupMut = useMutation({
+    mutationFn: (values: any) => shipComplaintMakeup(shippingTask!.id, {
+      tracking_no: values.tracking_no,
+      shipped_at: values.shipped_at ? values.shipped_at.toISOString() : undefined,
+    }),
+    onSuccess: () => {
+      message.success('补发已登记发出，工单与 ZTO-MF 已同步');
+      setShippingTask(null);
+      shipForm.resetFields();
+      invalidate();
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+  const completeMakeupMut = useMutation({
+    mutationFn: (id: number) => completeComplaintMakeup(id),
+    onSuccess: () => { message.success('补发任务已完成'); invalidate(); },
+    onError: (e) => message.error(errText(e)),
+  });
+  const cancelMakeupMut = useMutation({
+    mutationFn: (id: number) => cancelComplaintMakeup(id),
+    onSuccess: () => { message.success('补发任务已取消，待发 ZTO-MF 记录已移除'); invalidate(); },
+    onError: (e) => message.error(errText(e)),
+  });
 
   const detail = detailQ.data;
   const c = detail?.complaint;
@@ -1178,6 +1246,73 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
             ]} />
           </section>
 
+          <section className="app-drawer-panel complaint-makeup-panel">
+            <h3><span aria-hidden>🚚</span>中通补发</h3>
+            <Alert
+              type="info"
+              showIcon
+              title="补发属于本投诉工单的处理任务"
+              description="原订单仍按邮局投递履约；这里创建的快递只用于补漏，不会重复增加订单履约进度。"
+            />
+            <div className="complaint-makeup-list">
+              {(makeupsQ.data?.rows ?? []).map((task) => {
+                const meta = MAKEUP_STATUS_META[task.status];
+                return (
+                  <article className={`complaint-makeup-card is-${task.status}`} key={task.id}>
+                    <div className="complaint-makeup-card-head">
+                      <div><strong>补发任务 #{task.id}</strong><span>{task.items.map((item) => `第 ${item.issue_number} 期 × ${item.quantity}份`).join('、')}</span></div>
+                      <Tag color={meta.color}>{meta.label}</Tag>
+                    </div>
+                    <div className="complaint-makeup-recipient">
+                      <span>{task.recipient_name} · {task.recipient_phone || '未记录电话'}</span>
+                      <p>{task.recipient_address}</p>
+                    </div>
+                    {(task.tracking_no || task.shipped_at) && <div className="complaint-makeup-track">中通运单：<b>{task.tracking_no || '—'}</b><span>{task.shipped_at?.replace('T', ' ').slice(0, 16)}</span></div>}
+                    {isAdmin && task.status === 'ready' && <Flex gap={8} justify="flex-end">
+                      <Popconfirm title="取消后将移除对应的待发 ZTO-MF 记录，确认取消？" onConfirm={() => cancelMakeupMut.mutate(task.id)}><Button size="small">取消任务</Button></Popconfirm>
+                      <Button size="small" type="primary" onClick={() => { setShippingTask(task); shipForm.setFieldsValue({ shipped_at: dayjs() }); }}>登记发出</Button>
+                    </Flex>}
+                    {isAdmin && task.status === 'shipped' && <Flex justify="flex-end"><Popconfirm title="确认收件人已收到补发？" onConfirm={() => completeMakeupMut.mutate(task.id)}><Button size="small" type="primary">标记完成</Button></Popconfirm></Flex>}
+                  </article>
+                );
+              })}
+              {!makeupsQ.isLoading && !makeupsQ.data?.rows.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无补发任务" />}
+            </div>
+            {isAdmin && <Card size="small" title="创建中通补发" className="complaint-makeup-create">
+              <Form
+                form={makeupForm}
+                layout="vertical"
+                initialValues={{
+                  recipient_name: c.snap_name,
+                  recipient_phone: c.snap_phone,
+                  recipient_address: c.snap_address,
+                  items: [{ quantity: 1 }],
+                }}
+                onFinish={(values) => createMakeupMut.mutate(values)}
+              >
+                <Form.List name="items">
+                  {(fields, { add, remove }) => <>
+                    {fields.map(({ key, ...field }, index) => <Flex gap={8} align="start" key={key}>
+                      <Form.Item {...field} name={[field.name, 'issue_number']} label={index === 0 ? '补发期次' : undefined} rules={[{ required: true, message: '请选择期次' }]} style={{ flex: 1 }}>
+                        <Select showSearch placeholder="选择刊期" options={(issuesQ.data ?? []).map((issue) => ({ value: issue.issue_number, label: `第 ${issue.issue_number} 期 · ${issue.publish_date}` }))} />
+                      </Form.Item>
+                      <Form.Item {...field} name={[field.name, 'quantity']} label={index === 0 ? '份数' : undefined} rules={[{ required: true }]}><InputNumber min={1} style={{ width: 82 }} /></Form.Item>
+                      {fields.length > 1 && <Button danger type="text" style={{ marginTop: index === 0 ? 30 : 0 }} onClick={() => remove(field.name)}>删除</Button>}
+                    </Flex>)}
+                    <Button type="dashed" block onClick={() => add({ quantity: 1 })} icon={<PlusOutlined />}>增加补发期次</Button>
+                  </>}
+                </Form.List>
+                <div className="complaint-makeup-form-grid">
+                  <Form.Item name="recipient_name" label="收件人" rules={[{ required: true }]}><Input /></Form.Item>
+                  <Form.Item name="recipient_phone" label="联系电话"><Input /></Form.Item>
+                </div>
+                <Form.Item name="recipient_address" label="补发地址" rules={[{ required: true }]}><Input.TextArea autoSize={{ minRows: 2, maxRows: 3 }} /></Form.Item>
+                <Form.Item name="notes" label="补发说明"><Input placeholder="如：漏收后中通补发" /></Form.Item>
+                <Button type="primary" htmlType="submit" loading={createMakeupMut.isPending}>创建并同步 ZTO-MF</Button>
+              </Form>
+            </Card>}
+          </section>
+
           {isAdmin && (
             <Card size="small" title="登记一次处理">
               <Form form={form} layout="vertical" initialValues={{ result_status: 'in_progress' }} onFinish={(v) => addMut.mutate(v)}>
@@ -1206,9 +1341,10 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
                       <Text type="secondary" style={{ fontSize: 12 }}>{h.handled_at?.replace('T', ' ').slice(0, 16)}</Text>
                       {h.handled_by_name && <Tag>{h.handled_by_name}</Tag>}
                       {h.event_type === 'follow_up' && <Tag color="green">回访</Tag>}
+                      {h.event_type.startsWith('makeup_') && <Tag color="blue">中通补发</Tag>}
                       {h.result_status && <Tag color={COMPLAINT_STATUS_META[h.result_status as PostalComplaintStatus].color}>{COMPLAINT_STATUS_META[h.result_status as PostalComplaintStatus].label}</Tag>}
                       {isAdmin && h.source_ticket_id && <Button type="text" size="small" icon={<EditOutlined />} title="编辑回访" onClick={() => editFollow(h.source_ticket_id as number)} />}
-                      {isAdmin && <Popconfirm title={h.event_type === 'follow_up' ? '删除该回访记录？' : '删除该处理记录？次数与状态会回退。'} onConfirm={() => delMut.mutate(h)}><Button type="link" size="small" danger>删除</Button></Popconfirm>}
+                      {isAdmin && ['handling', 'follow_up'].includes(h.event_type) && <Popconfirm title={h.event_type === 'follow_up' ? '删除该回访记录？' : '删除该处理记录？次数与状态会回退。'} onConfirm={() => delMut.mutate(h)}><Button type="link" size="small" danger>删除</Button></Popconfirm>}
                     </Space>
                     <Text>{h.action}</Text>
                     {h.follow_result && <Text type="secondary" style={{ fontSize: 12 }}>回访：{h.follow_result}</Text>}
@@ -1226,6 +1362,12 @@ function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number
       onClose={() => setEditingFollow(null)}
       onSaved={invalidate}
     />
+    <Modal title={`登记补发发出 · 任务 #${shippingTask?.id ?? ''}`} open={shippingTask != null} onCancel={() => setShippingTask(null)} onOk={() => shipForm.submit()} confirmLoading={shipMakeupMut.isPending} destroyOnHidden>
+      <Form form={shipForm} layout="vertical" onFinish={(values) => shipMakeupMut.mutate(values)}>
+        <Form.Item name="tracking_no" label="中通运单号" rules={[{ required: true, message: '请输入运单号' }]}><Input placeholder="请输入中通运单号" /></Form.Item>
+        <Form.Item name="shipped_at" label="发出时间" rules={[{ required: true }]}><DatePicker showTime style={{ width: '100%' }} /></Form.Item>
+      </Form>
+    </Modal>
   </>);
 }
 

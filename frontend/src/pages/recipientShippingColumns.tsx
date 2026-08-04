@@ -28,12 +28,14 @@ const sourceTypeLabels: Record<ShippingDetailSourceType, string> = {
   manual: '手工',
   order_generated: '订单生成',
   historical_import: '历史导入',
+  complaint_makeup: '投诉补发',
 };
 
 const sourceTypeColors: Record<ShippingDetailSourceType, string> = {
   manual: 'default',
   order_generated: 'blue',
   historical_import: 'default',
+  complaint_makeup: 'volcano',
 };
 
 const syncStatusLabels: Record<ShippingDetailSyncStatus, string> = {

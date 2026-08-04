@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.database import get_db
 from app.cache import invalidate_dashboard_cache
 from app.auth import require_admin, get_current_user
-from app.models import Issue, ShippingDetail, User
+from app.models import Issue, ShippingDetail, ShippingDetailSourceType, User
 from app.models.report_revision import ReportRevision
 from app.schemas.issue import IssueCreate, IssueOut, IssueUpdate, NextIssueInfo
 from app.services.issue_service import build_issue_out, get_next_issue_info, get_available_issues, create_issue_with_data, compute_print_totals
@@ -92,6 +92,11 @@ def delete_issue(issue_id: int, db: Session = Depends(get_db), _user: User = Dep
 
     issue_number = issue.issue_number
     issue_pk = issue.id
+    if db.query(ShippingDetail.id).filter(
+        ShippingDetail.issue_number == issue_number,
+        ShippingDetail.source_type == ShippingDetailSourceType.complaint_makeup,
+    ).first():
+        raise HTTPException(status_code=409, detail="该刊期存在投诉补发记录，不能删除")
     db.query(ShippingDetail).filter(ShippingDetail.issue_number == issue_number).delete()
     db.query(ReportRevision).filter(ReportRevision.issue_id == issue.id).delete()
     db.delete(issue)

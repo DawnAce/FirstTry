@@ -24,6 +24,7 @@ from app.schemas.shipping_detail import (
     ShippingDetailOut,
 )
 from app.services.address_service import normalize_address
+from app.services import postal_complaint_makeup_service as makeup_svc
 
 router = APIRouter(prefix="/api/shipping-details", tags=["shipping-details"])
 
@@ -102,7 +103,10 @@ def _copy_shipping_details_from_previous(
 
     locked_existing_ids = (
         db.query(ShippingDetail.id)
-        .filter(ShippingDetail.issue_number == issue_number)
+        .filter(
+            ShippingDetail.issue_number == issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
         .with_for_update()
         .all()
     )
@@ -115,7 +119,10 @@ def _copy_shipping_details_from_previous(
             ShippingDetail.issue_number == previous_issue_number,
             or_(
                 ShippingDetail.source_type.is_(None),
-                ShippingDetail.source_type != ShippingDetailSourceType.order_generated,
+                ShippingDetail.source_type.notin_([
+                    ShippingDetailSourceType.order_generated,
+                    ShippingDetailSourceType.complaint_makeup,
+                ]),
             ),
         )
         .order_by(ShippingDetail.id)
@@ -324,6 +331,17 @@ def update_shipping_detail(
         update_data["address"] = parsed["address"]
     for key, value in update_data.items():
         setattr(detail, key, value)
+    if detail.source_type == ShippingDetailSourceType.complaint_makeup and detail.complaint_makeup_item:
+        item = detail.complaint_makeup_item
+        if "quantity" in update_data:
+            item.quantity = detail.quantity
+        task = item.task
+        if "name" in update_data:
+            task.recipient_name = detail.name
+        if "phone" in update_data:
+            task.recipient_phone = detail.phone
+        if "address" in update_data:
+            task.recipient_address = detail.address
     new_snapshot = _snapshot(detail)
     changes = _diff(old_snapshot, new_snapshot)
     if (
@@ -346,6 +364,7 @@ def update_shipping_detail(
             channel=detail.channel,
             changes=changes,
         )
+    makeup_svc.sync_task_from_shipping_detail(db, detail, operator_id=getattr(user, "id", None))
     db.commit()
     db.refresh(detail)
     return detail
@@ -386,6 +405,7 @@ def ship_shipping_detail(
             channel=detail.channel,
             changes=changes,
         )
+    makeup_svc.sync_task_from_shipping_detail(db, detail, operator_id=getattr(user, "id", None))
     db.commit()
     db.refresh(detail)
     return detail
@@ -418,6 +438,7 @@ def unship_shipping_detail(
             channel=detail.channel,
             changes=changes,
         )
+    makeup_svc.sync_task_from_shipping_detail(db, detail, operator_id=getattr(user, "id", None))
     db.commit()
     db.refresh(detail)
     return detail
@@ -431,6 +452,8 @@ def batch_delete_shipping_details(
 ):
     details = db.query(ShippingDetail).filter(ShippingDetail.id.in_(data.ids)).all()
     _ensure_all_ids_found(data.ids, details)
+    if any(d.source_type == ShippingDetailSourceType.complaint_makeup for d in details):
+        raise HTTPException(status_code=409, detail="投诉补发记录请从邮局工单取消")
 
     for detail in details:
         record_operation(
@@ -462,7 +485,10 @@ def clear_shipping_details_by_issue(
 
     details = (
         db.query(ShippingDetail)
-        .filter(ShippingDetail.issue_number == issue_number)
+        .filter(
+            ShippingDetail.issue_number == issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
         .all()
     )
     affected_count = len(details)
@@ -495,6 +521,8 @@ def delete_shipping_detail(
     detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
     if not detail:
         raise HTTPException(status_code=404, detail="发货明细不存在")
+    if detail.source_type == ShippingDetailSourceType.complaint_makeup:
+        raise HTTPException(status_code=409, detail="投诉补发记录请从邮局工单取消")
     record_operation(
         db,
         user=user,

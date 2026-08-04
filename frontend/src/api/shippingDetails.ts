@@ -1,7 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
 
-export type ShippingDetailSourceType = 'manual' | 'order_generated' | 'historical_import';
+export type ShippingDetailSourceType = 'manual' | 'order_generated' | 'historical_import' | 'complaint_makeup';
 
 export type ShippingDetailSyncStatus = 'synced' | 'manually_modified' | 'orphaned';
 
@@ -34,6 +34,10 @@ export interface ShippingDetail {
   order_id: number | null;
   order_item_id: number | null;
   fulfillment_target_id: number | null;
+  complaint_makeup_item_id?: number | null;
+  complaint_makeup_task_id?: number | null;
+  complaint_ticket_id?: number | null;
+  postal_delivery_id?: number | null;
   source_type: ShippingDetailSourceType;
   sync_status: ShippingDetailSyncStatus;
   created_at: string;

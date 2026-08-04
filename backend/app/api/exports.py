@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Issue, IssueAuditSnapshot, IssueStatus, ReportEntry, ShippingDetail, User
+from app.models import Issue, IssueAuditSnapshot, IssueStatus, ReportEntry, ShippingDetail, ShippingDetailSourceType, User
 from app.auth import get_current_user
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.services.operation_log_service import record_operation
@@ -36,7 +36,10 @@ def _export_totals(issue: Issue, db: Session) -> tuple[int, int]:
     )
     zt_shipping_total = (
         db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
-        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .filter(
+            ShippingDetail.issue_number == issue.issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
         .scalar()
     )
     return zt_report_total, zt_shipping_total

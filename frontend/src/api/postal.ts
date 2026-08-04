@@ -460,7 +460,7 @@ export interface ComplaintPayload {
 export interface PostalComplaintHandling {
   id: number;
   complaint_id: number;
-  event_type: 'handling' | 'follow_up' | 'address_applied';
+  event_type: 'handling' | 'follow_up' | 'address_applied' | 'makeup_created' | 'makeup_shipped' | 'makeup_completed' | 'makeup_cancelled';
   source_ticket_id: number | null;
   handled_at: string | null;
   handled_by: number | null;
@@ -495,6 +495,57 @@ export function addComplaintHandling(id: number, body: HandlingPayload): Promise
 }
 export function deleteComplaintHandling(id: number, handlingId: number): Promise<AxiosResponse<ComplaintDetail>> {
   return api.delete(`/postal/tickets/${id}/handlings/${handlingId}`);
+}
+
+export type ComplaintMakeupStatus = 'ready' | 'shipped' | 'completed' | 'cancelled';
+export interface ComplaintMakeupItem {
+  id: number;
+  issue_number: number;
+  quantity: number;
+  shipping_detail_id: number | null;
+  shipped_at: string | null;
+  shipped_quantity: number | null;
+  tracking_no: string | null;
+}
+export interface ComplaintMakeupTask {
+  id: number;
+  complaint_id: number;
+  order_id: number | null;
+  postal_delivery_id: number | null;
+  recipient_name: string;
+  recipient_phone: string | null;
+  recipient_address: string;
+  status: ComplaintMakeupStatus;
+  tracking_no: string | null;
+  shipped_at: string | null;
+  notes: string | null;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  items: ComplaintMakeupItem[];
+}
+export interface ComplaintMakeupListOut { rows: ComplaintMakeupTask[]; total: number }
+export interface ComplaintMakeupCreatePayload {
+  items: Array<{ issue_number: number; quantity: number }>;
+  recipient_name?: string;
+  recipient_phone?: string | null;
+  recipient_address?: string;
+  notes?: string | null;
+}
+export function listComplaintMakeups(f: { complaint_id?: number; order_id?: number }): Promise<AxiosResponse<ComplaintMakeupListOut>> {
+  return api.get('/postal/makeups', { params: f });
+}
+export function createComplaintMakeup(id: number, body: ComplaintMakeupCreatePayload): Promise<AxiosResponse<ComplaintMakeupTask>> {
+  return api.post(`/postal/tickets/${id}/makeups`, body);
+}
+export function shipComplaintMakeup(id: number, body: { tracking_no: string; shipped_at?: string }): Promise<AxiosResponse<ComplaintMakeupTask>> {
+  return api.post(`/postal/makeups/${id}/ship`, body);
+}
+export function completeComplaintMakeup(id: number): Promise<AxiosResponse<ComplaintMakeupTask>> {
+  return api.post(`/postal/makeups/${id}/complete`);
+}
+export function cancelComplaintMakeup(id: number): Promise<AxiosResponse<ComplaintMakeupTask>> {
+  return api.post(`/postal/makeups/${id}/cancel`);
 }
 
 // --- 改地址 ---

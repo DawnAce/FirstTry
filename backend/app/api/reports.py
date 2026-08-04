@@ -12,6 +12,7 @@ from app.models import (
     ReportRevision,
     ReportSourceItem,
     ShippingDetail,
+    ShippingDetailSourceType,
     TempPrintDetail,
     User,
 )
@@ -56,7 +57,10 @@ def _copy_previous_shipping_details_for_confirm(
     db.query(Issue.id).filter(Issue.id == issue.id).with_for_update().first()
     locked_existing_ids = (
         db.query(ShippingDetail.id)
-        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .filter(
+            ShippingDetail.issue_number == issue.issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
         .with_for_update()
         .all()
     )
@@ -74,7 +78,10 @@ def _copy_previous_shipping_details_for_confirm(
 
     previous_details = (
         db.query(ShippingDetail)
-        .filter(ShippingDetail.issue_number == previous_issue.issue_number)
+        .filter(
+            ShippingDetail.issue_number == previous_issue.issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
         .order_by(ShippingDetail.id)
         .all()
     )
@@ -140,7 +147,10 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
     )
     current_shipping_total = (
         db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
-        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .filter(
+            ShippingDetail.issue_number == issue.issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
         .scalar()
     )
     report_zt_total = destination_totals.get(DESTINATION_ZTO, 0)
@@ -246,7 +256,10 @@ def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = De
     )
     zt_shipping_total = (
         db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
-        .filter(ShippingDetail.issue_number == issue.issue_number)
+        .filter(
+            ShippingDetail.issue_number == issue.issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
         .scalar()
     )
 
