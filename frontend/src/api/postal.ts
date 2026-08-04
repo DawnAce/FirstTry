@@ -334,6 +334,7 @@ export interface PostalFollowUp {
   batch_label: string | null;
   result: string | null;
   snap_name: string | null;
+  snap_phone: string | null;
 }
 
 export interface FollowUpListOut { rows: PostalFollowUp[]; total: number }
@@ -372,6 +373,7 @@ export interface Ticket {
   year: number | null;
   delivery_no: string | null;
   recipient_name: string | null;
+  recipient_phone: string | null;
   postal_delivery_id: number | null;
   order_id: number | null;
   ticket_date: string | null;
@@ -586,6 +588,7 @@ export interface FollowUpPayload {
   batch_label?: string | null;
   result?: string | null;
   snap_name?: string | null;
+  snap_phone?: string | null;
 }
 export function createFollowUp(body: FollowUpPayload): Promise<AxiosResponse<PostalFollowUp>> {
   return api.post('/postal/tickets', { type: 'follow', ...body });

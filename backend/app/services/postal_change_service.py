@@ -549,6 +549,13 @@ def create_follow_up(db: Session, payload: dict, operator_id: Optional[int] = No
     year = d.pop("year", None)
     delivery_no = d.pop("delivery_no", None)
     external, pd_id, order_id = pc.link_delivery(db, year, delivery_no)
+    if pd_id:
+        delivery = db.query(PostalDelivery).filter(PostalDelivery.id == pd_id).first()
+        if delivery is not None:
+            if not d.get("snap_name"):
+                d["snap_name"] = delivery.recipient_name
+            if not d.get("snap_phone"):
+                d["snap_phone"] = delivery.recipient_phone
     rec = PostalFollowUp(
         postal_delivery_id=pd_id,
         order_id=order_id,

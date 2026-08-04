@@ -454,15 +454,15 @@ def test_unified_tickets_list(client):
     # 三类各建一条
     client.post("/api/postal/complaints", json={
         "year": 2026, "delivery_no": "301", "complaint_date": "2026-05-10",
-        "missing_issues": "缺 5 月", "snap_name": "投诉甲",
+        "missing_issues": "缺 5 月", "snap_name": "投诉甲", "snap_phone": "13700000111",
     })
     client.post("/api/postal/address-changes", json={
         "year": 2026, "delivery_no": "302", "change_date": "2026-05-11",
-        "new_name": "改址乙", "new_address": "北京市海淀区新址",
+        "new_name": "改址乙", "new_phone": "138-0000-0222", "new_address": "北京市海淀区新址",
     })
     client.post("/api/postal/follow-ups", json={
         "year": 2026, "delivery_no": "303", "follow_up_date": "2026-05-12",
-        "result": "已回访", "snap_name": "回访丙",
+        "result": "已回访", "snap_name": "回访丙", "snap_phone": "139 0000 0333",
     })
 
     # 全部：三类混排 + 计数
@@ -478,10 +478,15 @@ def test_unified_tickets_list(client):
     # 按日期倒序：回访(05-12) 在最前
     assert body["rows"][0]["type"] == "follow"
     assert body["rows"][0]["ticket_date"] == "2026-05-12"
+    assert body["rows"][0]["recipient_phone"] == "139 0000 0333"
 
     # 按类型筛选
     assert client.get("/api/postal/tickets?type=complaint&year=2026").json()["total"] == 1
     assert client.get("/api/postal/tickets?type=address&year=2026").json()["rows"][0]["recipient_name"] == "改址乙"
+    # 电话支持模糊查询，并忽略存量号码中的空格、连字符。
+    assert client.get("/api/postal/tickets", params={"search": "000011"}).json()["rows"][0]["type"] == "complaint"
+    assert client.get("/api/postal/tickets", params={"search": "8000002"}).json()["rows"][0]["type"] == "address"
+    assert client.get("/api/postal/tickets", params={"search": "9000003"}).json()["rows"][0]["type"] == "follow"
     # 未知类型 400
     assert client.get("/api/postal/tickets?type=xxx").status_code == 400
 
