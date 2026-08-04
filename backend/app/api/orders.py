@@ -94,6 +94,7 @@ def list_orders(
     order_date_end: Optional[date] = None,
     unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
+    needs_attention: Optional[bool] = None,
     search: Optional[str] = None,
     sort: Optional[str] = None,
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
@@ -104,10 +105,10 @@ def list_orders(
 ):
     """Return ``{"rows": [...], "total": N}``.
 
-    With ``has_drift`` unset, ``total`` is the DB-side filter count and paging
-    is done in SQL. With ``has_drift`` set, drift is computed in Python over the
-    full filtered set, so ``total`` reflects the post-drift count and every page
-    stays full (see ``order_service.list_orders``).
+    With ``has_drift`` / ``needs_attention`` unset, ``total`` is the DB-side
+    filter count and paging is done in SQL. Either computed filter materialises
+    the filtered set first, so ``total`` reflects the post-filter count and
+    every page stays full (see ``order_service.list_orders``).
     """
     rows, total = order_service.list_orders(
         db,
@@ -122,6 +123,7 @@ def list_orders(
         order_date_end=order_date_end,
         unpaid=unpaid,
         has_drift=has_drift,
+        needs_attention=needs_attention,
         search=search,
         sort=sort,
         order=order,
@@ -144,6 +146,7 @@ def export_orders(
     order_date_end: Optional[date] = None,
     unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
+    needs_attention: Optional[bool] = None,
     search: Optional[str] = None,
     sort: Optional[str] = None,
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
@@ -165,6 +168,7 @@ def export_orders(
         order_date_end=order_date_end,
         unpaid=unpaid,
         has_drift=has_drift,
+        needs_attention=needs_attention,
         search=search,
         sort=sort,
         order=order,

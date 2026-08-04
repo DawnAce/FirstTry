@@ -123,14 +123,14 @@
 - 为何人工：`build_pricing_preview` 根本不接收 publication，测不到商学院高估；口径对比是 UI 联动 + 落库值对照，须人工在 OrderEditor 观察并与详情比对。
 
 ---
-**[P2] OrderList「期数(已同步/预估)」列已同步恒显 0，与详情不一致；偏差数字受 synced=0 影响**（列表误读/跨模块）
-- 前置：active 单已排发若干期到 ZTO-MF（实际 synced>0），且 has_drift 使偏差 Tag 显示。
+**[P1] OrderList 总览履约进度与详情一致**（列表/跨模块）
+- 前置：一张邮局订单已有到达出刊日的刊期；一张 ZTO-MF 订单已有部分主履约明细发出；可另建投诉补发验证排除口径。
 - 步骤：
-  1. OrderList 看「期数(已同步/预估)」列的「已同步」与偏差 Tag。
-  2. 详情 → fulfillment-progress / 关联快递明细，看真实 `synced_count`。
-  3. 对比两处「已同步」，注意列表偏差 Tag 数值。
-- 预期（riskySpot）：`_build_list_row` 硬写 `synced_count=0`（V1.3 占位，`order_service.py:1204`），OrderList 渲染 `{synced}/{expected}` 恒显「0/N」；偏差 Tag 由服务端 `has_drift` 门控是否显示，但 Tag 内数字 `driftLabel(drift)` 用 `drift=expected−0`（`OrderList.tsx:381`），把整段 expected 当偏差量显示。详情 `compute_fulfillment_progress` 才给真实值。列表易误读为「一期没同步」且偏差虚高。已知占位、非功能性 bug，故 P2。
-- 为何人工：synced=0 占位有后端单测，但「列表 0 vs 详情真实值」跨页误读 + Tag 数字联动是端到端 UI 观感，须两页对照。
+  1. 在订单总览查看两单“履约概况”的已履约/计划期数与进度条。
+  2. 点击订单编码打开快速预览，再进入完整详情查看对应履约进度。
+  3. 对邮局单核对刊期表出刊日；对中通单核对主履约明细 `shipped_at`；创建投诉补发后再次比较。
+- 预期：列表 `fulfilled_count` 与详情 `shipped_count` 口径一致；邮局按已出刊期数、中通按已发主履约明细，投诉补发不重复累计；期数偏差仍只比较创建快照与当前计划，不用履约数计算。
+- 交互复核：状态视图、关键词搜索、折叠筛选、筛选标签移除、行勾选浮动批量条、快速预览抽屉均可用；1280px 宽度无整页横向溢出。
 
 ---
 **[P2] 退款/取消单再排发：preview 全 skip 且 apply 不新增发货行（端到端防回归）**

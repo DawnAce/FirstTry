@@ -333,6 +333,7 @@ export interface OrderListRow {
   refunded_amount: string;
   has_drift: boolean;
   synced_count: number;
+  fulfilled_count: number;
   expected_total: number | null;
 }
 
@@ -486,6 +487,7 @@ export interface ListOrdersParams {
   order_date_end?: string;
   unpaid?: boolean;
   has_drift?: boolean;
+  needs_attention?: boolean;
   search?: string;
   sort?: 'order_date' | 'total_amount' | 'outstanding';
   order?: 'asc' | 'desc';

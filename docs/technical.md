@@ -1617,7 +1617,7 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/api/orders` | 分页列表，支持 `status` / `source_type` / `payer_name_like` / `coverage_start` / `coverage_end` / `order_date_start` / `order_date_end` / `unpaid` / `has_drift` / `search`(订单编码/来源单号 ilike) / `sort`(`order_date`/`total_amount`/`outstanding`,仅 DB 列) / `order`(asc/desc) 筛选排序，返回 `{ rows, total }`（`source_type` API 参数保留以备后续版本批量导入 / API 同步扩展，前端 UI 不再暴露筛选器，详见 §3.15 录入方式说明）。`order_date_start/end` 为**下单日期闭区间，服务端过滤**（不再前端逐页过滤，跨页准确）。`unpaid=true/false` 按 `paid_amount < / >= total_amount` 筛未付清/已付清。`has_drift` 是 Python 端按实时刊期表算的谓词、无法下推 SQL：设了它时取全集 → 内存过滤 → 内存分页，`total` 反映**过滤后**条数（每页满、计数一致）；不设则走 SQL 分页、`total` 为 DB 计数 |
+| `GET` | `/api/orders` | 分页列表，支持 `status` / `source_type` / `payer_name_like` / `coverage_start` / `coverage_end` / `order_date_start` / `order_date_end` / `unpaid` / `has_drift` / `needs_attention` / `search`(订单编码/来源单号/付款主体 ilike) / `sort`(`order_date`/`total_amount`/`outstanding`,仅 DB 列) / `order`(asc/desc) 筛选排序，返回 `{ rows, total }`（`source_type` API 参数保留以备后续版本批量导入 / API 同步扩展，前端 UI 不再暴露筛选器，详见 §3.15 录入方式说明）。列表行的 `fulfilled_count` 复用详情履约口径：邮局按已到出刊日的刊期数，中通按已发出的主履约明细数；补发不重复累计。`needs_attention=true` 取期数偏差或仍有欠款的订单，供总览“需关注”视图使用。`order_date_start/end` 为**下单日期闭区间，服务端过滤**（不再前端逐页过滤，跨页准确）。`unpaid=true/false` 按 `paid_amount < / >= total_amount` 筛未付清/已付清。`has_drift` / `needs_attention` 含 Python 聚合谓词、无法完整下推 SQL：设了它们时取全集 → 内存过滤 → 内存分页，`total` 反映**过滤后**条数（每页满、计数一致）；不设则走 SQL 分页、`total` 为 DB 计数 |
 | `POST` | `/api/orders` | 创建草稿订单，内嵌 items + v1 allocation + targets，事务一致 |
 | `POST` | `/api/orders/pricing-preview` | 根据订阅期限、起始月份、投递/收费方式与每期总份数，预览实际覆盖期、预计发货期数与套餐价 |
 | `GET` | `/api/orders/{id}` | 详情，含 items / allocations / targets / 各明细的 `FulfillmentProgress` |
