@@ -48,6 +48,23 @@ const makeup = {
   items: [{ id: 901, issue_number: 3001, quantity: 1, shipping_detail_id: 1001, shipped_at: '2026-08-04T15:20:00', shipped_quantity: 1, tracking_no: 'ZT20260804001' }],
 };
 
+const shippedHandlings = [
+  { id: 1002, complaint_id: 701, event_type: 'makeup_shipped', source_ticket_id: null, handled_at: '2026-08-04T15:20:00', handled_by: 1, handled_by_name: 'admin', action: '中通补发已发出，运单号 ZT20260804001', follow_result: null, result_status: 'in_progress' },
+  { id: 1001, complaint_id: 701, event_type: 'makeup_created', source_ticket_id: null, handled_at: '2026-08-04T14:30:00', handled_by: 1, handled_by_name: 'admin', action: '创建中通补发任务 #801：第 3001 期×1份', follow_result: null, result_status: 'in_progress' },
+];
+
+const complaintHandler = (handlings = shippedHandlings) => http.get('/api/postal/tickets/701', () => HttpResponse.json({
+  type: 'complaint',
+  complaint,
+  handlings,
+}));
+
+const makeupsHandler = (rows = [makeup]) => http.get('/api/postal/makeups', () => HttpResponse.json({ rows, total: rows.length }));
+
+const issuesHandler = http.get('/api/issues', () => HttpResponse.json([
+  { id: 3001, issue_number: 3001, publish_date: '2026-08-03', status: 'confirmed', page_count: 24, planned_page_count: 24, year_issue_index: 31, year_issue_label: '2026年第31期', notes: null, created_at: '2026-08-01T00:00:00', updated_at: '2026-08-03T00:00:00' },
+]));
+
 const meta = {
   title: '页面/邮局投递/投诉补发闭环',
   component: ComplaintHandlingDrawer,
@@ -57,18 +74,9 @@ const meta = {
     auth: { user: { username: 'admin', role: 'admin' }, isAdmin: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} },
     msw: {
       handlers: [
-        http.get('/api/postal/tickets/701', () => HttpResponse.json({
-          type: 'complaint',
-          complaint,
-          handlings: [
-            { id: 1002, complaint_id: 701, event_type: 'makeup_shipped', source_ticket_id: null, handled_at: '2026-08-04T15:20:00', handled_by: 1, handled_by_name: 'admin', action: '中通补发已发出，运单号 ZT20260804001', follow_result: null, result_status: 'in_progress' },
-            { id: 1001, complaint_id: 701, event_type: 'makeup_created', source_ticket_id: null, handled_at: '2026-08-04T14:30:00', handled_by: 1, handled_by_name: 'admin', action: '创建中通补发任务 #801：第 3001 期×1份', follow_result: null, result_status: 'in_progress' },
-          ],
-        })),
-        http.get('/api/postal/makeups', () => HttpResponse.json({ rows: [makeup], total: 1 })),
-        http.get('/api/issues', () => HttpResponse.json([
-          { id: 3001, issue_number: 3001, publish_date: '2026-08-03', status: 'confirmed', page_count: 24, planned_page_count: 24, year_issue_index: 31, year_issue_label: '2026年第31期', notes: null, created_at: '2026-08-01T00:00:00', updated_at: '2026-08-03T00:00:00' },
-        ])),
+        complaintHandler(),
+        makeupsHandler(),
+        issuesHandler,
       ],
     },
   },
@@ -87,5 +95,20 @@ export const ShippedMakeup: Story = {
     await expect(await body.findByText('补发任务 #801')).toBeVisible();
     await expect(await body.findByText('ZT20260804001')).toBeVisible();
     await expect(await body.findByText('创建并同步 ZTO-MF')).toBeVisible();
+  },
+};
+
+export const NoMakeup: Story = {
+  name: '无补发默认收拢',
+  parameters: {
+    msw: {
+      handlers: [complaintHandler([]), makeupsHandler([]), issuesHandler],
+    },
+  },
+  play: async () => {
+    const body = within(document.body);
+    const toggle = await body.findByRole('button', { name: /中通补发.*未使用/ });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(body.queryByText('创建中通补发')).not.toBeInTheDocument();
   },
 };

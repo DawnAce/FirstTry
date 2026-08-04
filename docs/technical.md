@@ -599,7 +599,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr
 
 **统一邮局工单（PR-E，迁移 `d4e6f8a0b2c4`）**：投诉 / 收件信息变更（内部类型 `address`）/ 回访通过 SQLAlchemy 单表继承统一存入 `postal_tickets`，类型列为 `complaint/address/follow`，公共字段含 `postal_delivery_id/order_id/external_order_no/year`，类型专属字段保持可空。投诉处理、关联回访和应用变更留痕统一存入 `postal_ticket_events`。迁移保留投诉主键，重排收件信息变更 / 回访主键；同编号回访设置 `parent_ticket_id` 并写入投诉时间线，独立回访仍作为工单展示。前端新建三类工单统一复用投递明细查询选择读者，支持年度编号、姓名、电话、地址检索，选择后自动提交唯一的年度+编号并带入快照。旧模型模块仅保留兼容导出。
 
-**投诉中通补发闭环（迁移 `d1f3a5c7e9b2`）**：一张投诉可建立多次 `postal_complaint_makeup_tasks`，每次任务通过 `postal_complaint_makeup_items` 选择一个或多个刊期及份数。创建任务时自动生成 `source_type=complaint_makeup` 的 `shipping_details`，保留订单、邮局投递、投诉工单和补发任务四向追溯；从邮局工单或 ZTO-MF 登记发出均会同步任务状态、运单号和时间线。原订单投递方式保持邮局不变，补发明细显式排除在订单主履约进度、报数对账、跨期复制和 ZTO-MF 主清单合计之外，但仍保留在 ZTO-MF 操作明细及导出中。待发任务可取消并移除对应 ZTO-MF 行；已发任务只能完成，不能直接删除。
+**投诉中通补发闭环（迁移 `d1f3a5c7e9b2`）**：一张投诉可建立多次 `postal_complaint_makeup_tasks`，每次任务通过 `postal_complaint_makeup_items` 选择一个或多个刊期及份数。创建任务时自动生成 `source_type=complaint_makeup` 的 `shipping_details`，保留订单、邮局投递、投诉工单和补发任务四向追溯；从邮局工单或 ZTO-MF 登记发出均会同步任务状态、运单号和时间线。原订单投递方式保持邮局不变，补发明细显式排除在订单主履约进度、报数对账、跨期复制和 ZTO-MF 主清单合计之外，但仍保留在 ZTO-MF 操作明细及导出中。待发任务可取消并移除对应 ZTO-MF 行；已发任务只能完成，不能直接删除。`ComplaintHandlingDrawer` 的补发区使用任务数据派生默认状态：`rows.length === 0` 时收拢，存在任务时展开；用户选择以 `{ complaintId, expanded }` 保存，避免切换投诉时串用状态，关闭详情时清除。折叠标题汇总任务次数和去重后的状态标签，正文仅在展开时渲染；`PostalComplaintMakeup.stories.tsx` 覆盖“无补发默认收拢”和“已发出补发任务自动展开”两种场景。
 
 **投诉工单（P2）**：投诉 `编号`(去前导零) + `年度` 经 `postal_common.delivery_map` → `postal_delivery`（`postal_delivery_id` 可空 SET NULL；关联的投递记录挂了真实订单才继承 `order_id`；匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；状态为 open/in_progress/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。
 

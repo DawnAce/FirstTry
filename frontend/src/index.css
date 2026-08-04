@@ -572,6 +572,82 @@ body {
   color: #2f80ed;
 }
 
+.complaint-makeup-panel {
+  overflow: hidden;
+  padding: 0;
+}
+
+.complaint-makeup-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 58px;
+  padding: 14px 16px;
+  border: 0;
+  color: #293348;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color .16s ease;
+}
+
+.complaint-makeup-toggle:hover {
+  background: #f8fafc;
+}
+
+.complaint-makeup-toggle:focus-visible {
+  outline: 2px solid #2f80ed;
+  outline-offset: -2px;
+}
+
+.complaint-makeup-toggle-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.complaint-makeup-toggle-title strong {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.complaint-makeup-toggle-title small {
+  overflow: hidden;
+  color: #7b8798;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.complaint-makeup-toggle-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 25px;
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+  background: #f1f6fc;
+}
+
+.complaint-makeup-toggle-arrow {
+  flex: 0 0 auto;
+  color: #8b96a7;
+  font-size: 12px;
+  transition: transform .18s ease;
+}
+
+.complaint-makeup-panel.is-expanded .complaint-makeup-toggle-arrow {
+  transform: rotate(180deg);
+}
+
+.complaint-makeup-body {
+  padding: 0 16px 16px;
+}
+
 .complaint-makeup-panel .ant-alert {
   margin-bottom: 14px;
   border-radius: 10px;
@@ -582,6 +658,14 @@ body {
   display: grid;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.complaint-makeup-empty {
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: #7b8798;
+  background: #f8fafc;
+  font-size: 12px;
 }
 
 .complaint-makeup-card {
