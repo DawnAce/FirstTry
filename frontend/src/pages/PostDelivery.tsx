@@ -28,6 +28,7 @@ import {
   message,
 } from 'antd';
 import {
+  DownOutlined,
   DeleteOutlined,
   EditOutlined,
   HistoryOutlined,
@@ -1250,7 +1251,12 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
   const [shipForm] = Form.useForm();
   const [editingFollow, setEditingFollow] = useState<PostalFollowUp | null>(null);
   const [shippingTask, setShippingTask] = useState<ComplaintMakeupTask | null>(null);
+  const [makeupExpansion, setMakeupExpansion] = useState<{ complaintId: number; expanded: boolean } | null>(null);
   const open = complaintId != null;
+  const closeDetail = () => {
+    setMakeupExpansion(null);
+    onClose();
+  };
 
   const detailQ = useQuery({
     queryKey: ['postalComplaintDetail', complaintId],
@@ -1339,6 +1345,14 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
 
   const detail = detailQ.data;
   const c = detail?.complaint;
+  const makeupTasks = makeupsQ.data?.rows ?? [];
+  const makeupExpandedOverride = makeupExpansion?.complaintId === complaintId ? makeupExpansion.expanded : null;
+  const makeupExpanded = makeupExpandedOverride ?? makeupTasks.length > 0;
+  const makeupSummary = makeupsQ.isLoading
+    ? '查询中'
+    : makeupTasks.length === 0
+      ? '未使用'
+      : `${makeupTasks.length} 次 · ${Array.from(new Set(makeupTasks.map((task) => MAKEUP_STATUS_META[task.status].label))).join(' / ')}`;
   const detailTitle = (
     <DrawerTitle
       icon="📣"
@@ -1351,7 +1365,7 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
   const detailFooter = (
     <div className="app-drawer-footer">
       <span className="app-drawer-footer-tip"><b>✓</b>处理记录和回访按时间写入工单时间线</span>
-      <Button type="primary" onClick={onClose}>关闭</Button>
+      <Button type="primary" onClick={closeDetail}>关闭</Button>
     </div>
   );
   const detailContent = !c
@@ -1378,71 +1392,85 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
             ]} />
           </section>
 
-          <section className="app-drawer-panel complaint-makeup-panel">
-            <h3><span aria-hidden>🚚</span>中通补发</h3>
-            <Alert
-              type="info"
-              showIcon
-              title="补发属于本投诉工单的处理任务"
-              description="原订单仍按邮局投递履约；这里创建的快递只用于补漏，不会重复增加订单履约进度。"
-            />
-            <div className="complaint-makeup-list">
-              {(makeupsQ.data?.rows ?? []).map((task) => {
-                const meta = MAKEUP_STATUS_META[task.status];
-                return (
-                  <article className={`complaint-makeup-card is-${task.status}`} key={task.id}>
-                    <div className="complaint-makeup-card-head">
-                      <div><strong>补发任务 #{task.id}</strong><span>{task.items.map((item) => `第 ${item.issue_number} 期 × ${item.quantity}份`).join('、')}</span></div>
-                      <Tag color={meta.color}>{meta.label}</Tag>
-                    </div>
-                    <div className="complaint-makeup-recipient">
-                      <span>{task.recipient_name} · {task.recipient_phone || '未记录电话'}</span>
-                      <p>{task.recipient_address}</p>
-                    </div>
-                    {(task.tracking_no || task.shipped_at) && <div className="complaint-makeup-track">中通运单：<b>{task.tracking_no || '—'}</b><span>{task.shipped_at?.replace('T', ' ').slice(0, 16)}</span></div>}
-                    {isAdmin && task.status === 'ready' && <Flex gap={8} justify="flex-end">
-                      <Popconfirm title="取消后将移除对应的待发 ZTO-MF 记录，确认取消？" onConfirm={() => cancelMakeupMut.mutate(task.id)}><Button size="small">取消任务</Button></Popconfirm>
-                      <Button size="small" type="primary" onClick={() => { setShippingTask(task); shipForm.setFieldsValue({ shipped_at: dayjs() }); }}>登记发出</Button>
-                    </Flex>}
-                    {isAdmin && task.status === 'shipped' && <Flex justify="flex-end"><Popconfirm title="确认收件人已收到补发？" onConfirm={() => completeMakeupMut.mutate(task.id)}><Button size="small" type="primary">标记完成</Button></Popconfirm></Flex>}
-                  </article>
-                );
-              })}
-              {!makeupsQ.isLoading && !makeupsQ.data?.rows.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无补发任务" />}
-            </div>
-            {isAdmin && <Card size="small" title="创建中通补发" className="complaint-makeup-create">
-              <Form
-                form={makeupForm}
-                layout="vertical"
-                initialValues={{
-                  recipient_name: c.snap_name,
-                  recipient_phone: c.snap_phone,
-                  recipient_address: c.snap_address,
-                  items: [{ quantity: 1 }],
-                }}
-                onFinish={(values) => createMakeupMut.mutate(values)}
-              >
-                <Form.List name="items">
-                  {(fields, { add, remove }) => <>
-                    {fields.map(({ key, ...field }, index) => <Flex gap={8} align="start" key={key}>
-                      <Form.Item {...field} name={[field.name, 'issue_number']} label={index === 0 ? '补发期次' : undefined} rules={[{ required: true, message: '请选择期次' }]} style={{ flex: 1 }}>
-                        <Select showSearch placeholder="选择刊期" options={(issuesQ.data ?? []).map((issue) => ({ value: issue.issue_number, label: `第 ${issue.issue_number} 期 · ${issue.publish_date}` }))} />
-                      </Form.Item>
-                      <Form.Item {...field} name={[field.name, 'quantity']} label={index === 0 ? '份数' : undefined} rules={[{ required: true }]}><InputNumber min={1} style={{ width: 82 }} /></Form.Item>
-                      {fields.length > 1 && <Button danger type="text" style={{ marginTop: index === 0 ? 30 : 0 }} onClick={() => remove(field.name)}>删除</Button>}
-                    </Flex>)}
-                    <Button type="dashed" block onClick={() => add({ quantity: 1 })} icon={<PlusOutlined />}>增加补发期次</Button>
-                  </>}
-                </Form.List>
-                <div className="complaint-makeup-form-grid">
-                  <Form.Item name="recipient_name" label="收件人" rules={[{ required: true }]}><Input /></Form.Item>
-                  <Form.Item name="recipient_phone" label="联系电话"><Input /></Form.Item>
-                </div>
-                <Form.Item name="recipient_address" label="补发地址" rules={[{ required: true }]}><Input.TextArea autoSize={{ minRows: 2, maxRows: 3 }} /></Form.Item>
-                <Form.Item name="notes" label="补发说明"><Input placeholder="如：漏收后中通补发" /></Form.Item>
-                <Button type="primary" htmlType="submit" loading={createMakeupMut.isPending}>创建并同步 ZTO-MF</Button>
-              </Form>
-            </Card>}
+          <section className={`app-drawer-panel complaint-makeup-panel ${makeupExpanded ? 'is-expanded' : 'is-collapsed'}`}>
+            <button
+              type="button"
+              className="complaint-makeup-toggle"
+              aria-expanded={makeupExpanded}
+              onClick={() => setMakeupExpansion({ complaintId: complaintId as number, expanded: !makeupExpanded })}
+            >
+              <span className="complaint-makeup-toggle-title">
+                <span className="complaint-makeup-toggle-icon" aria-hidden>🚚</span>
+                <strong>中通补发</strong>
+                <small>· {makeupSummary}</small>
+              </span>
+              <DownOutlined className="complaint-makeup-toggle-arrow" aria-hidden />
+            </button>
+            {makeupExpanded && <div className="complaint-makeup-body">
+              <Alert
+                type="info"
+                showIcon
+                title="补发属于本投诉工单的处理任务"
+                description="原订单仍按邮局投递履约；这里创建的快递只用于补漏，不会重复增加订单履约进度。"
+              />
+              <div className="complaint-makeup-list">
+                {makeupTasks.map((task) => {
+                  const meta = MAKEUP_STATUS_META[task.status];
+                  return (
+                    <article className={`complaint-makeup-card is-${task.status}`} key={task.id}>
+                      <div className="complaint-makeup-card-head">
+                        <div><strong>补发任务 #{task.id}</strong><span>{task.items.map((item) => `第 ${item.issue_number} 期 × ${item.quantity}份`).join('、')}</span></div>
+                        <Tag color={meta.color}>{meta.label}</Tag>
+                      </div>
+                      <div className="complaint-makeup-recipient">
+                        <span>{task.recipient_name} · {task.recipient_phone || '未记录电话'}</span>
+                        <p>{task.recipient_address}</p>
+                      </div>
+                      {(task.tracking_no || task.shipped_at) && <div className="complaint-makeup-track">中通运单：<b>{task.tracking_no || '—'}</b><span>{task.shipped_at?.replace('T', ' ').slice(0, 16)}</span></div>}
+                      {isAdmin && task.status === 'ready' && <Flex gap={8} justify="flex-end">
+                        <Popconfirm title="取消后将移除对应的待发 ZTO-MF 记录，确认取消？" onConfirm={() => cancelMakeupMut.mutate(task.id)}><Button size="small">取消任务</Button></Popconfirm>
+                        <Button size="small" type="primary" onClick={() => { setShippingTask(task); shipForm.setFieldsValue({ shipped_at: dayjs() }); }}>登记发出</Button>
+                      </Flex>}
+                      {isAdmin && task.status === 'shipped' && <Flex justify="flex-end"><Popconfirm title="确认收件人已收到补发？" onConfirm={() => completeMakeupMut.mutate(task.id)}><Button size="small" type="primary">标记完成</Button></Popconfirm></Flex>}
+                    </article>
+                  );
+                })}
+                {!makeupsQ.isLoading && makeupTasks.length === 0 && <div className="complaint-makeup-empty">暂无补发任务，需要补发时可在下方创建。</div>}
+              </div>
+              {isAdmin && <Card size="small" title="创建中通补发" className="complaint-makeup-create">
+                <Form
+                  form={makeupForm}
+                  layout="vertical"
+                  initialValues={{
+                    recipient_name: c.snap_name,
+                    recipient_phone: c.snap_phone,
+                    recipient_address: c.snap_address,
+                    items: [{ quantity: 1 }],
+                  }}
+                  onFinish={(values) => createMakeupMut.mutate(values)}
+                >
+                  <Form.List name="items">
+                    {(fields, { add, remove }) => <>
+                      {fields.map(({ key, ...field }, index) => <Flex gap={8} align="start" key={key}>
+                        <Form.Item {...field} name={[field.name, 'issue_number']} label={index === 0 ? '补发期次' : undefined} rules={[{ required: true, message: '请选择期次' }]} style={{ flex: 1 }}>
+                          <Select showSearch placeholder="选择刊期" options={(issuesQ.data ?? []).map((issue) => ({ value: issue.issue_number, label: `第 ${issue.issue_number} 期 · ${issue.publish_date}` }))} />
+                        </Form.Item>
+                        <Form.Item {...field} name={[field.name, 'quantity']} label={index === 0 ? '份数' : undefined} rules={[{ required: true }]}><InputNumber min={1} style={{ width: 82 }} /></Form.Item>
+                        {fields.length > 1 && <Button danger type="text" style={{ marginTop: index === 0 ? 30 : 0 }} onClick={() => remove(field.name)}>删除</Button>}
+                      </Flex>)}
+                      <Button type="dashed" block onClick={() => add({ quantity: 1 })} icon={<PlusOutlined />}>增加补发期次</Button>
+                    </>}
+                  </Form.List>
+                  <div className="complaint-makeup-form-grid">
+                    <Form.Item name="recipient_name" label="收件人" rules={[{ required: true }]}><Input /></Form.Item>
+                    <Form.Item name="recipient_phone" label="联系电话"><Input /></Form.Item>
+                  </div>
+                  <Form.Item name="recipient_address" label="补发地址" rules={[{ required: true }]}><Input.TextArea autoSize={{ minRows: 2, maxRows: 3 }} /></Form.Item>
+                  <Form.Item name="notes" label="补发说明"><Input placeholder="如：漏收后中通补发" /></Form.Item>
+                  <Button type="primary" htmlType="submit" loading={createMakeupMut.isPending}>创建并同步 ZTO-MF</Button>
+                </Form>
+              </Card>}
+            </div>}
           </section>
 
           {isAdmin && (
@@ -1494,7 +1522,7 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
         title={detailTitle}
         width={900}
         open={open}
-        onCancel={onClose}
+        onCancel={closeDetail}
         footer={detailFooter}
         destroyOnHidden
         zIndex={1100}
@@ -1505,7 +1533,7 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
         {detailContent}
       </Modal>
     ) : (
-      <Drawer title={detailTitle} size={640} open={open} onClose={onClose} destroyOnHidden rootClassName="app-drawer-root" footer={detailFooter}>
+      <Drawer title={detailTitle} size={640} open={open} onClose={closeDetail} destroyOnHidden rootClassName="app-drawer-root" footer={detailFooter}>
         {detailContent}
       </Drawer>
     )}
@@ -2361,7 +2389,7 @@ function TicketsTab() {
         </Text>
       </Space>
     ) },
-    { title: '时间', dataIndex: 'ticket_date', width: 148, render: (v: string | null, r) => v ? dayjs(v).format(r.type === 'address' ? 'MM月DD日 HH:mm' : 'YYYY-MM-DD') : '—' },
+    { title: '时间', dataIndex: 'ticket_date', width: 148, render: (v: string | null, r) => v ? dayjs(v).format(r.type === 'address' ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD') : '—' },
     { title: '状态', key: 'status', width: 100, render: (_: unknown, r) => ticketStatusTag(r) },
     {
       title: '操作', key: 'act', width: isAdmin ? 170 : 80, render: (_: unknown, r: Ticket) => {
