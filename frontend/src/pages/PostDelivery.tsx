@@ -2389,7 +2389,7 @@ function TicketsTab() {
         </Text>
       </Space>
     ) },
-    { title: '时间', dataIndex: 'ticket_date', width: 148, render: (v: string | null, r) => v ? dayjs(v).format(r.type === 'address' ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD') : '—' },
+    { title: '时间', dataIndex: 'ticket_date', width: 148, render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD') : '—' },
     { title: '状态', key: 'status', width: 100, render: (_: unknown, r) => ticketStatusTag(r) },
     {
       title: '操作', key: 'act', width: isAdmin ? 170 : 80, render: (_: unknown, r: Ticket) => {
