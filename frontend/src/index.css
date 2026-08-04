@@ -3267,22 +3267,30 @@ body {
 
 /* Recipient information change + follow-up modals reuse the complaint shell. */
 .address-form-modal .ant-modal-header,
-.follow-form-modal .ant-modal-header {
+.follow-form-modal .ant-modal-header,
+.complaint-detail-modal .ant-modal-header,
+.follow-detail-modal .ant-modal-header {
   padding: 14px 22px;
 }
 
 .address-form-modal .ant-modal-close,
-.follow-form-modal .ant-modal-close {
+.follow-form-modal .ant-modal-close,
+.complaint-detail-modal .ant-modal-close,
+.follow-detail-modal .ant-modal-close {
   top: 20px;
 }
 
 .address-form-modal .ant-modal-body,
-.follow-form-modal .ant-modal-body {
+.follow-form-modal .ant-modal-body,
+.complaint-detail-modal .ant-modal-body,
+.follow-detail-modal .ant-modal-body {
   padding: 8px 22px 9px;
 }
 
 .address-form-modal .ant-modal-footer,
-.follow-form-modal .ant-modal-footer {
+.follow-form-modal .ant-modal-footer,
+.complaint-detail-modal .ant-modal-footer,
+.follow-detail-modal .ant-modal-footer {
   padding: 11px 22px;
 }
 
@@ -4064,6 +4072,130 @@ body {
   font-size: 11px;
 }
 
+.postal-service-section h3 small {
+  margin-left: auto;
+  color: #8994a5;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.postal-service-section .ant-alert {
+  margin-bottom: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.postal-service-section .ant-empty {
+  margin-block: 12px 4px;
+}
+
+.postal-service-list {
+  overflow: hidden;
+  border: 1px solid #e8ecf1;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.postal-service-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid #eef1f5;
+  color: inherit;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.postal-service-item:hover {
+  background: #f7fbff;
+}
+
+.postal-service-item:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid rgba(22, 119, 255, 0.35);
+  outline-offset: -2px;
+}
+
+.postal-service-item:last-of-type {
+  border-bottom: 0;
+}
+
+.postal-service-type {
+  min-width: 58px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #1769cc;
+  background: #eaf3ff;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.postal-service-type.type-address {
+  color: #6b4ab1;
+  background: #f1edff;
+}
+
+.postal-service-type.type-follow {
+  color: #24834f;
+  background: #eaf8f0;
+}
+
+.postal-service-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.postal-service-copy strong,
+.postal-service-copy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postal-service-copy strong {
+  color: #354052;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.postal-service-copy span {
+  margin-top: 3px;
+  color: #8994a5;
+  font-size: 10px;
+}
+
+.postal-service-item .ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.postal-service-action {
+  flex: 0 0 auto;
+  color: #1677ff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.postal-service-more {
+  display: block;
+  padding: 8px 12px;
+  border-top: 1px solid #eef1f5;
+  font-size: 11px;
+  text-align: center;
+}
+
 @media (max-width: 760px) {
   .complaint-form-columns,
   .complaint-form-grid-three {
@@ -4111,7 +4243,9 @@ body {
     display: none;
   }
 
-  .address-source-modal {
+  .address-source-modal,
+  .complaint-detail-modal,
+  .follow-detail-modal {
     margin-inline: auto !important;
   }
 
@@ -4135,6 +4269,15 @@ body {
 
   .postal-detail-field.wide {
     grid-column: auto;
+  }
+
+  .postal-service-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .postal-service-copy {
+    min-width: calc(100% - 78px);
   }
 }
 

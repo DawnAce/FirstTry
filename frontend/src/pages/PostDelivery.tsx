@@ -194,9 +194,9 @@ const fromDateTime = (d?: Dayjs | null): string | null => (d ? d.format('YYYY-MM
 type FollowNextAction = 'complaint' | 'address';
 type TicketFormPrefill = {
   reader: PostalDelivery;
-  communicationContent: string;
-  followUpId: number;
-  existingComplaintId: number | null;
+  communicationContent?: string;
+  followUpId?: number;
+  existingComplaintId?: number | null;
 };
 
 /** 新建工单时从投递明细选人；复用名册查询，不维护第二套“客户”数据。 */
@@ -402,10 +402,19 @@ function DeliveriesTab() {
   const [editing, setEditing] = useState<PostalDelivery | null>(null);
   const [detail, setDetail] = useState<PostalDelivery | null>(null);
   const [sourceChangeId, setSourceChangeId] = useState<number | null>(null);
+  const [complaintForm, setComplaintForm] = useState(false);
+  const [addressForm, setAddressForm] = useState(false);
+  const [followForm, setFollowForm] = useState(false);
+  const [ticketReader, setTicketReader] = useState<PostalDelivery | null>(null);
   const PAGE_SIZE = 50;
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const requestedDeliveryId = Number(searchParams.get('delivery_id')) || null;
+  const requestedTicketId = Number(searchParams.get('ticket_id')) || null;
+  const ticketTypeParam = searchParams.get('ticket_type');
+  const requestedTicketType: TicketType | null = ticketTypeParam === 'complaint' || ticketTypeParam === 'address' || ticketTypeParam === 'follow'
+    ? ticketTypeParam
+    : null;
   const deepLinkQ = useQuery({
     queryKey: ['postalDelivery', requestedDeliveryId],
     queryFn: () => getDelivery(requestedDeliveryId as number).then((r) => r.data),
@@ -414,9 +423,27 @@ function DeliveriesTab() {
   const setDetailUrl = (record: PostalDelivery | null) => {
     const next = new URLSearchParams(searchParams);
     if (record) next.set('delivery_id', String(record.id));
-    else next.delete('delivery_id');
+    else {
+      next.delete('delivery_id');
+      next.delete('ticket_type');
+      next.delete('ticket_id');
+    }
     setSearchParams(next, { replace: true });
     setDetail(record);
+  };
+
+  const openTicketDetail = (ticket: Ticket) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('ticket_type', ticket.type);
+    next.set('ticket_id', String(ticket.id));
+    setSearchParams(next, { replace: true });
+  };
+
+  const closeTicketDetail = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('ticket_type');
+    next.delete('ticket_id');
+    setSearchParams(next, { replace: true });
   };
   const deleteMut = useMutation({
     mutationFn: (id: number) => deleteDelivery(id),
@@ -443,6 +470,20 @@ function DeliveriesTab() {
     },
     onError: (e) => message.error(errText(e)),
   });
+
+  const openTicketForm = (record: PostalDelivery, type: TicketType) => {
+    setTicketReader(record);
+    if (type === 'complaint') setComplaintForm(true);
+    else if (type === 'address') setAddressForm(true);
+    else setFollowForm(true);
+  };
+
+  const closeTicketForms = () => {
+    setComplaintForm(false);
+    setAddressForm(false);
+    setFollowForm(false);
+    setTicketReader(null);
+  };
 
   const unitsQ = useQuery({ queryKey: ['partners'], queryFn: () => listPartners().then((r) => r.data) });
   const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
@@ -551,9 +592,32 @@ function DeliveriesTab() {
         onEdit={(record) => { setDetailUrl(null); setEditing(record); setFormOpen(true); }}
         onDelete={(record) => deleteMut.mutate(record.id, { onSuccess: () => setDetailUrl(null) })}
         onRetryLink={(record) => linkMut.mutate(record.id)}
-        onOpenAddressChange={setSourceChangeId} />
-      <AddressDetailDrawer addressId={sourceChangeId} readOnly modal onClose={() => setSourceChangeId(null)} onEdit={() => {}} />
+        onOpenAddressChange={setSourceChangeId}
+        onCreateTicket={openTicketForm}
+        onOpenTicket={openTicketDetail} />
+      <ComplaintHandlingDrawer
+        complaintId={requestedTicketType === 'complaint' ? requestedTicketId : null}
+        modal
+        onClose={closeTicketDetail}
+      />
+      <AddressDetailDrawer
+        addressId={sourceChangeId ?? (requestedTicketType === 'address' ? requestedTicketId : null)}
+        readOnly
+        modal
+        onClose={() => sourceChangeId != null ? setSourceChangeId(null) : closeTicketDetail()}
+        onEdit={() => {}}
+      />
+      <FollowDetailDrawer
+        followId={requestedTicketType === 'follow' ? requestedTicketId : null}
+        modal
+        readOnly
+        onClose={closeTicketDetail}
+        onEdit={() => {}}
+      />
       <DeliveryFormDrawer open={formOpen} editing={editing} unitOpts={unitOpts} onClose={() => { setFormOpen(false); setEditing(null); }} />
+      <ComplaintFormModal open={complaintForm} editing={null} prefill={ticketReader ? { reader: ticketReader } : null} unitOpts={unitOpts} onClose={closeTicketForms} />
+      <AddressChangeFormModal open={addressForm} editing={null} prefill={ticketReader ? { reader: ticketReader } : null} onClose={closeTicketForms} />
+      <FollowUpFormModal open={followForm} editing={null} prefill={ticketReader ? { reader: ticketReader } : null} onClose={closeTicketForms} />
     </>
   );
 }
@@ -833,7 +897,7 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
   );
 }
 
-function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onEdit, onDelete, onRetryLink, onOpenAddressChange }: {
+function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onEdit, onDelete, onRetryLink, onOpenAddressChange, onCreateTicket, onOpenTicket }: {
   record: PostalDelivery | null;
   isAdmin: boolean;
   deleting: boolean;
@@ -843,6 +907,8 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onE
   onDelete: (record: PostalDelivery) => void;
   onRetryLink: (record: PostalDelivery) => void;
   onOpenAddressChange: (id: number) => void;
+  onCreateTicket: (record: PostalDelivery, type: TicketType) => void;
+  onOpenTicket: (ticket: Ticket) => void;
 }) {
   const navigate = useNavigate();
   const source = record?.source_type ? POSTAL_SOURCE_META[record.source_type] : null;
@@ -854,6 +920,17 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onE
     enabled: record != null,
   });
   const changeSources = changesQ.data ?? [];
+  const servicesQ = useQuery({
+    queryKey: ['postalTickets', 'delivery-services', record?.id],
+    queryFn: () => listTickets({ postal_delivery_id: record?.id, page: 1, page_size: 100 }).then((r) => r.data),
+    enabled: record != null,
+  });
+  const serviceRows = servicesQ.data?.rows ?? [];
+  const activeComplaints = serviceRows
+    .filter((ticket) => ticket.type === 'complaint' && ticket.status !== 'resolved')
+    .sort((left, right) => (left.ticket_date || '9999').localeCompare(right.ticket_date || '9999') || left.id - right.id);
+  const activeComplaintCount = activeComplaints.length;
+  const nextActiveComplaint = activeComplaints[0];
   const statusKey = record ? coverageStatus(record.coverage_start_date, record.coverage_end_date) : 'unknown';
   const statusMeta = DELIVERY_STATUS_META[statusKey];
   const statusClass = statusKey === 'active' ? 'status-resolved'
@@ -869,11 +946,20 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onE
       />
     )} open={record != null} onClose={onClose} size={720} destroyOnHidden
       rootClassName="app-drawer-root"
-      extra={isAdmin && record ? <Space>
-        {!record.order_id && record.external_order_no && (
+      extra={record ? <Space>
+        {isAdmin && !record.order_id && record.external_order_no && (
           <Button loading={linking} onClick={() => onRetryLink(record)}>尝试关联</Button>
         )}
-        <Button icon={<EditOutlined />} onClick={() => onEdit(record)}>编辑记录</Button>
+        {isAdmin && (
+          <Dropdown menu={{ items: [
+            { key: 'complaint', label: `新建投诉${activeComplaintCount ? `（已有 ${activeComplaintCount} 条未解决）` : ''}`, onClick: () => onCreateTicket(record, 'complaint') },
+            { key: 'address', label: '变更投递资料', onClick: () => onCreateTicket(record, 'address') },
+            { key: 'follow', label: '新增回访', onClick: () => onCreateTicket(record, 'follow') },
+          ] }}>
+            <Button type="primary" icon={<PlusOutlined />}>新增处理</Button>
+          </Dropdown>
+        )}
+        {isAdmin && <Button icon={<EditOutlined />} onClick={() => onEdit(record)}>编辑记录</Button>}
       </Space> : null}
       footer={record ? (
         <div className="complaint-form-footer">
@@ -898,6 +984,52 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onE
               {record.order_id ? '✓ 来源订单已关联' : '尚未关联来源订单'}
             </span>
           </div>
+
+          <section className="complaint-form-section postal-detail-section postal-service-section">
+            <h3><span aria-hidden>🧭</span>服务处理<small>共 {servicesQ.data?.total ?? 0} 条记录</small></h3>
+            {activeComplaintCount > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`当前有 ${activeComplaintCount} 条未解决投诉，新建前请确认是否为同一问题`}
+                action={nextActiveComplaint ? (
+                  <Button size="small" type="link" onClick={() => onOpenTicket(nextActiveComplaint)}>
+                    处理未解决投诉（{activeComplaintCount}）
+                  </Button>
+                ) : undefined}
+              />
+            )}
+            {servicesQ.isLoading ? (
+              <Text type="secondary">正在查询投诉、信息修改和回访记录…</Text>
+            ) : servicesQ.isError ? (
+              <Text type="danger">服务记录加载失败</Text>
+            ) : serviceRows.length ? (
+              <div className="postal-service-list">
+                {serviceRows.slice(0, 6).map((ticket) => (
+                  <button
+                    type="button"
+                    className="postal-service-item"
+                    key={`${ticket.type}-${ticket.id}`}
+                    onClick={() => onOpenTicket(ticket)}
+                    aria-label={`${ticket.type === 'complaint' && ticket.status !== 'resolved' ? '处理' : '查看'}${TICKET_TYPE_META[ticket.type].label}：${ticket.summary || `记录 #${ticket.id}`}`}
+                  >
+                    <span className={`postal-service-type type-${ticket.type}`}>{TICKET_TYPE_META[ticket.type].label}</span>
+                    <div className="postal-service-copy">
+                      <strong>{ticket.summary || `${TICKET_TYPE_META[ticket.type].label}记录 #${ticket.id}`}</strong>
+                      <span>{ticket.ticket_date ? dayjs(ticket.ticket_date).format(ticket.type === 'address' ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD') : '时间未记录'}{ticket.handling_count != null ? ` · 已处理 ${ticket.handling_count} 次` : ''}</span>
+                    </div>
+                    {ticketStatusTag(ticket)}
+                    <span className="postal-service-action">
+                      {ticket.type === 'complaint' ? (ticket.status === 'resolved' ? '查看' : '去处理') : ticket.type === 'address' ? '查看变更' : '查看回访'}
+                    </span>
+                  </button>
+                ))}
+                {serviceRows.length > 6 && <Text type="secondary" className="postal-service-more">另有 {serviceRows.length - 6} 条记录，可前往“邮局工单”查看</Text>}
+              </div>
+            ) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无投诉、信息修改或回访记录" />
+            )}
+          </section>
 
           <section className="complaint-form-section postal-detail-section">
             <h3><span aria-hidden>📍</span>投递信息</h3>
@@ -977,7 +1109,7 @@ function ComplaintFormModal({ open, editing, prefill, unitOpts, onClose }: {
           source_platform: reader.source_channel,
         } : {}),
         missing_issues: prefill?.communicationContent,
-        notes: prefill ? `由回访记录 #${prefill.followUpId} 转入` : undefined,
+        notes: prefill?.followUpId ? `由回访记录 #${prefill.followUpId} 转入` : undefined,
       });
     }
   }, [open, editing, prefill, form]);
@@ -1109,8 +1241,8 @@ function ComplaintFormModal({ open, editing, prefill, unitOpts, onClose }: {
   );
 }
 
-/** 投诉详情抽屉：详情 + 三态时间线 + 登记处理 */
-export function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId: number | null; onClose: () => void }) {
+/** 投诉详情：邮局工单页使用抽屉，订户详情内使用二级弹窗。 */
+export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }: { complaintId: number | null; modal?: boolean; onClose: () => void }) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const [form] = Form.useForm();
@@ -1207,24 +1339,24 @@ export function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId:
 
   const detail = detailQ.data;
   const c = detail?.complaint;
-
-  return (<>
-    <Drawer title={(
-      <DrawerTitle
-        icon="📣"
-        title="投诉详情"
-        description={c ? `${c.snap_name || '未记录收报人'} · 编号 ${c.external_order_no || '未记录'}` : '邮局投诉工单'}
-        tone="warning"
-        status={c ? <StatusPill tone={c.status === 'resolved' ? 'success' : c.status === 'in_progress' ? 'info' : 'warning'}>{COMPLAINT_STATUS_META[c.status].label}</StatusPill> : undefined}
-      />
-    )} size={640} open={open} onClose={onClose} destroyOnHidden rootClassName="app-drawer-root"
-      footer={(
-        <div className="app-drawer-footer">
-          <span className="app-drawer-footer-tip"><b>✓</b>处理记录和回访按时间写入工单时间线</span>
-          <Button type="primary" onClick={onClose}>关闭</Button>
-        </div>
-      )}>
-      {!c ? <Empty description={detailQ.isLoading ? '加载中…' : (detailQ.isError ? errText(detailQ.error) : '无数据')} /> : (
+  const detailTitle = (
+    <DrawerTitle
+      icon="📣"
+      title="投诉详情"
+      description={c ? `${c.snap_name || '未记录收报人'} · 编号 ${c.external_order_no || '未记录'}` : '邮局投诉工单'}
+      tone="warning"
+      status={c ? <StatusPill tone={c.status === 'resolved' ? 'success' : c.status === 'in_progress' ? 'info' : 'warning'}>{COMPLAINT_STATUS_META[c.status].label}</StatusPill> : undefined}
+    />
+  );
+  const detailFooter = (
+    <div className="app-drawer-footer">
+      <span className="app-drawer-footer-tip"><b>✓</b>处理记录和回访按时间写入工单时间线</span>
+      <Button type="primary" onClick={onClose}>关闭</Button>
+    </div>
+  );
+  const detailContent = !c
+    ? <Empty description={detailQ.isLoading ? '加载中…' : (detailQ.isError ? errText(detailQ.error) : '无数据')} />
+    : (
         <div className="app-drawer-stack">
           <section className="app-drawer-panel">
             <h3><span aria-hidden>📋</span>投诉信息</h3>
@@ -1354,8 +1486,29 @@ export function ComplaintHandlingDrawer({ complaintId, onClose }: { complaintId:
             )}
           </section>
         </div>
-      )}
-    </Drawer>
+      );
+
+  return (<>
+    {modal ? (
+      <Modal
+        title={detailTitle}
+        width={900}
+        open={open}
+        onCancel={onClose}
+        footer={detailFooter}
+        destroyOnHidden
+        zIndex={1100}
+        style={{ top: 24, marginLeft: 40, marginRight: 'auto' }}
+        className="complaint-form-modal complaint-detail-modal"
+        rootClassName="complaint-form-modal-root app-drawer-root"
+      >
+        {detailContent}
+      </Modal>
+    ) : (
+      <Drawer title={detailTitle} size={640} open={open} onClose={onClose} destroyOnHidden rootClassName="app-drawer-root" footer={detailFooter}>
+        {detailContent}
+      </Drawer>
+    )}
     <FollowUpFormModal
       open={editingFollow != null}
       editing={editingFollow}
@@ -1398,7 +1551,7 @@ function AddressChangeFormModal({ open, editing, prefill, onClose }: {
           old_copies: reader.copies,
           original_start_month: reader.coverage_start_date ? dayjs(reader.coverage_start_date).format('MMDD') : null,
         } : {}),
-        notes: prefill ? `由回访记录 #${prefill.followUpId} 转入：${prefill.communicationContent}` : undefined,
+        notes: prefill?.followUpId ? `由回访记录 #${prefill.followUpId} 转入：${prefill.communicationContent || ''}` : undefined,
       });
     }
   }, [open, editing, prefill, form]);
@@ -1538,9 +1691,10 @@ function AddressChangeFormModal({ open, editing, prefill, onClose }: {
 }
 
 /** 回访 · 新增 / 编辑 */
-function FollowUpFormModal({ open, editing, onClose, onSaved, onContinue }: {
+function FollowUpFormModal({ open, editing, prefill, onClose, onSaved, onContinue }: {
   open: boolean;
   editing: PostalFollowUp | null;
+  prefill?: TicketFormPrefill | null;
   onClose: () => void;
   onSaved?: () => void;
   onContinue?: (prefill: TicketFormPrefill, actions: FollowNextAction[]) => void;
@@ -1551,10 +1705,21 @@ function FollowUpFormModal({ open, editing, onClose, onSaved, onContinue }: {
     if (!open) return;
     if (editing) form.setFieldsValue({ ...editing, follow_up_date: toDay(editing.follow_up_date) });
     else {
+      const reader = prefill?.reader;
       form.resetFields();
-      form.setFieldsValue({ follow_up_date: dayjs(), next_actions: [] });
+      form.setFieldsValue({
+        follow_up_date: dayjs(),
+        next_actions: [],
+        ...(reader ? {
+          selected_reader: reader,
+          postal_delivery_id: reader.id,
+          year: reader.year,
+          delivery_no: reader.delivery_no,
+          snap_name: reader.recipient_name,
+        } : {}),
+      });
     }
-  }, [open, editing, form]);
+  }, [open, editing, prefill, form]);
 
   const watchedYear = Form.useWatch<number>('year', form);
   const watchedDeliveryNo = Form.useWatch<string>('delivery_no', form);
@@ -2001,9 +2166,13 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
   );
 }
 
-/** 回访详情抽屉。 */
-function FollowDetailDrawer({ followId, onEdit, onClose }: {
-  followId: number | null; onEdit: (rec: PostalFollowUp) => void; onClose: () => void;
+/** 回访详情：邮局工单页使用抽屉，订户详情内使用二级弹窗。 */
+function FollowDetailDrawer({ followId, modal = false, readOnly = false, onEdit, onClose }: {
+  followId: number | null;
+  modal?: boolean;
+  readOnly?: boolean;
+  onEdit: (rec: PostalFollowUp) => void;
+  onClose: () => void;
 }) {
   const { isAdmin } = useAuth();
   const open = followId != null;
@@ -2013,25 +2182,17 @@ function FollowDetailDrawer({ followId, onEdit, onClose }: {
     enabled: open,
   });
   const f = q.data;
-  return (
-    <Drawer title={(
-      <DrawerTitle
-        icon="💬"
-        title="回访记录"
-        description={f ? `${f.snap_name || '未记录收报人'} · 编号 ${f.external_order_no || '未记录'}` : '客户沟通留痕'}
-        tone="success"
-        status={<StatusPill tone="success">回访留痕</StatusPill>}
-      />
-    )} size={480} open={open} onClose={onClose} destroyOnHidden rootClassName="app-drawer-root"
-      extra={isAdmin && f && <Button icon={<EditOutlined />} onClick={() => onEdit(f)}>编辑</Button>}
-      footer={(
-        <div className="app-drawer-footer">
-          <span className="app-drawer-footer-tip"><b>✓</b>沟通内容与结果独立留存</span>
-          <Button type="primary" onClick={onClose}>关闭</Button>
-        </div>
-      )}>
-      {!f ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
-        <Descriptions size="small" column={1} bordered items={[
+  const detailTitle = (
+    <DrawerTitle
+      icon="💬"
+      title="回访记录"
+      description={f ? `${f.snap_name || '未记录收报人'} · 编号 ${f.external_order_no || '未记录'}` : '客户沟通留痕'}
+      tone="success"
+      status={<StatusPill tone="success">回访留痕</StatusPill>}
+    />
+  );
+  const detailContent = !f ? <Empty description={q.isLoading ? '加载中…' : '无数据'} /> : (
+    <Descriptions size="small" column={1} bordered items={[
           { key: 'd', label: '回访日期', children: f.follow_up_date || '—' },
           { key: 'n', label: '收报人', children: f.snap_name || '—' },
           { key: 'no', label: '编号', children: f.external_order_no || '—' },
@@ -2039,7 +2200,42 @@ function FollowDetailDrawer({ followId, onEdit, onClose }: {
           { key: 'r', label: '沟通结果', children: <span style={{ whiteSpace: 'pre-wrap' }}>{f.result || '—'}</span> },
           { key: 'link', label: '关联读者', children: readerTag(f.postal_delivery_id) },
         ]} />
-      )}
+  );
+  const detailFooter = (
+    <div className="app-drawer-footer">
+      <span className="app-drawer-footer-tip"><b>✓</b>沟通内容与结果独立留存</span>
+      {!readOnly && isAdmin && f && <Button icon={<EditOutlined />} onClick={() => onEdit(f)}>编辑</Button>}
+      <Button type="primary" onClick={onClose}>关闭</Button>
+    </div>
+  );
+  if (modal) return (
+    <Modal
+      title={detailTitle}
+      width={760}
+      open={open}
+      onCancel={onClose}
+      footer={detailFooter}
+      destroyOnHidden
+      zIndex={1100}
+      style={{ top: 24, marginLeft: 40, marginRight: 'auto' }}
+      className="complaint-form-modal follow-detail-modal"
+      rootClassName="complaint-form-modal-root app-drawer-root"
+    >
+      {detailContent}
+    </Modal>
+  );
+  return (
+    <Drawer
+      title={detailTitle}
+      size={480}
+      open={open}
+      onClose={onClose}
+      destroyOnHidden
+      rootClassName="app-drawer-root"
+      extra={!readOnly && isAdmin && f && <Button icon={<EditOutlined />} onClick={() => onEdit(f)}>编辑</Button>}
+      footer={detailFooter}
+    >
+      {detailContent}
     </Drawer>
   );
 }
