@@ -67,6 +67,11 @@ from app.models.postal_ticket import (
     PostalFollowUp,
 )
 from app.models.postal_finance import PostalFinance
+from app.models.postal_complaint_makeup import (
+    PostalComplaintMakeupItem,
+    PostalComplaintMakeupStatus,
+    PostalComplaintMakeupTask,
+)
 from app.models.subscription_batch import (
     SubscriptionArtifactType,
     SubscriptionBatch,
@@ -124,6 +129,7 @@ __all__ = [
     "PostalComplaint", "PostalComplaintStatus", "PostalComplaintHandlingRecord",
     "PostalAddressChange", "PostalFollowUp",
     "PostalFinance",
+    "PostalComplaintMakeupTask", "PostalComplaintMakeupItem", "PostalComplaintMakeupStatus",
     # 邮局订报数据生成模块（上传驱动 · 版本流水 · 生成产物）
     "SubscriptionBatch", "SubscriptionBatchStatus",
     "SubscriptionImportVersion", "SubscriptionImportStatus",

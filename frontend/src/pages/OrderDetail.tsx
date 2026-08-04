@@ -45,6 +45,7 @@ import {
   TruckOutlined,
   UserOutlined,
   WalletOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import type { TableColumnsType } from 'antd';
 import dayjs from 'dayjs';
@@ -79,11 +80,13 @@ import {
   applyAddressChange,
   createAddressChange,
   getAddressChange,
+  listComplaintMakeups,
   listDeliveries,
   listTickets,
 } from '../api/postal';
 import type {
   AddressChangePayload,
+  ComplaintMakeupTask,
   PostalAddressChange,
   PostalDelivery,
   Ticket,
@@ -161,9 +164,15 @@ export default function OrderDetail() {
     enabled: Number.isFinite(orderId),
   });
 
-  const addressTicketsQuery = useQuery({
-    queryKey: ['postalTickets', 'order-address', orderId],
-    queryFn: () => listTickets({ type: 'address', order_id: orderId, page_size: 200 }).then((r) => r.data),
+  const postalTicketsQuery = useQuery({
+    queryKey: ['postalTickets', 'order', orderId],
+    queryFn: () => listTickets({ order_id: orderId, page_size: 200 }).then((r) => r.data),
+    enabled: Number.isFinite(orderId),
+  });
+
+  const makeupsQuery = useQuery({
+    queryKey: ['postalMakeups', 'order', orderId],
+    queryFn: () => listComplaintMakeups({ order_id: orderId }).then((r) => r.data),
     enabled: Number.isFinite(orderId),
   });
 
@@ -273,6 +282,11 @@ export default function OrderDetail() {
   const progressPercent = progressSummary.expected > 0
     ? Math.min(100, Math.round((progressSummary.fulfilled / progressSummary.expected) * 100))
     : 0;
+  const postalTickets = postalTicketsQuery.data?.rows ?? [];
+  const addressTickets = postalTickets.filter((ticket) => ticket.type === 'address');
+  const complaintTickets = postalTickets.filter((ticket) => ticket.type === 'complaint');
+  const makeupTasks = makeupsQuery.data?.rows ?? [];
+  const activeMakeups = makeupTasks.filter((task) => task.status === 'ready' || task.status === 'shipped');
 
   const handleVoidClick = () => {
     setVoidReason('');
@@ -419,6 +433,17 @@ export default function OrderDetail() {
         <div className="order-detail-overview-cell"><span>覆盖期</span><strong>{headerCoverage}</strong></div>
       </section>
 
+      {(complaintTickets.length > 0 || activeMakeups.length > 0) && (
+        <section className="order-detail-exception-strip" aria-label="邮局异常处理">
+          <div className="order-detail-exception-icon"><WarningOutlined /></div>
+          <div>
+            <strong>该订单存在邮局投递异常处理</strong>
+            <span>投诉工单 {complaintTickets.length} 张{activeMakeups.length ? ` · 中通补发处理中 ${activeMakeups.length} 个` : ''}；补发不重复计入上方履约进度。</span>
+          </div>
+          <Button type="link" onClick={() => navigate('/post-delivery/tickets')}>前往邮局工单</Button>
+        </section>
+      )}
+
       <section className="order-detail-progress-strip" aria-label="订单履约进度">
         <div><strong>履约进度</strong><span>{progressSummary.deliveryLabel} · {progressSummary.fulfilled > 0 ? '履约中' : '尚未开始'}</span></div>
         <div className="order-detail-progress-track"><i style={{ width: `${progressPercent}%` }} /></div>
@@ -448,8 +473,10 @@ export default function OrderDetail() {
                   <ItemsTab
                     items={order.items}
                     deliveries={postalDeliveriesQuery.data?.rows ?? []}
-                    addressTickets={addressTicketsQuery.data?.rows ?? []}
-                    addressLoading={addressTicketsQuery.isLoading}
+                    addressTickets={addressTickets}
+                    complaintTickets={complaintTickets}
+                    makeupTasks={makeupTasks}
+                    addressLoading={postalTicketsQuery.isLoading}
                     onStartAddressChange={setAddressFormDelivery}
                     onOpenAddressChange={setAddressDetailId}
                   />
@@ -477,13 +504,13 @@ export default function OrderDetail() {
               },
               {
                 key: 'shipping',
-                label: <DetailTabLabel icon={<TruckOutlined />} label="关联快递" />,
-                children: <ShippingSyncTab orderId={order.id} items={order.items} />,
+                label: <DetailTabLabel icon={<TruckOutlined />} label="关联快递" count={makeupTasks.length || undefined} />,
+                children: <ShippingSyncTab orderId={order.id} items={order.items} makeups={makeupTasks} />,
               },
               {
                 key: 'postal',
                 label: <DetailTabLabel icon={<MailOutlined />} label="关联邮局" count={postalDeliveriesQuery.data?.total} />,
-                children: <PostalDeliveriesTab orderId={order.id} />,
+                children: <PostalDeliveriesTab orderId={order.id} tickets={postalTickets} makeups={makeupTasks} />,
               },
               {
                 key: 'events',
@@ -859,6 +886,8 @@ interface ItemsTabProps {
   items: OrderItemOut[];
   deliveries: PostalDelivery[];
   addressTickets: Ticket[];
+  complaintTickets: Ticket[];
+  makeupTasks: ComplaintMakeupTask[];
   addressLoading: boolean;
   onStartAddressChange: (delivery: PostalDelivery) => void;
   onOpenAddressChange: (id: number) => void;
@@ -868,6 +897,8 @@ function ItemsTab({
   items,
   deliveries,
   addressTickets,
+  complaintTickets,
+  makeupTasks,
   addressLoading,
   onStartAddressChange,
   onOpenAddressChange,
@@ -884,6 +915,8 @@ function ItemsTab({
           index={idx}
           deliveries={deliveries}
           addressTickets={addressTickets}
+          complaintTickets={complaintTickets}
+          makeupTasks={makeupTasks}
           addressLoading={addressLoading}
           onStartAddressChange={onStartAddressChange}
           onOpenAddressChange={onOpenAddressChange}
@@ -898,6 +931,8 @@ function ItemCard({
   index,
   deliveries,
   addressTickets,
+  complaintTickets,
+  makeupTasks,
   addressLoading,
   onStartAddressChange,
   onOpenAddressChange,
@@ -906,6 +941,8 @@ function ItemCard({
   index: number;
   deliveries: PostalDelivery[];
   addressTickets: Ticket[];
+  complaintTickets: Ticket[];
+  makeupTasks: ComplaintMakeupTask[];
   addressLoading: boolean;
   onStartAddressChange: (delivery: PostalDelivery) => void;
   onOpenAddressChange: (id: number) => void;
@@ -972,6 +1009,8 @@ function ItemCard({
         itemId={item.id}
         deliveries={deliveries}
         addressTickets={addressTickets}
+        complaintTickets={complaintTickets}
+        makeupTasks={makeupTasks}
         loading={addressLoading}
         onStartAddressChange={onStartAddressChange}
         onOpenAddressChange={onOpenAddressChange}
@@ -985,6 +1024,8 @@ function TargetsList({
   itemId,
   deliveries,
   addressTickets,
+  complaintTickets,
+  makeupTasks,
   loading,
   onStartAddressChange,
   onOpenAddressChange,
@@ -993,6 +1034,8 @@ function TargetsList({
   itemId: number;
   deliveries: PostalDelivery[];
   addressTickets: Ticket[];
+  complaintTickets: Ticket[];
+  makeupTasks: ComplaintMakeupTask[];
   loading: boolean;
   onStartAddressChange: (delivery: PostalDelivery) => void;
   onOpenAddressChange: (id: number) => void;
@@ -1009,6 +1052,13 @@ function TargetsList({
         const pending = tickets.find((ticket) => ticket.status === 'pending' || ticket.status === 'unmatched');
         const applied = tickets.filter((ticket) => ticket.status === 'applied' || ticket.status === 'recipient_pending');
         const latest = pending ?? tickets[0];
+        const complaints = delivery
+          ? complaintTickets.filter((ticket) => ticket.postal_delivery_id === delivery.id)
+          : [];
+        const targetMakeups = delivery
+          ? makeupTasks.filter((task) => task.postal_delivery_id === delivery.id)
+          : [];
+        const activeTargetMakeups = targetMakeups.filter((task) => task.status === 'ready' || task.status === 'shipped');
         return (
           <div className="order-detail-target" key={target.id}>
             <div><span>收报人</span><strong>{target.recipient_name}</strong></div>
@@ -1024,6 +1074,8 @@ function TargetsList({
               ) : (
                 <Tag>{targetStatusLabel(target.status)}</Tag>
               )}
+              {complaints.length > 0 && <Tag color="volcano">投诉工单 {complaints.length}</Tag>}
+              {activeTargetMakeups.length > 0 && <Tag color="blue">中通补发 {activeTargetMakeups.length}</Tag>}
               {latest && (
                 <Button type="link" icon={<HistoryOutlined />} onClick={() => onOpenAddressChange(latest.id)}>
                   {pending ? '查看处理进度' : '查看变更记录'}
@@ -1478,7 +1530,7 @@ function formatOrderTimestamp(value: string): string {
 // Tab 3: Shipping sync
 // =============================================================================
 
-function PostalDeliveriesTab({ orderId }: { orderId: number }) {
+function PostalDeliveriesTab({ orderId, tickets, makeups }: { orderId: number; tickets: Ticket[]; makeups: ComplaintMakeupTask[] }) {
   const navigate = useNavigate();
   const q = useQuery({
     queryKey: ['postalDeliveries', 'order', orderId],
@@ -1525,6 +1577,13 @@ function PostalDeliveriesTab({ orderId }: { orderId: number }) {
                 <div><small>当前有效投递地址</small><strong>{row.recipient_address}</strong><span>{row.recipient_phone || '未记录电话'}{row.amount != null ? ` · 分段金额 ¥${row.amount}` : ''}</span></div>
                 <Button type="link" onClick={() => navigate(`/post-delivery/deliveries?delivery_id=${row.id}`)}>查看投递详情</Button>
               </div>
+              {(tickets.some((ticket) => ticket.postal_delivery_id === row.id) || makeups.some((task) => task.postal_delivery_id === row.id)) && (
+                <div className="order-detail-postal-exceptions">
+                  <span>异常处理同步</span>
+                  {tickets.filter((ticket) => ticket.postal_delivery_id === row.id && ticket.type === 'complaint').map((ticket) => <Tag color="volcano" key={`ticket-${ticket.id}`}>投诉 #{ticket.id} · {ticket.status === 'resolved' ? '已解决' : '处理中'}</Tag>)}
+                  {makeups.filter((task) => task.postal_delivery_id === row.id).map((task) => <Tag color={task.status === 'completed' ? 'green' : task.status === 'cancelled' ? 'default' : 'blue'} key={`makeup-${task.id}`}>中通补发 #{task.id} · {makeupStatusLabel(task.status)}</Tag>)}
+                </div>
+              )}
             </article>
           ))}
         </div>
@@ -1533,7 +1592,36 @@ function PostalDeliveriesTab({ orderId }: { orderId: number }) {
   );
 }
 
-function ShippingSyncTab({ orderId, items }: { orderId: number; items: OrderItemOut[] }) {
+function makeupStatusLabel(status: ComplaintMakeupTask['status']): string {
+  return { ready: '待发出', shipped: '已发出', completed: '已完成', cancelled: '已取消' }[status];
+}
+
+function OrderMakeupCards({ makeups }: { makeups: ComplaintMakeupTask[] }) {
+  return (
+    <div className="order-detail-ticket-list order-detail-makeup-list">
+      {makeups.map((task) => (
+        <article className={`order-detail-work-ticket order-detail-makeup-ticket is-${task.status}`} key={task.id}>
+          <div className="order-detail-ticket-head">
+            <div><strong>投诉补发 #{task.id}</strong><span>来源邮局工单 #{task.complaint_id}{task.postal_delivery_id ? ` · 邮局投递 #${task.postal_delivery_id}` : ''}</span></div>
+            <i className={`order-detail-soft-status ${task.status === 'completed' ? 'is-success' : task.status === 'cancelled' ? 'is-neutral' : 'is-warning'}`}>{makeupStatusLabel(task.status)}</i>
+          </div>
+          <div className="order-detail-plan-facts">
+            <div><span>补发期次</span><strong>{task.items.map((item) => `第 ${item.issue_number} 期`).join('、')}</strong></div>
+            <div><span>补发份数</span><strong>{task.items.reduce((sum, item) => sum + item.quantity, 0)} 份</strong></div>
+            <div><span>中通运单</span><strong>{task.tracking_no || '待登记'}</strong></div>
+            <div><span>发出时间</span><strong>{task.shipped_at?.replace('T', ' ').slice(0, 16) || '待发出'}</strong></div>
+          </div>
+          <div className="order-detail-postal-address">
+            <TruckOutlined />
+            <div><small>投诉补发收件信息</small><strong>{task.recipient_name} · {task.recipient_phone || '未记录电话'}</strong><span>{task.recipient_address}</span></div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ShippingSyncTab({ orderId, items, makeups }: { orderId: number; items: OrderItemOut[]; makeups: ComplaintMakeupTask[] }) {
   const queryClient = useQueryClient();
   const postalOnly = items.length > 0 && items.every((item) => item.delivery_method === 'post_office');
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number | null>(null);
@@ -1700,8 +1788,8 @@ function ShippingSyncTab({ orderId, items }: { orderId: number; items: OrderItem
   if (postalOnly) {
     return (
       <section className="order-detail-tab-section">
-        <TabSectionHeader kicker="EXPRESS LINK" title="关联快递" description="查看订单按期同步到中通发货明细的结果。" status={<i className="order-detail-soft-status is-neutral">本单不适用</i>} />
-        <TabEmptyState icon={<TruckOutlined />} title="本订单采用邮局投递" description="不会生成中通快递发货明细；如投递方式调整，关联记录将在此处按期展示。" />
+        <TabSectionHeader kicker="EXPRESS LINK" title="关联快递" description="原订单采用邮局投递；这里只展示投诉产生的中通补发，不改变原履约方式。" status={<i className={`order-detail-soft-status ${makeups.length ? 'is-warning' : 'is-neutral'}`}>{makeups.length ? `补发 ${makeups.length} 个` : '无补发'}</i>} />
+        {makeups.length ? <OrderMakeupCards makeups={makeups} /> : <TabEmptyState icon={<TruckOutlined />} title="本订单采用邮局投递" description="当前没有投诉补发快递；正常履约不会生成中通明细。" />}
       </section>
     );
   }
@@ -1709,6 +1797,7 @@ function ShippingSyncTab({ orderId, items }: { orderId: number; items: OrderItem
   return (
     <section className="order-detail-tab-section">
       <TabSectionHeader kicker="EXPRESS LINK" title="关联快递" description="选择刊期预览并同步订单履约目标到中通发货明细。" />
+      {makeups.length > 0 && <><Alert type="warning" showIcon title="下方投诉补发独立于订单正常快递履约，不参与应发与已发进度统计。" /><OrderMakeupCards makeups={makeups} /></>}
       <div className="order-detail-sync-stack">
       <Card size="small" className="order-detail-sync-controls">
         <Space wrap>

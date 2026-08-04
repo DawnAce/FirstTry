@@ -117,6 +117,10 @@ class ShippingDetailOut(BaseModel):
     order_id: Optional[int]
     order_item_id: Optional[int]
     fulfillment_target_id: Optional[int]
+    complaint_makeup_item_id: Optional[int]
+    complaint_makeup_task_id: Optional[int] = None
+    complaint_ticket_id: Optional[int] = None
+    postal_delivery_id: Optional[int] = None
     source_type: ShippingDetailSourceType
     sync_status: ShippingDetailSyncStatus
     created_at: Optional[datetime]

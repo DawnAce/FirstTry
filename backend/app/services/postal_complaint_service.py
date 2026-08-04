@@ -10,6 +10,7 @@ from app.models import (
     PostalComplaint,
     PostalComplaintHandlingRecord,
     PostalComplaintStatus,
+    PostalComplaintMakeupTask,
     PostalDelivery,
     PostalFollowUp,
     PostalTicketEventType,
@@ -192,6 +193,10 @@ def delete_complaint(db: Session, complaint_id: int) -> None:
     rec = db.query(PostalComplaint).filter(PostalComplaint.id == complaint_id).first()
     if rec is None:
         raise HTTPException(status_code=404, detail=f"投诉工单 {complaint_id} 不存在")
+    if db.query(PostalComplaintMakeupTask.id).filter(
+        PostalComplaintMakeupTask.complaint_id == complaint_id
+    ).first():
+        raise HTTPException(status_code=409, detail="该投诉已有补发任务，不能删除工单")
     linked_follow_ups = (
         db.query(PostalFollowUp)
         .filter(PostalFollowUp.parent_ticket_id == complaint_id)

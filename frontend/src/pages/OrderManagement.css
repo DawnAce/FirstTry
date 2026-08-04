@@ -648,6 +648,58 @@
   box-shadow: 0 4px 13px rgba(30, 47, 73, 0.04);
 }
 
+.order-detail-exception-strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 0 16px;
+  padding: 13px 16px;
+  border: 1px solid #f2c9b8;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #fff8f4, #fffdfb);
+}
+
+.order-detail-exception-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: #c7502d;
+  background: #ffeadf;
+  font-size: 17px;
+}
+
+.order-detail-exception-strip > div:nth-child(2) {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+}
+
+.order-detail-exception-strip strong { color: #613122; }
+.order-detail-exception-strip span { color: #8b675b; font-size: 12px; }
+
+.order-detail-postal-exceptions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #d9e2ee;
+}
+
+.order-detail-postal-exceptions > span {
+  margin-right: 4px;
+  color: #6b7788;
+  font-size: 12px;
+}
+
+.order-detail-makeup-list { margin: 14px 0; }
+.order-detail-makeup-ticket { border-left: 4px solid #e8902e; }
+.order-detail-makeup-ticket.is-completed { border-left-color: #32a46d; }
+.order-detail-makeup-ticket.is-cancelled { border-left-color: #aeb5be; opacity: .76; }
+
 .order-detail-progress-strip > div:first-child strong,
 .order-detail-progress-strip > div:first-child span {
   display: block;

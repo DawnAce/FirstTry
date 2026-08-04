@@ -41,6 +41,10 @@ class PostalTicketEventType(str, enum.Enum):
     handling = "handling"
     follow_up = "follow_up"
     address_applied = "address_applied"
+    makeup_created = "makeup_created"
+    makeup_shipped = "makeup_shipped"
+    makeup_completed = "makeup_completed"
+    makeup_cancelled = "makeup_cancelled"
 
 
 class PostalTicket(Base):

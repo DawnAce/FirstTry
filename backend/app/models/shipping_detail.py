@@ -1,6 +1,7 @@
 import enum
 
 from sqlalchemy import Column, DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -16,6 +17,7 @@ class ShippingDetailSourceType(str, enum.Enum):
     manual = "manual"
     order_generated = "order_generated"
     historical_import = "historical_import"
+    complaint_makeup = "complaint_makeup"
 
 
 class ShippingDetailSyncStatus(str, enum.Enum):
@@ -67,6 +69,11 @@ class ShippingDetail(Base):
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
     order_item_id = Column(Integer, ForeignKey("order_items.id"), nullable=True)
     fulfillment_target_id = Column(Integer, ForeignKey("fulfillment_targets.id"), nullable=True)
+    complaint_makeup_item_id = Column(
+        Integer,
+        ForeignKey("postal_complaint_makeup_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     source_type = Column(
         SAEnum(ShippingDetailSourceType),
         nullable=False,
@@ -83,6 +90,24 @@ class ShippingDetail(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    complaint_makeup_item = relationship(
+        "PostalComplaintMakeupItem",
+        back_populates="shipping_detail",
+        foreign_keys=[complaint_makeup_item_id],
+    )
+
+    @property
+    def complaint_makeup_task_id(self):
+        return self.complaint_makeup_item.task_id if self.complaint_makeup_item else None
+
+    @property
+    def complaint_ticket_id(self):
+        return self.complaint_makeup_item.task.complaint_id if self.complaint_makeup_item else None
+
+    @property
+    def postal_delivery_id(self):
+        return self.complaint_makeup_item.task.postal_delivery_id if self.complaint_makeup_item else None
+
     __table_args__ = (
         Index(
             "uq_shipping_detail_order_target_issue",
@@ -90,6 +115,11 @@ class ShippingDetail(Base):
             "order_id",
             "order_item_id",
             "fulfillment_target_id",
+            unique=True,
+        ),
+        Index(
+            "ix_shipping_details_makeup_item",
+            "complaint_makeup_item_id",
             unique=True,
         ),
     )

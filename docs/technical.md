@@ -597,6 +597,8 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr
 
 **统一邮局工单（PR-E，迁移 `d4e6f8a0b2c4`）**：投诉 / 收件信息变更（内部类型 `address`）/ 回访通过 SQLAlchemy 单表继承统一存入 `postal_tickets`，类型列为 `complaint/address/follow`，公共字段含 `postal_delivery_id/order_id/external_order_no/year`，类型专属字段保持可空。投诉处理、关联回访和应用变更留痕统一存入 `postal_ticket_events`。迁移保留投诉主键，重排收件信息变更 / 回访主键；同编号回访设置 `parent_ticket_id` 并写入投诉时间线，独立回访仍作为工单展示。前端新建三类工单统一复用投递明细查询选择读者，支持年度编号、姓名、电话、地址检索，选择后自动提交唯一的年度+编号并带入快照。旧模型模块仅保留兼容导出。
 
+**投诉中通补发闭环（迁移 `d1f3a5c7e9b2`）**：一张投诉可建立多次 `postal_complaint_makeup_tasks`，每次任务通过 `postal_complaint_makeup_items` 选择一个或多个刊期及份数。创建任务时自动生成 `source_type=complaint_makeup` 的 `shipping_details`，保留订单、邮局投递、投诉工单和补发任务四向追溯；从邮局工单或 ZTO-MF 登记发出均会同步任务状态、运单号和时间线。原订单投递方式保持邮局不变，补发明细显式排除在订单主履约进度、报数对账、跨期复制和 ZTO-MF 主清单合计之外，但仍保留在 ZTO-MF 操作明细及导出中。待发任务可取消并移除对应 ZTO-MF 行；已发任务只能完成，不能直接删除。
+
 **投诉工单（P2）**：投诉 `编号`(去前导零) + `年度` 经 `postal_common.delivery_map` → `postal_delivery`（`postal_delivery_id` 可空 SET NULL；关联的投递记录挂了真实订单才继承 `order_id`；匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；状态为 open/in_progress/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。
 
 **收件信息变更 + 回访（P3）**：均按 编号+年度 关联投递记录；历史独立表已由 PR-E 迁入 `postal_tickets`。
@@ -1742,6 +1744,9 @@ draft ──confirm──> active ──void──> void
 | `GET`/`PUT`/`DELETE` | `/api/postal/tickets/{id}` | 统一详情 / 编辑 / 删除；响应带类型判别字段；投诉详情含 `complaint_source` 与动态派生的 `source_platform`；已应用收件信息变更的 `PUT`/`DELETE` 返回 409；删除投诉会删除其时间线，但关联回访解除归属后恢复为独立工单 |
 | `POST` | `/api/postal/tickets/{id}/apply` | 应用收件信息变更：写回投递记录；挂真实订单时精确同步已绑定 `FulfillmentTarget`，未绑定仅接受唯一当前邮局目标，多目标返回 409 |
 | `POST`/`DELETE` | `/api/postal/tickets/{id}/handlings[/{handling_id}]` | 新增 / 删除投诉处理时间线 |
+| `GET`/`POST` | `/api/postal/tickets/{id}/makeups` | 查询 / 创建该投诉的中通补发任务；创建时按期次同步生成 ZTO-MF 行 |
+| `GET` | `/api/postal/makeups?order_id=&complaint_id=` | 按订单或投诉查询同一批补发任务，供订单详情和邮局工单同步展示 |
+| `POST` | `/api/postal/makeups/{id}/ship` · `/complete` · `/cancel` | 登记发出、完成或取消补发；发出写运单和时间线，取消只允许待发任务 |
 | `POST` | `/api/postal/tickets/import/{type}/preview` · `/commit` | 按类型导入投诉 / 收件信息变更（兼容历史《改地址》Excel）/ 回访；同编号回访并入投诉时间线 |
 
 > **收款发票已迁至财务管理**：原 `/api/postal/finance` + `/api/postal/finance/import/*` 迁为 **`/api/finance/postal-receipts`**（筛选 `platform`/`tax_category`/`linked`/`search`）+ **`/api/finance/postal-receipts/import/preview` · `/commit`**，作为财务管理第三个 Tab「邮局收款」；台账表 `postal_finance` 不变（见 §3.17 P4）。

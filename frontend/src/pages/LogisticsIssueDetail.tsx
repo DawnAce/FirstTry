@@ -79,6 +79,7 @@ const sourceTypeMeta: Record<string, { label: string; color: string }> = {
   manual: { label: '手工录入', color: 'default' },
   order_generated: { label: '订单生成', color: 'blue' },
   historical_import: { label: '历史导入', color: 'default' },
+  complaint_makeup: { label: '投诉补发', color: 'volcano' },
 };
 const syncStatusMeta: Record<string, { label: string; color: string }> = {
   synced: { label: '已同步', color: 'green' },
@@ -361,10 +362,11 @@ export default function LogisticsIssueDetail() {
     selectedRowKeys,
     onChange: (keys) => setSelectedRowKeys(keys),
     columnWidth: 44,
+    getCheckboxProps: (record) => ({ disabled: record.source_type === 'complaint_makeup' }),
   };
   const confirmationSummary = report?.confirmation_summary;
-  const currentShippingTotal = details.reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
-  const allShippingTotal = allDetails.reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const currentShippingTotal = details.filter((detail) => detail.source_type !== 'complaint_makeup').reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const allShippingTotal = allDetails.filter((detail) => detail.source_type !== 'complaint_makeup').reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
   const check = report?.shipping_check;
   const advancedFilterCount = [shippingFilters.frequency, shippingFilters.transport, shippingFilters.sub_channel].filter(Boolean).length;
   const uploaded = allDetails.length > 0;
@@ -486,9 +488,9 @@ export default function LogisticsIssueDetail() {
             content={
               <div className="zto-action-menu">
                 <Button type="text" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)}>操作日志</Button>
-                <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
+                {record.source_type !== 'complaint_makeup' ? <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
                   <Button type="text" danger icon={<DeleteOutlined />}>删除</Button>
-                </Popconfirm>
+                </Popconfirm> : <Button type="text" disabled>请在邮局工单取消</Button>}
               </div>
             }
           >
@@ -516,6 +518,11 @@ export default function LogisticsIssueDetail() {
         k: '来源订单',
         v: r.order_id ? <a onClick={() => navigate(`/orders/${r.order_id}`)}>查看订单 #{r.order_id}</a> : '—',
       },
+      ...(r.source_type === 'complaint_makeup' ? [
+        { k: '投诉工单', v: r.complaint_ticket_id ? `邮局投诉 #${r.complaint_ticket_id}` : '—' },
+        { k: '补发任务', v: r.complaint_makeup_task_id ? `中通补发 #${r.complaint_makeup_task_id}` : '—' },
+        { k: '邮局投递', v: r.postal_delivery_id ? `邮局投递 #${r.postal_delivery_id}` : '—' },
+      ] : []),
       { k: '备注', v: r.notes || '—' },
       { k: '附加信息', v: r.extra_info || '—' },
     ];

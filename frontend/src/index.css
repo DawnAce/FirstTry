@@ -572,6 +572,71 @@ body {
   color: #2f80ed;
 }
 
+.complaint-makeup-panel .ant-alert {
+  margin-bottom: 14px;
+  border-radius: 10px;
+  background: #f4f8ff;
+}
+
+.complaint-makeup-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.complaint-makeup-card {
+  padding: 14px;
+  border: 1px solid #dce6f4;
+  border-left: 4px solid #f0a020;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.complaint-makeup-card.is-shipped { border-left-color: #2878d0; }
+.complaint-makeup-card.is-completed { border-left-color: #32a46d; }
+.complaint-makeup-card.is-cancelled { border-left-color: #a9b0ba; opacity: .75; }
+
+.complaint-makeup-card-head,
+.complaint-makeup-track {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.complaint-makeup-card-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.complaint-makeup-card-head strong { color: #172840; }
+.complaint-makeup-card-head span,
+.complaint-makeup-recipient p,
+.complaint-makeup-track { color: #6b7788; font-size: 12px; }
+
+.complaint-makeup-recipient {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #f7f9fc;
+}
+
+.complaint-makeup-recipient span { color: #2f4058; font-weight: 600; }
+.complaint-makeup-recipient p { margin: 4px 0 0; }
+.complaint-makeup-track { margin: -2px 0 12px; }
+.complaint-makeup-track b { color: #2878d0; }
+.complaint-makeup-create { margin-top: 4px; }
+
+.complaint-makeup-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 680px) {
+  .complaint-makeup-form-grid { grid-template-columns: 1fr; gap: 0; }
+}
+
 /* ===== Timeline ===== */
 .ant-timeline-item-head {
   background: var(--color-accent) !important;
