@@ -175,6 +175,57 @@ def test_normal_invoice_can_be_split_but_cannot_exceed_order_total(client):
     assert duplicate.json()["detail"] == "该订单已足额开票，不能继续登记正票"
 
 
+def test_order_detail_uses_same_invoice_state_as_finance_workbench(client):
+    db = client.session_factory()
+    no_invoice = _order(db, invoice_required=False, total=240, code="NONE")
+    pending = _order(db, invoice_required=True, total=240, code="PENDING")
+    partial = _order(db, invoice_required=True, total=240, code="PARTIAL")
+    issued = _order(db, invoice_required=True, total=240, code="ISSUED")
+    needs_red = _order(db, invoice_required=True, refunded=50, total=240, code="RED")
+    db.commit()
+    ids = {
+        "none": no_invoice.id,
+        "pending": pending.id,
+        "partial": partial.id,
+        "issued": issued.id,
+        "red": needs_red.id,
+    }
+    db.close()
+
+    assert client.post("/api/invoices", json={"order_id": ids["partial"], "amount": 100}).status_code == 201
+    assert client.post("/api/invoices", json={"order_id": ids["issued"], "amount": 240}).status_code == 201
+    assert client.post("/api/invoices", json={"order_id": ids["red"], "amount": 240}).status_code == 201
+
+    expected = {
+        "none": ("not_required", "0.00", "0.00", False),
+        "pending": ("pending", "0.00", "240.00", False),
+        "partial": ("pending", "100.00", "140.00", False),
+        "issued": ("issued", "240.00", "0.00", False),
+        "red": ("needs_red_reversal", "240.00", "0.00", True),
+    }
+    for key, order_id in ids.items():
+        detail = client.get(f"/api/orders/{order_id}")
+        assert detail.status_code == 200, detail.text
+        body = detail.json()
+        state, invoiced, remaining, needs_reversal = expected[key]
+        assert body["invoice_state"] == state
+        assert body["normal_invoiced_amount"] == invoiced
+        assert body["remaining_invoice_amount"] == remaining
+        assert body["needs_red_reversal"] is needs_reversal
+
+    workbench = {
+        row["order_id"]: row
+        for row in client.get("/api/invoices/orders").json()["rows"]
+    }
+    for key in ("pending", "partial", "issued", "red"):
+        detail = client.get(f"/api/orders/{ids[key]}").json()
+        row = workbench[ids[key]]
+        assert detail["invoice_state"] == row["invoice_state"]
+        assert detail["normal_invoiced_amount"] == row["normal_invoiced_amount"]
+        assert detail["remaining_invoice_amount"] == row["remaining_invoice_amount"]
+        assert detail["needs_red_reversal"] == row["needs_red_reversal"]
+
+
 def test_normal_invoice_requires_positive_amount(client):
     db = client.session_factory()
     o = _order(db, invoice_required=True, total=240)

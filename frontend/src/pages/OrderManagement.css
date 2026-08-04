@@ -1453,6 +1453,43 @@
   text-align: right;
 }
 
+.order-detail-invoice-state > div {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.order-detail-invoice-state small {
+  color: #748094;
+  font-size: 11px;
+  text-align: right;
+}
+
+.order-detail-invoice-state.is-issued {
+  background: #f1f8ee;
+}
+
+.order-detail-invoice-state.is-issued strong {
+  color: #20804b;
+}
+
+.order-detail-invoice-state.is-pending {
+  background: #fff8eb;
+}
+
+.order-detail-invoice-state.is-pending strong {
+  color: #ad6800;
+}
+
+.order-detail-invoice-state.is-needs_red_reversal {
+  background: #fff1f0;
+}
+
+.order-detail-invoice-state.is-needs_red_reversal strong {
+  color: #cf3c3c;
+}
+
 .order-detail-info-list {
   margin: 0;
 }

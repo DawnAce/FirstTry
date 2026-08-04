@@ -10,6 +10,7 @@
 渠道结算的 CRUD 在 ``api/settlements`` 内联（与 contracts 同风格），不在此。
 """
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
 
@@ -26,6 +27,69 @@ _STATE_RANK = {"needs_red_reversal": 0, "pending": 1, "issued": 2}
 
 def _money(value) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
+
+
+@dataclass(frozen=True)
+class OrderInvoiceSummary:
+    """One shared invoice-state calculation for finance and order detail."""
+
+    state: str
+    normal_invoiced_amount: Decimal
+    remaining_invoice_amount: Decimal
+    needs_red_reversal: bool
+
+
+def summarize_order_invoices(
+    order: Order,
+    invoices: list[Invoice],
+) -> OrderInvoiceSummary:
+    """Derive the order invoice state from its invoice records.
+
+    ``not_required`` is used only by order detail when the order neither asks
+    for an invoice nor has historical invoice records. Finance-workbench rows
+    are already restricted to relevant orders, so their existing three-state
+    semantics remain unchanged.
+    """
+    normal_invs = [i for i in invoices if i.invoice_type == InvoiceType.normal]
+    has_normal = bool(normal_invs)
+    order_total = _money(order.total_amount)
+    normal_amount_unknown = any(i.amount is None for i in normal_invs)
+    if normal_amount_unknown:
+        normal_invoiced = order_total
+    else:
+        normal_invoiced = sum((_money(i.amount) for i in normal_invs), Decimal("0.00"))
+
+    relevant = bool(order.invoice_required or invoices)
+    remaining_invoice = (
+        max(order_total - normal_invoiced, Decimal("0.00"))
+        if relevant
+        else Decimal("0.00")
+    )
+    fully_invoiced = has_normal and (normal_amount_unknown or remaining_invoice == 0)
+    red_invs = [i for i in invoices if i.invoice_type == InvoiceType.red_reversal]
+    refunded = _money(order.refunded_amount)
+    if red_invs and any(i.amount is None for i in red_invs):
+        reversal_covers = True
+    else:
+        reversed_total = sum((abs(_money(i.amount)) for i in red_invs), Decimal("0"))
+        reversal_covers = reversed_total >= refunded
+    needs_red = has_normal and refunded > 0 and not reversal_covers
+
+    if needs_red:
+        state = "needs_red_reversal"
+    elif fully_invoiced:
+        state = "issued"
+    elif relevant:
+        state = "pending"
+    else:
+        state = "not_required"
+
+    return OrderInvoiceSummary(
+        state=state,
+        normal_invoiced_amount=normal_invoiced,
+        remaining_invoice_amount=remaining_invoice,
+        needs_red_reversal=needs_red,
+    )
 
 
 def list_invoice_orders(
@@ -60,44 +124,20 @@ def list_invoice_orders(
     issued_count = 0
     for o in orders:
         invs = by_order.get(o.id, [])
-        normal_invs = [i for i in invs if i.invoice_type == InvoiceType.normal]
-        has_normal = bool(normal_invs)
+        summary = summarize_order_invoices(o, invs)
         order_total = _money(o.total_amount)
-        # 旧数据允许正票不填金额；这种记录无法计算剩余金额，沿用原口径视为已足额开票。
-        normal_amount_unknown = any(i.amount is None for i in normal_invs)
-        if normal_amount_unknown:
-            normal_invoiced = order_total
-        else:
-            normal_invoiced = sum((_money(i.amount) for i in normal_invs), Decimal("0.00"))
-        remaining_invoice = max(order_total - normal_invoiced, Decimal("0.00"))
-        fully_invoiced = has_normal and (normal_amount_unknown or remaining_invoice == 0)
-        red_invs = [i for i in invs if i.invoice_type == InvoiceType.red_reversal]
         refunded = _money(o.refunded_amount)
-        # 「是否需冲红」按金额口径：已冲红累计 ≥ 当前累计退款 即视为已覆盖。
-        # refunded_amount 是 SUM(refunds) 会随追加退款累加，故布尔「有没有红冲」会漏报追加 / 部分冲红。
-        # 任一红冲未填金额 → 无法核算，保守视为已覆盖（沿用 v0 行为，不误催）。
-        if red_invs and any(i.amount is None for i in red_invs):
-            reversal_covers = True
-        else:
-            reversed_total = sum((abs(_money(i.amount)) for i in red_invs), Decimal("0"))
-            reversal_covers = reversed_total >= refunded
-        needs_red = has_normal and refunded > 0 and not reversal_covers
 
         is_void = o.status == OrderStatus.void
         # 作废单只在「仍需冲红」时保留可见；其余作废单（含纯待开票）不展示——不催作废单开票。
-        if is_void and not needs_red:
+        if is_void and not summary.needs_red_reversal:
             continue
 
-        if needs_red:
-            state = "needs_red_reversal"
-        elif not fully_invoiced:
-            state = "pending"
-        else:
-            state = "issued"
+        state = summary.state
 
         if state == "pending":
             pending_count += 1
-        if needs_red:
+        if summary.needs_red_reversal:
             needs_red_count += 1
         if state == "issued":
             issued_count += 1
@@ -114,11 +154,11 @@ def list_invoice_orders(
                 invoice_title=o.invoice_title,
                 invoice_tax_no=o.invoice_tax_no,
                 invoice_recipient_email=o.invoice_recipient_email,
-                normal_invoiced_amount=normal_invoiced,
-                remaining_invoice_amount=remaining_invoice,
+                normal_invoiced_amount=summary.normal_invoiced_amount,
+                remaining_invoice_amount=summary.remaining_invoice_amount,
                 invoices=[InvoiceOut.model_validate(i) for i in invs],
                 invoice_state=state,
-                needs_red_reversal=needs_red,
+                needs_red_reversal=summary.needs_red_reversal,
                 order_voided=is_void,
             )
         )

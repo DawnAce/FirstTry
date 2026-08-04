@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import OrderEntryMethod, OrderStatus, User
+from app.models import Invoice, OrderEntryMethod, OrderStatus, User
 from app.models.order_event import OrderEvent
 from app.schemas.order import (
     BatchSyncSummary,
@@ -63,7 +63,7 @@ from app.schemas.order import (
     RefundIn,
     ShipBatchResult,
 )
-from app.services import order_service
+from app.services import finance_service, order_service
 from app.services.order_shipping_batch_service import (
     apply_all_for_issue,
     apply_all_issues_for_order,
@@ -543,6 +543,14 @@ def _build_order_out(db: Session, order) -> OrderOut:
         RefundOut,
     )
 
+    invoices = (
+        db.query(Invoice)
+        .filter(Invoice.order_id == order.id)
+        .order_by(Invoice.id)
+        .all()
+    )
+    invoice_summary = finance_service.summarize_order_invoices(order, invoices)
+
     item_outs = []
     for item in order.items:
         progress = order_service.compute_fulfillment_progress(db, item)
@@ -591,6 +599,10 @@ def _build_order_out(db: Session, order) -> OrderOut:
         invoice_title=order.invoice_title,
         invoice_tax_no=order.invoice_tax_no,
         invoice_recipient_email=order.invoice_recipient_email,
+        invoice_state=invoice_summary.state,
+        normal_invoiced_amount=invoice_summary.normal_invoiced_amount,
+        remaining_invoice_amount=invoice_summary.remaining_invoice_amount,
+        needs_red_reversal=invoice_summary.needs_red_reversal,
         status=order.status,
         commercial_status=order.commercial_status,
         refunded_amount=order.refunded_amount,
