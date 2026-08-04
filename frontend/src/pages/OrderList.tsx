@@ -1,31 +1,39 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Badge,
   Button,
-  Card,
   DatePicker,
+  Drawer,
+  Dropdown,
+  Empty,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Progress,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
-  Typography,
   message,
 } from 'antd';
 import {
   CheckOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  EllipsisOutlined,
+  FilterOutlined,
+  FileTextOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SearchOutlined,
   StopOutlined,
+  TruckOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
-import type { TableColumnsType, TableProps } from 'antd';
+import type { MenuProps, TableColumnsType, TableProps } from 'antd';
 import type { Dayjs } from 'dayjs';
 import {
   bulkConfirmOrders,
@@ -34,7 +42,9 @@ import {
   confirmOrder,
   deleteOrder,
   exportOrders,
+  getOrder,
   listOrders,
+  listOrderEvents,
   orderQueryKeys,
   voidOrder,
 } from '../api/orders';
@@ -47,22 +57,31 @@ import {
   canConfirmOrder,
   canDeleteOrder,
   canVoidOrder,
+  deliveryMethodLabel,
   driftColor,
   driftLabel,
+  eventTypeLabel,
   formatCoverage,
   formatCurrency,
-  statusBadgeColor,
+  publicationLabel,
   statusLabel,
+  subscriptionTermLabel,
 } from './orderUtils';
 import EcommerceRules from './ecommerceRules';
 import { useAuth } from '../contexts/AuthContext';
-import { PageHeader } from '../components/UiPrimitives';
+import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives';
+import './OrderManagement.css';
 
 const { RangePicker } = DatePicker;
 
-const STATUS_OPTIONS: Array<{ label: string; value: OrderStatus }> = [
+type OrderView = 'all' | 'active' | 'pending_confirmation' | 'draft' | 'attention' | 'void';
+
+const ORDER_VIEWS: Array<{ label: string; value: OrderView }> = [
+  { label: '全部', value: 'all' },
+  { label: '履约中', value: 'active' },
+  { label: '待确认', value: 'pending_confirmation' },
   { label: '草稿', value: 'draft' },
-  { label: '生效', value: 'active' },
+  { label: '需关注', value: 'attention' },
   { label: '已作废', value: 'void' },
 ];
 
@@ -83,7 +102,6 @@ const PAYMENT_OPTIONS: Array<{ label: string; value: PaymentFilter }> = [
 ];
 
 interface FilterState {
-  status?: OrderStatus;
   search?: string;
   payer_name_like?: string;
   campaign?: string;
@@ -109,12 +127,12 @@ const INITIAL_FILTERS: FilterState = { drift: 'all', payment: 'all' };
 
 const PAGE_SIZE = 20;
 
-function buildQueryParams(filters: FilterState, page: number): ListOrdersParams {
+function buildQueryParams(filters: FilterState, page: number, view: OrderView): ListOrdersParams {
   const params: ListOrdersParams = {
     skip: (page - 1) * PAGE_SIZE,
     limit: PAGE_SIZE,
   };
-  if (filters.status) params.status = filters.status;
+  if (view !== 'all' && view !== 'attention') params.status = view;
   if (filters.search) params.search = filters.search.trim();
   if (filters.payer_name_like) params.payer_name_like = filters.payer_name_like.trim();
   if (filters.campaign) params.campaign = filters.campaign.trim();
@@ -131,11 +149,24 @@ function buildQueryParams(filters: FilterState, page: number): ListOrdersParams 
   if (filters.coverage_range?.[1]) {
     params.coverage_end = filters.coverage_range[1].format('YYYY-MM-DD');
   }
-  if (filters.drift === 'with_drift') params.has_drift = true;
-  if (filters.drift === 'no_drift') params.has_drift = false;
+  if (view === 'attention') params.needs_attention = true;
+  else if (filters.drift === 'with_drift') params.has_drift = true;
+  else if (filters.drift === 'no_drift') params.has_drift = false;
   if (filters.payment === 'unpaid') params.unpaid = true;
   if (filters.payment === 'paid') params.unpaid = false;
   return params;
+}
+
+function progressPercent(row: OrderListRow): number {
+  if (!row.expected_total || row.expected_total <= 0) return 0;
+  return Math.min(100, Math.round(((row.fulfilled_count ?? row.synced_count) / row.expected_total) * 100));
+}
+
+function orderStatusTone(status: OrderStatus): 'neutral' | 'info' | 'success' | 'danger' {
+  if (status === 'active') return 'success';
+  if (status === 'pending_confirmation') return 'info';
+  if (status === 'void') return 'danger';
+  return 'neutral';
 }
 
 export default function OrderList() {
@@ -144,6 +175,9 @@ export default function OrderList() {
   const { isAdmin } = useAuth();
   const [form] = Form.useForm<FilterState>();
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
+  const [view, setView] = useState<OrderView>('all');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [quickSearch, setQuickSearch] = useState('');
   const [page, setPage] = useState(1);
   const [sorter, setSorter] = useState<{ field?: SortField; order?: 'asc' | 'desc' }>({});
   const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
@@ -153,15 +187,16 @@ export default function OrderList() {
   const [bulkVoidOpen, setBulkVoidOpen] = useState(false);
   const [bulkVoidReason, setBulkVoidReason] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [previewRow, setPreviewRow] = useState<OrderListRow | null>(null);
 
   const queryParams = useMemo(() => {
-    const p = buildQueryParams(filters, page);
+    const p = buildQueryParams(filters, page, view);
     if (sorter.field) {
       p.sort = sorter.field;
       p.order = sorter.order ?? 'desc';
     }
     return p;
-  }, [filters, page, sorter]);
+  }, [filters, page, sorter, view]);
 
   const ordersQuery = useQuery({
     queryKey: orderQueryKeys.list(queryParams),
@@ -172,6 +207,31 @@ export default function OrderList() {
   });
 
   const rows = ordersQuery.data?.rows ?? [];
+
+  const viewCountQueries = useQueries({
+    queries: ORDER_VIEWS.map((item) => {
+      const params = buildQueryParams(filters, 1, item.value);
+      params.skip = 0;
+      params.limit = 1;
+      return {
+        queryKey: [...orderQueryKeys.list(params), 'count'],
+        queryFn: async () => (await listOrders(params)).data.total,
+        staleTime: 30_000,
+      };
+    }),
+  });
+
+  const previewOrderId = previewRow?.id ?? NaN;
+  const previewOrderQuery = useQuery({
+    queryKey: orderQueryKeys.detail(previewOrderId),
+    queryFn: async () => (await getOrder(previewOrderId)).data,
+    enabled: Number.isFinite(previewOrderId),
+  });
+  const previewEventsQuery = useQuery({
+    queryKey: orderQueryKeys.events(previewOrderId),
+    queryFn: async () => (await listOrderEvents(previewOrderId)).data,
+    enabled: Number.isFinite(previewOrderId),
+  });
 
   // 选中项里真正可删的（草稿/作废且无发货明细）——批量删除只对这些生效。
   const deletableSelectedIds = useMemo(
@@ -286,13 +346,37 @@ export default function OrderList() {
 
   const handleApplyFilters = (values: FilterState) => {
     setPage(1);
-    setFilters({ ...INITIAL_FILTERS, ...values });
+    setFilters({
+      ...INITIAL_FILTERS,
+      ...values,
+      search: quickSearch.trim() || undefined,
+    });
+    setFilterOpen(false);
   };
 
   const handleResetFilters = () => {
     form.resetFields();
+    setQuickSearch('');
     setPage(1);
     setFilters(INITIAL_FILTERS);
+  };
+
+  const handleQuickSearch = () => {
+    setPage(1);
+    setFilters((current) => ({ ...current, search: quickSearch.trim() || undefined }));
+  };
+
+  const handleViewChange = (nextView: OrderView) => {
+    setView(nextView);
+    setPage(1);
+  };
+
+  const removeFilter = (key: keyof FilterState) => {
+    const fallback = key === 'drift' || key === 'payment' ? 'all' : undefined;
+    form.setFieldValue(key, fallback);
+    if (key === 'search') setQuickSearch('');
+    setPage(1);
+    setFilters((current) => ({ ...current, [key]: fallback }));
   };
 
   const handleVoidClick = (row: OrderListRow) => {
@@ -311,179 +395,171 @@ export default function OrderList() {
     voidMutation.mutate({ id: voidingRow.id, reason });
   };
 
+  const handleDeleteClick = (row: OrderListRow) => {
+    Modal.confirm({
+      title: `删除订单 ${row.order_code ?? `#${row.id}`}`,
+      icon: <DeleteOutlined />,
+      content: '将永久删除该订单及其明细、收款和事件记录，不可恢复。仅用于清理草稿、误建或测试数据。',
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => deleteMutation.mutateAsync(row.id),
+    });
+  };
+
+  const activeFilters = useMemo(() => {
+    const chips: Array<{ key: keyof FilterState; label: string }> = [];
+    if (filters.search) chips.push({ key: 'search', label: `关键词：${filters.search}` });
+    if (filters.payer_name_like) chips.push({ key: 'payer_name_like', label: `付款主体：${filters.payer_name_like}` });
+    if (filters.campaign) chips.push({ key: 'campaign', label: `活动：${filters.campaign}` });
+    if (filters.source_platform) chips.push({ key: 'source_platform', label: filters.source_platform });
+    if (filters.order_date_range) {
+      chips.push({ key: 'order_date_range', label: `下单：${filters.order_date_range[0].format('YYYY-MM-DD')} ～ ${filters.order_date_range[1].format('YYYY-MM-DD')}` });
+    }
+    if (filters.coverage_range) {
+      chips.push({ key: 'coverage_range', label: `覆盖：${filters.coverage_range[0].format('YYYY-MM-DD')} ～ ${filters.coverage_range[1].format('YYYY-MM-DD')}` });
+    }
+    if (filters.drift !== 'all') chips.push({ key: 'drift', label: filters.drift === 'with_drift' ? '含期数偏差' : '无期数偏差' });
+    if (filters.payment !== 'all') chips.push({ key: 'payment', label: filters.payment === 'paid' ? '已付清' : '未付清' });
+    return chips;
+  }, [filters]);
+
+  const previewOrder = previewOrderQuery.data;
+  const previewRecipient = useMemo(() => {
+    if (!previewOrder) return null;
+    for (const item of previewOrder.items) {
+      for (const allocation of item.allocations) {
+        const target = allocation.targets.find((candidate) => candidate.status === 'active');
+        if (target) return target;
+      }
+    }
+    return null;
+  }, [previewOrder]);
+
+  const previewProducts = useMemo(() => {
+    if (!previewOrder) return '-';
+    const names = [...new Set(previewOrder.items.map((item) => (
+      `${publicationLabel(item.publication)}${item.subscription_term ? `（${subscriptionTermLabel(item.subscription_term)}）` : ''}`
+    )))];
+    return names.join('、') || '-';
+  }, [previewOrder]);
+
+  const previewDelivery = useMemo(() => {
+    if (!previewOrder) return '-';
+    const methods = [...new Set(previewOrder.items.map((item) => deliveryMethodLabel(item.delivery_method)))];
+    return methods.join('、') || '-';
+  }, [previewOrder]);
+
+  const actionMenu = (row: OrderListRow): MenuProps['items'] => {
+    const items: MenuProps['items'] = [];
+    if (canConfirmOrder(row.status)) {
+      items.push({ key: 'confirm', icon: <CheckOutlined />, label: '确认生效', onClick: () => confirmMutation.mutate(row.id) });
+    }
+    if (isAdmin && canVoidOrder(row.status)) {
+      items.push({ key: 'void', icon: <StopOutlined />, danger: true, label: '作废订单', onClick: () => handleVoidClick(row) });
+    }
+    if (isAdmin && canDeleteOrder(row.status, row.synced_count)) {
+      items.push({ key: 'delete', icon: <DeleteOutlined />, danger: true, label: '永久删除', onClick: () => handleDeleteClick(row) });
+    }
+    return items;
+  };
+
   const columns: TableColumnsType<OrderListRow> = [
     {
-      title: '订单编码',
-      dataIndex: 'order_code',
-      key: 'order_code',
-      width: 140,
-      render: (code: string | null) => code ?? <Tag color="default">未生成</Tag>,
-    },
-    {
-      title: '来源单号',
-      dataIndex: 'external_order_no',
-      key: 'external_order_no',
-      width: 140,
-      render: (v: string | null) => v ?? '-',
-    },
-    {
-      title: '下单日期',
-      dataIndex: 'order_date',
+      title: '订单信息',
       key: 'order_date',
-      width: 110,
+      width: 330,
       sorter: true,
+      render: (_: unknown, row) => (
+        <div className="order-list-order-cell">
+          <div className="order-list-code-line">
+            <Button type="link" onClick={() => setPreviewRow(row)}>{row.order_code ?? `草稿 #${row.id}`}</Button>
+            <Tag>{row.source_platform ?? '手工订单'}</Tag>
+          </div>
+          <div className="order-list-source">来源单号 {row.external_order_no ?? '—'} · {row.order_date} 下单</div>
+          <div className="order-list-product">
+            <span>{row.campaign || '常规订阅'}</span>
+            <small>共 {row.total_quantity} 份</small>
+          </div>
+        </div>
+      ),
     },
     {
-      title: '付款主体',
-      dataIndex: 'payer_name',
-      key: 'payer_name',
-      width: 160,
-      ellipsis: true,
-    },
-    {
-      title: '渠道/平台',
-      dataIndex: 'source_platform',
-      key: 'source_platform',
-      width: 140,
-      render: (platform: string | null) => platform ?? '-',
-    },
-    {
-      title: '活动',
-      dataIndex: 'campaign',
-      key: 'campaign',
-      width: 120,
-      render: (c: string | null) => (c ? <Tag color="magenta">{c}</Tag> : '-'),
-    },
-    {
-      title: '份数',
-      dataIndex: 'total_quantity',
-      key: 'total_quantity',
-      width: 80,
-      align: 'right',
-    },
-    {
-      title: '金额',
-      dataIndex: 'total_amount',
+      title: '客户 / 收款',
       key: 'total_amount',
-      width: 110,
-      align: 'right',
-      sorter: true,
-      render: (v: string) => formatCurrency(v),
-    },
-    {
-      title: '欠款',
-      dataIndex: 'outstanding_amount',
-      key: 'outstanding_amount',
-      width: 110,
-      align: 'right',
-      sorter: true,
-      render: (v: string) =>
-        Number(v) > 0 ? (
-          <Typography.Text type="danger">{formatCurrency(v)}</Typography.Text>
-        ) : (
-          '-'
-        ),
-    },
-    {
-      title: '覆盖期',
-      key: 'coverage',
       width: 220,
-      render: (_: unknown, row) =>
-        formatCoverage(row.coverage_start_date, row.coverage_end_date),
+      sorter: true,
+      render: (_: unknown, row) => {
+        const paid = Number(row.outstanding_amount) <= 0;
+        return (
+          <div className="order-list-customer-cell">
+            <strong>{row.payer_name}</strong>
+            <small>付款主体</small>
+            <div><b>{formatCurrency(row.total_amount)}</b><span className={paid ? 'is-paid' : 'is-unpaid'}>{paid ? '已付清' : `欠 ${formatCurrency(row.outstanding_amount)}`}</span></div>
+          </div>
+        );
+      },
+    },
+    {
+      title: '履约概况',
+      key: 'fulfillment',
+      width: 310,
+      render: (_: unknown, row) => {
+        const fulfilled = row.fulfilled_count ?? row.synced_count;
+        const expected = row.expected_total;
+        const drift = expected == null ? null : expected - fulfilled;
+        return (
+          <div className="order-list-fulfillment-cell">
+            <div className="order-list-progress-line">
+              <strong>{row.status === 'active' ? '履约进行中' : statusLabel(row.status)}</strong>
+              <span>{fulfilled} / {expected ?? '—'} 期</span>
+            </div>
+            <Progress percent={progressPercent(row)} showInfo={false} strokeColor="#1677ff" railColor="#e8edf4" size="small" />
+            <div className="order-list-coverage">{formatCoverage(row.coverage_start_date, row.coverage_end_date)}</div>
+            {row.has_drift && <Tag color={driftColor(drift) === 'error' ? 'red' : 'orange'}>期数偏差 {driftLabel(drift)}</Tag>}
+          </div>
+        );
+      },
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
-      render: (s: OrderStatus) => (
-        <Badge status={statusBadgeColor(s)} text={statusLabel(s)} />
+      width: 120,
+      render: (status: OrderStatus, row) => (
+        <div className="order-list-status-cell">
+          <StatusPill tone={orderStatusTone(status)}>{status === 'active' ? '履约中' : statusLabel(status)}</StatusPill>
+          {row.has_drift && <small>需要核对期数</small>}
+          {!row.has_drift && Number(row.outstanding_amount) > 0 && <small>存在待收款</small>}
+        </div>
       ),
-    },
-    {
-      title: '期数（已同步 / 预估）',
-      key: 'progress',
-      width: 200,
-      render: (_: unknown, row) => {
-        const synced = row.synced_count;
-        const expected = row.expected_total;
-        const drift = expected == null ? null : expected - synced;
-        return (
-          <Space size={4}>
-            <span>
-              {synced} / {expected ?? '-'}
-            </span>
-            {row.has_drift && (
-              <Tag color={driftColor(drift) === 'error' ? 'red' : 'orange'}>
-                偏差 {driftLabel(drift)}
-              </Tag>
-            )}
-          </Space>
-        );
-      },
     },
     {
       title: '操作',
       key: 'actions',
-      width: 140,
+      width: 100,
       fixed: 'right',
-      render: (_: unknown, row) => (
-        <Space size={4}>
-          <Button type="link" size="small" onClick={() => navigate(`/orders/${row.id}`)}>
-            查看
-          </Button>
-          {canConfirmOrder(row.status) && (
-            <Button
-              type="link"
-              size="small"
-              icon={<CheckOutlined />}
-              loading={confirmMutation.isPending}
-              onClick={() => confirmMutation.mutate(row.id)}
-            >
-              确认生效
-            </Button>
-          )}
-          {isAdmin && canVoidOrder(row.status) && (
-            <Button
-              type="link"
-              size="small"
-              danger
-              icon={<StopOutlined />}
-              onClick={() => handleVoidClick(row)}
-            >
-              作废
-            </Button>
-          )}
-          {isAdmin && canDeleteOrder(row.status, row.synced_count) && (
-            <Popconfirm
-              title="删除订单"
-              description={
-                <span>
-                  将永久删除该订单及其明细 / 收款 / 事件记录，不可恢复。
-                  <br />
-                  仅用于清理草稿 / 误建 / 测试数据。确定删除？
-                </span>
-              }
-              okText="确认删除"
-              okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
-              cancelText="取消"
-              onConfirm={() => deleteMutation.mutate(row.id)}
-            >
-              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                删除
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+      render: (_: unknown, row) => {
+        const menuItems = actionMenu(row);
+        return (
+          <div className="order-list-actions" onClick={(event) => event.stopPropagation()}>
+            <Button type="link" size="small" onClick={() => setPreviewRow(row)}>查看</Button>
+            {menuItems && menuItems.length > 0 && (
+              <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+                <Button type="text" size="small" icon={<EllipsisOutlined />} aria-label="更多订单操作" />
+              </Dropdown>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
   return (
-    <div>
+    <div className="order-list-page">
       <PageHeader
         title="订单管理"
-        description="管理订单创建、生效、履约与售后状态"
+        description="统一查看订单、履约、收款与售后状态"
         actions={<Space>
           <Button
             icon={<ReloadOutlined />}
@@ -507,66 +583,131 @@ export default function OrderList() {
         </Space>}
       />
 
-      <EcommerceRules />
+      <div className="order-list-rules"><EcommerceRules /></div>
 
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Form<FilterState>
-          form={form}
-          layout="inline"
-          initialValues={INITIAL_FILTERS}
-          onFinish={handleApplyFilters}
-        >
-          <Form.Item name="search" label="单号">
-            <Input allowClear placeholder="订单编码 / 来源单号" style={{ width: 180 }} />
-          </Form.Item>
-          <Form.Item name="status" label="状态">
-            <Select
-              allowClear
-              placeholder="全部"
-              options={STATUS_OPTIONS}
-              style={{ width: 140 }}
-            />
-          </Form.Item>
-          <Form.Item name="payer_name_like" label="付款主体">
-            <Input allowClear placeholder="模糊匹配" style={{ width: 180 }} />
-          </Form.Item>
-          <Form.Item name="campaign" label="活动">
-            <Input allowClear placeholder="如 2026-618" style={{ width: 150 }} />
-          </Form.Item>
-          <Form.Item name="source_platform" label="平台">
-            <Select
-              allowClear
-              placeholder="全部"
-              options={PLATFORM_OPTIONS}
-              style={{ width: 140 }}
-            />
-          </Form.Item>
-          <Form.Item name="order_date_range" label="下单日期">
-            <RangePicker style={{ width: 240 }} />
-          </Form.Item>
-          <Form.Item name="coverage_range" label="覆盖期">
-            <RangePicker style={{ width: 240 }} />
-          </Form.Item>
-          <Form.Item name="drift" label="期数偏差">
-            <Select options={DRIFT_OPTIONS} style={{ width: 120 }} />
-          </Form.Item>
-          <Form.Item name="payment" label="付款">
-            <Select options={PAYMENT_OPTIONS} style={{ width: 120 }} />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                查询
-              </Button>
-              <Button onClick={handleResetFilters}>重置</Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Card>
+      <section className="order-list-workspace">
+        <div className="order-list-views" role="tablist" aria-label="订单状态视图">
+          {ORDER_VIEWS.map((item, index) => (
+            <button
+              key={item.value}
+              type="button"
+              role="tab"
+              aria-selected={view === item.value}
+              className={view === item.value ? 'is-active' : ''}
+              onClick={() => handleViewChange(item.value)}
+            >
+              {item.label}
+              <span className={item.value === 'attention' ? 'is-warning' : ''}>{viewCountQueries[index].data ?? '—'}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="order-list-search-row">
+          <Input
+            value={quickSearch}
+            onChange={(event) => setQuickSearch(event.target.value)}
+            onPressEnter={handleQuickSearch}
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="搜索订单编号、来源单号或付款主体"
+            aria-label="搜索订单"
+          />
+          <Button type="primary" onClick={handleQuickSearch}>搜索</Button>
+          <Button
+            icon={<FilterOutlined />}
+            className={filterOpen ? 'is-active' : ''}
+            onClick={() => setFilterOpen((open) => !open)}
+          >
+            筛选{activeFilters.length > 0 && <span className="order-list-filter-count">{activeFilters.length}</span>}
+          </Button>
+        </div>
+
+        {filterOpen && (
+          <div className="order-list-filter-panel">
+            <Form<FilterState>
+              form={form}
+              layout="vertical"
+              initialValues={INITIAL_FILTERS}
+              onFinish={handleApplyFilters}
+            >
+              <Form.Item name="payer_name_like" label="付款主体">
+                <Input allowClear placeholder="输入名称模糊匹配" />
+              </Form.Item>
+              <Form.Item name="campaign" label="活动">
+                <Input allowClear placeholder="如 2026-618" />
+              </Form.Item>
+              <Form.Item name="source_platform" label="渠道 / 平台">
+                <Select allowClear placeholder="全部平台" options={PLATFORM_OPTIONS} />
+              </Form.Item>
+              <Form.Item name="order_date_range" label="下单日期">
+                <RangePicker />
+              </Form.Item>
+              <Form.Item name="coverage_range" label="覆盖期">
+                <RangePicker />
+              </Form.Item>
+              <Form.Item name="drift" label="期数偏差">
+                <Select options={DRIFT_OPTIONS} />
+              </Form.Item>
+              <Form.Item name="payment" label="付款状态">
+                <Select options={PAYMENT_OPTIONS} />
+              </Form.Item>
+              <div className="order-list-filter-actions">
+                <Button type="link" onClick={handleResetFilters}>重置全部</Button>
+                <Button type="primary" htmlType="submit">应用筛选</Button>
+              </div>
+            </Form>
+          </div>
+        )}
+
+        {activeFilters.length > 0 && (
+          <div className="order-list-active-filters">
+            {activeFilters.map((chip) => (
+              <Tag key={chip.key} closable onClose={(event) => { event.preventDefault(); removeFilter(chip.key); }}>{chip.label}</Tag>
+            ))}
+            <Button type="link" size="small" onClick={handleResetFilters}>清空</Button>
+          </div>
+        )}
+
+        <Table<OrderListRow>
+          className="order-list-table"
+          rowKey="id"
+          columns={columns}
+          dataSource={rows}
+          loading={ordersQuery.isLoading}
+          scroll={{ x: 1080 }}
+          onChange={handleTableChange}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到匹配的订单" /> }}
+          rowSelection={
+            isAdmin
+              ? {
+                  selectedRowKeys: selectedKeys,
+                  onChange: (keys) => setSelectedKeys(keys as number[]),
+                  preserveSelectedRowKeys: true,
+                }
+              : undefined
+          }
+          pagination={{
+            current: page,
+            pageSize: PAGE_SIZE,
+            total: ordersQuery.data?.total ?? 0,
+            showSizeChanger: false,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: setPage,
+          }}
+          onRow={(row) => ({
+            onClick: (event) => {
+              const target = event.target as HTMLElement;
+              if (target.closest('button, a, input, .ant-dropdown')) return;
+              setPreviewRow(row);
+            },
+            style: { cursor: 'pointer' },
+          })}
+        />
+      </section>
 
       {isAdmin && selectedKeys.length > 0 && (
-        <Space style={{ marginBottom: 12 }}>
-          <span>已选 {selectedKeys.length} 单：</span>
+        <div className="order-list-bulk-bar">
+          <span>已选择 <strong>{selectedKeys.length}</strong> 笔订单</span>
           <Button
             size="small"
             icon={<CheckOutlined />}
@@ -613,44 +754,73 @@ export default function OrderList() {
             </Button>
           </Popconfirm>
           <Button size="small" type="link" onClick={() => setSelectedKeys([])}>
-            清除选择
+            取消选择
           </Button>
-        </Space>
+        </div>
       )}
 
-      <Table<OrderListRow>
-        rowKey="id"
-        columns={columns}
-        dataSource={rows}
-        loading={ordersQuery.isLoading}
-        scroll={{ x: 1500 }}
-        onChange={handleTableChange}
-        rowSelection={
-          isAdmin
-            ? {
-                selectedRowKeys: selectedKeys,
-                onChange: (keys) => setSelectedKeys(keys as number[]),
-                preserveSelectedRowKeys: true,
-              }
-            : undefined
-        }
-        pagination={{
-          current: page,
-          pageSize: PAGE_SIZE,
-          total: ordersQuery.data?.total ?? 0,
-          showSizeChanger: false,
-          showTotal: (total) => `共 ${total} 条`,
-          onChange: setPage,
-        }}
-        onRow={(row) => ({
-          onClick: (event) => {
-            const target = event.target as HTMLElement;
-            if (target.closest('button')) return;
-            navigate(`/orders/${row.id}`);
-          },
-          style: { cursor: 'pointer' },
-        })}
-      />
+      <Drawer
+        className="order-list-preview-drawer"
+        size={440}
+        open={Boolean(previewRow)}
+        onClose={() => setPreviewRow(null)}
+        title={previewRow ? (
+          <DrawerTitle
+            icon={<FileTextOutlined />}
+            title={previewRow.order_code ?? `草稿 #${previewRow.id}`}
+            description="订单快速预览"
+            status={<StatusPill tone={orderStatusTone(previewRow.status)}>{previewRow.status === 'active' ? '履约中' : statusLabel(previewRow.status)}</StatusPill>}
+          />
+        ) : null}
+        footer={previewRow ? (
+          <div className="order-list-preview-footer">
+            <Button onClick={() => setPreviewRow(null)}>关闭</Button>
+            <Button type="primary" onClick={() => navigate(`/orders/${previewRow.id}`)}>进入完整详情</Button>
+          </div>
+        ) : null}
+      >
+        {!previewRow || previewOrderQuery.isLoading ? <div className="order-list-preview-loading"><Spin /></div> : (
+          <div className="order-list-preview-body">
+            <section className="order-list-preview-progress">
+              <div><span><TruckOutlined /> 履约进度</span><strong>{previewRow.fulfilled_count ?? previewRow.synced_count} / {previewRow.expected_total ?? '—'}期</strong></div>
+              <Progress percent={progressPercent(previewRow)} showInfo={false} strokeColor="#1677ff" railColor="#dfe8f3" />
+              <small>{formatCoverage(previewRow.coverage_start_date, previewRow.coverage_end_date)}</small>
+            </section>
+
+            {(previewRow.has_drift || Number(previewRow.outstanding_amount) > 0) ? (
+              <section className="order-list-preview-attention">
+                <WarningOutlined />
+                <div><strong>当前需处理</strong><small>{previewRow.has_drift ? '刊期计划发生变化，请核对订单期数' : `仍有 ${formatCurrency(previewRow.outstanding_amount)} 待收款`}</small></div>
+              </section>
+            ) : (
+              <section className="order-list-preview-clear"><CheckOutlined /><span>当前没有待处理异常</span></section>
+            )}
+
+            <section className="order-list-preview-section">
+              <h3>订单摘要</h3>
+              <dl>
+                <div><dt>收件人</dt><dd>{previewRecipient?.recipient_name ?? previewOrder?.payer_name ?? previewRow.payer_name}</dd></div>
+                <div><dt>付款主体</dt><dd>{previewOrder?.payer_name ?? previewRow.payer_name}</dd></div>
+                <div><dt>付款金额</dt><dd>{formatCurrency(previewOrder?.total_amount ?? previewRow.total_amount)}</dd></div>
+                <div><dt>订阅产品</dt><dd>{previewProducts}</dd></div>
+                <div><dt>履约方式</dt><dd>{previewDelivery}</dd></div>
+                <div><dt>来源平台</dt><dd>{previewOrder?.source_platform ?? previewRow.source_platform ?? '手工订单'}</dd></div>
+              </dl>
+            </section>
+
+            <section className="order-list-preview-section">
+              <h3>最近动态</h3>
+              {previewEventsQuery.isLoading ? <Spin size="small" /> : previewEventsQuery.data?.length ? (
+                <ol className="order-list-preview-timeline">
+                  {previewEventsQuery.data.slice(0, 3).map((event) => (
+                    <li key={event.id}><i /><div><strong>{eventTypeLabel(event.event_type)}</strong><small>{new Date(event.created_at).toLocaleString('zh-CN', { hour12: false })}</small></div></li>
+                  ))}
+                </ol>
+              ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无动态" />}
+            </section>
+          </div>
+        )}
+      </Drawer>
 
       <Modal
         title={voidingRow ? `作废订单 ${voidingRow.order_code ?? `#${voidingRow.id}`}` : '作废订单'}

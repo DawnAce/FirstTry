@@ -1162,7 +1162,7 @@ def test_list_orders_no_baseline_no_drift_even_when_schedule_changes():
     assert rows[0].expected_total == 43
 
 
-def test_list_orders_row_payload_has_v13_placeholder_synced_count_zero():
+def test_list_orders_row_payload_keeps_sync_placeholder_and_reports_fulfilled_count():
     order = _make_listable_order(
         order_id=1,
         items_data=[
@@ -1174,3 +1174,4 @@ def test_list_orders_row_payload_has_v13_placeholder_synced_count_zero():
     db = FakeListDb(orders=[order])
     rows, _ = order_service.list_orders(db)
     assert rows[0].synced_count == 0  # V1.3 placeholder
+    assert rows[0].fulfilled_count == 1

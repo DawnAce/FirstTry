@@ -501,6 +501,7 @@ class OrderListRow(BaseModel):
     refunded_amount: Decimal = Decimal("0")
     has_drift: bool
     synced_count: int
+    fulfilled_count: int = 0
     expected_total: Optional[int]
 
 

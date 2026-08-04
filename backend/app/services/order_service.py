@@ -1327,15 +1327,12 @@ def _build_list_row(db: Session, order: Order) -> OrderListRow:
 
     order_drift = False
     expected_total: Optional[int] = 0
+    fulfilled_total = 0
     any_expected = False
     for item in items:
-        current = compute_expected_issues(
-            db,
-            coverage_start=item.coverage_start_date,
-            coverage_end=item.coverage_end_date,
-            fulfillment_type=item.fulfillment_type,
-            publication=item.publication,
-        )
+        progress = compute_fulfillment_progress(db, item)
+        current = progress.current_expected
+        fulfilled_total += progress.shipped_count
         if current is not None:
             expected_total += current
             any_expected = True
@@ -1367,6 +1364,7 @@ def _build_list_row(db: Session, order: Order) -> OrderListRow:
         refunded_amount=_as_money(order.refunded_amount),
         has_drift=order_drift,
         synced_count=0,
+        fulfilled_count=fulfilled_total,
         expected_total=expected_total if any_expected else None,
     )
 
@@ -1384,6 +1382,7 @@ def list_orders(
     order_date_end: Optional[date] = None,
     unpaid: Optional[bool] = None,
     has_drift: Optional[bool] = None,
+    needs_attention: Optional[bool] = None,
     search: Optional[str] = None,
     sort: Optional[str] = None,
     order: str = "desc",
@@ -1404,17 +1403,17 @@ def list_orders(
       DB 层过滤（不再前端逐页客户端过滤，避免跨页不准）。
     * ``has_drift``        — per-order drift computed against the live
       schedule snapshot.
+    * ``needs_attention``  — orders with schedule drift or an outstanding
+      balance; computed after row aggregation.
 
     Returns ``(rows, total)``.
 
-    Pagination semantics depend on ``has_drift``:
+    Pagination semantics depend on ``has_drift`` / ``needs_attention``:
 
-    * ``has_drift is None`` — paginate at the SQL level; ``total`` is the
-      DB-level filter count.
-    * ``has_drift`` set — drift is a Python-computed predicate that can't be
-      pushed into SQL, so the full filtered set is materialised, drift-filtered,
-      and paginated in memory. ``total`` then reflects the **post-drift** count
-      so every page is full and the count matches what's returned.
+    * both unset — paginate at the SQL level; ``total`` is the DB-level count.
+    * either set — computed predicates can't be fully pushed into SQL, so the
+      filtered set is materialised and paginated in memory. ``total`` reflects
+      the post-filter count so every page is full and counts stay accurate.
     """
     q = db.query(Order)
     if status is not None:
@@ -1441,6 +1440,7 @@ def list_orders(
             or_(
                 Order.order_code.ilike(like),
                 Order.external_order_no.ilike(like),
+                Order.payer_name.ilike(like),
             )
         )
     if coverage_start is not None or coverage_end is not None:
@@ -1473,15 +1473,20 @@ def list_orders(
     else:
         base = q.options(selectinload(Order.items)).order_by(Order.id.desc())
 
-    if has_drift is None:
+    if has_drift is None and not needs_attention:
         # 不按偏差筛 → 直接在 SQL 层分页（每行的偏差仅用于展示，按本页逐单算）。
         total = q.count()
         rows = [_build_list_row(db, order) for order in base.offset(skip).limit(limit).all()]
         return rows, total
 
-    # 按偏差筛：偏差是 Python 端按实时刊期表算的，无法下推到 SQL。取整批过滤后的订单、
-    # 逐单算偏差、按 has_drift 过滤，再在内存里分页——这样每页都满 limit 条、且 total
-    # 反映过滤后的真实条数（修正旧版"先 SQL 分页再丢行"导致的页面残缺 + total 不符）。
+    # 偏差 / 需关注由聚合行计算，无法完整下推 SQL。取整批过滤后的订单、逐单计算，
+    # 再在内存里筛选和分页，保证每页填满且 total 与当前视图一致。
     all_rows = [_build_list_row(db, order) for order in base.all()]
-    matched = [row for row in all_rows if row.has_drift == has_drift]
+    if needs_attention:
+        matched = [
+            row for row in all_rows
+            if row.has_drift or row.outstanding_amount > 0
+        ]
+    else:
+        matched = [row for row in all_rows if row.has_drift == has_drift]
     return matched[skip : skip + limit], len(matched)

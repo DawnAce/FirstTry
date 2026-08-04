@@ -851,6 +851,7 @@ def test_list_orders_returns_rows_and_total(client):
     assert len(body["rows"]) == 2
     payers = {row["payer_name"] for row in body["rows"]}
     assert payers == {"A", "B"}
+    assert all("fulfilled_count" in row for row in body["rows"])
 
 
 def test_list_orders_filters_by_status(client):
@@ -871,6 +872,27 @@ def test_list_orders_filters_by_payer_name_like(client):
     body = r.json()
     assert body["total"] == 1
     assert body["rows"][0]["payer_name"] == "李四"
+
+
+def test_list_orders_search_matches_payer_name(client):
+    client.post("/api/orders", json=_make_create_payload(payer_name="宋女士"))
+    client.post("/api/orders", json=_make_create_payload(payer_name="张先生"))
+    r = client.get("/api/orders?search=宋女士")
+    body = r.json()
+    assert body["total"] == 1
+    assert body["rows"][0]["payer_name"] == "宋女士"
+
+
+def test_list_orders_needs_attention_includes_outstanding_orders(client):
+    client.post("/api/orders", json=_make_create_payload(payer_name="待收款客户"))
+    paid_payload = _make_create_payload(payer_name="已付清客户")
+    paid_payload["paid_amount"] = "180"
+    client.post("/api/orders", json=paid_payload)
+
+    r = client.get("/api/orders?needs_attention=true")
+    body = r.json()
+    assert body["total"] == 1
+    assert body["rows"][0]["payer_name"] == "待收款客户"
 
 
 def test_list_orders_pagination(client):
