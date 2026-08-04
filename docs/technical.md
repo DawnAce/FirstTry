@@ -1791,6 +1791,8 @@ draft ──confirm──> active ──void──> void
 
 附件复用 `attachment_service` 落盘与路径穿越防护；数据库只存原始文件名和相对路径。替换附件或删除发票记录时会清理旧文件。附件完全选填：先登记、不传文件，以及登记后补传均受支持。
 
+订单详情 `GET /api/orders/{id}` 同时返回 `invoice_state`、`normal_invoiced_amount`、`remaining_invoice_amount`、`needs_red_reversal`。它与财务工作台统一调用 `finance_service.summarize_order_invoices()`，避免订单详情仅凭 `invoice_required` 固定显示「待开具」。无开票需求且无历史记录时额外使用 `not_required`；其余 `pending / issued / needs_red_reversal` 与工作台完全一致。
+
 
 发货明细的生成遵循以下优先级规则：
 

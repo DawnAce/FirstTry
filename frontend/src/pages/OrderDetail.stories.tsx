@@ -24,6 +24,10 @@ const order: OrderOut = {
   invoice_title: '悦心堂（济南）医养有限公司历下分公司',
   invoice_tax_no: '91370102MAE3DH6U68',
   invoice_recipient_email: '380903801@qq.com',
+  invoice_state: 'issued',
+  normal_invoiced_amount: '240.00',
+  remaining_invoice_amount: '0.00',
+  needs_red_reversal: false,
   status: 'active',
   commercial_status: null,
   refunded_amount: '0.00',
@@ -173,6 +177,8 @@ export const Overview: Story = {
   name: '订单详情总览',
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('1 / 49 期')).toBeVisible()
+    await expect(canvas.getByText('已开具')).toBeVisible()
+    await expect(canvas.getByText('累计已开 ¥240.00')).toBeVisible()
     await expect(canvas.getByText('已履约')).toBeVisible()
     await expect(await canvas.findByText('已关联 · 1 条')).toBeVisible()
     await expect(canvas.getByText(/邮局投递 · 履约中/)).toBeVisible()

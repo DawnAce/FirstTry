@@ -511,9 +511,31 @@ export default function OrderDetail() {
               <div><span>累计已付</span><strong className="is-paid">{formatCurrency(order.paid_amount)}</strong></div>
               <div><span>待收金额</span><strong className={Number(order.outstanding_amount) > 0 ? 'is-due' : 'is-paid'}>{Number(order.outstanding_amount) > 0 ? formatCurrency(order.outstanding_amount) : '已付清'}</strong></div>
             </div>
-            <div className="order-detail-invoice-state">
+            <div className={`order-detail-invoice-state is-${order.invoice_state}`}>
               <span>发票状态</span>
-              <strong>{order.invoice_required ? '需要发票 · 待开具' : '无需发票'}</strong>
+              <div>
+                <strong>
+                  {order.invoice_state === 'not_required' && '无需发票'}
+                  {order.invoice_state === 'issued' && '已开具'}
+                  {order.invoice_state === 'needs_red_reversal' && '需冲红'}
+                  {order.invoice_state === 'pending' && (
+                    Number(order.normal_invoiced_amount) > 0 ? '部分开票' : '需要发票 · 待开具'
+                  )}
+                </strong>
+                {order.invoice_state === 'issued' && (
+                  <small>累计已开 {formatCurrency(order.normal_invoiced_amount)}</small>
+                )}
+                {order.invoice_state === 'pending' && (
+                  <small>
+                    {Number(order.normal_invoiced_amount) > 0
+                      ? `已开 ${formatCurrency(order.normal_invoiced_amount)} · 待开 ${formatCurrency(order.remaining_invoice_amount)}`
+                      : `待开 ${formatCurrency(order.remaining_invoice_amount)}`}
+                  </small>
+                )}
+                {order.invoice_state === 'needs_red_reversal' && (
+                  <small>已开 {formatCurrency(order.normal_invoiced_amount)} · 已退款 {formatCurrency(order.refunded_amount)}</small>
+                )}
+              </div>
             </div>
           </Card>
 

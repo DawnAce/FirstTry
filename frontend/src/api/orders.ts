@@ -16,6 +16,8 @@ export type OrderCommercialStatus =
   | 'partial_refund'
   | 'cancelled';
 
+export type OrderInvoiceState = 'not_required' | 'pending' | 'issued' | 'needs_red_reversal';
+
 // 录入方式（provenance）：数据如何进入系统。与销售渠道（source_platform /
 // source_store）正交。PR-B 从旧的 OrderSourceType 收敛而来。
 export type OrderEntryMethod = 'manual' | 'excel_import' | 'api_sync';
@@ -295,6 +297,10 @@ export interface OrderOut {
   invoice_title: string | null;
   invoice_tax_no: string | null;
   invoice_recipient_email: string | null;
+  invoice_state: OrderInvoiceState;
+  normal_invoiced_amount: string;
+  remaining_invoice_amount: string;
+  needs_red_reversal: boolean;
   status: OrderStatus;
   commercial_status: OrderCommercialStatus | null;
   refunded_amount: string;

@@ -454,6 +454,11 @@ class OrderOut(BaseModel):
     invoice_title: Optional[str]
     invoice_tax_no: Optional[str]
     invoice_recipient_email: Optional[str]
+    # 与财务工作台共用口径：not_required / pending / issued / needs_red_reversal
+    invoice_state: str = "not_required"
+    normal_invoiced_amount: Decimal = Decimal("0")
+    remaining_invoice_amount: Decimal = Decimal("0")
+    needs_red_reversal: bool = False
     status: OrderStatus
     commercial_status: Optional[OrderCommercialStatus] = None
     refunded_amount: Decimal = Decimal("0")

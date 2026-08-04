@@ -517,6 +517,13 @@
 - 自动化覆盖：`test_invoice_optional_attachment_upload_preview_replace_and_delete`、`test_invoice_attachment_rejects_unsupported_file` 及 `ViewInvoiceRecords` Story。
 
 ---
+**[P1] 订单详情与财务工作台发票状态一致**（跨页面口径）
+- 前置：准备 4 张需开票订单：未开、应开 240 已开 100、应开 240 已开 240、已开 240 且退款 50 未冲红。
+- 步骤：分别在「财务管理 → 订单发票」和每张订单详情右侧「收款与发票」查看状态与金额。
+- 预期：两处依次一致显示「待开具」「部分开票（已开 100 / 待开 140）」「已开具（累计已开 240）」「需冲红（已开 240 / 已退款 50）」；删除或追加发票记录后重新打开订单详情，状态随财务记录重新计算。
+- 自动化覆盖：`test_order_detail_uses_same_invoice_state_as_finance_workbench` 覆盖无需发票、待开、部分开、足额和需冲红五种接口状态；`OrderDetail` Story 覆盖足额开票页面展示。
+
+---
 **[P1] 部分退款订单：客户聚合仍全额在订 vs 发票工作台需冲红（跨模块口径分叉）**
 - 前置：一张生效订单 O，实付 200，含 1 个当前分配版本有效履约目标（份数=4），invoice_required=True，已登记 1 张正票（200）；状态「已开票」，该收报人在客户列表、份数 4。
 - 步骤：
