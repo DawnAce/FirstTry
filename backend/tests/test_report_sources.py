@@ -171,6 +171,82 @@ def test_upload_deduplicates_same_channel_and_file(db, user, monkeypatch):
     assert db.query(ReportSourceDocument).count() == 1
 
 
+def test_monthly_archive_name_uses_explicit_unambiguous_filename_month():
+    display_name = report_source_service._build_display_name(
+        channel="chengdu",
+        document_type="monthly",
+        source_date=date(2026, 12, 1),
+        filename="2026年1月成都杂志铺报纸报数.png",
+        suggestions=[],
+    )
+
+    assert display_name == "2026年01月_成都杂志铺_月度报数.png"
+
+
+def test_duplicate_upload_refreshes_legacy_monthly_display_name(db, user):
+    content = b"legacy-monthly-source"
+    document = ReportSourceDocument(
+        channel="chengdu",
+        document_type="monthly",
+        original_filename="2026年1月成都杂志铺报纸报数.png",
+        display_name="202612_成都杂志铺_月度报数.png",
+        stored_path="uploads/report_sources/legacy.png",
+        mime_type="image/png",
+        size=len(content),
+        sha256=report_source_service.attachment_service.sha256_hex(content),
+        source_date=date(2026, 12, 1),
+        extraction_status="confirmed",
+        extraction_json={"suggestions": []},
+        uploaded_by=user.id,
+    )
+    db.add(document)
+    db.commit()
+
+    duplicate, is_duplicate = report_source_service.create_source_document(
+        db,
+        user=user,
+        channel="chengdu",
+        filename="same-file.png",
+        content=content,
+        mime_type="image/png",
+    )
+
+    assert is_duplicate is True
+    assert duplicate.display_name == "2026年01月_成都杂志铺_月度报数.png"
+
+
+def test_operator_can_withdraw_own_pending_upload(db, monkeypatch):
+    operator = User(username="source-operator", password_hash="x", role=UserRole.operator)
+    db.add(operator)
+    db.flush()
+    document = _document(db)
+    document.uploaded_by = operator.id
+    db.commit()
+    deleted_paths = []
+    monkeypatch.setattr(report_source_service.attachment_service, "delete_file", deleted_paths.append)
+
+    report_source_service.delete_source_document(db, document=document, user=operator)
+
+    assert db.query(ReportSourceDocument).count() == 0
+    assert deleted_paths == ["uploads/report_sources/source-1.jpg"]
+
+
+def test_operator_cannot_delete_confirmed_source(db):
+    operator = User(username="source-operator", password_hash="x", role=UserRole.operator)
+    db.add(operator)
+    db.flush()
+    document = _document(db)
+    document.uploaded_by = operator.id
+    document.extraction_status = "confirmed"
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        report_source_service.delete_source_document(db, document=document, user=operator)
+
+    assert exc_info.value.status_code == 403
+    assert db.query(ReportSourceDocument).count() == 1
+
+
 def test_confirmed_base_updates_draft_but_never_confirmed_issue(db, user):
     issue = _issue_with_entries(db)
     document = _document(db, channel="postal", document_type="weekly")

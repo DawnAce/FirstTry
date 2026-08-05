@@ -1,12 +1,8 @@
 """Parse uploaded history report/shipping workbooks and produce a preview + commit."""
 
 import datetime
-import io
-from zipfile import BadZipFile
 
 from fastapi import HTTPException
-from openpyxl import load_workbook
-from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy.orm import Session
 
 from app.history_import_cache import save_history_import_session, pop_history_import_session
@@ -18,13 +14,17 @@ from app.services.original_zto_shipping_import_service import (
 )
 from app.services.raw_report_import_service import parse_raw_report_workbook
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
+from app.services.workbook_loader import load_uploaded_workbook
 from app.schemas.history_import import (
     CommitReadiness,
     HistoryImportCommitOut,
     HistoryImportRow,
+    ManualReportMapping,
+    ReportMappingOption,
     TempPrintDetailRow,
     ShippingImportRow,
     HistoryImportPreviewOut,
+    UnmappedReportItem,
 )
 
 _SHIPPING_COLUMNS = [
@@ -208,12 +208,31 @@ def _raw_report_validation_result(raw_report) -> tuple[list[str], int, int]:
     temp_total = row_map.get(("social_use", "临时加印"), 0)
     temp_self = row_map.get(("social_use", "临时加印_自留"), 0)
     pending_temp = max(temp_total - temp_self, 0)
-    if raw_report.source_total != raw_report.mapped_total:
+    unresolved_total = sum(item.value for item in raw_report.unmapped_rows)
+    projected_total = raw_report.mapped_total + unresolved_total
+    if not raw_report.unmapped_rows and raw_report.source_total != raw_report.mapped_total:
         diff = abs(raw_report.source_total - raw_report.mapped_total)
-        errors.append(f"原表总印数 {raw_report.source_total} 与映射后总数 {raw_report.mapped_total} 不一致，相差 {diff} 份")
-    if raw_report.unmapped_items:
-        errors.append(f"未命中映射项：{'；'.join(raw_report.unmapped_items)}")
+        errors.append(
+            f"原表总印数 {raw_report.source_total} 与映射后总数 {raw_report.mapped_total} 不一致，相差 {diff} 份"
+        )
+    elif raw_report.source_total != projected_total:
+        diff = abs(raw_report.source_total - projected_total)
+        errors.append(
+            f"原表总印数 {raw_report.source_total} 与已识别及待归类合计 {projected_total} 不一致，相差 {diff} 份"
+        )
     return errors, pending_temp, temp_self
+
+
+def _report_mapping_options(db: Session) -> list[ReportMappingOption]:
+    templates = db.query(ReportItemTemplate).order_by(ReportItemTemplate.sort_order, ReportItemTemplate.id).all()
+    return [
+        ReportMappingOption(
+            category=template.category,
+            sub_category=template.sub_category,
+            display_name=template.display_name,
+        )
+        for template in templates
+    ]
 
 
 def _zto_total_validation_errors(
@@ -240,15 +259,17 @@ def preview_history_import(
     db: Session,
     report_bytes: bytes,
     shipping_bytes: bytes,
+    report_password: str | None = None,
 ) -> HistoryImportPreviewOut:
-    try:
-        report_wb = load_workbook(io.BytesIO(report_bytes), data_only=True)
-        shipping_wb = load_workbook(io.BytesIO(shipping_bytes), data_only=True)
-    except (BadZipFile, InvalidFileException, OSError) as exc:
-        raise HTTPException(
-            status_code=422,
-            detail="无法解析上传的文件，请确保上传的是 .xlsx 格式",
-        ) from exc
+    report_wb = load_uploaded_workbook(
+        report_bytes,
+        password=report_password,
+        file_label="印数文件",
+    )
+    shipping_wb = load_uploaded_workbook(
+        shipping_bytes,
+        file_label="中通发货文件",
+    )
 
     uses_template_report = _is_template_report_workbook(report_wb)
     uses_template_shipping = _is_template_shipping_workbook(shipping_wb)
@@ -356,42 +377,28 @@ def preview_history_import(
     manual_temp_print_required_quantity = 0
     manual_temp_print_self_quantity = 0
     manual_temp_rows: list[TempPrintDetailRow] = []
+    validation_errors: list[str] = []
+    unmapped_report_items: list[UnmappedReportItem] = []
+    source_total = sum(row.value for row in report_rows)
+    mapped_total = source_total
     if raw_report is not None:
         (
-            validation_errors,
+            raw_validation_errors,
             manual_temp_print_required_quantity,
             manual_temp_print_self_quantity,
         ) = _raw_report_validation_result(raw_report)
+        validation_errors.extend(raw_validation_errors)
         manual_temp_rows = raw_report.temp_print_rows
-        if validation_errors:
-            readiness = CommitReadiness(
-                same_issue=True,
-                issue_exists=False,
-                can_commit=False,
-                errors=validation_errors,
-            )
-            return _error_response(issue_number, publish_date, readiness)
+        source_total = raw_report.source_total
+        mapped_total = raw_report.mapped_total
+        unmapped_report_items = [UnmappedReportItem(**item.__dict__) for item in raw_report.unmapped_rows]
 
     # Validate report rows against template structure and enrich with display_name
-    validation_errors, enriched_report_rows = _validate_and_enrich_report_rows(db, report_rows)
-    if validation_errors:
-        readiness = CommitReadiness(
-            same_issue=True,
-            issue_exists=False,
-            can_commit=False,
-            errors=validation_errors,
-        )
-        return _error_response(issue_number, publish_date, readiness)
+    template_validation_errors, enriched_report_rows = _validate_and_enrich_report_rows(db, report_rows)
+    validation_errors.extend(template_validation_errors)
 
-    total_validation_errors = _zto_total_validation_errors(enriched_report_rows, shipping_rows)
-    if total_validation_errors:
-        readiness = CommitReadiness(
-            same_issue=True,
-            issue_exists=False,
-            can_commit=False,
-            errors=total_validation_errors,
-        )
-        return _error_response(issue_number, publish_date, readiness)
+    if not validation_errors and not unmapped_report_items:
+        validation_errors.extend(_zto_total_validation_errors(enriched_report_rows, shipping_rows))
 
     payload: dict = {
         "issue_number": issue_number,
@@ -404,8 +411,10 @@ def preview_history_import(
         "manual_temp_print_required_quantity": manual_temp_print_required_quantity,
         "manual_temp_print_self_quantity": manual_temp_print_self_quantity,
         "manual_temp_rows": [r.model_dump() for r in manual_temp_rows],
+        "source_total": source_total,
+        "unmapped_report_items": [item.model_dump() for item in unmapped_report_items],
     }
-    session_id = save_history_import_session(payload)
+    session_id = save_history_import_session(payload) if not validation_errors else ""
 
     # Compare against publication_schedule.page_count, warn on mismatch
     warnings: list[str] = []
@@ -419,8 +428,13 @@ def preview_history_import(
     readiness = CommitReadiness(
         same_issue=True,
         issue_exists=False,
-        can_commit=True,
-        errors=[],
+        can_commit=not validation_errors,
+        errors=validation_errors,
+    )
+    can_commit = (
+        not validation_errors
+        and not unmapped_report_items
+        and manual_temp_print_required_quantity == 0
     )
     return HistoryImportPreviewOut(
         issue_number=issue_number,
@@ -429,14 +443,19 @@ def preview_history_import(
         report_entry_count=len(enriched_report_rows),
         temp_detail_count=len(temp_rows),
         shipping_detail_count=len(shipping_rows),
-        can_commit=manual_temp_print_required_quantity == 0,
+        can_commit=can_commit,
         import_session_id=session_id,
-        errors=[],
+        errors=validation_errors,
         warnings=warnings,
         readiness=readiness,
         manual_temp_print_required_quantity=manual_temp_print_required_quantity,
         manual_temp_print_self_quantity=manual_temp_print_self_quantity,
         manual_temp_rows=manual_temp_rows,
+        report_rows=enriched_report_rows,
+        source_total=source_total,
+        mapped_total=mapped_total,
+        unmapped_report_items=unmapped_report_items,
+        report_mapping_options=_report_mapping_options(db),
     )
 
 
@@ -486,10 +505,73 @@ def _validate_manual_temp_rows(
     return [row.model_dump() for row in rows]
 
 
+def _apply_manual_report_mappings(
+    db: Session,
+    payload: dict,
+    mappings: list[ManualReportMapping] | None,
+) -> list[dict]:
+    unresolved = {
+        item["item_id"]: item
+        for item in payload.get("unmapped_report_items", [])
+    }
+    if not unresolved:
+        return list(payload.get("report_rows", []))
+
+    supplied = mappings or []
+    supplied_by_id = {mapping.item_id: mapping for mapping in supplied}
+    if len(supplied_by_id) != len(supplied):
+        raise HTTPException(status_code=422, detail="待归类项目不能重复提交")
+    missing_ids = set(unresolved) - set(supplied_by_id)
+    extra_ids = set(supplied_by_id) - set(unresolved)
+    if missing_ids:
+        raise HTTPException(status_code=422, detail=f"还有 {len(missing_ids)} 个项目未完成归类")
+    if extra_ids:
+        raise HTTPException(status_code=422, detail="提交了无效的待归类项目")
+
+    templates = db.query(ReportItemTemplate).all()
+    template_map = {(template.category, template.sub_category): template for template in templates}
+    rows_by_key = {
+        (row["category"], row["sub_category"]): dict(row)
+        for row in payload.get("report_rows", [])
+    }
+    for item_id, mapping in supplied_by_id.items():
+        key = (mapping.category, mapping.sub_category)
+        template = template_map.get(key)
+        if template is None:
+            raise HTTPException(status_code=422, detail="所选报数归类已失效，请重新预览")
+        quantity = int(unresolved[item_id]["value"] or 0)
+        if key in rows_by_key:
+            rows_by_key[key]["value"] = int(rows_by_key[key].get("value", 0) or 0) + quantity
+        else:
+            rows_by_key[key] = HistoryImportRow(
+                category=template.category,
+                display_name=template.display_name,
+                sub_category=template.sub_category,
+                destination=template.destination or "",
+                is_variable=template.is_variable,
+                value=quantity,
+            ).model_dump()
+
+    rows = list(rows_by_key.values())
+    source_total = int(payload.get("source_total", 0) or 0)
+    mapped_total = sum(int(row.get("value", 0) or 0) for row in rows)
+    if source_total and mapped_total != source_total:
+        raise HTTPException(
+            status_code=422,
+            detail=f"归类后总数 {mapped_total} 份，与原表总印数 {source_total} 份不一致",
+        )
+    shipping_rows = [ShippingImportRow(**row) for row in payload.get("shipping_rows", [])]
+    zto_errors = _zto_total_validation_errors([HistoryImportRow(**row) for row in rows], shipping_rows)
+    if zto_errors:
+        raise HTTPException(status_code=422, detail=zto_errors[0])
+    return rows
+
+
 def commit_history_import(
     db: Session,
     import_session_id: str,
     manual_temp_rows: list[TempPrintDetailRow] | None = None,
+    manual_report_mappings: list[ManualReportMapping] | None = None,
 ) -> HistoryImportCommitOut:
     """Persist a previously previewed history import from cache to the database.
 
@@ -511,6 +593,8 @@ def commit_history_import(
             status_code=409,
             detail=f"该期已存在：第 {issue_number} 期已录入系统，无法重复导入",
         )
+
+    payload["report_rows"] = _apply_manual_report_mappings(db, payload, manual_report_mappings)
 
     required_temp_quantity = int(payload.get("manual_temp_print_required_quantity", 0) or 0)
     if required_temp_quantity > 0 or manual_temp_rows is not None:

@@ -125,6 +125,9 @@ export const confirmReportSource = (documentId: number, items: ReportSourceConfi
     apply_base_values: true,
   });
 
+export const deleteReportSource = (documentId: number) =>
+  api.delete(`/report-sources/${documentId}`);
+
 export async function downloadReportSource(documentId: number, filename: string) {
   const response = await api.get<Blob>(`/report-sources/${documentId}/download`, { responseType: 'blob' });
   const url = URL.createObjectURL(response.data);

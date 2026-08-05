@@ -14,8 +14,12 @@ import {
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined, DownloadOutlined } from '@ant-design/icons';
-import type { HistoryImportPreview, TempPrintDetailDraft } from '../api/historyImport';
+import { DownloadOutlined, FileExcelOutlined, InboxOutlined } from '@ant-design/icons';
+import type {
+  HistoryImportPreview,
+  ManualReportMappingDraft,
+  TempPrintDetailDraft,
+} from '../api/historyImport';
 import {
   downloadReportTemplate,
   downloadShippingTemplate,
@@ -23,6 +27,7 @@ import {
   commitHistoryImport,
 } from '../api/historyImport';
 import { PageHeader } from '../components/UiPrimitives';
+import { categoryLabel } from './reportCategories';
 
 const { Text } = Typography;
 const { Dragger } = Upload;
@@ -34,6 +39,12 @@ const DEPARTMENT_OPTIONS = [
   { label: '产经中心', value: '产经中心' },
   { label: '其他', value: '其他' },
 ];
+
+const reportMappingKey = (category: string, subCategory: string) =>
+  JSON.stringify([category, subCategory]);
+
+const parseReportMappingKey = (value: string): [string, string] =>
+  JSON.parse(value) as [string, string];
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -49,8 +60,10 @@ export default function HistoryImport() {
   const queryClient = useQueryClient();
   const [reportFile, setReportFile] = useState<File | null>(null);
   const [shippingFile, setShippingFile] = useState<File | null>(null);
+  const [reportPassword, setReportPassword] = useState('');
   const [preview, setPreview] = useState<HistoryImportPreview | null>(null);
   const [manualTempRows, setManualTempRows] = useState<TempPrintDetailDraft[]>([]);
+  const [manualReportMappings, setManualReportMappings] = useState<Record<string, string>>({});
   const [previewing, setPreviewing] = useState(false);
   const [committing, setCommitting] = useState(false);
 
@@ -80,8 +93,9 @@ export default function HistoryImport() {
     setPreviewing(true);
     setPreview(null);
     setManualTempRows([]);
+    setManualReportMappings({});
     try {
-      const res = await previewHistoryImport(reportFile, shippingFile);
+      const res = await previewHistoryImport(reportFile, shippingFile, reportPassword);
       setPreview(res.data);
       setManualTempRows(
         res.data.manual_temp_print_required_quantity > 0
@@ -109,6 +123,16 @@ export default function HistoryImport() {
   const manualTempSelfTotal = manualTempRows.reduce((sum, row) => sum + row.self_quantity, 0);
   const manualTempRequired = preview?.manual_temp_print_required_quantity ?? 0;
   const manualTempValid = manualTempRequired === 0 || manualTempTotal === manualTempRequired;
+  const unmappedReportItems = preview?.unmapped_report_items ?? [];
+  const manualReportMappingsValid = unmappedReportItems.every(
+    (item) => Boolean(manualReportMappings[item.item_id]),
+  );
+  const manuallyMappedTotal = unmappedReportItems.reduce(
+    (sum, item) => sum + (manualReportMappings[item.item_id] ? item.value : 0),
+    0,
+  );
+  const projectedReportTotal = (preview?.mapped_total ?? 0) + manuallyMappedTotal;
+  const reportTotalValid = !preview || preview.source_total === 0 || projectedReportTotal === preview.source_total;
 
   const handleAddManualTempRow = () => {
     setManualTempRows([
@@ -139,13 +163,30 @@ export default function HistoryImport() {
     setManualTempRows(manualTempRows.filter((_, rowIndex) => rowIndex !== index));
   };
 
+  const buildManualReportMappings = (): ManualReportMappingDraft[] =>
+    unmappedReportItems.map((item) => {
+      const [category, subCategory] = parseReportMappingKey(manualReportMappings[item.item_id]);
+      return {
+        item_id: item.item_id,
+        category,
+        sub_category: subCategory,
+      };
+    });
+
   const handleCommit = async () => {
-    if (!preview || !preview.readiness.can_commit || !manualTempValid) return;
+    if (
+      !preview
+      || !preview.readiness.can_commit
+      || !manualTempValid
+      || !manualReportMappingsValid
+      || !reportTotalValid
+    ) return;
     setCommitting(true);
     try {
       const res = await commitHistoryImport(
         preview.import_session_id,
         preview.manual_temp_print_required_quantity > 0 ? manualTempRows : undefined,
+        unmappedReportItems.length > 0 ? buildManualReportMappings() : undefined,
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['issues'] }),
@@ -197,27 +238,76 @@ export default function HistoryImport() {
           <div>
             <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>印数文件</Text>
             <Dragger
-              accept=".xlsx,.xls"
+              className="history-import-dragger"
+              accept=".xlsx"
               maxCount={1}
+              showUploadList={false}
               beforeUpload={() => false}
-              onChange={({ fileList }) => setReportFile(fileList[0]?.originFileObj ?? null)}
+              onChange={({ fileList }) => {
+                setReportFile(fileList[0]?.originFileObj ?? null);
+                setPreview(null);
+              }}
             >
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖拽上传印数文件</p>
-              <p className="ant-upload-hint">.xlsx / .xls</p>
+              {reportFile ? (
+                <div className="history-import-selected-file">
+                  <FileExcelOutlined className="history-import-selected-file-icon" />
+                  <div className="history-import-selected-file-name" title={reportFile.name}>
+                    {reportFile.name}
+                  </div>
+                  <div className="history-import-selected-file-action">点击或拖拽文件可重新选择</div>
+                </div>
+              ) : (
+                <>
+                  <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                  <p className="ant-upload-text">点击或拖拽上传印数文件</p>
+                  <p className="ant-upload-hint">.xlsx</p>
+                </>
+              )}
             </Dragger>
+            <Input.Password
+              allowClear
+              placeholder="如印数文件有密码，请在这里输入"
+              name="history_import_workbook_decryption_key"
+              autoComplete="new-password"
+              value={reportPassword}
+              onChange={(event) => {
+                setReportPassword(event.target.value);
+                setPreview(null);
+              }}
+              style={{ marginTop: 12 }}
+            />
+            <Text type="secondary" style={{ display: 'block', marginTop: 6, fontSize: 12 }}>
+              密码只用于本次上传解密，不会保存。
+            </Text>
           </div>
           <div>
             <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>中通发货文件</Text>
             <Dragger
-              accept=".xlsx,.xls"
+              className="history-import-dragger"
+              accept=".xlsx"
               maxCount={1}
+              showUploadList={false}
               beforeUpload={() => false}
-              onChange={({ fileList }) => setShippingFile(fileList[0]?.originFileObj ?? null)}
+              onChange={({ fileList }) => {
+                setShippingFile(fileList[0]?.originFileObj ?? null);
+                setPreview(null);
+              }}
             >
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖拽上传发货文件</p>
-              <p className="ant-upload-hint">.xlsx / .xls</p>
+              {shippingFile ? (
+                <div className="history-import-selected-file">
+                  <FileExcelOutlined className="history-import-selected-file-icon" />
+                  <div className="history-import-selected-file-name" title={shippingFile.name}>
+                    {shippingFile.name}
+                  </div>
+                  <div className="history-import-selected-file-action">点击或拖拽文件可重新选择</div>
+                </div>
+              ) : (
+                <>
+                  <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                  <p className="ant-upload-text">点击或拖拽上传发货文件</p>
+                  <p className="ant-upload-hint">.xlsx</p>
+                </>
+              )}
             </Dragger>
           </div>
         </div>
@@ -281,6 +371,97 @@ export default function HistoryImport() {
               </div>
             </div>
           </div>
+
+          {preview.report_rows.length > 0 && (
+            <div className="history-import-data-section">
+              <div className="history-import-data-section-header">
+                <div>
+                  <div className="history-import-data-section-title">已识别的报数数据</div>
+                  <Text type="secondary">以下为系统从印数文件中实际读取并完成归类的数据</Text>
+                </div>
+                <Text strong>已识别合计：{preview.mapped_total} 份</Text>
+              </div>
+              <div className="history-import-data-table-wrap">
+                <table className="history-import-data-table">
+                  <thead>
+                    <tr>
+                      <th>系统报数项</th>
+                      <th>分类</th>
+                      <th>去向</th>
+                      <th className="history-import-number-cell">份数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.report_rows.map((row) => (
+                      <tr key={`${row.category}:${row.sub_category}`}>
+                        <td>{row.display_name || row.sub_category}</td>
+                        <td>{categoryLabel(row.category)}</td>
+                        <td>{row.destination || '-'}</td>
+                        <td className="history-import-number-cell">{row.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {unmappedReportItems.length > 0 && (
+            <Alert
+              type={manualReportMappingsValid && reportTotalValid ? 'warning' : 'error'}
+              showIcon
+              title={`有 ${unmappedReportItems.length} 个项目需要手动归类`}
+              description={
+                <div>
+                  <div style={{ marginBottom: 12 }}>
+                    系统保留了原始位置和数量。请选择对应的系统报数项，全部归类且总数对平后即可导入。
+                  </div>
+                  <div className="history-import-data-table-wrap history-import-mapping-table-wrap">
+                    <table className="history-import-data-table">
+                      <thead>
+                        <tr>
+                          <th>来源</th>
+                          <th>原始项目</th>
+                          <th className="history-import-number-cell">份数</th>
+                          <th>归类到</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unmappedReportItems.map((item) => (
+                          <tr key={item.item_id}>
+                            <td>{item.sheet_name} · {item.cell_reference}</td>
+                            <td>{item.source_label}</td>
+                            <td className="history-import-number-cell">{item.value}</td>
+                            <td>
+                              <Select
+                                showSearch
+                                optionFilterProp="label"
+                                placeholder="选择系统报数项"
+                                value={manualReportMappings[item.item_id]}
+                                options={preview.report_mapping_options.map((option) => ({
+                                  label: option.display_name || option.sub_category,
+                                  value: reportMappingKey(option.category, option.sub_category),
+                                }))}
+                                onChange={(value) => setManualReportMappings((current) => ({
+                                  ...current,
+                                  [item.item_id]: value,
+                                }))}
+                                style={{ width: '100%', minWidth: 220 }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className={reportTotalValid ? 'history-import-total-ok' : 'history-import-total-error'}>
+                    原表总印数 {preview.source_total} 份；当前归类后合计 {projectedReportTotal} 份
+                  </div>
+                </div>
+              }
+              style={{ marginBottom: 16 }}
+            />
+          )}
 
           {preview.warnings && preview.warnings.length > 0 && (
             <Alert
@@ -385,7 +566,7 @@ export default function HistoryImport() {
               }
               style={{ marginBottom: 16 }}
             />
-          ) : manualTempRequired === 0 ? (
+          ) : manualTempRequired === 0 && unmappedReportItems.length === 0 ? (
             <Alert
               type="success"
               title="数据验证通过，可以提交导入"
@@ -400,7 +581,12 @@ export default function HistoryImport() {
               type="primary"
               onClick={handleCommit}
               loading={committing}
-              disabled={!preview.readiness.can_commit || !manualTempValid}
+              disabled={
+                !preview.readiness.can_commit
+                || !manualTempValid
+                || !manualReportMappingsValid
+                || !reportTotalValid
+              }
             >
               确认导入
             </Button>

@@ -14,7 +14,6 @@ import {
   Drawer,
   Upload,
 } from 'antd';
-import type { UploadFile } from 'antd';
 import {
   CheckOutlined,
   DownloadOutlined,
@@ -42,6 +41,7 @@ import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton
 import { DrawerTitle, StatusPill } from '../components/UiPrimitives';
 import {
   confirmReportSource,
+  deleteReportSource,
   downloadReportSource,
   getIssueReportSources,
   updateReportSourceShipping,
@@ -536,6 +536,21 @@ export default function ReportEditor() {
       message.error(err.response?.data?.detail || '来源文件上传失败');
     } finally {
       setSourceUploading(false);
+    }
+  };
+
+  const handleSourceReupload = async () => {
+    if (!sourcePreview) return;
+    try {
+      await deleteReportSource(sourcePreview.id);
+      setSourceFile(null);
+      setSourcePreview(null);
+      setSourceSuggestions([]);
+      await queryClient.invalidateQueries({ queryKey: ['reportSources', issueId] });
+      message.success('错误文件已移除，请重新选择正确文件');
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '撤销来源文件失败');
+      throw err;
     }
   };
 
@@ -1331,8 +1346,10 @@ export default function ReportEditor() {
           <section className="report-source-panel">
             <h3><span aria-hidden>②</span>上传原始文件</h3>
             <Upload.Dragger
+              className="report-source-dragger"
               maxCount={1}
               accept=".pdf,.jpg,.jpeg,.png"
+              showUploadList={false}
               disabled={Boolean(sourcePreview)}
               beforeUpload={file => {
                 setSourceFile(file);
@@ -1340,16 +1357,20 @@ export default function ReportEditor() {
                 setSourceSuggestions([]);
                 return false;
               }}
-              onRemove={() => {
-                setSourceFile(null);
-                setSourcePreview(null);
-                setSourceSuggestions([]);
-              }}
-              fileList={sourceFile ? [{ uid: 'report-source', name: sourceFile.name } as UploadFile] : []}
             >
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖拽当期来源文件</p>
-              <p className="ant-upload-hint">上传后自动识别数字、日期和刊期；原文件同步归档</p>
+              {sourceFile ? (
+                <div className="report-source-selected-file">
+                  <PaperClipOutlined />
+                  <strong title={sourceFile.name}>{sourceFile.name}</strong>
+                  <small>{sourcePreview ? '文件已上传并归档' : '点击或拖拽文件可重新选择'}</small>
+                </div>
+              ) : (
+                <>
+                  <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                  <p className="ant-upload-text">点击或拖拽当期来源文件</p>
+                  <p className="ant-upload-hint">上传后自动识别数字、日期和刊期；原文件同步归档</p>
+                </>
+              )}
             </Upload.Dragger>
           </section>
 
@@ -1357,7 +1378,28 @@ export default function ReportEditor() {
             <section className="report-source-panel">
               <div className="report-source-review-head">
                 <h3><span aria-hidden>③</span>核对识别结果</h3>
-                <Button size="small" icon={<PlusOutlined />} onClick={addSourceSuggestion}>人工补一行</Button>
+                <div className="report-source-review-actions">
+                  {sourcePreview.extraction_status === 'pending_review' && (
+                    <Button
+                      size="small"
+                      danger
+                      icon={<UndoOutlined />}
+                      onClick={() => {
+                        Modal.confirm({
+                          title: '重新上传来源文件？',
+                          content: '当前错误文件和识别结果将从本期归档中移除。',
+                          okText: '移除并重新选择',
+                          cancelText: '取消',
+                          okButtonProps: { danger: true },
+                          onOk: handleSourceReupload,
+                        });
+                      }}
+                    >
+                      重新上传
+                    </Button>
+                  )}
+                  <Button size="small" icon={<PlusOutlined />} onClick={addSourceSuggestion}>人工补录</Button>
+                </div>
               </div>
               <div className="report-source-file-meta">
                 <PaperClipOutlined />
@@ -1381,7 +1423,7 @@ export default function ReportEditor() {
                   type="warning"
                   showIcon
                   title="没有识别出结构化数字"
-                  description="文件已经安全归档，请点击“人工补一行”录入刊期和份数。"
+                  description="文件已经安全归档，请点击“人工补录”录入刊期和份数。"
                 />
               ) : (
                 <div className="report-source-review-list">

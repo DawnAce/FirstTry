@@ -1028,7 +1028,15 @@
   width: 100%;
 }
 
+.report-source-dragger.ant-upload-wrapper {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
 .report-source-drawer .ant-upload-wrapper .ant-upload-drag {
+  height: 160px;
+  box-sizing: border-box;
   border-color: #cfdae7;
   border-radius: 10px;
   background: #f8fbff;
@@ -1054,6 +1062,34 @@
   font-size: 10px !important;
 }
 
+.report-source-selected-file {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.report-source-selected-file > .anticon {
+  color: #2f80ed;
+  font-size: 30px;
+}
+
+.report-source-selected-file > strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: #253146;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-source-selected-file > small {
+  color: #8894a5;
+  font-size: 10px;
+}
+
 .report-source-review-head {
   display: flex;
   align-items: center;
@@ -1064,6 +1100,13 @@
 
 .report-source-review-head h3 {
   margin-bottom: 0;
+}
+
+.report-source-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .report-source-file-meta {

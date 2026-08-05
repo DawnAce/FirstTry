@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from openpyxl.workbook.workbook import Workbook
+from openpyxl.utils import get_column_letter
 
 from app.schemas.history_import import HistoryImportRow, TempPrintDetailRow
 
@@ -19,7 +20,17 @@ class RawReportParseResult:
     source_total: int
     mapped_total: int
     unmapped_items: list[str]
+    unmapped_rows: list["RawUnmappedItem"]
     temp_print_rows: list[TempPrintDetailRow]
+
+
+@dataclass
+class RawUnmappedItem:
+    item_id: str
+    sheet_name: str
+    source_label: str
+    cell_reference: str
+    value: int
 
 
 def _norm(value: Any) -> str:
@@ -98,10 +109,24 @@ def _add(entries: dict[tuple[str, str], int], category: str, sub_category: str, 
     entries[key] = entries.get(key, 0) + _int(value)
 
 
-def _add_unmapped(unmapped_items: list[str], sheet_name: str, label: str, value: Any) -> None:
+def _add_unmapped(
+    unmapped_items: list[str],
+    unmapped_rows: list[RawUnmappedItem],
+    sheet_name: str,
+    label: str,
+    value: Any,
+    cell_reference: str,
+) -> None:
     quantity = _int(value)
     if label and quantity > 0:
         unmapped_items.append(f"{sheet_name}：{label}（{quantity}份）")
+        unmapped_rows.append(RawUnmappedItem(
+            item_id=f"{sheet_name}:{cell_reference}",
+            sheet_name=sheet_name,
+            source_label=label,
+            cell_reference=cell_reference,
+            value=quantity,
+        ))
 
 
 def _last_number(cells: list[Any], max_columns: int = 8) -> int:
@@ -132,11 +157,16 @@ def _parse_print_factory(sheet, entries: dict[tuple[str, str], int]) -> int:
     return source_total
 
 
-def _parse_retail(sheet, entries: dict[tuple[str, str], int], unmapped_items: list[str]) -> None:
+def _parse_retail(
+    sheet,
+    entries: dict[tuple[str, str], int],
+    unmapped_items: list[str],
+    unmapped_rows: list[RawUnmappedItem],
+) -> None:
     current_col = _find_current_col(sheet)
     print_location_col = _find_optional_header_col(sheet, "印刷地点")
     last_label = ""
-    for row in sheet.iter_rows(min_row=4, values_only=True):
+    for row_number, row in enumerate(sheet.iter_rows(min_row=4, values_only=True), start=4):
         cells = _row_values(row)
         label = _norm(cells[0] if len(cells) > 0 else None) or last_label
         if label:
@@ -150,12 +180,24 @@ def _parse_retail(sheet, entries: dict[tuple[str, str], int], unmapped_items: li
         elif "广州日报" in label and "零售" in label:
             _set(entries, "guangzhou", "零售", value)
         elif label:
-            _add_unmapped(unmapped_items, sheet.title, label, value)
+            _add_unmapped(
+                unmapped_items,
+                unmapped_rows,
+                sheet.title,
+                label,
+                value,
+                f"{get_column_letter(current_col + 1)}{row_number}",
+            )
 
 
-def _parse_subscription(sheet, entries: dict[tuple[str, str], int], unmapped_items: list[str]) -> None:
+def _parse_subscription(
+    sheet,
+    entries: dict[tuple[str, str], int],
+    unmapped_items: list[str],
+    unmapped_rows: list[RawUnmappedItem],
+) -> None:
     current_col = _find_current_col(sheet)
-    for row in sheet.iter_rows(min_row=4, values_only=True):
+    for row_number, row in enumerate(sheet.iter_rows(min_row=4, values_only=True), start=4):
         cells = _row_values(row)
         label = _norm(cells[0] if len(cells) > 0 else None)
         if label == "报数合计":
@@ -170,7 +212,14 @@ def _parse_subscription(sheet, entries: dict[tuple[str, str], int], unmapped_ite
         elif label in {"杂志铺", "成都杂志铺"}:
             _set(entries, "chengdu", "成都杂志铺", value)
         elif label:
-            _add_unmapped(unmapped_items, sheet.title, label, value)
+            _add_unmapped(
+                unmapped_items,
+                unmapped_rows,
+                sheet.title,
+                label,
+                value,
+                f"{get_column_letter(current_col + 1)}{row_number}",
+            )
 
 
 _SOCIAL_ROW_MAP = {
@@ -221,10 +270,11 @@ def _parse_social(
     sheet,
     entries: dict[tuple[str, str], int],
     unmapped_items: list[str],
+    unmapped_rows: list[RawUnmappedItem],
     temp_print_rows: list[TempPrintDetailRow],
 ) -> None:
     current_col = _find_current_col(sheet)
-    for row in sheet.iter_rows(min_row=4, values_only=True):
+    for row_number, row in enumerate(sheet.iter_rows(min_row=4, values_only=True), start=4):
         cells = _row_values(row)
         label = _norm(cells[0] if len(cells) > 0 else None)
         if label == "合计":
@@ -240,7 +290,14 @@ def _parse_social(
         elif label in {"营报传媒", "印厂留存", "报社订阅自投/展示"}:
             pass
         else:
-            _add_unmapped(unmapped_items, sheet.title, label, value)
+            _add_unmapped(
+                unmapped_items,
+                unmapped_rows,
+                sheet.title,
+                label,
+                value,
+                f"{get_column_letter(current_col + 1)}{row_number}",
+            )
         if (report_value := _parse_side_value(cells, "报社")) is not None:
             _set(entries, "social_use", "营报传媒_收发室", report_value)
         if (reader_value := _parse_side_value(cells, "读者")) is not None:
@@ -252,10 +309,64 @@ def _parse_social(
         if (rail_value := _parse_side_value(cells, "高铁展示")) is not None:
             _set(entries, "social_use", "高铁展示", rail_value)
 
+    _collect_unlabeled_social_side_items(sheet, unmapped_items, unmapped_rows)
 
-def _parse_distribution(sheet, entries: dict[tuple[str, str], int], unmapped_items: list[str]) -> None:
+
+def _collect_unlabeled_social_side_items(
+    sheet,
+    unmapped_items: list[str],
+    unmapped_rows: list[RawUnmappedItem],
+) -> None:
+    """Expose legacy side-table numbers whose labels are blank for manual mapping.
+
+    Old report files place auxiliary counts in columns I/J. Some versions omit
+    the J-column labels and finish with a formula total. We retain the unlabeled
+    detail values, while ignoring the trailing value when it equals the running
+    side-table total.
+    """
+    known_total = 0
+    candidates: list[tuple[int, int, int]] = []
+    side_labels = {"报社", "读者", "备用", "上犹", "高铁展示"}
+    for row_number, row in enumerate(sheet.iter_rows(min_row=4, values_only=True), start=4):
+        cells = _row_values(row)
+        if _norm(cells[0] if cells else None) == "合计":
+            break
+        for index in range(8, len(cells)):
+            cell = cells[index]
+            if not isinstance(cell, (int, float)) or _int(cell) <= 0:
+                continue
+            following_label = _norm(cells[index + 1] if index + 1 < len(cells) else None)
+            if following_label in side_labels:
+                known_total += _int(cell)
+            elif not following_label:
+                candidates.append((row_number, index, _int(cell)))
+
+    running_total = known_total
+    for candidate_index, (row_number, index, quantity) in enumerate(candidates):
+        is_trailing_total = candidate_index == len(candidates) - 1 and quantity == running_total
+        if is_trailing_total:
+            continue
+        cell_reference = f"{get_column_letter(index + 1)}{row_number}"
+        label = f"未标注项目（{cell_reference}）"
+        _add_unmapped(
+            unmapped_items,
+            unmapped_rows,
+            sheet.title,
+            label,
+            quantity,
+            cell_reference,
+        )
+        running_total += quantity
+
+
+def _parse_distribution(
+    sheet,
+    entries: dict[tuple[str, str], int],
+    unmapped_items: list[str],
+    unmapped_rows: list[RawUnmappedItem],
+) -> None:
     current_col = _find_current_col(sheet)
-    for row in sheet.iter_rows(min_row=5, values_only=True):
+    for row_number, row in enumerate(sheet.iter_rows(min_row=5, values_only=True), start=5):
         cells = _row_values(row)
         label = _norm(cells[0] if len(cells) > 0 else None)
         if label == "合计":
@@ -264,26 +375,34 @@ def _parse_distribution(sheet, entries: dict[tuple[str, str], int], unmapped_ite
         if label == "临时加印（报社内存）":
             _set(entries, "social_use", "临时加印_自留", value)
         elif label not in _SOCIAL_ROW_MAP and label != "营报传媒":
-            _add_unmapped(unmapped_items, sheet.title, label, value)
+            _add_unmapped(
+                unmapped_items,
+                unmapped_rows,
+                sheet.title,
+                label,
+                value,
+                f"{get_column_letter(current_col + 1)}{row_number}",
+            )
 
 
 def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
     issue_number, publish_date, page_count = _parse_metadata(workbook)
     entries: dict[tuple[str, str], int] = {}
     unmapped_items: list[str] = []
+    unmapped_rows: list[RawUnmappedItem] = []
     temp_print_rows: list[TempPrintDetailRow] = []
     source_total = 0
 
     if "北京印厂" in workbook.sheetnames:
         source_total = _parse_print_factory(workbook["北京印厂"], entries)
     if "零售渠道`" in workbook.sheetnames:
-        _parse_retail(workbook["零售渠道`"], entries, unmapped_items)
+        _parse_retail(workbook["零售渠道`"], entries, unmapped_items, unmapped_rows)
     if "订阅渠道`" in workbook.sheetnames:
-        _parse_subscription(workbook["订阅渠道`"], entries, unmapped_items)
+        _parse_subscription(workbook["订阅渠道`"], entries, unmapped_items, unmapped_rows)
     if "社用报`" in workbook.sheetnames:
-        _parse_social(workbook["社用报`"], entries, unmapped_items, temp_print_rows)
+        _parse_social(workbook["社用报`"], entries, unmapped_items, unmapped_rows, temp_print_rows)
     if "收发室自留分发（需打印）" in workbook.sheetnames:
-        _parse_distribution(workbook["收发室自留分发（需打印）"], entries, unmapped_items)
+        _parse_distribution(workbook["收发室自留分发（需打印）"], entries, unmapped_items, unmapped_rows)
 
     entries.setdefault(("social_use", "临时加印"), 0)
     entries.setdefault(("social_use", "临时加印_自留"), 0)
@@ -309,5 +428,6 @@ def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
         source_total=source_total,
         mapped_total=mapped_total,
         unmapped_items=unmapped_items,
+        unmapped_rows=unmapped_rows,
         temp_print_rows=temp_print_rows,
     )

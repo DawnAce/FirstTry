@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import suppress
 from datetime import date, datetime
 from pathlib import Path
+import re
 from typing import Iterable
 
 from fastapi import HTTPException
@@ -97,9 +98,22 @@ def _build_display_name(
     channel_label = CHANNEL_LABELS[channel]
     stamp = (source_date or date.today()).strftime("%Y%m%d")
     if document_type == "monthly":
-        first_period = next((item.get("source_period") for item in suggestions if item.get("source_period")), None)
-        month_stamp = first_period.split("#", 1)[0].replace("-", "") if first_period else stamp[:6]
-        return f"{month_stamp}_{channel_label}_月度报数{suffix}"
+        # An explicit Chinese year/month in the original filename is more
+        # reliable than an OCR date inferred from document content. Keep the
+        # archive name human-readable so values such as ``202612`` cannot be
+        # mistaken for either 2026-01/issue 2 or 2026-12.
+        filename_month = re.search(r"(?<!\d)(20\d{2})年\s*(1[0-2]|0?[1-9])月", filename)
+        if filename_month:
+            year, month = int(filename_month.group(1)), int(filename_month.group(2))
+        else:
+            first_period = next((item.get("source_period") for item in suggestions if item.get("source_period")), None)
+            period_month = re.fullmatch(r"(20\d{2})-(0[1-9]|1[0-2])#\d+", first_period or "")
+            if period_month:
+                year, month = int(period_month.group(1)), int(period_month.group(2))
+            else:
+                fallback_date = source_date or date.today()
+                year, month = fallback_date.year, fallback_date.month
+        return f"{year}年{month:02d}月_{channel_label}_月度报数{suffix}"
     if document_type == "adjustment":
         count = len(suggestions)
         total = sum(abs(item.get("source_quantity") or 0) for item in suggestions)
@@ -157,6 +171,16 @@ def create_source_document(
         .first()
     )
     if existing:
+        normalized_display_name = _build_display_name(
+            channel=existing.channel,
+            document_type=existing.document_type,
+            source_date=existing.source_date,
+            filename=existing.original_filename,
+            suggestions=(existing.extraction_json or {}).get("suggestions", []),
+        )
+        if existing.display_name != normalized_display_name:
+            existing.display_name = normalized_display_name
+            db.commit()
         return existing, True
 
     issue = db.query(Issue).filter(Issue.issue_number == current_issue_number).first() if current_issue_number else None
@@ -261,6 +285,41 @@ def get_document(db: Session, document_id: int) -> ReportSourceDocument:
     if document is None:
         raise HTTPException(status_code=404, detail="来源文件不存在")
     return document
+
+
+def delete_source_document(
+    db: Session,
+    *,
+    document: ReportSourceDocument,
+    user: User,
+) -> None:
+    """Remove an incorrect source while preserving confirmed evidence.
+
+    Operators may withdraw only their own OCR-pending upload. Administrators
+    retain the existing ability to remove any source from the archive.
+    """
+    is_admin = user.role.value == "admin"
+    if not is_admin and document.uploaded_by != user.id:
+        raise HTTPException(status_code=403, detail="只能撤销自己上传的来源文件")
+    if not is_admin and document.extraction_status != "pending_review":
+        raise HTTPException(status_code=403, detail="已完成核对的来源文件仅管理员可以删除")
+
+    stored_path = document.stored_path
+    issue_numbers = {item.issue_number for item in document.items}
+    record_operation(
+        db,
+        user=user,
+        table_name="report_source_documents",
+        record_id=document.id,
+        record_name=document.display_name,
+        action="delete_source",
+        issue_number=next(iter(issue_numbers)) if len(issue_numbers) == 1 else None,
+        channel=CHANNEL_LABELS[document.channel],
+        changes={"status": document.extraction_status, "reason": "reupload"},
+    )
+    db.delete(document)
+    db.commit()
+    attachment_service.delete_file(stored_path)
 
 
 def _adjustment_deltas(kind: str | None, quantity: int | None) -> tuple[int, int]:

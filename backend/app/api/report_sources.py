@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user, require_admin
+from app.auth import get_current_user
 from app.database import get_db
 from app.models import Issue, ReportSourceItem, User
 from app.schemas.report_source import (
@@ -20,6 +20,7 @@ from app.services.report_source_service import (
     _document_out,
     confirm_document,
     create_source_document,
+    delete_source_document,
     get_document,
     get_issue_summary,
     update_adjustment_shipping,
@@ -119,10 +120,7 @@ def patch_adjustment_shipping(
 def delete_report_source(
     document_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    user: User = Depends(get_current_user),
 ):
     document = get_document(db, document_id)
-    stored_path = document.stored_path
-    db.delete(document)
-    db.commit()
-    attachment_service.delete_file(stored_path)
+    delete_source_document(db, document=document, user=user)

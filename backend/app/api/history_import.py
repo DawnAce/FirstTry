@@ -1,6 +1,6 @@
 """API routes for history import (template download, preview, commit)."""
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import io
@@ -51,12 +51,18 @@ def download_shipping_template():
 async def preview_import(
     report_file: UploadFile = File(...),
     shipping_file: UploadFile = File(...),
+    report_password: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     """Parse and validate both Excel files; return a preview without persisting anything."""
     report_bytes = await read_upload(report_file, label="报数文件")
     shipping_bytes = await read_upload(shipping_file, label="发货文件")
-    return preview_history_import(db, report_bytes, shipping_bytes)
+    return preview_history_import(
+        db,
+        report_bytes,
+        shipping_bytes,
+        report_password=report_password,
+    )
 
 
 @router.post("/commit", response_model=HistoryImportCommitOut)
@@ -65,4 +71,9 @@ def commit_import(
     db: Session = Depends(get_db),
 ):
     """Persist a previously previewed import from the cache session to the database."""
-    return commit_history_import(db, body.import_session_id, body.manual_temp_rows)
+    return commit_history_import(
+        db,
+        body.import_session_id,
+        body.manual_temp_rows,
+        body.manual_report_mappings,
+    )
