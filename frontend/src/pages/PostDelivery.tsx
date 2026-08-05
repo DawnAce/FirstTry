@@ -193,6 +193,15 @@ function errText(err: unknown): string {
   return (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '操作失败';
 }
 
+function formatPostalNo(value?: string | number | null, year?: string | number | null): string {
+  const raw = value == null ? '' : String(value).trim();
+  if (!raw) return '';
+  const fullMatch = raw.match(/^(\d{4})-(\d+)$/);
+  if (fullMatch) return `${fullMatch[1]}-${fullMatch[2].padStart(4, '0')}`;
+  const normalized = /^\d+$/.test(raw) ? raw.padStart(4, '0') : raw;
+  return year == null ? normalized : `${year}-${normalized}`;
+}
+
 const toDay = (s?: string | null): Dayjs | null => (s ? dayjs(s) : null);
 const fromDay = (d?: Dayjs | null): string | null => (d ? d.format('YYYY-MM-DD') : null);
 const fromDateTime = (d?: Dayjs | null): string | null => (d ? d.format('YYYY-MM-DDTHH:mm:ss') : null);
@@ -244,7 +253,7 @@ function ReaderLookup({ value, selectedReader, onChange, onSelectReader }: {
       notFoundContent={search ? (q.isFetching ? '搜索中…' : '未找到匹配读者') : '请输入检索内容'}
       options={readers.map((reader) => ({
         value: reader.id,
-        label: `${reader.year}-${reader.delivery_no}｜${reader.recipient_name}｜${reader.recipient_phone || '无电话'}｜${reader.recipient_address}`,
+        label: `${formatPostalNo(reader.delivery_no, reader.year)}｜${reader.recipient_name}｜${reader.recipient_phone || '无电话'}｜${reader.recipient_address}`,
       }))}
     />
   );
@@ -283,7 +292,7 @@ function ReaderImportModal({ open, onClose }: { open: boolean; onClose: () => vo
   const counts = preview?.counts ?? {};
   const columns: TableColumnsType<PostalImportRow> = [
     { title: '结果', dataIndex: 'decision', width: 90, render: (d: PostalImportDecision) => <Tag color={DECISION_META[d].color}>{DECISION_META[d].label}</Tag> },
-    { title: '编号', dataIndex: 'delivery_no', width: 100 },
+    { title: '编号', dataIndex: 'delivery_no', width: 120, render: (_: string, r) => formatPostalNo(r.delivery_no, r.year) },
     { title: '年度', dataIndex: 'year', width: 70, render: (v: number | null) => v ?? '—' },
     { title: '收报人', dataIndex: 'name', width: 100 },
     { title: '金额', dataIndex: 'amount', width: 80, align: 'right', render: (v: string) => `¥${v}` },
@@ -354,7 +363,7 @@ function ComplaintImportModal({ open, onClose }: { open: boolean; onClose: () =>
   const counts = preview?.counts ?? {};
   const columns: TableColumnsType<ComplaintImportRow> = [
     { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
-    { title: '编号', dataIndex: 'external_order_no', width: 130, render: (v: string, r) => <Space size={4}>{v}{r.linked && <Tag color="cyan" style={{ marginInlineEnd: 0 }}>已关联读者</Tag>}</Space> },
+    { title: '编号', dataIndex: 'external_order_no', width: 130, render: (v: string, r) => <Space size={4}>{formatPostalNo(v)}{r.linked && <Tag color="cyan" style={{ marginInlineEnd: 0 }}>已关联读者</Tag>}</Space> },
     { title: '收报人', dataIndex: 'name', width: 90 },
     { title: '接诉日期', dataIndex: 'complaint_date', width: 110 },
     { title: '投诉情况', dataIndex: 'missing_issues', ellipsis: true },
@@ -504,7 +513,7 @@ function DeliveriesTab() {
 
   const cols: TableColumnsType<PostalDelivery> = [
     { title: '编号', key: 'delivery_no', width: 120, render: (_: unknown, r) => (
-      <Text className="postal-delivery-number">{r.year}-{r.delivery_no}</Text>
+      <Text className="postal-delivery-number">{formatPostalNo(r.delivery_no, r.year)}</Text>
     ) },
     { title: '收报人', key: 'reader', width: 160, render: (_: unknown, r) => (
       <Space direction="vertical" size={0} className="postal-reader-cell">
@@ -848,7 +857,7 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
       <DrawerTitle
         icon={editing ? '✏️' : '➕'}
         title={editing ? '编辑投递记录' : '新增投递记录'}
-        description={editing ? `投递编号 ${editing.year}-${editing.delivery_no}` : '手工补录一条邮局投递台账'}
+        description={editing ? `投递编号 ${formatPostalNo(editing.delivery_no, editing.year)}` : '手工补录一条邮局投递台账'}
         tone={editing ? 'purple' : 'info'}
         status={<StatusPill tone={editing ? 'purple' : 'info'}>{editing ? '编辑模式' : '新记录'}</StatusPill>}
       />
@@ -947,7 +956,7 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onE
       <DrawerTitle
         icon="📬"
         title="投递记录详情"
-        description={record ? `投递编号 ${record.year}-${record.delivery_no}` : '邮局投递台账'}
+        description={record ? `投递编号 ${formatPostalNo(record.delivery_no, record.year)}` : '邮局投递台账'}
         status={record ? <span className={`complaint-form-status ${statusClass}`}>{statusMeta.label}</span> : undefined}
       />
     )} open={record != null} onClose={onClose} size={720} destroyOnHidden
@@ -1026,7 +1035,7 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onE
                     </div>
                     {ticketStatusTag(ticket)}
                     <span className="postal-service-action">
-                      {ticket.type === 'complaint' ? (ticket.status === 'resolved' ? '查看' : '去处理') : ticket.type === 'address' ? '查看变更' : '查看回访'}
+                      {ticket.type === 'complaint' ? (ticket.status === 'resolved' ? '查看' : '去处理') : ticket.type === 'address' ? '变更' : '查看回访'}
                     </span>
                   </button>
                 ))}
@@ -1152,7 +1161,7 @@ function ComplaintFormModal({ open, editing, prefill, unitOpts, onClose }: {
             <div className="complaint-form-meta">
               <span>{year ? `${year} 年度` : '待选择年度'}</span>
               <i>·</i>
-              <span>{displayDeliveryNo ? `编号 ${displayDeliveryNo}` : '待关联读者'}</span>
+              <span>{displayDeliveryNo ? `编号 ${formatPostalNo(displayDeliveryNo)}` : '待关联读者'}</span>
               {sourcePlatform && <><i>·</i><span className="complaint-form-platform">来源平台：{sourcePlatform}</span></>}
             </div>
           </div>
@@ -1224,7 +1233,7 @@ function ComplaintFormModal({ open, editing, prefill, unitOpts, onClose }: {
             </div>
             <div className="complaint-form-source-note">
               <span aria-hidden>🔗</span>
-              <span>资料来自 <b>{year && displayDeliveryNo ? `${year}-${displayDeliveryNo}` : '所选读者'}</b> 的关联读者名册，编辑后保留为投诉快照</span>
+              <span>资料来自 <b>{year && displayDeliveryNo ? formatPostalNo(displayDeliveryNo, year) : '所选读者'}</b> 的关联读者名册，编辑后保留为投诉快照</span>
             </div>
           </section>
 
@@ -1362,7 +1371,7 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
     <DrawerTitle
       icon="📣"
       title="投诉详情"
-      description={c ? `${c.snap_name || '未记录收报人'} · 编号 ${c.external_order_no || '未记录'}` : '邮局投诉工单'}
+      description={c ? `${c.snap_name || '未记录收报人'} · 编号 ${formatPostalNo(c.external_order_no) || '未记录'}` : '邮局投诉工单'}
       tone="warning"
       status={c ? <StatusPill tone={c.status === 'resolved' ? 'success' : c.status === 'in_progress' ? 'info' : 'warning'}>{COMPLAINT_STATUS_META[c.status].label}</StatusPill> : undefined}
     />
@@ -1387,7 +1396,7 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
             { key: 'n', label: '收报人', children: c.snap_name || '—' },
             { key: 'phone', label: '电话', children: c.snap_phone || '—' },
             { key: 'address', label: '地址', children: c.snap_address || '—' },
-            { key: 'no', label: '编号', children: c.external_order_no || '—' },
+            { key: 'no', label: '编号', children: formatPostalNo(c.external_order_no) || '—' },
             { key: 'm', label: '投诉情况', children: c.missing_issues || '—' },
             { key: 'handling', label: '处理情况', children: c.handling || '—' },
             { key: 'unit', label: '投递单位', children: c.routed_unit_name || c.routed_label || '—' },
@@ -1557,7 +1566,7 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
   </>);
 }
 
-/** 收件信息变更 · 新增 / 编辑 */
+/** 信息变更 · 新增 / 编辑 */
 function AddressChangeFormModal({ open, editing, prefill, onClose }: {
   open: boolean;
   editing: PostalAddressChange | null;
@@ -1603,7 +1612,7 @@ function AddressChangeFormModal({ open, editing, prefill, onClose }: {
       return editing ? updateAddressChange(editing.id, body) : createAddressChange(body);
     },
     onSuccess: () => {
-      message.success(editing ? '收件信息变更已更新' : '收件信息变更已新增');
+      message.success(editing ? '信息变更已更新' : '信息变更已新增');
       qc.invalidateQueries({ queryKey: ['postalAddrChanges'] });
       qc.invalidateQueries({ queryKey: ['postalTickets'] });
       onClose();
@@ -1627,10 +1636,10 @@ function AddressChangeFormModal({ open, editing, prefill, onClose }: {
         <div className="complaint-form-title">
           <span className="complaint-form-title-icon" aria-hidden>📬</span>
           <div className="complaint-form-title-copy">
-            <strong>{editing ? '编辑收件信息变更' : '新增收件信息变更'}</strong>
+            <strong>{editing ? '编辑信息变更' : '新增信息变更'}</strong>
             <div className="complaint-form-meta">
               <span>{year ? `${year} 年度` : '待选择年度'}</span><i>·</i>
-              <span>{deliveryNo ? `编号 ${deliveryNo}` : '待关联读者'}</span>
+              <span>{deliveryNo ? `编号 ${formatPostalNo(deliveryNo, year)}` : '待关联读者'}</span>
               {postalDeliveryId && <><i>·</i><span className="complaint-form-platform">已关联读者</span></>}
             </div>
           </div>
@@ -1675,7 +1684,7 @@ function AddressChangeFormModal({ open, editing, prefill, onClose }: {
                 })} />
               </Form.Item>
             ) : (
-              <Form.Item label="关联读者"><Input value={`${editing.old_name || '读者'} · ${editing.external_order_no || '未匹配'}`} disabled /></Form.Item>
+              <Form.Item label="关联读者"><Input value={`${editing.old_name || '读者'} · ${formatPostalNo(editing.external_order_no) || '未匹配'}`} disabled /></Form.Item>
             )}
             <Form.Item name="change_date" label="变更登记时间">
               <DatePicker showTime={{ format: 'HH:mm' }} format="YYYY-MM-DD HH:mm" />
@@ -1801,7 +1810,7 @@ function FollowUpFormModal({ open, editing, prefill, onClose, onSaved, onContinu
             <strong>{editing ? '编辑回访' : '新增回访'}</strong>
             <div className="complaint-form-meta">
               <span>{year ? `${year} 年度` : '待选择年度'}</span><i>·</i>
-              <span>{deliveryNo ? `编号 ${deliveryNo}` : '待关联读者'}</span>
+              <span>{deliveryNo ? `编号 ${formatPostalNo(deliveryNo, year)}` : '待关联读者'}</span>
               {readerName && <><i>·</i><span className="complaint-form-platform">{readerName}</span></>}
             </div>
           </div>
@@ -1848,7 +1857,7 @@ function FollowUpFormModal({ open, editing, prefill, onClose, onSaved, onContinu
                 }} />
               </Form.Item>
             ) : (
-              <Form.Item label="关联读者"><Input value={`${editing.snap_name || '读者'} · ${editing.external_order_no || '未匹配'}`} disabled /></Form.Item>
+              <Form.Item label="关联读者"><Input value={`${editing.snap_name || '读者'} · ${formatPostalNo(editing.external_order_no) || '未匹配'}`} disabled /></Form.Item>
             )}
             <Form.Item name="follow_up_date" label="回访日期" rules={[{ required: true, message: '请选择回访日期' }]}><DatePicker /></Form.Item>
           </div>
@@ -1876,7 +1885,7 @@ function FollowUpFormModal({ open, editing, prefill, onClose, onSaved, onContinu
                   <span className="follow-next-action-copy"><strong>创建投诉工单</strong><small>带入关联读者与沟通内容</small></span>
                 </Checkbox>
                 <Checkbox value="address" className={`follow-next-action address ${nextActions.includes('address') ? 'selected' : ''}`}>
-                  <span className="follow-next-action-copy"><strong>创建收件信息变更工单</strong><small>打开变更前后对比，确认具体修改项</small></span>
+                  <span className="follow-next-action-copy"><strong>创建信息变更工单</strong><small>打开变更前后对比，确认具体修改项</small></span>
                 </Checkbox>
               </Checkbox.Group>
             </Form.Item>
@@ -1890,7 +1899,7 @@ function FollowUpFormModal({ open, editing, prefill, onClose, onSaved, onContinu
 
 const TICKET_TYPE_META: Record<TicketType, { label: string; color: string }> = {
   complaint: { label: '投诉', color: 'red' },
-  address: { label: '收件信息变更', color: 'purple' },
+  address: { label: '信息变更', color: 'purple' },
   follow: { label: '回访', color: 'blue' },
 };
 
@@ -1908,6 +1917,18 @@ function ticketStatusTag(t: Ticket) {
   return <Text type="secondary">—</Text>;
 }
 
+function ticketHandlingTag(t: Ticket) {
+  if (t.type === 'complaint') {
+    const count = t.handling_count ?? 0;
+    return count > 0 ? <Tag color="blue">已处理 {count} 次</Tag> : <Tag>尚未处理</Tag>;
+  }
+  if (t.type === 'address') {
+    if (t.status === 'recipient_pending') return <Tag color="orange">已更新 · 待核对</Tag>;
+    return t.applied_to_order ? <Tag color="green">已更新投递信息</Tag> : <Tag>待更新投递信息</Tag>;
+  }
+  return <Tag color="blue">已记录回访</Tag>;
+}
+
 function ticketTypeIcon(type: TicketType) {
   if (type === 'complaint') return <NotificationOutlined />;
   if (type === 'address') return <EnvironmentOutlined />;
@@ -1922,7 +1943,7 @@ function formatTicketPhone(value: string | null) {
     : value;
 }
 
-/** 收件信息变更详情抽屉：新旧对比 + 应用变更（写回投递记录，挂单则同步履约订单）。 */
+/** 信息变更详情抽屉：新旧对比 + 应用变更（更新投递记录，挂单则同步履约订单）。 */
 function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdit, onClose }: {
   addressId: number | null; readOnly?: boolean; modal?: boolean; onEdit: (rec: PostalAddressChange) => void; onClose: () => void;
 }) {
@@ -1940,7 +1961,7 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
   const applyMut = useMutation({
     mutationFn: () => applyAddressChange(addressId as number),
     onSuccess: () => {
-      message.success('已应用收件信息变更');
+      message.success('已应用信息变更');
       qc.invalidateQueries({ queryKey: ['postalTickets'] });
       qc.invalidateQueries({ queryKey: ['postalAddrDetail', addressId] });
     },
@@ -2034,14 +2055,14 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
         { key: 'date', label: '变更登记时间', children: a.change_date ? dayjs(a.change_date).format('YYYY-MM-DD HH:mm') : '—' },
         { key: 'h', label: '处理情况', children: a.handling || a.routed_label || '—' },
         { key: 'r', label: '关联读者', children: readerTag(a.postal_delivery_id) },
-        { key: 'no', label: '编号', children: a.external_order_no || '—' },
+        { key: 'no', label: '编号', children: formatPostalNo(a.external_order_no) || '—' },
         { key: 'ap', label: '应用状态', children: a.applied_to_order
             ? <Tag color={pendingCopies ? 'red' : 'green'}>{pendingCopies ? `已应用 · ${pendingCopies}份待确认` : `已应用${a.order_id ? '·已同步履约订单' : '·仅名册'}`}</Tag>
             : (a.postal_delivery_id ? <Tag color="orange">待应用</Tag> : <Tag>未匹配（未关联读者）</Tag>) },
         { key: 'notes', label: '备注', children: a.notes || '—' },
       ]} />
       {isAdmin && !readOnly && !a.applied_to_order && (
-        <Popconfirm title="应用收件信息变更？" description="把变更后的收件信息写回投递明细。"
+        <Popconfirm title="应用信息变更？" description="把变更后的收件信息更新到投递明细。"
           okText="应用" onConfirm={() => applyMut.mutate()} disabled={!a.postal_delivery_id}>
           <Button type="primary" loading={applyMut.isPending} disabled={!a.postal_delivery_id}>应用变更</Button>
         </Popconfirm>
@@ -2055,7 +2076,7 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
         <div className="address-source-link-grid">
           <div className="address-source-field">
             <span>关联读者</span>
-            <strong className="linked">{a.new_name || a.old_name || '读者'} · {a.external_order_no || '编号未填'}</strong>
+            <strong className="linked">{a.new_name || a.old_name || '读者'} · {formatPostalNo(a.external_order_no) || '编号未填'}</strong>
           </div>
           <div className="address-source-field">
             <span>变更登记时间</span>
@@ -2164,10 +2185,10 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
         <div className="complaint-form-title">
           <span className="complaint-form-title-icon" aria-hidden>📬</span>
           <div className="complaint-form-title-copy">
-            <strong>收件信息变更记录</strong>
+            <strong>信息变更记录</strong>
             <div className="complaint-form-meta">
               <span>{sourceYear ? `${sourceYear} 年度` : '年度未填'}</span><i>·</i>
-              <span>{a.external_order_no ? `编号 ${a.external_order_no}` : '编号未填'}</span><i>·</i>
+              <span>{a.external_order_no ? `编号 ${formatPostalNo(a.external_order_no)}` : '编号未填'}</span><i>·</i>
               <span className="address-source-record-pill">修改记录 #{a.id}</span>
             </div>
           </div>
@@ -2176,7 +2197,7 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
           </span>
           {pendingCopies > 0 && <span className="address-source-review-status">份数待核对</span>}
         </div>
-      ) : '收件信息变更记录'}
+      ) : '信息变更记录'}
       width={900}
       open={open}
       onCancel={onClose}
@@ -2199,8 +2220,8 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
     <><Drawer title={(
       <DrawerTitle
         icon="📝"
-        title="收件信息变更工单"
-        description={a ? `${a.old_name || a.new_name || '未记录收报人'} · 编号 ${a.external_order_no || '未记录'}` : '查看修改前后信息'}
+        title="信息变更工单"
+        description={a ? `${a.old_name || a.new_name || '未记录收报人'} · 编号 ${formatPostalNo(a.external_order_no) || '未记录'}` : '查看修改前后信息'}
         tone="purple"
         status={a ? <StatusPill tone={pendingCopies ? 'danger' : a.applied_to_order ? 'success' : a.postal_delivery_id ? 'warning' : 'neutral'}>{pendingCopies ? `${pendingCopies}份未确认` : a.applied_to_order ? '已应用' : a.postal_delivery_id ? '待应用' : '未匹配'}</StatusPill> : undefined}
       />
@@ -2236,7 +2257,7 @@ function FollowDetailDrawer({ followId, modal = false, readOnly = false, onEdit,
     <DrawerTitle
       icon="💬"
       title="回访记录"
-      description={f ? `${f.snap_name || '未记录收报人'} · 编号 ${f.external_order_no || '未记录'}` : '客户沟通留痕'}
+      description={f ? `${f.snap_name || '未记录收报人'} · 编号 ${formatPostalNo(f.external_order_no) || '未记录'}` : '客户沟通留痕'}
       tone="success"
       status={<StatusPill tone="success">回访留痕</StatusPill>}
     />
@@ -2245,7 +2266,7 @@ function FollowDetailDrawer({ followId, modal = false, readOnly = false, onEdit,
     <Descriptions size="small" column={1} bordered items={[
           { key: 'd', label: '回访日期', children: f.follow_up_date || '—' },
           { key: 'n', label: '收报人', children: f.snap_name || '—' },
-          { key: 'no', label: '编号', children: f.external_order_no || '—' },
+          { key: 'no', label: '编号', children: formatPostalNo(f.external_order_no) || '—' },
           { key: 'content', label: '沟通内容', children: <span style={{ whiteSpace: 'pre-wrap' }}>{f.communication_content || '—'}</span> },
           { key: 'r', label: '沟通结果', children: <span style={{ whiteSpace: 'pre-wrap' }}>{f.result || '—'}</span> },
           { key: 'link', label: '关联读者', children: readerTag(f.postal_delivery_id) },
@@ -2333,7 +2354,7 @@ function TicketsTab() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['postalTickets'] });
   const delComplaint = useMutation({ mutationFn: (id: number) => deleteComplaint(id), onSuccess: () => { message.success('已删除投诉'); invalidate(); }, onError: (e) => message.error(errText(e)) });
-  const delAddress = useMutation({ mutationFn: (id: number) => deleteAddressChange(id), onSuccess: () => { message.success('已删除收件信息变更'); invalidate(); }, onError: (e) => message.error(errText(e)) });
+  const delAddress = useMutation({ mutationFn: (id: number) => deleteAddressChange(id), onSuccess: () => { message.success('已删除信息变更'); invalidate(); }, onError: (e) => message.error(errText(e)) });
   const delFollow = useMutation({ mutationFn: (id: number) => deleteFollowUp(id), onSuccess: () => { message.success('已删除回访'); invalidate(); }, onError: (e) => message.error(errText(e)) });
 
   const openDetail = (t: Ticket) => {
@@ -2400,7 +2421,7 @@ function TicketsTab() {
     const isAppliedAddress = ticket.type === 'address' && ticket.applied_to_order === true;
     return (
       <Space size={0} className="postal-ticket-card-actions">
-        <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => openDetail(ticket)}>详情</Button>
+        <Button type="link" size="small" aria-label="详情" title="详情" icon={<HistoryOutlined />} onClick={() => openDetail(ticket)} />
         {isAdmin && !isAppliedAddress && (
           <>
             <Button type="link" size="small" aria-label={`编辑${TICKET_TYPE_META[ticket.type].label}`} icon={<EditOutlined />} onClick={() => openEdit(ticket)} />
@@ -2423,7 +2444,7 @@ function TicketsTab() {
   const typeOptions = [
     { label: `全部${sm ? ` ${sm.complaint + sm.address + sm.follow}` : ''}`, value: 'all' },
     { label: `投诉${sm ? ` ${sm.complaint}` : ''}`, value: 'complaint' },
-    { label: `收件信息变更${sm ? ` ${sm.address}` : ''}`, value: 'address' },
+    { label: `信息变更${sm ? ` ${sm.address}` : ''}`, value: 'address' },
     { label: `回访${sm ? ` ${sm.follow}` : ''}`, value: 'follow' },
   ];
 
@@ -2435,7 +2456,7 @@ function TicketsTab() {
         actions={<Space wrap>
           <Dropdown menu={{ items: [
             { key: 'complaint', label: '导入投诉', onClick: () => setImportType('complaint') },
-            { key: 'address', label: '导入收件信息变更', onClick: () => setImportType('address') },
+            { key: 'address', label: '导入信息变更', onClick: () => setImportType('address') },
             { key: 'follow', label: '导入回访', onClick: () => setImportType('follow') },
           ] }}>
             <Button icon={<UploadOutlined />}>导入</Button>
@@ -2443,7 +2464,7 @@ function TicketsTab() {
           {isAdmin && (
             <Dropdown menu={{ items: [
               { key: 'complaint', label: '新增投诉', onClick: () => { setComplaintPrefill(null); setComplaintForm({ open: true, editing: null }); } },
-              { key: 'address', label: '新增收件信息变更', onClick: () => { setAddressPrefill(null); setAddressForm({ open: true, editing: null }); } },
+              { key: 'address', label: '新增信息变更', onClick: () => { setAddressPrefill(null); setAddressForm({ open: true, editing: null }); } },
               { key: 'follow', label: '新增回访', onClick: () => setFollowForm({ open: true, editing: null }) },
             ] }}>
               <Button type="primary" icon={<PlusOutlined />}>新建工单</Button>
@@ -2488,37 +2509,36 @@ function TicketsTab() {
         <Spin spinning={q.isLoading}>
           <div className="postal-ticket-card-list">
             {(data?.rows ?? []).map((ticket) => {
-              const associationMeta = [
-                ticket.year ? `${ticket.year}年度` : null,
-                ticket.handling_count != null ? `已处理 ${ticket.handling_count} 次` : null,
-              ].filter(Boolean).join(' · ');
+              const fullDeliveryNo = formatPostalNo(ticket.delivery_no, ticket.year) || '无编号';
               return (
                 <article
                   key={`${ticket.type}-${ticket.id}`}
                   className={`postal-ticket-card type-${ticket.type}${ticket.status === 'recipient_pending' ? ' is-recipient-pending' : ''}`}
                 >
                   <span className="postal-ticket-card-type-icon" aria-hidden>{ticketTypeIcon(ticket.type)}</span>
+                  <div className="postal-ticket-card-field postal-ticket-card-number">
+                    <span>编号</span>
+                    <Text strong>{fullDeliveryNo}</Text>
+                  </div>
                   <div className="postal-ticket-card-reader">
                     <Text strong>{ticket.recipient_name || '—'}</Text>
-                    <Text type="secondary" className="postal-ticket-card-meta">
-                      {ticket.delivery_no || '无编号'} · {TICKET_TYPE_META[ticket.type].label}
-                    </Text>
+                    <Text type="secondary" className="postal-ticket-card-meta postal-ticket-card-reader-phone">{formatTicketPhone(ticket.recipient_phone)}</Text>
                   </div>
-                  <div className="postal-ticket-card-field postal-ticket-card-phone">
-                    <span>联系电话</span>
-                    <Text>{formatTicketPhone(ticket.recipient_phone)}</Text>
+                  <div className="postal-ticket-card-field postal-ticket-card-kind">
+                    <span>工单类型</span>
+                    <Text strong>{TICKET_TYPE_META[ticket.type].label}</Text>
                   </div>
-                  <div className="postal-ticket-card-field postal-ticket-card-association">
-                    <span>关联信息</span>
-                    <Text strong>{ticket.postal_delivery_id ? '已关联投递明细' : '未关联投递明细'}</Text>
-                    <Text type="secondary" className="postal-ticket-card-meta">{associationMeta || '—'}</Text>
+                  <div className="postal-ticket-card-field postal-ticket-card-handling">
+                    <span>处理情况</span>
+                    {ticketHandlingTag(ticket)}
                   </div>
-                  <div className="postal-ticket-card-field postal-ticket-card-progress">
-                    <span>登记日期 / 状态</span>
-                    <Flex align="center" gap={8} wrap>
-                      <Text>{ticket.ticket_date ? dayjs(ticket.ticket_date).format('YYYY-MM-DD') : '—'}</Text>
-                      {ticketStatusTag(ticket)}
-                    </Flex>
+                  <div className="postal-ticket-card-field postal-ticket-card-date">
+                    <span>登记日期</span>
+                    <Text>{ticket.ticket_date ? dayjs(ticket.ticket_date).format('YYYY-MM-DD') : '—'}</Text>
+                  </div>
+                  <div className="postal-ticket-card-field postal-ticket-card-status">
+                    <span>状态</span>
+                    {ticketStatusTag(ticket)}
                   </div>
                   {renderTicketActions(ticket)}
                 </article>
@@ -2555,13 +2575,13 @@ function TicketsTab() {
       {/* 导入弹窗 */}
       <ComplaintImportModal open={importType === 'complaint'} onClose={() => setImportType(null)} />
       <SimpleImportModal<AddrImportRow>
-        open={importType === 'address'} onClose={() => setImportType(null)} title="导入收件信息变更" unit="条" linkedLabel="已关联" invalidateKey="postalTickets"
+        open={importType === 'address'} onClose={() => setImportType(null)} title="导入信息变更" unit="条" linkedLabel="已关联" invalidateKey="postalTickets"
         hint="点击或拖拽含《改地址》的 .xlsx"
         previewFn={previewAddressChangeImport} commitFn={commitAddressChangeImport}
         rowKey={(r, i) => `${r.external_order_no}-${i}`}
         columns={[
           { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
-          { title: '编号', dataIndex: 'external_order_no', width: 120 },
+          { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string) => formatPostalNo(v) },
           { title: '原姓名', dataIndex: 'old_name', width: 100 },
           { title: '新地址', dataIndex: 'new_address', ellipsis: true },
         ]}
@@ -2573,7 +2593,7 @@ function TicketsTab() {
         rowKey={(r, i) => `${r.external_order_no}-${i}`}
         columns={[
           { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
-          { title: '编号', dataIndex: 'external_order_no', width: 120 },
+          { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string) => formatPostalNo(v) },
           { title: '姓名', dataIndex: 'name', width: 100 },
           { title: '批次', dataIndex: 'batch_label', width: 130 },
           { title: '结果', dataIndex: 'result', ellipsis: true },
