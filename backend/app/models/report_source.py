@@ -76,6 +76,21 @@ class ReportSourceItem(Base):
     source_status = Column(
         String(30), nullable=False, default="pending_review", server_default="pending_review", index=True
     )
+    # Business role of this evidence.  Base and prepress additions contribute
+    # to the editable print count; postpress actions affect only settlement /
+    # supplemental shipping after the print count has been locked.
+    source_action = Column(String(30), nullable=False, default="base", server_default="base", index=True)
+    applied_phase = Column(
+        String(30), nullable=False, default="pre_confirmation", server_default="pre_confirmation", index=True
+    )
+    print_delta = Column(Integer, nullable=False, default=0, server_default="0")
+    effect_status = Column(String(20), nullable=False, default="active", server_default="active", index=True)
+    supersedes_item_id = Column(
+        Integer,
+        ForeignKey("report_source_items.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     adjustment_kind = Column(String(30), nullable=True)
     settlement_delta = Column(Integer, nullable=False, default=0, server_default="0")
     shipping_delta = Column(Integer, nullable=False, default=0, server_default="0")
@@ -89,6 +104,12 @@ class ReportSourceItem(Base):
 
     document = relationship("ReportSourceDocument", back_populates="items")
     confirmer = relationship("User", foreign_keys=[confirmed_by])
+    superseded_item = relationship(
+        "ReportSourceItem",
+        remote_side=[id],
+        foreign_keys=[supersedes_item_id],
+        backref="replacement_items",
+    )
 
     __table_args__ = (
         UniqueConstraint(

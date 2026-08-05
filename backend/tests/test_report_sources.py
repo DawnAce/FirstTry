@@ -279,19 +279,89 @@ def test_confirmed_base_updates_draft_but_never_confirmed_issue(db, user):
     locked_value = db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value
     second = _document(db, channel="postal", document_type="weekly", suffix="2")
     db.commit()
-    report_source_service.confirm_document(
+    with pytest.raises(HTTPException) as exc_info:
+        report_source_service.confirm_document(
+            db,
+            document=second,
+            user=user,
+            data=ReportSourceConfirmIn(items=[ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="本市",
+                source_quantity=9999,
+                applied_quantity=9999,
+            )]),
+        )
+    assert exc_info.value.status_code == 409
+    assert db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value == locked_value
+
+
+def _confirm_chengdu_source(db, user, issue, *, quantity, suffix, action="base", supersedes=None):
+    document = _document(db, channel="chengdu", document_type="monthly", suffix=suffix)
+    db.commit()
+    return report_source_service.confirm_document(
         db,
-        document=second,
+        document=document,
         user=user,
         data=ReportSourceConfirmIn(items=[ReportSourceItemConfirmIn(
             issue_number=issue.issue_number,
-            category="postal",
-            sub_category="本市",
-            source_quantity=9999,
-            applied_quantity=9999,
+            category="chengdu",
+            sub_category="成都杂志铺",
+            source_quantity=quantity,
+            applied_quantity=quantity,
+            source_action=action,
+            supersedes_item_id=supersedes,
         )]),
     )
-    assert db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value == locked_value
+
+
+def test_prepress_sources_add_and_replacing_base_preserves_addition(db, user):
+    issue = _issue_with_entries(db)
+    base = _confirm_chengdu_source(db, user, issue, quantity=350, suffix="base")
+    addition = _confirm_chengdu_source(
+        db, user, issue, quantity=15, suffix="addition", action="prepress_addition",
+    )
+
+    entry = db.query(ReportEntry).filter_by(issue_id=issue.id, category="chengdu").one()
+    assert entry.value == 365
+
+    replacement = _confirm_chengdu_source(
+        db,
+        user,
+        issue,
+        quantity=340,
+        suffix="base-replacement",
+        action="prepress_addition",  # server inherits the target's base role
+        supersedes=base.items[0].id,
+    )
+
+    db.refresh(entry)
+    assert entry.value == 355
+    assert base.items[0].effect_status == "replaced"
+    assert replacement.items[0].source_action == "base"
+    assert addition.items[0].effect_status == "active"
+
+
+def test_replacing_prepress_addition_changes_only_that_contribution(db, user):
+    issue = _issue_with_entries(db)
+    _confirm_chengdu_source(db, user, issue, quantity=350, suffix="base")
+    addition = _confirm_chengdu_source(
+        db, user, issue, quantity=15, suffix="addition", action="prepress_addition",
+    )
+
+    replacement = _confirm_chengdu_source(
+        db,
+        user,
+        issue,
+        quantity=20,
+        suffix="addition-replacement",
+        supersedes=addition.items[0].id,
+    )
+
+    entry = db.query(ReportEntry).filter_by(issue_id=issue.id, category="chengdu").one()
+    assert entry.value == 370
+    assert addition.items[0].effect_status == "replaced"
+    assert replacement.items[0].source_action == "prepress_addition"
 
 
 def test_adjustments_change_settlement_and_shipping_not_print_count(db, user):
@@ -381,6 +451,7 @@ def test_reviewed_monthly_value_applies_when_future_issue_is_created(db):
         source_label="2026年8月第1期",
         source_quantity=377,
         applied_quantity=377,
+        print_delta=377,
         source_status="confirmed",
     ))
     db.commit()

@@ -5,6 +5,13 @@ export type ReportSourceDocumentType = 'weekly' | 'monthly' | 'adjustment';
 export type ReportSourceStatus = 'pending_review' | 'channel_pending' | 'confirmed';
 export type ReportSourceItemKind = 'base' | 'adjustment';
 export type ReportSourceAdjustmentKind = 'billable_addition' | 'replacement' | 'reduction';
+export type ReportSourceAction =
+  | 'base'
+  | 'prepress_addition'
+  | 'postpress_addition'
+  | 'damage_reshipment'
+  | 'reduction'
+  | 'archive_only';
 
 export interface ReportSourceSuggestion {
   issue_number: number | null;
@@ -17,6 +24,8 @@ export interface ReportSourceSuggestion {
   applied_quantity: number | null;
   source_status: ReportSourceStatus;
   adjustment_kind: ReportSourceAdjustmentKind | null;
+  source_action: ReportSourceAction;
+  supersedes_item_id: number | null;
   confidence: number | null;
   notes: string | null;
 }
@@ -32,6 +41,11 @@ export interface ReportSourceItem {
   source_quantity: number | null;
   applied_quantity: number | null;
   source_status: ReportSourceStatus;
+  source_action: ReportSourceAction;
+  applied_phase: 'pre_confirmation' | 'post_confirmation';
+  print_delta: number;
+  effect_status: 'active' | 'replaced';
+  supersedes_item_id: number | null;
   adjustment_kind: ReportSourceAdjustmentKind | null;
   settlement_delta: number;
   shipping_delta: number;
@@ -74,6 +88,9 @@ export interface ChannelSourceSummary {
   channel: string;
   document_count: number;
   base_quantity: number;
+  source_total: number;
+  source_difference: number;
+  active_source_count: number;
   settlement_delta: number;
   settlement_total: number;
   shipping_delta: number;
@@ -99,6 +116,8 @@ export interface ReportSourceConfirmItem {
   applied_quantity?: number | null;
   source_status: ReportSourceStatus;
   adjustment_kind?: ReportSourceAdjustmentKind | null;
+  source_action: ReportSourceAction;
+  supersedes_item_id?: number | null;
   notes?: string | null;
 }
 

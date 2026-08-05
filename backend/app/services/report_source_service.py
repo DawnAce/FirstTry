@@ -36,6 +36,7 @@ ATTACHMENT_CATEGORY = "report_sources"
 ALLOWED_SUFFIXES = {".pdf", ".jpg", ".jpeg", ".png"}
 VALID_CHANNELS = set(CHANNEL_LABELS)
 VALID_DOCUMENT_TYPES = {"weekly", "monthly", "adjustment"}
+PREPRESS_ACTIONS = {"base", "prepress_addition"}
 
 
 def _suffix(filename: str) -> str:
@@ -248,6 +249,12 @@ def create_source_document(
             source_quantity=suggestion.get("source_quantity"),
             applied_quantity=suggestion.get("applied_quantity"),
             source_status="pending_review",
+            source_action=suggestion.get("source_action") or (
+                "postpress_addition" if suggestion.get("item_kind") == "adjustment" else "base"
+            ),
+            applied_phase=(
+                "post_confirmation" if suggestion.get("item_kind") == "adjustment" else "pre_confirmation"
+            ),
             adjustment_kind=suggestion.get("adjustment_kind"),
             notes=suggestion.get("notes"),
         ))
@@ -333,6 +340,56 @@ def _adjustment_deltas(kind: str | None, quantity: int | None) -> tuple[int, int
     raise HTTPException(status_code=400, detail="调整项必须选择追加订数、补损重发或冲减")
 
 
+def _action_for_adjustment(kind: str | None) -> str:
+    return {
+        "billable_addition": "postpress_addition",
+        "replacement": "damage_reshipment",
+        "reduction": "reduction",
+    }.get(kind, "archive_only")
+
+
+def _active_print_totals(
+    db: Session,
+    issue_number: int,
+) -> dict[tuple[str, str], int]:
+    items = (
+        db.query(ReportSourceItem)
+        .filter(
+            ReportSourceItem.issue_number == issue_number,
+            ReportSourceItem.source_status == "confirmed",
+            ReportSourceItem.effect_status == "active",
+            ReportSourceItem.source_action.in_(PREPRESS_ACTIONS),
+        )
+        .all()
+    )
+    totals: dict[tuple[str, str], int] = {}
+    for item in items:
+        key = (item.category, item.sub_category)
+        totals[key] = totals.get(key, 0) + item.print_delta
+    return totals
+
+
+def _apply_print_totals_to_issue(
+    db: Session,
+    issue: Issue,
+    keys: set[tuple[str, str]] | None = None,
+) -> int:
+    totals = _active_print_totals(db, issue.issue_number)
+    entries = {
+        (entry.category, entry.sub_category): entry
+        for entry in db.query(ReportEntry).filter(ReportEntry.issue_id == issue.id).all()
+    }
+    applied = 0
+    for key, total in totals.items():
+        if keys is not None and key not in keys:
+            continue
+        entry = entries.get(key)
+        if entry is not None:
+            entry.value = total
+            applied += 1
+    return applied
+
+
 def confirm_document(
     db: Session,
     *,
@@ -340,8 +397,13 @@ def confirm_document(
     data: ReportSourceConfirmIn,
     user: User,
 ) -> ReportSourceDocument:
+    if document.extraction_status == "confirmed":
+        raise HTTPException(status_code=409, detail="已确认来源不可直接改写，请使用“重新上传”定向替换")
+
     seen: set[tuple[int, str, str, str, str]] = set()
     prepared: list[ReportSourceItem] = []
+    replacement_targets: list[ReportSourceItem] = []
+    affected_draft_keys: dict[int, set[tuple[str, str]]] = {}
     for item in data.items:
         key = (item.issue_number, item.item_kind, item.category, item.sub_category, document.channel)
         if key in seen:
@@ -349,18 +411,81 @@ def confirm_document(
         seen.add(key)
         if item.category != document.channel:
             raise HTTPException(status_code=400, detail="明细渠道与来源文件渠道不一致")
-        known_issue = db.query(Issue).filter(Issue.issue_number == item.issue_number).first()
+        # Lock the issue row while deciding whether this is a prepress
+        # contribution or a postpress adjustment.  This prevents a concurrent
+        # report confirmation from changing phase halfway through the commit.
+        known_issue = (
+            db.query(Issue)
+            .filter(Issue.issue_number == item.issue_number)
+            .with_for_update()
+            .first()
+        )
         known_schedule = db.query(PublicationSchedule).filter(PublicationSchedule.issue_number == item.issue_number).first()
         if known_issue is None and known_schedule is None:
             raise HTTPException(status_code=400, detail=f"第{item.issue_number}期不在系统刊期表中")
 
         settlement_delta = shipping_delta = 0
+        source_action = item.source_action
+        applied_phase = "pre_confirmation"
+        print_delta = 0
+        replacement_target = None
         if item.item_kind == "adjustment":
             settlement_delta, shipping_delta = _adjustment_deltas(item.adjustment_kind, item.source_quantity)
+            source_action = _action_for_adjustment(item.adjustment_kind)
+            applied_phase = "post_confirmation"
+            if known_issue is None or known_issue.status != IssueStatus.confirmed:
+                raise HTTPException(status_code=409, detail="印数确认后的调整只能登记到已确认刊期")
         elif item.adjustment_kind is not None:
             raise HTTPException(status_code=400, detail="基础来源不能设置调整类型")
+        elif source_action not in PREPRESS_ACTIONS:
+            raise HTTPException(status_code=400, detail="印数来源只能选择基础数据或印前追加")
+        elif known_issue is not None and known_issue.status == IssueStatus.confirmed:
+            raise HTTPException(status_code=409, detail="印数已确认，请将后续数据登记到结算与补发凭证")
+
+        if item.supersedes_item_id is not None:
+            if item.item_kind != "base":
+                raise HTTPException(status_code=400, detail="后续调整暂不支持通过印数来源替换")
+            replacement_target = (
+                db.query(ReportSourceItem)
+                .filter(ReportSourceItem.id == item.supersedes_item_id)
+                .first()
+            )
+            if replacement_target is None:
+                raise HTTPException(status_code=404, detail="要替换的来源明细不存在")
+            if (
+                replacement_target.effect_status != "active"
+                or replacement_target.source_status != "confirmed"
+                or replacement_target.source_action not in PREPRESS_ACTIONS
+            ):
+                raise HTTPException(status_code=409, detail="只能替换当前有效的已确认印数来源")
+            if (
+                replacement_target.issue_number != item.issue_number
+                or replacement_target.category != item.category
+                or replacement_target.sub_category != item.sub_category
+            ):
+                raise HTTPException(status_code=400, detail="新文件明细与被替换来源的刊期或项目不一致")
+            source_action = replacement_target.source_action
+            replacement_targets.append(replacement_target)
 
         confirmed = item.source_status == "confirmed"
+        if item.item_kind == "base":
+            print_delta = item.applied_quantity or 0
+            if confirmed and source_action == "base" and replacement_target is None:
+                active_base = (
+                    db.query(ReportSourceItem.id)
+                    .filter(
+                        ReportSourceItem.issue_number == item.issue_number,
+                        ReportSourceItem.category == item.category,
+                        ReportSourceItem.sub_category == item.sub_category,
+                        ReportSourceItem.source_action == "base",
+                        ReportSourceItem.source_status == "confirmed",
+                        ReportSourceItem.effect_status == "active",
+                    )
+                    .first()
+                )
+                if active_base is not None:
+                    raise HTTPException(status_code=409, detail="该项目已有基础来源，请选择“追加”或定向“重新上传”")
+
         prepared.append(
             ReportSourceItem(
                 document_id=document.id,
@@ -372,6 +497,11 @@ def confirm_document(
                 source_quantity=item.source_quantity,
                 applied_quantity=item.applied_quantity,
                 source_status=item.source_status,
+                source_action=source_action,
+                applied_phase=applied_phase,
+                print_delta=print_delta,
+                effect_status="active",
+                supersedes_item_id=item.supersedes_item_id,
                 adjustment_kind=item.adjustment_kind,
                 settlement_delta=settlement_delta,
                 shipping_delta=shipping_delta,
@@ -381,32 +511,36 @@ def confirm_document(
             )
         )
 
-        if (
-            data.apply_base_values
-            and item.item_kind == "base"
-            and item.source_status == "confirmed"
-            and item.applied_quantity is not None
-            and known_issue is not None
-            and known_issue.status != IssueStatus.confirmed
-        ):
-            entry = (
-                db.query(ReportEntry)
-                .filter(
-                    ReportEntry.issue_id == known_issue.id,
-                    ReportEntry.category == item.category,
-                    ReportEntry.sub_category == item.sub_category,
-                )
-                .first()
-            )
-            if entry is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"第{item.issue_number}期缺少报数项 {item.category}/{item.sub_category}",
-                )
-            entry.value = item.applied_quantity
+        if confirmed and item.item_kind == "base" and known_issue is not None:
+            affected_draft_keys.setdefault(known_issue.id, set()).add((item.category, item.sub_category))
 
     db.query(ReportSourceItem).filter(ReportSourceItem.document_id == document.id).delete()
     db.add_all(prepared)
+    db.flush()
+    for target in replacement_targets:
+        target.effect_status = "replaced"
+    # Flush replacement invalidations before aggregating.  SQLAlchemy queries
+    # do not necessarily autoflush changes made after an explicit flush in the
+    # same unit of work (notably under the SQLite test transaction).
+    db.flush()
+
+    if data.apply_base_values:
+        for issue_id, keys in affected_draft_keys.items():
+            affected_issue = db.query(Issue).filter(Issue.id == issue_id).first()
+            if affected_issue is None or affected_issue.status == IssueStatus.confirmed:
+                raise HTTPException(status_code=409, detail="刊期状态已变化，请刷新后重新选择来源操作")
+            missing = [
+                key for key in keys
+                if db.query(ReportEntry).filter(
+                    ReportEntry.issue_id == issue_id,
+                    ReportEntry.category == key[0],
+                    ReportEntry.sub_category == key[1],
+                ).first() is None
+            ]
+            if missing:
+                category, sub_category = missing[0]
+                raise HTTPException(status_code=400, detail=f"第{affected_issue.issue_number}期缺少报数项 {category}/{sub_category}")
+            _apply_print_totals_to_issue(db, affected_issue, keys)
     document.extraction_status = "confirmed" if all(item.source_status == "confirmed" for item in data.items) else "reviewed"
     record_operation(
         db,
@@ -417,7 +551,12 @@ def confirm_document(
         action="confirm_source",
         issue_number=data.items[0].issue_number if len({item.issue_number for item in data.items}) == 1 else None,
         channel=CHANNEL_LABELS[document.channel],
-        changes={"items": len(prepared), "status": document.extraction_status},
+        changes={
+            "items": len(prepared),
+            "status": document.extraction_status,
+            "actions": sorted({item.source_action for item in prepared}),
+            "replaced_items": [item.id for item in replacement_targets],
+        },
     )
     db.commit()
     return get_document(db, document.id)
@@ -440,33 +579,9 @@ def apply_confirmed_source_bases_to_issue(db: Session, issue: Issue) -> int:
     confirmed.  Channel-pending and OCR-review rows remain visible but are not
     written into the report.
     """
-    source_items = (
-        db.query(ReportSourceItem)
-        .filter(
-            ReportSourceItem.issue_number == issue.issue_number,
-            ReportSourceItem.item_kind == "base",
-            ReportSourceItem.source_status == "confirmed",
-            ReportSourceItem.applied_quantity.isnot(None),
-        )
-        .order_by(ReportSourceItem.confirmed_at, ReportSourceItem.id)
-        .all()
-    )
-    if not source_items:
+    if not _active_print_totals(db, issue.issue_number):
         return 0
-
-    entries = {
-        (entry.category, entry.sub_category): entry
-        for entry in db.query(ReportEntry).filter(ReportEntry.issue_id == issue.id).all()
-    }
-    applied = 0
-    # Later confirmations win if more than one archived source maps to the same
-    # issue/channel.  The evidence remains fully traceable in the source list.
-    for source_item in source_items:
-        entry = entries.get((source_item.category, source_item.sub_category))
-        if entry is not None:
-            entry.value = source_item.applied_quantity
-            applied += 1
-    return applied
+    return _apply_print_totals_to_issue(db, issue)
 
 
 def get_issue_summary(db: Session, issue: Issue) -> IssueSourceSummaryOut:
@@ -481,11 +596,17 @@ def get_issue_summary(db: Session, issue: Issue) -> IssueSourceSummaryOut:
     )
     issue_items = [item for document in documents for item in document.items if item.issue_number == issue.issue_number]
     bases = _base_quantities(db, issue)
+    source_totals_by_key = _active_print_totals(db, issue.issue_number)
     channel_codes = sorted({item.category for item in issue_items} | set(bases))
     channels: list[ChannelSourceSummary] = []
     for channel in channel_codes:
         items = [item for item in issue_items if item.category == channel]
-        adjustments = [item for item in items if item.item_kind == "adjustment" and item.source_status == "confirmed"]
+        active_items = [item for item in items if item.effect_status == "active"]
+        adjustments = [
+            item for item in active_items
+            if item.item_kind == "adjustment" and item.source_status == "confirmed"
+        ]
+        source_total = sum(total for (category, _sub_category), total in source_totals_by_key.items() if category == channel)
         settlement_delta = sum(item.settlement_delta for item in adjustments)
         shipping_delta = sum(item.shipping_delta for item in adjustments)
         shipped = sum(item.shipped_quantity for item in adjustments)
@@ -494,6 +615,12 @@ def get_issue_summary(db: Session, issue: Issue) -> IssueSourceSummaryOut:
                 channel=channel,
                 document_count=len({item.document_id for item in items}),
                 base_quantity=bases.get(channel, 0),
+                source_total=source_total,
+                source_difference=source_total - bases.get(channel, 0),
+                active_source_count=len({
+                    item.document_id for item in active_items
+                    if item.source_status == "confirmed" and item.source_action in PREPRESS_ACTIONS
+                }),
                 settlement_delta=settlement_delta,
                 settlement_total=bases.get(channel, 0) + settlement_delta,
                 shipping_delta=shipping_delta,

@@ -103,6 +103,8 @@ const adjustmentKindOptions: { label: string; value: ReportSourceAdjustmentKind 
   { label: '冲减（减少结算）', value: 'reduction' },
 ];
 
+type SourceOperation = 'initial' | 'addition' | 'replacement' | 'postpress';
+
 // Items hidden from social_use display (shown separately or managed by temp print details)
 const EXTRA_ITEMS = ['临时加印', '临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'];
 
@@ -154,6 +156,8 @@ export default function ReportEditor() {
   const [sourceSuggestions, setSourceSuggestions] = useState<ReportSourceSuggestion[]>([]);
   const [sourceUploading, setSourceUploading] = useState(false);
   const [sourceConfirming, setSourceConfirming] = useState(false);
+  const [sourceOperation, setSourceOperation] = useState<SourceOperation>('initial');
+  const [sourceReplacementTarget, setSourceReplacementTarget] = useState<ReportSourceDocument | null>(null);
   const [shippingItem, setShippingItem] = useState<ReportSourceItem | null>(null);
   const [shippingQuantity, setShippingQuantity] = useState(0);
   const [shippingTracking, setShippingTracking] = useState('');
@@ -470,12 +474,32 @@ export default function ReportEditor() {
     setSourceSuggestions([]);
     setSourceUploading(false);
     setSourceConfirming(false);
+    setSourceOperation('initial');
+    setSourceReplacementTarget(null);
   };
 
   const openSourceDrawer = (channel: ReportSourceChannel) => {
     resetSourceDrawer();
     setSourceChannel(channel);
-    setSourceDocumentType(channel === 'chengdu' ? 'monthly' : 'weekly');
+    const hasActivePrintSource = (sourceSummary?.documents ?? []).some(document => (
+      document.channel === channel && document.items.some(item => (
+        item.issue_number === issue?.issue_number
+        && item.item_kind === 'base'
+        && item.source_status === 'confirmed'
+        && item.effect_status === 'active'
+      ))
+    ));
+    setSourceOperation(isConfirmed ? 'postpress' : hasActivePrintSource ? 'addition' : 'initial');
+    setSourceDocumentType(isConfirmed ? 'adjustment' : channel === 'chengdu' ? 'monthly' : 'weekly');
+    setSourceDrawerOpen(true);
+  };
+
+  const openSourceReplacement = (document: ReportSourceDocument) => {
+    resetSourceDrawer();
+    setSourceChannel(document.channel);
+    setSourceDocumentType(document.document_type);
+    setSourceOperation('replacement');
+    setSourceReplacementTarget(document);
     setSourceDrawerOpen(true);
   };
 
@@ -483,6 +507,17 @@ export default function ReportEditor() {
     resetSourceDrawer();
     setSourceChannel(document.channel);
     setSourceDocumentType(document.document_type);
+    const hasConfirmedPrintSource = (sourceSummary?.documents ?? []).some(candidate => (
+      candidate.channel === document.channel
+      && candidate.id !== document.id
+      && candidate.items.some(item => (
+        item.issue_number === issue?.issue_number
+        && item.item_kind === 'base'
+        && item.source_status === 'confirmed'
+        && item.effect_status === 'active'
+      ))
+    ));
+    setSourceOperation(document.document_type === 'adjustment' ? 'postpress' : hasConfirmedPrintSource ? 'addition' : 'initial');
     const suggestions: ReportSourceSuggestion[] = document.items.map(item => ({
       issue_number: item.issue_number,
       source_period: null,
@@ -494,6 +529,8 @@ export default function ReportEditor() {
       applied_quantity: item.applied_quantity,
       source_status: item.source_status,
       adjustment_kind: item.adjustment_kind,
+      source_action: item.source_action,
+      supersedes_item_id: item.supersedes_item_id,
       confidence: null,
       notes: item.notes,
     }));
@@ -577,6 +614,10 @@ export default function ReportEditor() {
       applied_quantity: null,
       source_status: 'pending_review',
       adjustment_kind: sourceDocumentType === 'adjustment' ? 'billable_addition' : null,
+      source_action: sourceDocumentType === 'adjustment'
+        ? 'postpress_addition'
+        : sourceOperation === 'addition' ? 'prepress_addition' : 'base',
+      supersedes_item_id: null,
       confidence: null,
       notes: 'OCR未识别，人工补录',
     }]);
@@ -596,6 +637,17 @@ export default function ReportEditor() {
       message.warning('仍有 OCR 待核对项，请逐行确认状态');
       return;
     }
+    const replacementItems = sourceReplacementTarget?.items.filter(item => (
+      item.effect_status === 'active' && item.source_status === 'confirmed' && item.item_kind === 'base'
+    )) ?? [];
+    if (sourceOperation === 'replacement' && sourceSuggestions.some(suggestion => !replacementItems.some(item => (
+      item.issue_number === suggestion.issue_number
+      && item.category === suggestion.category
+      && item.sub_category === suggestion.sub_category
+    )))) {
+      message.warning('新文件中有明细无法对应到被替换文件，请核对刊期和项目');
+      return;
+    }
     setSourceConfirming(true);
     try {
       await confirmReportSource(sourcePreview.id, sourceSuggestions.map(suggestion => ({
@@ -608,6 +660,23 @@ export default function ReportEditor() {
         applied_quantity: suggestion.item_kind === 'base' ? suggestion.applied_quantity : null,
         source_status: suggestion.source_status,
         adjustment_kind: suggestion.item_kind === 'adjustment' ? suggestion.adjustment_kind : null,
+        source_action: suggestion.item_kind === 'adjustment'
+          ? 'postpress_addition'
+          : sourceOperation === 'addition' ? 'prepress_addition'
+          : sourceOperation === 'replacement'
+            ? (replacementItems.find(item => (
+                item.issue_number === suggestion.issue_number
+                && item.category === suggestion.category
+                && item.sub_category === suggestion.sub_category
+              ))?.source_action ?? 'base')
+            : 'base',
+        supersedes_item_id: sourceOperation === 'replacement'
+          ? replacementItems.find(item => (
+              item.issue_number === suggestion.issue_number
+              && item.category === suggestion.category
+              && item.sub_category === suggestion.sub_category
+            ))?.id ?? null
+          : null,
         notes: suggestion.notes,
       })));
       const updatedReport = await getReport(Number(issueId));
@@ -716,7 +785,7 @@ export default function ReportEditor() {
   );
   const sourcePendingCount = currentSourceItems.filter(item => item.source_status !== 'confirmed').length;
   const sourceAdjustmentItems = currentSourceItems.filter(
-    item => item.item_kind === 'adjustment' && item.shipping_delta > 0,
+    item => item.item_kind === 'adjustment' && item.effect_status === 'active' && item.source_status === 'confirmed',
   );
 
   const sourceStateForChannel = (channel: ReportSourceChannel) => {
@@ -735,6 +804,30 @@ export default function ReportEditor() {
     }
     return { label: '缺来源', tone: 'neutral' as const, documents, items };
   };
+
+  const sourceOperationLabels: Record<SourceOperation, string> = {
+    initial: '上传基础来源',
+    addition: '印数确认前追加',
+    replacement: '定向替换原来源',
+    postpress: '登记结算与补发凭证',
+  };
+  const previewChannelSummary = sourceChannelSummaries[sourceChannel];
+  const replacementCurrentItems = sourceReplacementTarget?.items.filter(item => (
+    item.issue_number === issue.issue_number
+    && item.item_kind === 'base'
+    && item.effect_status === 'active'
+    && item.source_status === 'confirmed'
+  )) ?? [];
+  const previewContribution = sourceSuggestions
+    .filter(item => item.issue_number === issue.issue_number && item.item_kind === 'base' && item.source_status === 'confirmed')
+    .reduce((sum, item) => sum + (item.applied_quantity ?? 0), 0);
+  const replacedContribution = replacementCurrentItems.reduce((sum, item) => sum + item.print_delta, 0);
+  const currentSourceTotal = previewChannelSummary?.source_total ?? 0;
+  const previewSourceTotal = sourceOperation === 'replacement'
+    ? currentSourceTotal - replacedContribution + previewContribution
+    : sourceOperation === 'addition'
+      ? currentSourceTotal + previewContribution
+      : previewContribution;
 
   const renderEntryControl = (entry: ReportEntry) => isConfirmed ? (
     <span className="report-editor-static-count">{formatCount(entry.value)}</span>
@@ -1116,19 +1209,42 @@ export default function ReportEditor() {
                   <div className="report-editor-source-groups">
                     {sourceChannels.map(channel => {
                       const state = sourceStateForChannel(channel);
+                      const channelSummary = sourceChannelSummaries[channel];
+                      const printDocuments = state.documents.filter(document => document.items.some(item => (
+                        item.issue_number === issue.issue_number && item.item_kind === 'base'
+                      )));
                       return (
                         <div className="report-editor-source-group" key={channel}>
                           <div className="report-editor-source-group-head">
                             <strong>{categoryLabels[channel]}</strong>
                             <StatusPill tone={state.tone}>{state.label}</StatusPill>
                             <Button type="link" size="small" onClick={() => openSourceDrawer(channel)}>
-                              {state.documents.length > 0 ? '追加' : '上传'}
+                              {isConfirmed ? '登记调整' : (channelSummary?.active_source_count ?? 0) > 0 ? '追加' : '上传'}
                             </Button>
                           </div>
-                          {state.documents.length > 0 ? (
+                          {(channelSummary?.active_source_count ?? 0) > 0 && (
+                            <div className={`report-editor-source-total ${channelSummary?.source_difference ? 'has-difference' : ''}`}>
+                              <span>有效来源合计 <b>{formatCount(channelSummary?.source_total ?? 0)} 份</b></span>
+                              <small>
+                                {channelSummary?.source_difference
+                                  ? `与当前印数相差 ${channelSummary.source_difference > 0 ? '+' : ''}${formatCount(channelSummary.source_difference)} 份`
+                                  : `与当前印数一致 · ${channelSummary?.active_source_count ?? 0} 份来源`}
+                              </small>
+                            </div>
+                          )}
+                          {printDocuments.length > 0 ? (
                             <div className="report-editor-source-files">
-                              {state.documents.map(document => (
-                                <div key={document.id}>
+                              {printDocuments.map(document => {
+                                const documentItems = document.items.filter(item => (
+                                  item.issue_number === issue.issue_number && item.item_kind === 'base'
+                                ));
+                                const isReplaced = documentItems.length > 0 && documentItems.every(item => item.effect_status === 'replaced');
+                                const contribution = documentItems
+                                  .filter(item => item.effect_status === 'active' && item.source_status === 'confirmed')
+                                  .reduce((sum, item) => sum + item.print_delta, 0);
+                                const role = documentItems.some(item => item.source_action === 'prepress_addition') ? '印前追加' : '基础';
+                                return (
+                                <div className={`report-editor-source-file-row ${isReplaced ? 'is-replaced' : ''}`} key={document.id}>
                                   <button
                                     type="button"
                                     onClick={() => { void handleSourceDownload(document.id, document.original_filename); }}
@@ -1136,13 +1252,21 @@ export default function ReportEditor() {
                                   >
                                     <FileSearchOutlined />
                                     <span>{document.display_name}</span>
-                                    <small>{Math.max(1, Math.round(document.size / 1024))} KB</small>
+                                    <small>
+                                      {isReplaced ? '已替换' : `${role}${contribution ? ` ${role === '印前追加' ? '+' : ''}${formatCount(contribution)} 份` : ''}`}
+                                      {' · '}{Math.max(1, Math.round(document.size / 1024))} KB
+                                    </small>
                                   </button>
                                   {document.items.some(item => item.source_status !== 'confirmed') && (
                                     <Button size="small" type="link" onClick={() => openSourceReview(document)}>核对</Button>
                                   )}
+                                  {!isConfirmed && document.extraction_status === 'confirmed' && !isReplaced && documentItems.some(item => (
+                                    item.source_status === 'confirmed' && item.effect_status === 'active'
+                                  )) && (
+                                    <Button size="small" type="link" onClick={() => openSourceReplacement(document)}>重新上传</Button>
+                                  )}
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           ) : (
                             <small className="report-editor-source-empty">尚未关联本期原始文件</small>
@@ -1152,18 +1276,23 @@ export default function ReportEditor() {
                     })}
                   </div>
                 )}
-                {sourceAdjustmentItems.length > 0 && (
-                  <div className="report-editor-adjustment-list">
-                    <strong>补发执行</strong>
+                <div className="report-editor-adjustment-list">
+                    <strong>结算与补发凭证</strong>
+                    {sourceAdjustmentItems.length === 0 && (
+                      <small className="report-editor-source-empty">印数确认后的追加、补损或冲减将在这里留档</small>
+                    )}
                     {sourceAdjustmentItems.map(item => (
                       <div key={item.id}>
-                        <span>{item.source_label || '成都杂志铺补发'}</span>
-                        <small>应发 {item.shipping_delta} · 已发 {item.shipped_quantity}</small>
-                        <Button size="small" onClick={() => openShippingModal(item)}>登记</Button>
+                        <span>{item.source_label || `${categoryLabels[item.category] ?? item.category}调整`}</span>
+                        <small>
+                          结算 {item.settlement_delta >= 0 ? '+' : ''}{item.settlement_delta}
+                          {' · '}应发 {item.shipping_delta} · 已发 {item.shipped_quantity}
+                          {item.shipping_delta > 0 && ` · 待发 ${Math.max(0, item.shipping_delta - item.shipped_quantity)}`}
+                        </small>
+                        {item.shipping_delta > 0 && <Button size="small" onClick={() => openShippingModal(item)}>登记</Button>}
                       </div>
                     ))}
                   </div>
-                )}
                 <Button
                   block
                   className="report-editor-source-primary"
@@ -1295,7 +1424,7 @@ export default function ReportEditor() {
             }}>关闭</Button>
             {sourcePreview ? (
               <Button type="primary" loading={sourceConfirming} onClick={() => { void handleSourceConfirm(); }}>
-                确认识别与映射
+                {sourceOperation === 'replacement' ? '确认替换并更新印数' : '确认识别与映射'}
               </Button>
             ) : (
               <Button
@@ -1311,6 +1440,18 @@ export default function ReportEditor() {
         )}
       >
         <div className="report-source-drawer">
+          <Alert
+            type={sourceOperation === 'replacement' ? 'warning' : 'info'}
+            showIcon
+            title={sourceOperationLabels[sourceOperation]}
+            description={sourceOperation === 'replacement'
+              ? `只替换“${sourceReplacementTarget?.display_name ?? '所选文件'}”的有效贡献，其他追加来源保持不变。`
+              : sourceOperation === 'addition'
+                ? '新文件确认后会与现有有效来源相加，不会覆盖之前的数字。'
+                : sourceOperation === 'postpress'
+                  ? '当前印数已经锁定；新凭证只影响结算与快递补发，不修改印数。'
+                  : '首份确认来源将作为该渠道的基础贡献。'}
+          />
           {(!sourcePreview || sourceFile) && <section className="report-source-panel">
             <h3><span aria-hidden>①</span>来源类型</h3>
             <div className="report-source-type-grid">
@@ -1327,7 +1468,7 @@ export default function ReportEditor() {
                 文件用途
                 <Select<ReportSourceDocumentType>
                   value={sourceDocumentType}
-                  disabled={Boolean(sourcePreview)}
+                  disabled={Boolean(sourcePreview) || sourceOperation !== 'initial'}
                   options={[
                     { value: 'weekly', label: '每周原始报数' },
                     { value: 'monthly', label: '每月整月报数' },
@@ -1406,6 +1547,18 @@ export default function ReportEditor() {
                 <span>{sourcePreview.display_name}</span>
                 <small>原名：{sourcePreview.original_filename}</small>
               </div>
+              {sourceOperation !== 'postpress' && (
+                <Alert
+                  type="info"
+                  showIcon
+                  title="确认后的印数变化"
+                  description={sourceOperation === 'replacement'
+                    ? `替换贡献：${formatCount(replacedContribution)} → ${formatCount(previewContribution)} 份；来源合计：${formatCount(currentSourceTotal)} → ${formatCount(previewSourceTotal)} 份。`
+                    : sourceOperation === 'addition'
+                      ? `本次追加 +${formatCount(previewContribution)} 份；来源合计：${formatCount(currentSourceTotal)} → ${formatCount(previewSourceTotal)} 份。`
+                      : `本次基础贡献 ${formatCount(previewContribution)} 份；来源合计将变为 ${formatCount(previewSourceTotal)} 份。`}
+                />
+              )}
               {(sourcePreview.extraction_json?.warnings?.length ?? 0) > 0 && (
                 <Alert
                   type="warning"
