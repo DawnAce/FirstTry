@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Badge,
@@ -19,7 +19,6 @@ import {
   Table,
   Tabs,
   Tag,
-  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -285,6 +284,7 @@ export default function OrderDetail() {
   const postalTickets = postalTicketsQuery.data?.rows ?? [];
   const addressTickets = postalTickets.filter((ticket) => ticket.type === 'address');
   const complaintTickets = postalTickets.filter((ticket) => ticket.type === 'complaint');
+  const fulfillmentRecordCount = addressTickets.length + complaintTickets.length;
   const makeupTasks = makeupsQuery.data?.rows ?? [];
   const activeMakeups = makeupTasks.filter((task) => task.status === 'ready' || task.status === 'shipped');
 
@@ -465,6 +465,7 @@ export default function OrderDetail() {
           <Tabs
             className="order-detail-content-tabs"
             defaultActiveKey="items"
+            tabBarGutter={10}
             items={[
               {
                 key: 'items',
@@ -477,8 +478,6 @@ export default function OrderDetail() {
                     complaintTickets={complaintTickets}
                     makeupTasks={makeupTasks}
                     addressLoading={postalTicketsQuery.isLoading}
-                    onStartAddressChange={setAddressFormDelivery}
-                    onOpenAddressChange={setAddressDetailId}
                   />
                 ),
               },
@@ -486,6 +485,21 @@ export default function OrderDetail() {
                 key: 'allocations',
                 label: <DetailTabLabel icon={<ApartmentOutlined />} label="履约方案" count={allocationCount} />,
                 children: <AllocationsTab items={order.items} />,
+              },
+              {
+                key: 'fulfillment-dossier',
+                label: <DetailTabLabel icon={<FileTextOutlined />} label="履约档案" count={fulfillmentRecordCount} />,
+                children: (
+                  <FulfillmentDossierTab
+                    items={order.items}
+                    deliveries={postalDeliveriesQuery.data?.rows ?? []}
+                    addressTickets={addressTickets}
+                    complaintTickets={complaintTickets}
+                    loading={postalDeliveriesQuery.isLoading || postalTicketsQuery.isLoading}
+                    onStartAddressChange={setAddressFormDelivery}
+                    onOpenAddressChange={setAddressDetailId}
+                  />
+                ),
               },
               {
                 key: 'payments',
@@ -891,8 +905,6 @@ interface ItemsTabProps {
   complaintTickets: Ticket[];
   makeupTasks: ComplaintMakeupTask[];
   addressLoading: boolean;
-  onStartAddressChange: (delivery: PostalDelivery) => void;
-  onOpenAddressChange: (id: number) => void;
 }
 
 function ItemsTab({
@@ -902,8 +914,6 @@ function ItemsTab({
   complaintTickets,
   makeupTasks,
   addressLoading,
-  onStartAddressChange,
-  onOpenAddressChange,
 }: ItemsTabProps) {
   if (items.length === 0) {
     return <Empty description="该订单没有明细" />;
@@ -920,8 +930,6 @@ function ItemsTab({
           complaintTickets={complaintTickets}
           makeupTasks={makeupTasks}
           addressLoading={addressLoading}
-          onStartAddressChange={onStartAddressChange}
-          onOpenAddressChange={onOpenAddressChange}
         />
       ))}
     </Space>
@@ -936,8 +944,6 @@ function ItemCard({
   complaintTickets,
   makeupTasks,
   addressLoading,
-  onStartAddressChange,
-  onOpenAddressChange,
 }: {
   item: OrderItemOut;
   index: number;
@@ -946,8 +952,6 @@ function ItemCard({
   complaintTickets: Ticket[];
   makeupTasks: ComplaintMakeupTask[];
   addressLoading: boolean;
-  onStartAddressChange: (delivery: PostalDelivery) => void;
-  onOpenAddressChange: (id: number) => void;
 }) {
   const activeAllocation = useMemo<FulfillmentAllocationOut | undefined>(
     () =>
@@ -1014,8 +1018,6 @@ function ItemCard({
         complaintTickets={complaintTickets}
         makeupTasks={makeupTasks}
         loading={addressLoading}
-        onStartAddressChange={onStartAddressChange}
-        onOpenAddressChange={onOpenAddressChange}
       />
     </Card>
   );
@@ -1029,8 +1031,6 @@ function TargetsList({
   complaintTickets,
   makeupTasks,
   loading,
-  onStartAddressChange,
-  onOpenAddressChange,
 }: {
   targets: FulfillmentTargetOut[];
   itemId: number;
@@ -1039,8 +1039,6 @@ function TargetsList({
   complaintTickets: Ticket[];
   makeupTasks: ComplaintMakeupTask[];
   loading: boolean;
-  onStartAddressChange: (delivery: PostalDelivery) => void;
-  onOpenAddressChange: (id: number) => void;
 }) {
   if (targets.length === 0) return <Empty description="无履约目标" />;
   return (
@@ -1053,7 +1051,6 @@ function TargetsList({
           : [];
         const pending = tickets.find((ticket) => ticket.status === 'pending' || ticket.status === 'unmatched');
         const applied = tickets.filter((ticket) => ticket.status === 'applied' || ticket.status === 'recipient_pending');
-        const latest = pending ?? tickets[0];
         const complaints = delivery
           ? complaintTickets.filter((ticket) => ticket.postal_delivery_id === delivery.id)
           : [];
@@ -1084,52 +1081,210 @@ function TargetsList({
                     : '尚未生成或关联邮局投递记录，暂按订单履约目标展示'}
                 </small>
               </div>
-              <div className="order-detail-target-actions">
-                <div className="order-detail-target-badges">
-                  {loading ? (
-                    <Tag>变更状态加载中</Tag>
-                  ) : pending ? (
-                    <Tag color="orange">地址变更处理中</Tag>
-                  ) : applied.length > 0 ? (
-                    <Tag color="blue">地址变更 {applied.length} 次</Tag>
-                  ) : (
-                    <Tag>{targetStatusLabel(target.status)}</Tag>
-                  )}
-                  {complaints.length > 0 && <Tag color="volcano">投诉 {complaints.length} 条</Tag>}
-                  {activeTargetMakeups.length > 0 && <Tag color="blue">中通补发 {activeTargetMakeups.length}</Tag>}
-                </div>
-                <div className="order-detail-target-links">
-                  {latest && (
-                    <Button type="link" icon={<HistoryOutlined />} onClick={() => onOpenAddressChange(latest.id)}>
-                      {pending ? '查看处理进度' : '查看投递与变更'}
-                    </Button>
-                  )}
-                  {!pending && delivery && (
-                    <Button type="link" icon={<EnvironmentOutlined />} onClick={() => onStartAddressChange(delivery)}>
-                      修改收件信息
-                    </Button>
-                  )}
-                  {!pending && !delivery && (
-                    <Tooltip title="需先生成或关联邮局投递记录">
-                      <Button type="link" icon={<EnvironmentOutlined />} disabled>修改收件信息</Button>
-                    </Tooltip>
-                  )}
-                </div>
+              <div className="order-detail-target-records">
+                <span>履约记录</span>
+                {loading ? (
+                  <strong>正在加载</strong>
+                ) : pending ? (
+                  <strong className="is-pending">地址变更处理中</strong>
+                ) : applied.length + complaints.length > 0 ? (
+                  <strong>地址变更 {applied.length} · 投诉 {complaints.length}</strong>
+                ) : (
+                  <strong>暂无变更或投诉</strong>
+                )}
+                {activeTargetMakeups.length > 0 && <small>中通补发 {activeTargetMakeups.length} 条</small>}
               </div>
             </div>
-            {applied.length > 0 && (
-              <div className="order-detail-target-history">
-                <HistoryOutlined />
-                <span>最近状态</span>
-                <strong>已有 {applied.length} 次收件信息变更生效，历史地址仅用于追溯</strong>
-                {latest && <Button type="link" onClick={() => onOpenAddressChange(latest.id)}>查看变更记录</Button>}
-              </div>
-            )}
           </article>
         );
       })}
     </div>
   );
+}
+
+function FulfillmentDossierTab({
+  items,
+  deliveries,
+  addressTickets,
+  complaintTickets,
+  loading,
+  onStartAddressChange,
+  onOpenAddressChange,
+}: {
+  items: OrderItemOut[];
+  deliveries: PostalDelivery[];
+  addressTickets: Ticket[];
+  complaintTickets: Ticket[];
+  loading: boolean;
+  onStartAddressChange: (delivery: PostalDelivery) => void;
+  onOpenAddressChange: (id: number) => void;
+}) {
+  const addressDetailQueries = useQueries({
+    queries: addressTickets.map((ticket) => ({
+      queryKey: ['postalAddrDetail', ticket.id],
+      queryFn: () => getAddressChange(ticket.id).then((response) => response.data),
+    })),
+  });
+  const addressDetails = addressDetailQueries
+    .map((query) => query.data)
+    .filter((detail): detail is PostalAddressChange => detail != null);
+  const addressDetailById = new Map(addressDetails.map((detail) => [detail.id, detail]));
+
+  const targetRows = items.flatMap((item, itemIndex) => {
+    const allocation = item.allocations
+      .filter((candidate) => candidate.effective_until_issue == null)
+      .sort((a, b) => b.version_no - a.version_no)[0]
+      ?? [...item.allocations].sort((a, b) => b.version_no - a.version_no)[0];
+    return (allocation?.targets ?? []).map((target) => {
+      const delivery = deliveries.find((row) => row.fulfillment_target_id === target.id)
+        ?? deliveries.find((row) => row.order_item_id === item.id && row.recipient_name === target.recipient_name);
+      const targetAddressTickets = delivery
+        ? addressTickets.filter((ticket) => ticket.postal_delivery_id === delivery.id)
+        : [];
+      const pendingTicket = targetAddressTickets.find(
+        (ticket) => ticket.status === 'pending' || ticket.status === 'unmatched',
+      );
+      const appliedDetails = addressDetails
+        .filter((detail) => detail.postal_delivery_id === delivery?.id && detail.applied_to_order)
+        .sort((a, b) => (b.applied_at ?? b.change_date ?? '').localeCompare(a.applied_at ?? a.change_date ?? ''));
+      const latestApplied = appliedDetails[0];
+      return {
+        item,
+        itemIndex,
+        target,
+        delivery,
+        pendingTicket,
+        latestUpdatedAt: latestApplied?.applied_at ?? latestApplied?.change_date,
+      };
+    });
+  });
+
+  return (
+    <section className="order-detail-tab-section order-detail-dossier">
+      <TabSectionHeader
+        kicker="FULFILLMENT DOSSIER"
+        title="履约档案"
+        description="集中查看当前有效投递信息、地址变更与投诉处理记录。"
+        status={<i className="order-detail-soft-status is-neutral">服务记录 {addressTickets.length + complaintTickets.length} 条</i>}
+      />
+
+      {loading ? (
+        <div className="order-detail-tab-loading"><Spin /></div>
+      ) : targetRows.length === 0 ? (
+        <TabEmptyState icon={<UserOutlined />} title="暂无履约目标" description="订单生成履约目标后，会在这里建立独立档案。" />
+      ) : (
+        <div className="order-detail-dossier-current-list">
+          {targetRows.map(({ item, itemIndex, target, delivery, pendingTicket, latestUpdatedAt }) => (
+            <article className="order-detail-dossier-current" key={target.id}>
+              <div className="order-detail-dossier-current-head">
+                <div>
+                  <strong>当前有效投递信息</strong>
+                  <span>明细 {itemIndex + 1} · {publicationLabel(item.publication)}</span>
+                </div>
+                <Tag color={delivery ? 'green' : 'default'}>{delivery ? '已生效' : '待关联投递'}</Tag>
+              </div>
+              <div className="order-detail-dossier-current-grid">
+                <div>
+                  <span>收报人</span>
+                  <strong>{delivery?.recipient_name || target.recipient_name}</strong>
+                  <small>{delivery?.recipient_phone || target.recipient_phone || '未记录电话'}</small>
+                </div>
+                <div>
+                  <span>投递地址</span>
+                  <strong>{delivery?.recipient_address || target.recipient_address || '未记录投递地址'}</strong>
+                  {latestUpdatedAt && <small>最近更新：{dayjs(latestUpdatedAt).format('YYYY-MM-DD')}</small>}
+                </div>
+                <div>
+                  <span>{delivery ? '邮局投递' : '投递方式'}</span>
+                  <strong>{delivery ? `${delivery.year}-${delivery.delivery_no}` : deliveryMethodLabel(item.delivery_method)}</strong>
+                  <small>每期 {delivery?.copies ?? target.quantity} 份</small>
+                </div>
+              </div>
+              <div className="order-detail-dossier-current-action">
+                {pendingTicket ? (
+                  <Tag color="orange">地址变更处理中</Tag>
+                ) : delivery ? (
+                  <Button type="primary" icon={<EnvironmentOutlined />} onClick={() => onStartAddressChange(delivery)}>
+                    修改收件信息
+                  </Button>
+                ) : (
+                  <Button disabled>需先关联邮局投递</Button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <div className="order-detail-dossier-workspace">
+        <section className="order-detail-dossier-panel">
+          <div className="order-detail-dossier-panel-head">
+            <h3>地址变更</h3>
+            <span>{addressTickets.length} 条</span>
+          </div>
+          {addressTickets.length === 0 ? (
+            <div className="order-detail-dossier-empty">暂无地址变更记录</div>
+          ) : (
+            <div className="order-detail-dossier-address-list">
+              {addressTickets.map((ticket) => {
+                const detail = addressDetailById.get(ticket.id);
+                const pending = ticket.status === 'pending' || ticket.status === 'unmatched';
+                return (
+                  <article className="order-detail-dossier-address" key={ticket.id}>
+                    <div className="order-detail-dossier-record-head">
+                      <div>
+                        <strong>{pending ? '投递信息变更处理中' : '投递信息变更已生效'}</strong>
+                        <span>{ticket.ticket_date || detail?.change_date?.slice(0, 10) || '未记录日期'}</span>
+                      </div>
+                      <Button type="link" onClick={() => onOpenAddressChange(ticket.id)}>查看处理详情</Button>
+                    </div>
+                    {detail ? (
+                      <div className="order-detail-dossier-diff">
+                        <div><span>变更前</span><strong>{detail.old_address || '未记录原地址'}</strong></div>
+                        <div className="is-after"><span>变更后</span><strong>{detail.new_address || detail.old_address || '未记录新地址'}</strong></div>
+                      </div>
+                    ) : (
+                      <p>{ticket.summary || '变更详情加载中'}</p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="order-detail-dossier-panel">
+          <div className="order-detail-dossier-panel-head">
+            <h3>投诉记录</h3>
+            <span>{complaintTickets.length} 条</span>
+          </div>
+          {complaintTickets.length === 0 ? (
+            <div className="order-detail-dossier-empty">暂无投诉记录</div>
+          ) : (
+            <div className="order-detail-dossier-complaints">
+              {complaintTickets.map((ticket) => (
+                <article key={ticket.id}>
+                  <div className="order-detail-dossier-record-head">
+                    <div><strong>投诉 #{ticket.id}</strong><span>{ticket.ticket_date || '未记录日期'}</span></div>
+                    <Tag color={complaintTicketStatusColor(ticket.status)}>{complaintTicketStatusLabel(ticket.status)}</Tag>
+                  </div>
+                  <p>{ticket.summary || '未记录投诉摘要'}</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function complaintTicketStatusLabel(status: string | null): string {
+  return { resolved: '已处理', in_progress: '处理中', open: '待处理' }[status ?? ''] ?? '待确认';
+}
+
+function complaintTicketStatusColor(status: string | null): string {
+  return { resolved: 'green', in_progress: 'blue', open: 'orange' }[status ?? ''] ?? 'default';
 }
 
 function PaymentLedgerTab({

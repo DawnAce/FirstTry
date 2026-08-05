@@ -150,6 +150,26 @@ const complaintTicket = {
   status: 'in_progress', handling_count: 1, applied_to_order: null, pending_copies: 0, allocation_summary: null,
 }
 
+const addressTicket = {
+  type: 'address', id: 601, year: 2026, delivery_no: '6352', recipient_name: '宋女士',
+  postal_delivery_id: 501, order_id: 96, ticket_date: '2026-08-03', summary: '客户搬家，地址变更已应用',
+  status: 'applied', handling_count: null, applied_to_order: true, pending_copies: 0, allocation_summary: null,
+}
+
+const resolvedComplaintTicket = {
+  ...complaintTicket,
+  id: 702,
+  ticket_date: '2026-08-02',
+  summary: '投递延迟，已回访确认收到',
+  status: 'resolved',
+}
+
+const appliedChange = {
+  ...createdChange,
+  applied_to_order: true,
+  applied_at: '2026-08-03T10:36:00',
+}
+
 const makeupTask = {
   id: 801, complaint_id: 701, order_id: 96, postal_delivery_id: 501,
   recipient_name: '宋女士', recipient_phone: '13800008821', recipient_address: '北京市朝阳区建国路 88 号',
@@ -224,7 +244,10 @@ export const AddressChangeFlow: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('ORD-2026-000001')).toBeVisible()
     await expect(await canvas.findByText('北京市朝阳区建国路 88 号')).toBeVisible()
-    await userEvent.click(await canvas.findByRole('button', { name: /修改收件信息/ }))
+    await expect(canvas.queryByRole('button', { name: /修改收件信息/ })).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('tab', { name: /履约档案/ }))
+    const dossierPanel = within(canvas.getByRole('tabpanel'))
+    await userEvent.click(await dossierPanel.findByRole('button', { name: /修改收件信息/ }))
     const body = within(document.body)
     await waitFor(() => expect(body.getByRole('dialog')).toBeVisible())
     const dialog = within(body.getByRole('dialog'))
@@ -266,5 +289,45 @@ export const ComplaintMakeupFlow: Story = {
     const postalPanel = within(canvas.getByRole('tabpanel'))
     await expect(await postalPanel.findByText('投诉 #701 · 处理中')).toBeVisible()
     await expect(postalPanel.getByText('中通补发 #801 · 已发出')).toBeVisible()
+    await userEvent.click(canvas.getByRole('tab', { name: /履约档案/ }))
+    const dossierPanel = within(canvas.getByRole('tabpanel'))
+    await expect(await dossierPanel.findByText('投诉 #701')).toBeVisible()
+    await expect(dossierPanel.getByText('漏收第 3001 期')).toBeVisible()
+  },
+}
+
+export const FulfillmentDossier: Story = {
+  name: '履约档案与订单摘要',
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/orders/96', () => HttpResponse.json(order)),
+        http.get('/api/orders/96/events', () => HttpResponse.json(events)),
+        http.get('/api/postal/deliveries', () => HttpResponse.json({
+          rows: [{ ...delivery, recipient_address: appliedChange.new_address }],
+          total: 1,
+          summary: { total_copies: 1, unit_count: 0, missing_unit_count: 1, nearest_expiry_date: null },
+        })),
+        http.get('/api/postal/tickets', () => HttpResponse.json({
+          rows: [addressTicket, complaintTicket, resolvedComplaintTicket],
+          total: 3,
+          summary: { complaint: 2, address: 1, follow: 0, address_recipient_pending: 0 },
+        })),
+        http.get('/api/postal/tickets/601', () => HttpResponse.json(appliedChange)),
+        http.get('/api/postal/makeups', () => HttpResponse.json({ rows: [], total: 0 })),
+        http.get('/api/issues', () => HttpResponse.json([])),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('地址变更 1 · 投诉 2')).toBeVisible()
+    await expect(canvas.queryByText('查看投递与变更')).not.toBeInTheDocument()
+    await expect(canvas.queryByText('查看变更记录')).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('tab', { name: /履约档案/ }))
+    const dossierPanel = within(canvas.getByRole('tabpanel'))
+    await expect(await dossierPanel.findByText('北京市朝阳区建国路 88 号')).toBeVisible()
+    await expect(dossierPanel.getAllByText('北京市海淀区中关村大街 27 号')[0]).toBeVisible()
+    await expect(dossierPanel.getByText('投诉 #701')).toBeVisible()
+    await expect(dossierPanel.getByText('投诉 #702')).toBeVisible()
   },
 }
