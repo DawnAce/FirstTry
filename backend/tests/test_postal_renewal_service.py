@@ -1,6 +1,6 @@
 """邮局跨年续投：宋女士同构场景与防重复。"""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -19,7 +19,11 @@ from app.models import (
     FulfillmentTarget,
     Order,
     OrderItem,
+    PostalAddressChange,
+    PostalComplaint,
+    PostalComplaintHandlingRecord,
     PostalDelivery,
+    PostalTicketEventType,
 )
 from app.models.fulfillment_target import ShippingChannel, TargetStatus
 from app.models.order import OrderEntryMethod, OrderStatus
@@ -38,6 +42,9 @@ from app.services.postal_renewal_service import (
     list_renewals,
 )
 from app.services.postal_delivery_service import create_delivery, update_delivery
+from app.services.order_timeline_service import list_order_timeline
+from app.services.postal_ticket_service import list_tickets
+from app.schemas.order import OrderEventOut
 
 
 @pytest.fixture
@@ -155,6 +162,20 @@ def _seed_cross_year_order(db):
 def test_cross_year_gap_links_and_generates_remaining_segment(db):
     order, item, target, old_delivery = _seed_cross_year_order(db)
 
+    # Real import order: the work ticket exists before the source order is
+    # linked to its delivery.
+    complaint = PostalComplaint(
+        postal_delivery_id=old_delivery.id,
+        order_id=None,
+        external_order_no="2026-6352",
+        year=2026,
+        complaint_date=date(2026, 7, 28),
+        snap_name="宋女士",
+        missing_issues="第 30 期未收到",
+    )
+    db.add(complaint)
+    db.commit()
+
     pending = list_renewals(db, "2027-01")
     assert pending["summary"] == {
         "candidate_count": 1,
@@ -178,6 +199,11 @@ def test_cross_year_gap_links_and_generates_remaining_segment(db):
         item.id,
         target.id,
     )
+    db.refresh(complaint)
+    assert complaint.order_id == order.id
+    ticket_rows, ticket_total, _ = list_tickets(db, order_id=order.id)
+    assert ticket_total == 1
+    assert ticket_rows[0]["id"] == complaint.id
 
     result = generate_renewals(
         db,
@@ -206,6 +232,90 @@ def test_cross_year_gap_links_and_generates_remaining_segment(db):
     assert duplicate["created_count"] == 0
     assert duplicate["skipped_count"] == 1
 
+
+def test_order_timeline_merges_postal_ticket_history_via_delivery(db):
+    order, _, _, delivery = _seed_cross_year_order(db)
+    complaint = PostalComplaint(
+        postal_delivery_id=delivery.id,
+        order_id=None,
+        external_order_no="2026-6352",
+        year=2026,
+        complaint_date=date(2026, 7, 28),
+        snap_name="宋女士",
+        missing_issues="第 30 期未收到",
+    )
+    address = PostalAddressChange(
+        postal_delivery_id=delivery.id,
+        order_id=None,
+        external_order_no="2026-6352",
+        year=2026,
+        change_date=datetime(2026, 7, 29, 9, 0),
+        old_name="宋女士",
+        old_address="旧地址",
+        new_address="新地址",
+        applied_to_order=True,
+    )
+    db.add_all([complaint, address])
+    db.flush()
+    db.add(PostalComplaintHandlingRecord(
+        ticket_id=complaint.id,
+        event_type=PostalTicketEventType.handling,
+        action="联系投递局核查",
+        result_status="in_progress",
+    ))
+    db.add(PostalComplaintHandlingRecord(
+        ticket_id=address.id,
+        event_type=PostalTicketEventType.address_applied,
+        action="应用新地址",
+        follow_result="已同步履约订单",
+    ))
+    # Simulate historic drift deliberately: the delivery is linked but ticket
+    # order_id remains empty. Read-time membership must still recover it.
+    delivery.order_id = order.id
+    db.commit()
+
+    rows, total, summary = list_tickets(db, order_id=order.id)
+    assert total == 2
+    assert summary["complaint"] == 1
+    assert summary["address"] == 1
+    assert {row["id"] for row in rows} == {complaint.id, address.id}
+
+    timeline = list_order_timeline(db, order.id)
+    assert all(OrderEventOut.model_validate(row) for row in timeline)
+    types = {row["event_type"] for row in timeline}
+    assert {
+        "postal_complaint_created",
+        "postal_complaint_handled",
+        "postal_address_change_created",
+        "postal_address_change_applied",
+    } <= types
+    assert len({row["stream_id"] for row in timeline}) == len(timeline)
+
+
+def test_link_exact_syncs_previously_applied_address_to_order_target(db):
+    order, _, target, delivery = _seed_cross_year_order(db)
+    old_address = target.recipient_address
+    delivery.recipient_address = "山东省济南市历下区新地址 88 号"
+    db.add(PostalAddressChange(
+        postal_delivery_id=delivery.id,
+        order_id=None,
+        external_order_no="2026-6352",
+        year=2026,
+        change_date=datetime(2026, 7, 29, 9, 0),
+        old_name=delivery.recipient_name,
+        old_address=old_address,
+        new_address=delivery.recipient_address,
+        applied_to_order=True,
+    ))
+    db.commit()
+
+    assert delivery.order_id is None
+    result = link_exact_deliveries(db)
+    db.refresh(target)
+
+    assert result["linked"] == 1
+    assert delivery.order_id == order.id
+    assert target.recipient_address == delivery.recipient_address
 
 def test_non_post_office_item_is_not_a_renewal_candidate(db):
     _, item, _, _ = _seed_cross_year_order(db)

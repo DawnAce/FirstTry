@@ -197,6 +197,16 @@ const EVENT_TYPE_LABELS: Record<OrderEventType, string> = {
   refunded: '退款',
   cancelled: '取消订单',
   payment_recorded: '记录收款',
+  postal_complaint_created: '新增投诉工单',
+  postal_complaint_handled: '处理投诉',
+  postal_complaint_followed_up: '投诉回访',
+  postal_address_change_created: '新增信息变更',
+  postal_address_change_applied: '应用信息变更',
+  postal_follow_up_created: '新增回访工单',
+  postal_makeup_created: '创建投诉补发',
+  postal_makeup_shipped: '投诉补发已发出',
+  postal_makeup_completed: '投诉补发已完成',
+  postal_makeup_cancelled: '取消投诉补发',
 };
 
 export function eventTypeLabel(value: OrderEventType): string {

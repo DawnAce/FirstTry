@@ -1463,6 +1463,12 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
                   }}
                   onFinish={(values) => createMakeupMut.mutate(values)}
                 >
+                  <Alert
+                    type="info"
+                    showIcon
+                    title="这里只显示已在“印数管理”中创建的报数期次；如未找到目标日期，请先创建对应期次后刷新本页面。"
+                    style={{ marginBottom: 12 }}
+                  />
                   <Form.List name="items">
                     {(fields, { add, remove }) => <>
                       {fields.map(({ key, ...field }, index) => <Flex gap={8} align="start" key={key}>

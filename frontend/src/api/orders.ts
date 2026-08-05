@@ -77,7 +77,17 @@ export type OrderEventType =
   | 'shipping_sync_conflict'
   | 'refunded'
   | 'cancelled'
-  | 'payment_recorded';
+  | 'payment_recorded'
+  | 'postal_complaint_created'
+  | 'postal_complaint_handled'
+  | 'postal_complaint_followed_up'
+  | 'postal_address_change_created'
+  | 'postal_address_change_applied'
+  | 'postal_follow_up_created'
+  | 'postal_makeup_created'
+  | 'postal_makeup_shipped'
+  | 'postal_makeup_completed'
+  | 'postal_makeup_cancelled';
 
 // =============================================================================
 // Inputs (sent to backend)
@@ -244,6 +254,9 @@ export interface OrderItemOut {
 
 export interface OrderEventOut {
   id: number;
+  stream_id?: string;
+  source?: 'order' | 'postal_ticket' | 'postal_ticket_event';
+  source_id?: number;
   event_type: OrderEventType;
   payload_json: Record<string, unknown> | null;
   operator_id: number | null;

@@ -226,10 +226,16 @@ def update_delivery(db: Session, delivery_id: int, patch: dict) -> PostalDeliver
         rec.order_item_id = None
         rec.fulfillment_target_id = None
     db.flush()
-    from app.services.postal_renewal_service import try_link_delivery_exact
+    from app.services.postal_renewal_service import (
+        sync_delivery_ticket_order,
+        try_link_delivery_exact,
+    )
 
     if rec.order_id is None:
         try_link_delivery_exact(db, rec)
+    # Also clears stale ticket ownership when the changed source number no
+    # longer resolves to an order.
+    sync_delivery_ticket_order(db, rec)
     db.commit()
     db.refresh(rec)
     return rec

@@ -28,7 +28,6 @@ from app.models.order import (
     OrderPaymentMethod,
     OrderStatus,
 )
-from app.models.order_event import OrderEventType
 from app.models.order_item import (
     BillingType,
     DeliveryMethod,
@@ -402,7 +401,10 @@ class OrderItemOut(BaseModel):
 
 class OrderEventOut(BaseModel):
     id: int
-    event_type: OrderEventType
+    stream_id: str
+    source: str
+    source_id: int
+    event_type: str
     payload_json: Optional[dict]
     operator_id: Optional[int]
     created_at: datetime

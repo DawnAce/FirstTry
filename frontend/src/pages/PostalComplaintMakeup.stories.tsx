@@ -94,6 +94,7 @@ export const ShippedMakeup: Story = {
     await expect(await body.findByText('补发属于本投诉工单的处理任务')).toBeVisible();
     await expect(await body.findByText('补发任务 #801')).toBeVisible();
     await expect(await body.findByText('ZT20260804001')).toBeVisible();
+    await expect(await body.findByText(/这里只显示已在“印数管理”中创建的报数期次/)).toBeVisible();
     await expect(await body.findByText('创建并同步 ZTO-MF')).toBeVisible();
   },
 };

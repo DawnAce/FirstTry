@@ -593,7 +593,8 @@ export default function OrderDetail() {
         onCreated={(change) => {
           setAddressFormDelivery(null);
           setAddressDetailId(change.id);
-          queryClient.invalidateQueries({ queryKey: ['postalTickets', 'order-address', order.id] });
+          queryClient.invalidateQueries({ queryKey: ['postalTickets', 'order', order.id] });
+          queryClient.invalidateQueries({ queryKey: orderQueryKeys.events(order.id) });
         }}
       />
 
@@ -604,7 +605,8 @@ export default function OrderDetail() {
         onApplied={() => {
           queryClient.invalidateQueries({ queryKey: orderQueryKeys.detail(order.id) });
           queryClient.invalidateQueries({ queryKey: ['postalDeliveries', 'order', order.id] });
-          queryClient.invalidateQueries({ queryKey: ['postalTickets', 'order-address', order.id] });
+          queryClient.invalidateQueries({ queryKey: ['postalTickets', 'order', order.id] });
+          queryClient.invalidateQueries({ queryKey: orderQueryKeys.events(order.id) });
         }}
       />
 
@@ -1059,40 +1061,71 @@ function TargetsList({
           ? makeupTasks.filter((task) => task.postal_delivery_id === delivery.id)
           : [];
         const activeTargetMakeups = targetMakeups.filter((task) => task.status === 'ready' || task.status === 'shipped');
+        const effectiveName = delivery?.recipient_name || target.recipient_name;
+        const effectivePhone = delivery?.recipient_phone || target.recipient_phone;
+        const effectiveAddress = delivery?.recipient_address || target.recipient_address;
         return (
-          <div className="order-detail-target" key={target.id}>
-            <div><span>收报人</span><strong>{target.recipient_name}</strong></div>
-            <div><span>联系电话</span><strong>{target.recipient_phone ?? '-'}</strong></div>
-            <div className="is-address"><span>当前投递地址</span><strong>{target.recipient_address}</strong></div>
-            <div className="order-detail-target-actions">
-              {loading ? (
-                <Tag>变更状态加载中</Tag>
-              ) : pending ? (
-                <Tag color="orange">地址变更处理中</Tag>
-              ) : applied.length > 0 ? (
-                <Tag color="blue">地址已变更 · {applied.length} 次</Tag>
-              ) : (
-                <Tag>{targetStatusLabel(target.status)}</Tag>
-              )}
-              {complaints.length > 0 && <Tag color="volcano">投诉工单 {complaints.length}</Tag>}
-              {activeTargetMakeups.length > 0 && <Tag color="blue">中通补发 {activeTargetMakeups.length}</Tag>}
-              {latest && (
-                <Button type="link" icon={<HistoryOutlined />} onClick={() => onOpenAddressChange(latest.id)}>
-                  {pending ? '查看处理进度' : '查看变更记录'}
-                </Button>
-              )}
-              {!pending && delivery && (
-                <Button type="link" icon={<EnvironmentOutlined />} onClick={() => onStartAddressChange(delivery)}>
-                  修改收件信息
-                </Button>
-              )}
-              {!pending && !delivery && (
-                <Tooltip title="需先生成或关联邮局投递记录">
-                  <Button type="link" icon={<EnvironmentOutlined />} disabled>修改收件信息</Button>
-                </Tooltip>
-              )}
+          <article className="order-detail-target" key={target.id}>
+            <div className="order-detail-target-main">
+              <div className="order-detail-target-person">
+                <span>收报人</span>
+                <strong>{effectiveName}</strong>
+                <small>{effectivePhone ?? '未记录电话'}</small>
+              </div>
+              <div className={`order-detail-target-current ${delivery ? 'is-linked' : 'is-unlinked'}`}>
+                <div className="order-detail-target-current-head">
+                  <span>{delivery ? '当前有效投递信息' : '订单收件信息'}</span>
+                  <Tag color={delivery ? 'green' : 'default'}>{delivery ? '已生效' : '待关联投递'}</Tag>
+                </div>
+                <strong>{effectiveAddress}</strong>
+                <small>
+                  {delivery
+                    ? `邮局投递 ${delivery.year}-${delivery.delivery_no} · ${delivery.copies} 份`
+                    : '尚未生成或关联邮局投递记录，暂按订单履约目标展示'}
+                </small>
+              </div>
+              <div className="order-detail-target-actions">
+                <div className="order-detail-target-badges">
+                  {loading ? (
+                    <Tag>变更状态加载中</Tag>
+                  ) : pending ? (
+                    <Tag color="orange">地址变更处理中</Tag>
+                  ) : applied.length > 0 ? (
+                    <Tag color="blue">地址变更 {applied.length} 次</Tag>
+                  ) : (
+                    <Tag>{targetStatusLabel(target.status)}</Tag>
+                  )}
+                  {complaints.length > 0 && <Tag color="volcano">投诉 {complaints.length} 条</Tag>}
+                  {activeTargetMakeups.length > 0 && <Tag color="blue">中通补发 {activeTargetMakeups.length}</Tag>}
+                </div>
+                <div className="order-detail-target-links">
+                  {latest && (
+                    <Button type="link" icon={<HistoryOutlined />} onClick={() => onOpenAddressChange(latest.id)}>
+                      {pending ? '查看处理进度' : '查看投递与变更'}
+                    </Button>
+                  )}
+                  {!pending && delivery && (
+                    <Button type="link" icon={<EnvironmentOutlined />} onClick={() => onStartAddressChange(delivery)}>
+                      修改收件信息
+                    </Button>
+                  )}
+                  {!pending && !delivery && (
+                    <Tooltip title="需先生成或关联邮局投递记录">
+                      <Button type="link" icon={<EnvironmentOutlined />} disabled>修改收件信息</Button>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+            {applied.length > 0 && (
+              <div className="order-detail-target-history">
+                <HistoryOutlined />
+                <span>最近状态</span>
+                <strong>已有 {applied.length} 次收件信息变更生效，历史地址仅用于追溯</strong>
+                {latest && <Button type="link" onClick={() => onOpenAddressChange(latest.id)}>查看变更记录</Button>}
+              </div>
+            )}
+          </article>
         );
       })}
     </div>
@@ -1982,7 +2015,7 @@ function EventsTab({ events, loading, error }: EventsTabProps) {
       {!loading && !error && events.length === 0 && <TabEmptyState icon={<HistoryOutlined />} title="暂无事件记录" description="订单发生操作后会在这里形成可追溯记录。" />}
       {!loading && !error && sorted.length > 0 && (
         <div className="order-detail-event-stream">
-          {sorted.map((event, index) => <EventCard key={event.id} event={event} latest={index === 0} />)}
+          {sorted.map((event, index) => <EventCard key={event.stream_id ?? `order:${event.id}`} event={event} latest={index === 0} />)}
         </div>
       )}
     </section>
@@ -2002,7 +2035,11 @@ function eventTimelineColor(eventType: OrderEventOut['event_type']): string {
     case 'target_replaced':
     case 'target_suspended':
     case 'split':
+    case 'postal_address_change_created':
       return 'orange';
+    case 'postal_complaint_created':
+    case 'postal_complaint_handled':
+      return 'red';
     case 'voided':
     case 'cancelled':
     case 'refunded':
@@ -2010,6 +2047,13 @@ function eventTimelineColor(eventType: OrderEventOut['event_type']): string {
       return 'red';
     case 'synced_to_shipping':
     case 'payment_recorded':
+    case 'postal_address_change_applied':
+    case 'postal_complaint_followed_up':
+    case 'postal_follow_up_created':
+    case 'postal_makeup_created':
+    case 'postal_makeup_shipped':
+    case 'postal_makeup_completed':
+    case 'postal_makeup_cancelled':
       return 'green';
     default:
       return 'gray';
@@ -2047,7 +2091,15 @@ function eventGlyph(eventType: OrderEventOut['event_type']): ReactNode {
     case 'target_added':
     case 'target_replaced':
     case 'target_suspended':
+    case 'postal_address_change_created':
+    case 'postal_address_change_applied':
       return <EditOutlined />;
+    case 'postal_complaint_created':
+    case 'postal_complaint_handled':
+      return <WarningOutlined />;
+    case 'postal_complaint_followed_up':
+    case 'postal_follow_up_created':
+      return <HistoryOutlined />;
     case 'created':
     case 'imported':
       return <FileTextOutlined />;
@@ -2063,6 +2115,16 @@ function summarizeEventPayload(payload: Record<string, unknown> | null): string 
   if (typeof payload.entry_method === 'string') details.push(`录入方式：${eventEntryMethodLabel(payload.entry_method)}`);
   if (typeof payload.items_count === 'number') details.push(`订单明细：${payload.items_count} 条`);
   if (typeof payload.delivery_no === 'string') details.push(`投递编号：${payload.delivery_no}`);
+  if (typeof payload.ticket_id === 'number') details.push(`工单 #${payload.ticket_id}`);
+  if (typeof payload.recipient_name === 'string' && payload.recipient_name) details.push(`收报人：${payload.recipient_name}`);
+  if (typeof payload.summary === 'string' && payload.summary) details.push(payload.summary);
+  if (typeof payload.action === 'string' && payload.action) details.push(`处理：${payload.action}`);
+  if (typeof payload.follow_result === 'string' && payload.follow_result) details.push(`结果：${payload.follow_result}`);
+  if (typeof payload.business_date === 'string' && payload.business_date) details.push(`业务日期：${payload.business_date.slice(0, 10)}`);
+  if (typeof payload.new_address === 'string' && payload.new_address) {
+    const oldAddress = typeof payload.old_address === 'string' && payload.old_address ? `${payload.old_address} → ` : '';
+    details.push(`地址：${oldAddress}${payload.new_address}`);
+  }
   if (typeof payload.issue_number === 'number') details.push(`期号：第 ${payload.issue_number} 期`);
   if (typeof payload.created_count === 'number') details.push(`新增快递明细：${payload.created_count} 条`);
   if (typeof payload.updated_count === 'number') details.push(`更新快递明细：${payload.updated_count} 条`);
