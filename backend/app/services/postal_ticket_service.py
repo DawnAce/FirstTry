@@ -4,13 +4,32 @@ from datetime import date
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import PostalTicket, PostalTicketType
+from app.models import PostalDelivery, PostalTicket, PostalTicketType
 from app.services.postal_change_service import address_allocation_summary
 
 TICKET_TYPES = tuple(t.value for t in PostalTicketType)
+
+
+def linked_to_order_clause(order_id: int):
+    """Return the canonical order-membership predicate for postal tickets.
+
+    ``postal_tickets.order_id`` is a denormalised convenience field.  Historic
+    tickets can predate the moment their delivery is linked to an order, so the
+    delivery relation is authoritative whenever ``postal_delivery_id`` exists.
+    Tickets without a delivery retain the direct ``order_id`` fallback.
+    """
+    linked_delivery_ids = PostalTicket.postal_delivery_id.in_(
+        # Keeping the predicate in one helper prevents order-page and timeline
+        # queries from drifting apart again.
+        select(PostalDelivery.id).where(PostalDelivery.order_id == order_id)
+    )
+    return or_(
+        linked_delivery_ids,
+        and_(PostalTicket.postal_delivery_id.is_(None), PostalTicket.order_id == order_id),
+    )
 
 
 def _year_of(rec: PostalTicket) -> Optional[int]:
@@ -151,7 +170,7 @@ def _base_query(
     if postal_delivery_id is not None:
         q = q.filter(PostalTicket.postal_delivery_id == postal_delivery_id)
     if order_id is not None:
-        q = q.filter(PostalTicket.order_id == order_id)
+        q = q.filter(linked_to_order_clause(order_id))
     return q
 
 

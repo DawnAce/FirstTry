@@ -680,6 +680,8 @@ def update_order(
             operator_id=operator_id,
         )
         if "external_order_no" in diff:
+            from app.services.postal_renewal_service import sync_delivery_ticket_order
+
             for delivery in db.query(PostalDelivery).filter(
                 PostalDelivery.order_id == order.id
             ).all():
@@ -687,6 +689,7 @@ def update_order(
                     delivery.order_id = None
                     delivery.order_item_id = None
                     delivery.fulfillment_target_id = None
+                    sync_delivery_ticket_order(db, delivery)
         from app.services.postal_renewal_service import link_deliveries_for_order
 
         link_deliveries_for_order(db, order)

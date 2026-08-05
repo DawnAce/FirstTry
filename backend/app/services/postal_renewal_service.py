@@ -138,7 +138,58 @@ def try_link_delivery_exact(db: Session, delivery: PostalDelivery) -> tuple[str,
     delivery.order_id = order.id
     delivery.order_item_id = item.id
     delivery.fulfillment_target_id = target.id
+    sync_applied_delivery_recipient_to_target(db, delivery, target)
+    sync_delivery_ticket_order(db, delivery)
     return "linked", "已自动关联来源订单"
+
+
+def sync_delivery_ticket_order(db: Session, delivery: PostalDelivery) -> int:
+    """Keep denormalised ticket ownership aligned with its delivery.
+
+    Tickets are frequently imported before their source order exists.  When a
+    delivery is later linked, reassigned or detached, all existing tickets for
+    that delivery must follow it or order pages silently lose their history.
+    """
+    from app.models import PostalTicket
+
+    tickets = (
+        db.query(PostalTicket)
+        .filter(PostalTicket.postal_delivery_id == delivery.id)
+        .all()
+    )
+    for ticket in tickets:
+        ticket.order_id = delivery.order_id
+    return len(tickets)
+
+
+def sync_applied_delivery_recipient_to_target(
+    db: Session,
+    delivery: PostalDelivery,
+    target: FulfillmentTarget,
+) -> bool:
+    """Carry a pre-order applied address change into the linked order target.
+
+    Historic postal changes can be applied before the commerce order is
+    created.  In that sequence the delivery already contains the effective
+    recipient while the newly created target still contains the checkout
+    snapshot.  Only an explicitly applied address ticket authorises replacing
+    the target snapshot during back-linking.
+    """
+    from app.models import PostalTicket, PostalTicketType
+
+    has_applied_change = db.query(PostalTicket.id).filter(
+        PostalTicket.postal_delivery_id == delivery.id,
+        PostalTicket.type == PostalTicketType.address,
+        PostalTicket.applied_to_order.is_(True),
+    ).first()
+    if not has_applied_change:
+        return False
+
+    target.recipient_name = delivery.recipient_name
+    target.recipient_phone = delivery.recipient_phone or target.recipient_phone
+    target.recipient_address = delivery.recipient_address
+    target.recipient_postal_code = delivery.recipient_postal_code or target.recipient_postal_code
+    return True
 
 
 def link_exact_deliveries(

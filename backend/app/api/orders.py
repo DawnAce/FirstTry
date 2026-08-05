@@ -35,7 +35,6 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import Invoice, OrderEntryMethod, OrderStatus, User
-from app.models.order_event import OrderEvent
 from app.schemas.order import (
     BatchSyncSummary,
     BulkConfirmIn,
@@ -64,6 +63,7 @@ from app.schemas.order import (
     ShipBatchResult,
 )
 from app.services import finance_service, order_service
+from app.services.order_timeline_service import list_order_timeline
 from app.services.order_shipping_batch_service import (
     apply_all_for_issue,
     apply_all_issues_for_order,
@@ -501,13 +501,7 @@ def list_events(
     """Return the order's audit trail, newest first."""
     # Force a 404 by going through the detail loader.
     order_service.get_order_detail(db, order_id)
-    events = (
-        db.query(OrderEvent)
-        .filter(OrderEvent.order_id == order_id)
-        .order_by(OrderEvent.created_at.desc(), OrderEvent.id.desc())
-        .all()
-    )
-    return events
+    return list_order_timeline(db, order_id)
 
 
 @router.get(

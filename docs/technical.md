@@ -487,7 +487,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr
 | `order_items` | 订单明细（一笔履约：订阅 / 单期 / 赠阅 / 补寄 / 续订 / 换订），含 `expected_issues_at_creation` 期数快照、`total_quantity`（每期份数）、`unit_price`（订阅 = 单订户覆盖期总价 / 单期 = 每份零售价）、`subtotal`（= total_quantity × unit_price），以及订阅定价元数据 `subscription_term`（`half_year` / `one_year` / `custom`）、`delivery_method`（`post_office` / `zto_mf`）、`term_start_month`（`YYYY-MM`）、`issue_label`（单期归一化期次，见下） |
 | `fulfillment_allocations` | 分配方案版本（V1.2 起支持 active 订单明细编辑时按生效期号切出 v2+） |
 | `fulfillment_targets` | 履约目标（收件人 / 电话 / 地址 / 邮编 / 份数 = 每期份数），`shipping_channel` V1.1 默认 `zto_outsource` |
-| `order_events` | 订单事件流（created / confirmed / modified / voided / allocation_updated / target_* / item_added / item_removed / item_modified / synced_to_shipping / shipping_sync_conflict） |
+| `order_events` | 订单自身事件流（created / confirmed / modified / voided / allocation_updated / target_* / item_added / item_removed / item_modified / synced_to_shipping / shipping_sync_conflict）；订单详情事件接口还会在读取时合并关联的 `postal_tickets` / `postal_ticket_events`，不复制审计数据 |
 
 关键约束：
 
@@ -499,7 +499,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr
 - **原价列 `orders.original_amount`（迁移 `c4f1a9e2b6d3`，`Numeric(10,2)`、可空）**：CBJ 导出的「原价」（折前标价）列原先解析后被丢弃（导入器只写 `total_amount=实付`），现予以持久化；`total_amount` 仍追踪实付。该列支撑 §4.15「按活动统计」的折扣计算：`原价合计 = SUM(COALESCE(original_amount, paid))`，`折扣额 = 原价合计 − 实收`（未捕获原价的订单按「无折扣」计）。
 - 所有金额字段使用 `DECIMAL(10, 2)`（最大 9999 9999.99 元）；前端 TS 用 `string` 传输，避免 JS 浮点损失
 - `OrderEditor.tsx` 在 `validateFields()` 失败时通过 `extractFormValidation()` 保留 Ant Design 返回的字段路径和具体错误；单项错误直接 toast，多项错误沿用汇总弹窗，并滚动 / 聚焦第一处错误。`items` 是列表字段，使用 `#order-items-section` 定位到订单明细卡片。
-- `OrderDetail.tsx` 的下方信息区统一为 6 个标签页：订单内容、履约方案、收款记录、关联快递、关联邮局、事件流。标签使用图标和数量徽标；履约方案改为版本工单卡片，投递方式与目标份数使用响应式横向配置条，其中展示口径以 `order_items.delivery_method` 为权威值，不再被历史 `fulfillment_targets.shipping_channel` 默认值误导；收款、邮局关联和事件流分别使用摘要流水卡、投递工单卡与纵向时间线。事件流通过字段映射输出中文业务摘要，不向业务页面暴露 `payload_json` 原始 JSON。邮局订单的快递标签保留入口但展示“不适用”空状态，原有同步和信息变更业务动作不变。
+- `OrderDetail.tsx` 的下方信息区统一为 6 个标签页：订单内容、履约方案、收款记录、关联快递、关联邮局、事件流。标签使用图标和数量徽标；履约方案改为版本工单卡片，投递方式与目标份数使用响应式横向配置条，其中展示口径以 `order_items.delivery_method` 为权威值，不再被历史 `fulfillment_targets.shipping_channel` 默认值误导；已关联邮局投递的履约目标优先展示 `PostalDelivery` 中的当前有效收件信息，并单列变更历史状态。收款、邮局关联和事件流分别使用摘要流水卡、投递工单卡与纵向时间线。事件流通过字段映射输出中文业务摘要，不向业务页面暴露 `payload_json` 原始 JSON，并合并订单事件、邮局工单及工单处理事件。邮局订单的快递标签保留入口但展示“不适用”空状态，原有同步和信息变更业务动作不变。
 - 在 active 状态下，`PUT /api/orders/{id}` 仍只允许 `order_service.ACTIVE_EDITABLE_FIELDS` 白名单内的 13 个非结构字段被修改；明细 / 履约目标的结构改动改走 `PUT /api/orders/{id}/items`，并按 `effective_from_issue` 关闭旧 allocation、创建新版本或取消缺失明细
 - **当前业务范围限定**：仍主要覆盖"个人客户预付 + 同事赠阅"两种场景。`paid_amount` 字段虽已建表，但**没有任何业务逻辑读它**（不算欠款、不阻塞 confirm、不做对账、列表不能按"未付清"过滤）。"渠道订单（先履约后付款 / 赊账）"留待后续版本的财务对账引入「收款流水子表 + 欠款追踪 + 未付清筛选 + Dashboard 欠款卡片」时再激活该字段的业务价值
 - **`source_type` 字段的录入方式收敛**：原 5 个枚举值（`ecommerce` / `corporate_transfer` / `vip_gift` / `manual` / `mail_annual`）实际混杂了 4 个维度的概念（销售渠道 / 付款方式 / 业务性质 / 录入方式），与已有的 `source_platform`（销售渠道）/ `payment_method`（付款方式）/ `billing_type`（业务性质）字段重复。**PR-A 已将 UX 解耦为"录入方式"** —— 前端表单完全隐藏该字段，列表筛选器移除，详情页用 Tag「📥 手工录入」展示；后端 `OrderCreate.source_type` 默认 `manual`、`OrderUpdate` 完全移除该字段（provenance 元数据任何状态下都不可改）。数据迁移 `d8a1f4e7b9c2` 已把全部历史数据规范化为 `manual`。后续版本电商批量导入 / API 同步启用前，建议继续推进 DB schema rename `source_type` → `entry_method`，枚举值收敛为 `manual / excel_import / api_sync`
@@ -601,11 +601,11 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr
 
 **邮局工单列表显示（2026-08）**：界面术语统一为“投诉 / 信息变更 / 回访”，内部 `address` 类型和历史《改地址》Excel 保持兼容。卡片列依次为编号、收报人（姓名 / 电话）、工单类型、处理情况、登记日期、状态和操作；纯数字编号不足 4 位时仅在显示层左侧补零。处理情况按类型派生为投诉处理次数、信息是否已更新到投递明细、回访是否已记录；不再重复展示“已关联投递明细”。日期与状态拆列，操作列固定宽度并使用详情 / 编辑 / 删除图标，避免不同权限或已应用工单造成列漂移。
 
-**投诉中通补发闭环（迁移 `d1f3a5c7e9b2`）**：一张投诉可建立多次 `postal_complaint_makeup_tasks`，每次任务通过 `postal_complaint_makeup_items` 选择一个或多个刊期及份数。创建任务时自动生成 `source_type=complaint_makeup` 的 `shipping_details`，保留订单、邮局投递、投诉工单和补发任务四向追溯；从邮局工单或 ZTO-MF 登记发出均会同步任务状态、运单号和时间线。原订单投递方式保持邮局不变，补发明细显式排除在订单主履约进度、报数对账、跨期复制和 ZTO-MF 主清单合计之外，但仍保留在 ZTO-MF 操作明细及导出中。待发任务可取消并移除对应 ZTO-MF 行；已发任务只能完成，不能直接删除。`ComplaintHandlingDrawer` 的补发区使用任务数据派生默认状态：`rows.length === 0` 时收拢，存在任务时展开；用户选择以 `{ complaintId, expanded }` 保存，避免切换投诉时串用状态，关闭详情时清除。折叠标题汇总任务次数和去重后的状态标签，正文仅在展开时渲染；`PostalComplaintMakeup.stories.tsx` 覆盖“无补发默认收拢”和“已发出补发任务自动展开”两种场景。
+**投诉中通补发闭环（迁移 `d1f3a5c7e9b2`）**：一张投诉可建立多次 `postal_complaint_makeup_tasks`，每次任务通过 `postal_complaint_makeup_items` 选择一个或多个刊期及份数。创建任务时自动生成 `source_type=complaint_makeup` 的 `shipping_details`，保留订单、邮局投递、投诉工单和补发任务四向追溯；从邮局工单或 ZTO-MF 登记发出均会同步任务状态、运单号和时间线。原订单投递方式保持邮局不变，补发明细显式排除在订单主履约进度、报数对账、跨期复制和 ZTO-MF 主清单合计之外，但仍保留在 ZTO-MF 操作明细及导出中。待发任务可取消并移除对应 ZTO-MF 行；已发任务只能完成，不能直接删除。`ComplaintHandlingDrawer` 的补发区使用任务数据派生默认状态：`rows.length === 0` 时收拢，存在任务时展开；用户选择以 `{ complaintId, expanded }` 保存，避免切换投诉时串用状态，关闭详情时清除。折叠标题汇总任务次数和去重后的状态标签，正文仅在展开时渲染；创建表单明确提示期次选项来自已创建的 `issues`，不是完整 `publication_schedule`。`PostalComplaintMakeup.stories.tsx` 覆盖“无补发默认收拢”“已发出补发任务自动展开”和期次来源提示。
 
 **投诉工单（P2）**：投诉 `编号`(去前导零) + `年度` 经 `postal_common.delivery_map` → `postal_delivery`（`postal_delivery_id` 可空 SET NULL；关联的投递记录挂了真实订单才继承 `order_id`；匹配不上保留 external 字符串）。`处理情况` 归一为 `routed_label`（`\d*11185` 热线 / `XX局`）；状态为 open/in_progress/resolved；`投递渠道单位` → `partners.distribution`（删除受 partner guard 保护）。
 
-**信息变更 + 回访（P3）**：均按 编号+年度 关联投递记录；历史独立表已由 PR-E 迁入 `postal_tickets`。
+**信息变更 + 回访（P3）**：均按 编号+年度 关联投递记录；历史独立表已由 PR-E 迁入 `postal_tickets`。投递记录后续与订单建立、重建或解除关联时，`sync_delivery_ticket_order` 会同步工单的冗余 `order_id`；订单查询同时以 `PostalDelivery.order_id` 为权威关系恢复历史工单，避免导入先后顺序造成记录丢失。迁移 `e2a4c6f8b0d2` 回填历史工单关联，迁移 `f3b5d7e9a1c4` 把已应用信息变更对应的当前投递地址修复到履约目标。
 - **信息变更**：导入按编号(去零)，结合表头年度、变更登记年度及原姓名 / 电话定位 `postal_delivery`，兼容跨年改址和沿用旧表头的混合年度历史表；`change_date` 为 `DateTime`（迁移 `b7d9f1a3c5e8`；历史日期保留为当天 `00:00`），处理情况归一 `routed_label`（XX局）；迁移 `a6c8e0f2b4d6` 新增 JSON `copy_allocations` 与整数 `unresolved_copies`，完整保存“变更后收件人 / 原信息保留 / 去向待确认”的份数分配。**「应用变更」** `apply_address_change` 把新姓名/电话/地址/份数更新到**投递记录**并置 `applied_to_order`/`applied_by`/`applied_at`（幂等，行锁 `with_for_update`）——若该读者挂了真实订单则同步当前 `FulfillmentTarget`（=同步履约订单），详情标注「已应用·已同步履约订单」或「已应用·仅名册」；未关联投递记录（`postal_delivery_id` 空）→ 400。应用后工单永久只读，更新/删除均以行锁复查并返回 409；剩余去向通过 `/tickets/{id}/pending/resolve` 生成补充变更闭环，再次更正必须新建工单，避免审计记录与已写入信息失配。导入备注附加 `来源:邮局年改地址!第N行`。
 - **回访**：迁移 `e3f5a7c9b1d4` 新增 `communication_content`，手工记录拆为沟通内容与结果；历史 Excel 的 `batch_label` 仅作导入兼容。若回访先于投诉创建，补建同编号投诉时会自动把独立回访并入投诉时间线。
 - 公用小工具 `postal_common.py`（编号归一/年度/日期/处理情况归一/`order_map`/`delivery_map`）。服务 `postal_{address_change,follow_up}_{parser,import_service}.py` + `postal_change_service.py`；前端统一使用 `/api/postal/tickets*` 完成列表、详情、CRUD、应用、处理和导入。旧 `/complaints`、`/address-changes`、`/follow-ups` 路径仅作部署兼容。
@@ -1644,7 +1644,7 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 | `POST` | `/api/orders/shipping-sync/issues/{issue_number}/ship-all` | 按期一键标已发：把本期已生成且未发的行标已发（`shipped_at`=发货日、实发=计划份数）。`ShipBatchResult` |
 | `POST` | `/api/shipping-details/{id}/ship` | 标记一行已发：body `{shipped_at?, shipped_quantity?, tracking_no?}`（默认 shipped_at=今天、实发=计划份数）。非 SYNC_FIELD，不会把 order_generated 行置 manually_modified |
 | `POST` | `/api/shipping-details/{id}/unship` | 撤销已发：清空 shipped_at / 实发份数 / 运单号 |
-| `GET` | `/api/orders/{id}/events` | 事件流（含 payload_json） |
+| `GET` | `/api/orders/{id}/events` | 统一事件流：订单事件 + 关联邮局工单创建记录 + 工单处理事件，返回稳定 `stream_id/source/source_id` 与中文摘要所需的 `payload_json` |
 | `GET` | `/api/orders/{id}/fulfillment-progress` | 各明细的进度（创建时预估 / 当前预估 / 已同步 / 偏差）；`synced_count` 统计已关联到该订单明细的 `shipping_details` 行数 |
 
 #### POST /api/orders/pricing-preview
