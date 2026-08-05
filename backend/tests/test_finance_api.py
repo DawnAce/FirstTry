@@ -438,6 +438,117 @@ def test_settlement_crud_and_partner_name(client):
     assert client.delete(f"/api/settlements/{body['id']}").status_code == 204
 
 
+def test_structured_settlement_periods_returns_direction_and_calculations(client):
+    p = _partner(client, "北京报刊零售")
+    client.put(
+        f"/api/partners/{p['id']}",
+        json={
+            "invoice_title": "北京市报刊零售有限公司",
+            "tax_no": "91110102101537026D",
+            "taxpayer_type": "general",
+            "default_invoice_type": "vat_normal",
+            "default_invoice_content": "*印刷品*中国经营报",
+            "default_invoice_unit": "份",
+            "default_invoice_unit_price": 2.75,
+        },
+    )
+    response = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": p["id"],
+            "direction": "receivable",
+            "settlement_no": "JS100025612600000855",
+            "settlement_start_date": "2026-06-01",
+            "settlement_end_date": "2026-06-29",
+            "return_start_date": "2026-05-04",
+            "return_end_date": "2026-06-29",
+            "gross_amount": 14437.50,
+            "return_deduction_amount": 13794,
+            "invoice_quantity": 4,
+            "invoice_unit_price": 2.75,
+            "invoice_tax_rate": 0.09,
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["direction"] == "receivable"
+    assert body["amount_due"] == "643.50"
+    assert body["invoice_amount"] == "11.00"
+    assert body["invoice_title"] == "北京市报刊零售有限公司"
+    assert body["invoice_tax_no"] == "91110102101537026D"
+    assert body["return_start_date"] == "2026-05-04"
+
+    cleared_invoice_basis = client.put(
+        f"/api/settlements/{body['id']}", json={"invoice_quantity": None}
+    )
+    assert cleared_invoice_basis.status_code == 200
+    assert cleared_invoice_basis.json()["invoice_amount"] is None
+
+    assert len(client.get("/api/settlements", params={"direction": "receivable"}).json()) == 1
+    assert len(client.get("/api/settlements", params={"settlement_from": "2026-06-15"}).json()) == 1
+    assert len(client.get("/api/settlements", params={"q": "JS10002561"}).json()) == 1
+
+    duplicate = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": p["id"],
+            "settlement_no": "JS100025612600000855",
+            "settlement_start_date": "2026-07-06",
+            "settlement_end_date": "2026-07-27",
+        },
+    )
+    assert duplicate.status_code == 409
+
+
+@pytest.mark.parametrize(
+    "payload, detail",
+    [
+        ({"settlement_start_date": "2026-06-01"}, "同时填写开始和结束"),
+        (
+            {
+                "settlement_start_date": "2026-06-29",
+                "settlement_end_date": "2026-06-01",
+            },
+            "开始日期不能晚于结束日期",
+        ),
+        (
+            {
+                "settlement_start_date": "2026-06-01",
+                "settlement_end_date": "2026-06-29",
+                "gross_amount": 100,
+                "return_deduction_amount": 10,
+            },
+            "必须选择退报周期",
+        ),
+    ],
+)
+def test_structured_settlement_validation(client, payload, detail):
+    p = _partner(client)
+    response = client.post("/api/settlements", json={"partner_id": p["id"], **payload})
+    assert response.status_code == 400
+    assert detail in response.json()["detail"]
+
+
+def test_settlement_contract_must_belong_to_partner(client):
+    owner = _partner(client, "合同渠道")
+    other = _partner(client, "其他渠道")
+    contract = client.post(
+        "/api/contracts",
+        json={"partner_id": owner["id"], "title": "合同X"},
+    ).json()
+    response = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": other["id"],
+            "contract_id": contract["id"],
+            "settlement_start_date": "2026-06-01",
+            "settlement_end_date": "2026-06-29",
+        },
+    )
+    assert response.status_code == 400
+    assert "不属于当前合作渠道" in response.json()["detail"]
+
+
 def test_settlement_writes_require_admin(client):
     p = _partner(client)
     client.set_user(OPERATOR)
@@ -466,6 +577,51 @@ def test_settlement_attachment(client, monkeypatch, tmp_path):
     assert rm.status_code == 200
     assert rm.json()["has_attachment"] is False
     assert client.get(f"/api/settlements/{sid}/attachment").status_code == 404
+
+
+def test_settlement_multiple_typed_attachments_support_excel(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
+    p = _partner(client)
+    settlement = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": p["id"],
+            "settlement_start_date": "2026-06-01",
+            "settlement_end_date": "2026-06-29",
+        },
+    ).json()
+    sid = settlement["id"]
+
+    first = client.post(
+        f"/api/settlements/{sid}/attachments",
+        params={"category": "settlement_sheet"},
+        files={"file": ("结算单.xlsx", b"xlsx-demo", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert first.status_code == 200, first.text
+    second = client.post(
+        f"/api/settlements/{sid}/attachments",
+        params={"category": "invoice_application"},
+        files={"file": ("开票申请.pdf", b"%PDF application", "application/pdf")},
+    )
+    assert second.status_code == 200, second.text
+    attachments = second.json()["attachments"]
+    assert [item["category"] for item in attachments] == [
+        "settlement_sheet",
+        "invoice_application",
+    ]
+
+    excel_attachment = attachments[0]
+    downloaded = client.get(
+        f"/api/settlements/{sid}/attachments/{excel_attachment['id']}"
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"xlsx-demo"
+
+    deleted = client.delete(
+        f"/api/settlements/{sid}/attachments/{excel_attachment['id']}"
+    )
+    assert deleted.status_code == 200
+    assert len(deleted.json()["attachments"]) == 1
 
 
 def test_delete_partner_blocked_by_settlement(client):

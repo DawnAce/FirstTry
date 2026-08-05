@@ -101,6 +101,29 @@ def test_partner_crud(client):
     assert len(rows) == 1
 
 
+def test_partner_invoice_profile(client):
+    response = client.post(
+        "/api/partners",
+        json={
+            "name": "北京报刊零售",
+            "partner_type": "retail",
+            "invoice_title": "北京市报刊零售有限公司",
+            "tax_no": "91110102101537026D",
+            "taxpayer_type": "general",
+            "default_invoice_type": "vat_normal",
+            "default_tax_rate": 0.09,
+            "default_invoice_content": "*印刷品*中国经营报",
+            "default_invoice_unit": "份",
+            "default_invoice_unit_price": 2.75,
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["tax_no"] == "91110102101537026D"
+    assert body["default_tax_rate"] == "0.0900"
+    assert body["default_invoice_unit_price"] == "2.7500"
+
+
 def test_contract_crud_partner_name_and_expiring(client):
     p = _make_partner(client)
     soon = (date.today() + timedelta(days=10)).isoformat()

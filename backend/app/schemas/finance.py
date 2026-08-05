@@ -11,7 +11,11 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.channel_settlement import SettlementStatus
+from app.models.channel_settlement import (
+    SettlementAttachmentCategory,
+    SettlementDirection,
+    SettlementStatus,
+)
 from app.models.invoice import InvoiceType
 
 
@@ -89,13 +93,31 @@ class InvoiceOrdersOut(BaseModel):
 class SettlementBase(BaseModel):
     partner_id: int
     contract_id: Optional[int] = None
+    direction: SettlementDirection = SettlementDirection.payable
+    settlement_no: Optional[str] = Field(default=None, max_length=64)
     period: Optional[str] = Field(default=None, max_length=32)
-    amount_due: Optional[Decimal] = Field(default=None, ge=0)
+    settlement_start_date: Optional[date] = None
+    settlement_end_date: Optional[date] = None
+    return_start_date: Optional[date] = None
+    return_end_date: Optional[date] = None
+    gross_amount: Optional[Decimal] = Field(default=None, ge=0)
+    return_deduction_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    amount_due: Optional[Decimal] = None
     paid_amount: Optional[Decimal] = Field(default=None, ge=0)
     paid_date: Optional[date] = None
     on_time: Optional[bool] = None
     invoice_received: bool = False
     invoice_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_title: Optional[str] = Field(default=None, max_length=255)
+    invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_taxpayer_type: Optional[str] = Field(default=None, max_length=32)
+    invoice_type: Optional[str] = Field(default=None, max_length=32)
+    invoice_item_name: Optional[str] = Field(default=None, max_length=255)
+    invoice_unit: Optional[str] = Field(default=None, max_length=32)
+    invoice_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    invoice_unit_price: Optional[Decimal] = Field(default=None, ge=0)
+    invoice_tax_rate: Optional[Decimal] = Field(default=None, ge=0, le=1)
+    invoice_amount: Optional[Decimal] = Field(default=None, ge=0)
     status: SettlementStatus = SettlementStatus.pending
     notes: Optional[str] = None
 
@@ -107,15 +129,41 @@ class SettlementCreate(SettlementBase):
 class SettlementUpdate(BaseModel):
     partner_id: Optional[int] = None
     contract_id: Optional[int] = None
+    direction: Optional[SettlementDirection] = None
+    settlement_no: Optional[str] = Field(default=None, max_length=64)
     period: Optional[str] = Field(default=None, max_length=32)
-    amount_due: Optional[Decimal] = Field(default=None, ge=0)
+    settlement_start_date: Optional[date] = None
+    settlement_end_date: Optional[date] = None
+    return_start_date: Optional[date] = None
+    return_end_date: Optional[date] = None
+    gross_amount: Optional[Decimal] = Field(default=None, ge=0)
+    return_deduction_amount: Optional[Decimal] = Field(default=None, ge=0)
+    amount_due: Optional[Decimal] = None
     paid_amount: Optional[Decimal] = Field(default=None, ge=0)
     paid_date: Optional[date] = None
     on_time: Optional[bool] = None
     invoice_received: Optional[bool] = None
     invoice_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_title: Optional[str] = Field(default=None, max_length=255)
+    invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_taxpayer_type: Optional[str] = Field(default=None, max_length=32)
+    invoice_type: Optional[str] = Field(default=None, max_length=32)
+    invoice_item_name: Optional[str] = Field(default=None, max_length=255)
+    invoice_unit: Optional[str] = Field(default=None, max_length=32)
+    invoice_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    invoice_unit_price: Optional[Decimal] = Field(default=None, ge=0)
+    invoice_tax_rate: Optional[Decimal] = Field(default=None, ge=0, le=1)
+    invoice_amount: Optional[Decimal] = Field(default=None, ge=0)
     status: Optional[SettlementStatus] = None
     notes: Optional[str] = None
+
+
+class SettlementAttachmentOut(BaseModel):
+    id: int
+    category: SettlementAttachmentCategory
+    filename: str
+    content_type: Optional[str] = None
+    created_at: datetime
 
 
 class SettlementOut(SettlementBase):
@@ -123,6 +171,7 @@ class SettlementOut(SettlementBase):
     partner_name: str = ""
     attachment_filename: Optional[str] = None
     has_attachment: bool = False
+    attachments: List[SettlementAttachmentOut] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

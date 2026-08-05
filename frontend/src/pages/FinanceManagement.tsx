@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
   DatePicker,
+  Divider,
   Form,
   Input,
   InputNumber,
@@ -58,16 +59,20 @@ import type {
   InvoiceState,
   InvoiceType,
   Settlement,
+  SettlementAttachmentCategory,
+  SettlementDirection,
+  SettlementListParams,
   SettlementPayload,
   SettlementStatus,
 } from '../api/finance';
-import { listPartners, partnerQueryKeys } from '../api/contracts';
+import { contractQueryKeys, listContracts, listPartners, partnerQueryKeys } from '../api/contracts';
 import { useAuth } from '../contexts/AuthContext';
 import PostalReceiptsPanel from './PostalReceipts';
 import { PageHeader, StatusPill } from '../components/UiPrimitives';
 import './FinanceManagement.css';
 
 const { Text } = Typography;
+const { RangePicker } = DatePicker;
 
 // 与后端 MAX_ATTACHMENT_BYTES 对齐，前端先行拦截超大文件。
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -81,13 +86,13 @@ const INVOICE_STATE_LABELS: Record<InvoiceState, string> = {
 };
 const SETTLEMENT_STATUS_OPTIONS: Array<{ label: string; value: SettlementStatus }> = [
   { label: '待结算', value: 'pending' },
-  { label: '已打款', value: 'paid' },
+  { label: '已结款', value: 'paid' },
   { label: '已开票', value: 'invoiced' },
   { label: '已归档', value: 'archived' },
 ];
 const SETTLEMENT_STATUS_LABELS: Record<SettlementStatus, string> = {
   pending: '待结算',
-  paid: '已打款',
+  paid: '已结款',
   invoiced: '已开票',
   archived: '已归档',
 };
@@ -96,6 +101,26 @@ const SETTLEMENT_STATUS_COLORS: Record<SettlementStatus, string> = {
   paid: 'blue',
   invoiced: 'green',
   archived: 'default',
+};
+const SETTLEMENT_DIRECTION_OPTIONS: Array<{ label: string; value: SettlementDirection }> = [
+  { label: '应收', value: 'receivable' },
+  { label: '应付', value: 'payable' },
+];
+const SETTLEMENT_DIRECTION_LABELS: Record<SettlementDirection, string> = {
+  receivable: '应收',
+  payable: '应付',
+};
+const ATTACHMENT_CATEGORY_OPTIONS: Array<{ label: string; value: SettlementAttachmentCategory }> = [
+  { label: '结算单', value: 'settlement_sheet' },
+  { label: '开票申请', value: 'invoice_application' },
+  { label: '发票', value: 'invoice' },
+  { label: '其他凭证', value: 'other' },
+];
+const ATTACHMENT_CATEGORY_LABELS: Record<SettlementAttachmentCategory, string> = {
+  settlement_sheet: '结算单',
+  invoice_application: '开票申请',
+  invoice: '发票',
+  other: '其他',
 };
 
 function apiError(err: unknown, fallback: string) {
@@ -643,13 +668,29 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
 // =========================================================================== //
 interface SettlementFormValues {
   partner_id: number;
-  period?: string;
+  contract_id?: number;
+  direction: SettlementDirection;
+  settlement_no?: string;
+  settlement_period?: [Dayjs, Dayjs];
+  return_period?: [Dayjs, Dayjs];
+  gross_amount?: number | null;
+  return_deduction_amount?: number | null;
   amount_due?: number | null;
   paid_amount?: number | null;
   paid_date?: Dayjs | null;
   on_time?: boolean;
   invoice_received?: boolean;
   invoice_no?: string;
+  invoice_title?: string;
+  invoice_tax_no?: string;
+  invoice_taxpayer_type?: string;
+  invoice_type?: string;
+  invoice_item_name?: string;
+  invoice_unit?: string;
+  invoice_quantity?: number | null;
+  invoice_unit_price?: number | null;
+  invoice_tax_rate?: number | null;
+  invoice_amount?: number | null;
   status: SettlementStatus;
   notes?: string;
 }
@@ -657,13 +698,32 @@ interface SettlementFormValues {
 function buildSettlementPayload(v: SettlementFormValues): SettlementPayload {
   return {
     partner_id: v.partner_id,
-    period: v.period || null,
+    contract_id: v.contract_id ?? null,
+    direction: v.direction,
+    settlement_no: v.settlement_no || null,
+    period: null,
+    settlement_start_date: v.settlement_period?.[0].format('YYYY-MM-DD') ?? null,
+    settlement_end_date: v.settlement_period?.[1].format('YYYY-MM-DD') ?? null,
+    return_start_date: v.return_period?.[0].format('YYYY-MM-DD') ?? null,
+    return_end_date: v.return_period?.[1].format('YYYY-MM-DD') ?? null,
+    gross_amount: v.gross_amount ?? null,
+    return_deduction_amount: v.return_deduction_amount ?? 0,
     amount_due: v.amount_due ?? null,
     paid_amount: v.paid_amount ?? null,
     paid_date: v.paid_date ? v.paid_date.format('YYYY-MM-DD') : null,
     on_time: v.on_time ?? null,
     invoice_received: !!v.invoice_received,
     invoice_no: v.invoice_no || null,
+    invoice_title: v.invoice_title || null,
+    invoice_tax_no: v.invoice_tax_no || null,
+    invoice_taxpayer_type: v.invoice_taxpayer_type || null,
+    invoice_type: v.invoice_type || null,
+    invoice_item_name: v.invoice_item_name || null,
+    invoice_unit: v.invoice_unit || null,
+    invoice_quantity: v.invoice_quantity ?? null,
+    invoice_unit_price: v.invoice_unit_price ?? null,
+    invoice_tax_rate: v.invoice_tax_rate == null ? null : v.invoice_tax_rate / 100,
+    invoice_amount: v.invoice_amount ?? null,
     status: v.status,
     notes: v.notes || null,
   };
@@ -672,15 +732,27 @@ function buildSettlementPayload(v: SettlementFormValues): SettlementPayload {
 function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [form] = Form.useForm<SettlementFormValues>();
-  const [filters, setFilters] = useState<{ partner_id?: number; status?: SettlementStatus; q?: string }>({});
+  const [filters, setFilters] = useState<SettlementListParams>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Settlement | null>(null);
+  const [attachmentCategory, setAttachmentCategory] = useState<SettlementAttachmentCategory>('settlement_sheet');
+  const selectedPartnerId = Form.useWatch('partner_id', form);
+  const selectedDirection = Form.useWatch('direction', form) ?? 'payable';
 
   const partnersQuery = useQuery({
     queryKey: partnerQueryKeys.list(),
     queryFn: async () => (await listPartners()).data,
   });
   const partnerOptions = (partnersQuery.data ?? []).map((p) => ({ label: p.name, value: p.id }));
+  const contractsQuery = useQuery({
+    queryKey: contractQueryKeys.list({ partner_id: selectedPartnerId }),
+    queryFn: async () => (await listContracts({ partner_id: selectedPartnerId })).data,
+    enabled: !!selectedPartnerId,
+  });
+  const contractOptions = (contractsQuery.data ?? []).map((c) => ({
+    label: `${c.contract_no ? `${c.contract_no} · ` : ''}${c.title}`,
+    value: c.id,
+  }));
 
   const listQuery = useQuery({
     queryKey: settlementQueryKeys.list(filters),
@@ -707,20 +779,27 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
     onError: (err) => message.error(apiError(err, '删除失败')),
   });
   const uploadMutation = useMutation({
-    mutationFn: ({ id, file }: { id: number; file: File }) => uploadSettlementAttachment(id, file),
-    onSuccess: () => { message.success('附件已上传'); invalidate(); },
+    mutationFn: ({ id, category, file }: { id: number; category: SettlementAttachmentCategory; file: File }) =>
+      uploadSettlementAttachment(id, category, file),
+    onSuccess: (response) => { message.success('附件已上传'); setEditing(response.data); invalidate(); },
     onError: (err) => message.error(apiError(err, '上传失败')),
   });
   const delAttachMutation = useMutation({
-    mutationFn: (id: number) => deleteSettlementAttachment(id),
-    onSuccess: () => { message.success('附件已删除'); invalidate(); },
+    mutationFn: ({ id, attachmentId }: { id: number; attachmentId: number }) =>
+      deleteSettlementAttachment(id, attachmentId),
+    onSuccess: (response) => { message.success('附件已删除'); setEditing(response.data); invalidate(); },
     onError: (err) => message.error(apiError(err, '删除附件失败')),
   });
 
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ status: 'pending', invoice_received: false });
+    form.setFieldsValue({
+      direction: 'payable',
+      status: 'pending',
+      invoice_received: false,
+      return_deduction_amount: 0,
+    });
     setModalOpen(true);
   };
   const openEdit = (s: Settlement) => {
@@ -728,69 +807,127 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
     form.resetFields();
     form.setFieldsValue({
       partner_id: s.partner_id,
-      period: s.period ?? undefined,
+      contract_id: s.contract_id ?? undefined,
+      direction: s.direction,
+      settlement_no: s.settlement_no ?? undefined,
+      settlement_period: s.settlement_start_date && s.settlement_end_date
+        ? [dayjs(s.settlement_start_date), dayjs(s.settlement_end_date)]
+        : undefined,
+      return_period: s.return_start_date && s.return_end_date
+        ? [dayjs(s.return_start_date), dayjs(s.return_end_date)]
+        : undefined,
+      gross_amount: s.gross_amount == null ? undefined : Number(s.gross_amount),
+      return_deduction_amount: Number(s.return_deduction_amount ?? 0),
       amount_due: s.amount_due == null ? undefined : Number(s.amount_due),
       paid_amount: s.paid_amount == null ? undefined : Number(s.paid_amount),
       paid_date: s.paid_date ? dayjs(s.paid_date) : null,
       on_time: s.on_time ?? undefined,
       invoice_received: s.invoice_received,
       invoice_no: s.invoice_no ?? undefined,
+      invoice_title: s.invoice_title ?? undefined,
+      invoice_tax_no: s.invoice_tax_no ?? undefined,
+      invoice_taxpayer_type: s.invoice_taxpayer_type ?? undefined,
+      invoice_type: s.invoice_type ?? undefined,
+      invoice_item_name: s.invoice_item_name ?? undefined,
+      invoice_unit: s.invoice_unit ?? undefined,
+      invoice_quantity: s.invoice_quantity == null ? undefined : Number(s.invoice_quantity),
+      invoice_unit_price: s.invoice_unit_price == null ? undefined : Number(s.invoice_unit_price),
+      invoice_tax_rate: s.invoice_tax_rate == null ? undefined : Number(s.invoice_tax_rate) * 100,
+      invoice_amount: s.invoice_amount == null ? undefined : Number(s.invoice_amount),
       status: s.status,
       notes: s.notes ?? undefined,
     });
     setModalOpen(true);
   };
 
+  const formatPeriod = (start: string | null, end: string | null, legacy?: string | null) => {
+    if (!start || !end) return legacy || <Text type="secondary">—</Text>;
+    return start === end ? start : `${start} ～ ${end}`;
+  };
+
+  const fillPartnerInvoiceProfile = (partnerId: number) => {
+    const partner = (partnersQuery.data ?? []).find((item) => item.id === partnerId);
+    form.setFieldsValue({
+      contract_id: undefined,
+      invoice_title: partner?.invoice_title ?? undefined,
+      invoice_tax_no: partner?.tax_no ?? undefined,
+      invoice_taxpayer_type: partner?.taxpayer_type ?? undefined,
+      invoice_type: partner?.default_invoice_type ?? undefined,
+      invoice_item_name: partner?.default_invoice_content ?? undefined,
+      invoice_unit: partner?.default_invoice_unit ?? undefined,
+      invoice_unit_price: partner?.default_invoice_unit_price == null
+        ? undefined
+        : Number(partner.default_invoice_unit_price),
+      invoice_tax_rate: partner?.default_tax_rate == null
+        ? undefined
+        : Number(partner.default_tax_rate) * 100,
+    });
+  };
+
+  const syncCalculatedAmounts = (_changed: Partial<SettlementFormValues>, all: SettlementFormValues) => {
+    const patch: Partial<SettlementFormValues> = {};
+    if (all.gross_amount != null) {
+      patch.amount_due = all.gross_amount - (all.return_deduction_amount ?? 0);
+    }
+    if (all.invoice_quantity != null && all.invoice_unit_price != null) {
+      patch.invoice_amount = all.invoice_quantity * all.invoice_unit_price;
+    } else if ('invoice_quantity' in _changed || 'invoice_unit_price' in _changed) {
+      patch.invoice_amount = null;
+    }
+    if (Object.keys(patch).length) form.setFieldsValue(patch);
+  };
+
+  const validateSettlementAttachment = (file: File) => {
+    const suffix = file.name.includes('.') ? `.${file.name.split('.').pop()?.toLowerCase()}` : '';
+    if (!['.pdf', '.jpg', '.jpeg', '.png', '.xls', '.xlsx'].includes(suffix)) {
+      message.error('结算附件仅支持 PDF / JPG / PNG / XLS / XLSX');
+      return false;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      message.error('附件不能超过 20 MB');
+      return false;
+    }
+    return true;
+  };
+
   const columns: TableColumnsType<Settlement> = [
     { title: '合作渠道', dataIndex: 'partner_name', key: 'partner_name', render: (v) => <Text strong>{v}</Text> },
-    { title: '结算周期', dataIndex: 'period', key: 'period', width: 110, render: (v) => v || <Text type="secondary">—</Text> },
+    { title: '方向', dataIndex: 'direction', key: 'direction', width: 72, render: (v: SettlementDirection) => <Tag color={v === 'receivable' ? 'green' : 'blue'}>{SETTLEMENT_DIRECTION_LABELS[v]}</Tag> },
+    { title: '结算单号', dataIndex: 'settlement_no', key: 'settlement_no', width: 170, render: (v) => v || <Text type="secondary">—</Text> },
+    { title: '结算周期', key: 'settlement_period', width: 210, render: (_v, r) => formatPeriod(r.settlement_start_date, r.settlement_end_date, r.period) },
+    { title: '退报周期', key: 'return_period', width: 210, render: (_v, r) => r.return_start_date ? formatPeriod(r.return_start_date, r.return_end_date) : <Text type="secondary">无退报</Text> },
+    { title: '报款/结算总额', dataIndex: 'gross_amount', key: 'gross_amount', width: 130, align: 'right', render: (v: string | null) => money(v) },
+    { title: '退报扣款', dataIndex: 'return_deduction_amount', key: 'return_deduction_amount', width: 110, align: 'right', render: (v: string | null) => money(v) },
     { title: '应结', dataIndex: 'amount_due', key: 'amount_due', width: 110, align: 'right', render: (v: string | null) => money(v) },
-    { title: '已打款', dataIndex: 'paid_amount', key: 'paid_amount', width: 110, align: 'right', render: (v: string | null) => money(v) },
-    { title: '打款日', dataIndex: 'paid_date', key: 'paid_date', width: 110, render: (v) => v || <Text type="secondary">—</Text> },
+    { title: '已结款', dataIndex: 'paid_amount', key: 'paid_amount', width: 110, align: 'right', render: (v: string | null) => money(v) },
+    { title: '结款日', dataIndex: 'paid_date', key: 'paid_date', width: 110, render: (v) => v || <Text type="secondary">—</Text> },
     {
       title: '按时', dataIndex: 'on_time', key: 'on_time', width: 80,
       render: (v: boolean | null) => (v == null ? <Text type="secondary">—</Text> : v ? <Tag color="green">按时</Tag> : <Tag color="red">逾期</Tag>),
     },
     {
-      title: '进项发票', key: 'invoice_received', width: 140,
+      title: '发票', key: 'invoice_received', width: 160,
       render: (_: unknown, r) =>
         r.invoice_received ? (
-          <Space size={4}><Tag color="green">已开</Tag>{r.invoice_no && <Text type="secondary" style={{ fontSize: 12 }}>{r.invoice_no}</Text>}</Space>
+          <Space size={4}><Tag color="green">{r.direction === 'receivable' ? '我方已开' : '对方已开'}</Tag>{r.invoice_no && <Text type="secondary" style={{ fontSize: 12 }}>{r.invoice_no}</Text>}</Space>
         ) : (
           <Tag>未开</Tag>
         ),
     },
     { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (v: SettlementStatus) => <Tag color={SETTLEMENT_STATUS_COLORS[v]}>{SETTLEMENT_STATUS_LABELS[v]}</Tag> },
     {
-      title: '附件', key: 'attachment', width: 150,
+      title: '附件', key: 'attachment', width: 180,
       render: (_: unknown, r) =>
-        r.has_attachment ? (
-          <Space size={4}>
-            <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadSettlementAttachment(r)}>下载</Button>
-            {isAdmin && (
-              <Popconfirm title="删除附件？" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => delAttachMutation.mutate(r.id)}>
-                <Button type="link" size="small" danger>删</Button>
-              </Popconfirm>
-            )}
+        r.attachments.length ? (
+          <Space orientation="vertical" size={0}>
+            {r.attachments.slice(0, 2).map((attachment) => (
+              <Button key={attachment.id} type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadSettlementAttachment(r, attachment)}>
+                {ATTACHMENT_CATEGORY_LABELS[attachment.category]}
+              </Button>
+            ))}
+            {r.attachments.length > 2 && <Text type="secondary">另 {r.attachments.length - 2} 份</Text>}
           </Space>
-        ) : isAdmin ? (
-          <Upload
-            showUploadList={false}
-            accept=".pdf,.jpg,.jpeg,.png"
-            beforeUpload={(file) => {
-              if (file.size > MAX_ATTACHMENT_BYTES) {
-                message.error('附件不能超过 20 MB');
-              } else {
-                uploadMutation.mutate({ id: r.id, file });
-              }
-              return Upload.LIST_IGNORE;
-            }}
-          >
-            <Button type="link" size="small" icon={<UploadOutlined />}>上传</Button>
-          </Upload>
-        ) : (
-          <Text type="secondary">无</Text>
-        ),
+        ) : <Text type="secondary">无</Text>,
     },
     ...(isAdmin
       ? [{
@@ -811,7 +948,7 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
     <div className="finance-settlement-panel">
       <div className="finance-context-banner">
         <InfoCircleOutlined />
-        <Text><Text strong>结算归档：</Text>按合作渠道和结算周期登记打款、进项发票与附件，形成完整对账记录。</Text>
+        <Text><Text strong>结算归档：</Text>按渠道记录应收/应付、结构化结算与退报周期、结款、开票和多份凭证。</Text>
       </div>
       <div className="finance-toolbar">
         <div className="finance-toolbar-filters">
@@ -822,12 +959,25 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
             onChange={(v) => setFilters((f) => ({ ...f, partner_id: v }))}
           />
           <Select
+            allowClear placeholder="按方向筛选" style={{ width: 110 }}
+            options={SETTLEMENT_DIRECTION_OPTIONS}
+            value={filters.direction}
+            onChange={(v) => setFilters((f) => ({ ...f, direction: v }))}
+          />
+          <Select
             allowClear placeholder="按状态筛选" className="finance-filter-status"
             options={SETTLEMENT_STATUS_OPTIONS}
             value={filters.status}
             onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
           />
-          <Input.Search placeholder="搜索周期 / 进项发票号" allowClear className="finance-filter-search" onSearch={(v) => setFilters((f) => ({ ...f, q: v || undefined }))} />
+          <RangePicker
+            onChange={(value) => setFilters((f) => ({
+              ...f,
+              settlement_from: value?.[0]?.format('YYYY-MM-DD'),
+              settlement_to: value?.[1]?.format('YYYY-MM-DD'),
+            }))}
+          />
+          <Input.Search placeholder="搜索结算单号 / 发票号" allowClear className="finance-filter-search" onSearch={(v) => setFilters((f) => ({ ...f, q: v || undefined }))} />
           <Text type="secondary">共 {listQuery.data?.length ?? 0} 条记录</Text>
         </div>
         <Space>
@@ -844,8 +994,8 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
         columns={columns}
         dataSource={listQuery.data ?? []}
         pagination={false}
-        scroll={{ x: 1200 }}
-        locale={{ emptyText: '暂无结算记录（点「新增结算」按渠道按周期登记打款 / 进项发票）' }}
+        scroll={{ x: 2100 }}
+        locale={{ emptyText: '暂无结算记录（点「新增结算」登记渠道结算与退报周期）' }}
       />
 
       <Modal
@@ -855,46 +1005,134 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
         onOk={() => form.submit()}
         okText="保存"
         confirmLoading={saveMutation.isPending}
-        width={620}
+        width={920}
         destroyOnHidden
       >
-        <Form<SettlementFormValues> form={form} layout="vertical" onFinish={(v) => saveMutation.mutate(v)}>
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="partner_id" label="合作渠道" rules={[{ required: true, message: '请选择合作渠道' }]} style={{ width: 240 }}>
-              <Select options={partnerOptions} placeholder="选择渠道" showSearch optionFilterProp="label" />
+        <Form<SettlementFormValues> form={form} layout="vertical" onFinish={(v) => saveMutation.mutate(v)} onValuesChange={syncCalculatedAmounts}>
+          <Divider titlePlacement="start" plain>基本信息</Divider>
+          <div className="finance-settlement-form-grid">
+            <Form.Item name="partner_id" label="合作渠道" rules={[{ required: true, message: '请选择合作渠道' }]}>
+              <Select options={partnerOptions} placeholder="选择渠道" showSearch optionFilterProp="label" onChange={fillPartnerInvoiceProfile} />
             </Form.Item>
-            <Form.Item name="period" label="结算周期" style={{ width: 160 }}>
-              <Input placeholder="如 2026-Q1 / 2026-05" />
+            <Form.Item name="contract_id" label="关联合同">
+              <Select allowClear options={contractOptions} loading={contractsQuery.isFetching} placeholder="选填" />
             </Form.Item>
-            <Form.Item name="status" label="状态" style={{ width: 130 }}>
+            <Form.Item name="direction" label="收付方向" rules={[{ required: true }]}>
+              <Select options={SETTLEMENT_DIRECTION_OPTIONS} />
+            </Form.Item>
+            <Form.Item name="settlement_no" label="结算单号">
+              <Input placeholder="如 JS1000…" />
+            </Form.Item>
+            <Form.Item name="settlement_period" label="结算周期" rules={[{ required: true, message: '请选择结算周期' }]}>
+              <RangePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="return_period" label="退报周期" dependencies={['return_deduction_amount']} rules={[({ getFieldValue }) => ({
+              validator: (_rule, value) => getFieldValue('return_deduction_amount') > 0 && !value
+                ? Promise.reject(new Error('有退报扣款时必须选择退报周期'))
+                : Promise.resolve(),
+            })]}>
+              <RangePicker style={{ width: '100%' }} placeholder={['无退报可不填', '结束日期']} />
+            </Form.Item>
+            <Form.Item name="status" label="状态">
               <Select options={SETTLEMENT_STATUS_OPTIONS} />
             </Form.Item>
-          </Space>
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="amount_due" label="应结金额" style={{ width: 160 }}>
-              <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
+          </div>
+
+          <Divider titlePlacement="start" plain>金额与结款</Divider>
+          <div className="finance-settlement-form-grid">
+            <Form.Item name="gross_amount" label={selectedDirection === 'receivable' ? '报款金额' : '结算总额'} rules={[{ required: true, message: '请填写总额' }]}>
+              <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="paid_amount" label="已打款" style={{ width: 160 }}>
-              <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
+            <Form.Item name="return_deduction_amount" label="退报扣款">
+              <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="paid_date" label="打款日" style={{ width: 160 }}>
+            <Form.Item name="amount_due" label={selectedDirection === 'receivable' ? '应收金额' : '应付金额'}>
+              <InputNumber precision={2} prefix="¥" disabled style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="paid_amount" label={selectedDirection === 'receivable' ? '已收款' : '已付款'}>
+              <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="paid_date" label={selectedDirection === 'receivable' ? '收款日' : '付款日'}>
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
-          </Space>
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="on_time" label="是否按时" style={{ width: 140 }}>
+            <Form.Item name="on_time" label="是否按时">
               <Select allowClear options={[{ label: '按时', value: true }, { label: '逾期', value: false }]} placeholder="未填" />
             </Form.Item>
-            <Form.Item name="invoice_received" label="对方已开票（进项）" valuePropName="checked">
+          </div>
+
+          <Divider titlePlacement="start" plain>{selectedDirection === 'receivable' ? '我方销项开票' : '对方进项开票'}</Divider>
+          <div className="finance-settlement-form-grid">
+            <Form.Item name="invoice_received" label={selectedDirection === 'receivable' ? '我方已开票' : '对方已开票'} valuePropName="checked">
               <Switch checkedChildren="已开" unCheckedChildren="未开" />
             </Form.Item>
-            <Form.Item name="invoice_no" label="进项发票号" style={{ width: 200 }}>
+            <Form.Item name="invoice_no" label={selectedDirection === 'receivable' ? '销项发票号' : '进项发票号'}>
               <Input placeholder="可空" />
             </Form.Item>
-          </Space>
+            <Form.Item name="invoice_title" label="发票抬头">
+              <Input />
+            </Form.Item>
+            <Form.Item name="invoice_tax_no" label="纳税人识别号">
+              <Input />
+            </Form.Item>
+            <Form.Item name="invoice_taxpayer_type" label="纳税人类型">
+              <Select allowClear options={[
+                { label: '一般纳税人', value: 'general' },
+                { label: '小规模纳税人', value: 'small_scale' },
+                { label: '其他', value: 'other' },
+              ]} />
+            </Form.Item>
+            <Form.Item name="invoice_type" label="发票类型">
+              <Select allowClear options={[
+                { label: '增值税普通发票', value: 'vat_normal' },
+                { label: '增值税专用发票', value: 'vat_special' },
+              ]} />
+            </Form.Item>
+            <Form.Item name="invoice_item_name" label="发票内容">
+              <Input placeholder="如：*印刷品*中国经营报" />
+            </Form.Item>
+            <Form.Item name="invoice_unit" label="单位">
+              <Input placeholder="如：份" />
+            </Form.Item>
+            <Form.Item name="invoice_quantity" label="数量">
+              <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="invoice_unit_price" label="单价">
+              <InputNumber min={0} precision={4} prefix="¥" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="invoice_tax_rate" label="税率">
+              <InputNumber min={0} max={100} precision={2} suffix="%" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="invoice_amount" label="开票金额">
+              <InputNumber precision={2} prefix="¥" disabled style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} />
           </Form.Item>
+
+          <Divider titlePlacement="start" plain>附件归档</Divider>
+          {editing ? (
+            <Space orientation="vertical" style={{ width: '100%' }}>
+              {editing.attachments.length ? editing.attachments.map((attachment) => (
+                <Space key={attachment.id}>
+                  <Tag>{ATTACHMENT_CATEGORY_LABELS[attachment.category]}</Tag>
+                  <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadSettlementAttachment(editing, attachment)}>{attachment.filename}</Button>
+                  {isAdmin && <Popconfirm title="删除该附件？" onConfirm={() => delAttachMutation.mutate({ id: editing.id, attachmentId: attachment.id })}>
+                    <Button type="link" size="small" danger>删除</Button>
+                  </Popconfirm>}
+                </Space>
+              )) : <Text type="secondary">暂无附件</Text>}
+              {isAdmin && <Space>
+                <Select value={attachmentCategory} options={ATTACHMENT_CATEGORY_OPTIONS} onChange={setAttachmentCategory} style={{ width: 140 }} />
+                <Upload showUploadList={false} accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" beforeUpload={(file) => {
+                  if (validateSettlementAttachment(file)) uploadMutation.mutate({ id: editing.id, category: attachmentCategory, file });
+                  return Upload.LIST_IGNORE;
+                }}>
+                  <Button icon={<UploadOutlined />} loading={uploadMutation.isPending}>上传附件</Button>
+                </Upload>
+              </Space>}
+            </Space>
+          ) : <Text type="secondary">保存结算后，可在“编辑”中上传结算单、开票申请、发票和其他凭证。</Text>}
         </Form>
       </Modal>
     </div>

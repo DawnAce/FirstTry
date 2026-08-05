@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SAEnum,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -45,6 +46,15 @@ class Partner(Base):
     contact_phone = Column(String(64), nullable=True)
     # 结算账户 / 开户信息（自由文本，给财务渠道结算用）。
     settlement_account = Column(String(255), nullable=True)
+    # 开票档案：结算时自动带出，避免每张单重复录入。
+    invoice_title = Column(String(255), nullable=True)
+    tax_no = Column(String(64), nullable=True)
+    taxpayer_type = Column(String(32), nullable=True)
+    default_invoice_type = Column(String(32), nullable=True)
+    default_tax_rate = Column(Numeric(5, 4), nullable=True)
+    default_invoice_content = Column(String(255), nullable=True)
+    default_invoice_unit = Column(String(32), nullable=True)
+    default_invoice_unit_price = Column(Numeric(12, 4), nullable=True)
     notes = Column(Text, nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)

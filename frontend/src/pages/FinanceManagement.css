@@ -325,6 +325,18 @@
   margin-top: 2px;
 }
 
+.finance-settlement-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+@media (max-width: 760px) {
+  .finance-settlement-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .finance-workspace-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane {
     padding: 14px;

@@ -1853,6 +1853,23 @@ draft ──confirm──> active ──void──> void
 
 订单详情 `GET /api/orders/{id}` 同时返回 `invoice_state`、`normal_invoiced_amount`、`remaining_invoice_amount`、`needs_red_reversal`。它与财务工作台统一调用 `finance_service.summarize_order_invoices()`，避免订单详情仅凭 `invoice_required` 固定显示「待开具」。无开票需求且无历史记录时额外使用 `not_required`；其余 `pending / issued / needs_red_reversal` 与工作台完全一致。
 
+### 4.19 财务管理 · 渠道结算
+
+渠道结算接口位于 `backend/app/api/settlements.py`，前缀 `/api/settlements`。查询和附件下载允许所有登录用户，结算及附件写操作要求管理员。
+
+`channel_settlements` 保留旧 `period` 自由文本作为只读兼容，同时新增 `settlement_start_date/end_date`、可选 `return_start_date/end_date`、`direction(receivable/payable)`、`settlement_no`、`gross_amount`、`return_deduction_amount` 及开票明细。后端统一计算 `amount_due = gross_amount - return_deduction_amount`、`invoice_amount = invoice_quantity × invoice_unit_price`；日期必须成对且起始不晚于结束，退报扣款大于 0 时必须提供退报周期。`settlement_no` 有唯一索引。
+
+`partners` 增加渠道开票档案，供结算表单自动带出。`contract_id` 校验所选合同必须属于当前渠道。
+
+附件从单槽升级为 `settlement_attachments` 子表，类别为 `settlement_sheet / invoice_application / invoice / other`，支持 PDF/JPG/PNG/XLS/XLSX。迁移 `b6d8f0a2c4e7` 会把旧 `attachment_path` 复制为 `other` 类型；旧单附件端点暂时保留兼容，新端点如下：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/settlements` | 支持 `partner_id`、`direction`、`status`、`settlement_from/to`、`q` |
+| `POST` / `PUT` / `DELETE` | `/api/settlements[/{id}]` | 结构化渠道结算 CRUD |
+| `POST` | `/api/settlements/{id}/attachments?category=` | 上传分类附件 |
+| `GET` / `DELETE` | `/api/settlements/{id}/attachments/{attachment_id}` | 下载或删除单份附件 |
+
 
 发货明细的生成遵循以下优先级规则：
 
@@ -2136,7 +2153,8 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 - [x] 订单管理 V1.2（active 状态明细就地编辑、多版本 allocation、订阅期限与套餐价）
 - [x] 订单管理 V1.3 优先级 1：单订单按期手动预览 / 应用同步至 order_generated `shipping_details`
 - [x] post-V1.3：电商订单导入（**CBJ 小程序 + 淘宝** Excel，上传按表头自动识别平台）+ 商品库（三段式命名，名称与匹配解耦）+ 活动标签/赠品 + **商学院按期发行量**（单期 + 订阅展开）（详见 §3.16；有赞等其它平台与 API 同步留待后续）
-- [ ] post-V1.3：财务对账（实付 / 应收 / 退款、欠款追踪、未付清筛选）
+- [x] post-V1.3：渠道结算台账（应收/应付、结算/退报周期、结款、开票、多附件）
+- [ ] post-V1.3：订单级财务对账（实付 / 应收 / 退款、欠款追踪、未付清筛选）
 - [ ] post-V1.3：客户自助下单
 - [ ] 数据统计与报表分析
 - [ ] 自动发送邮件通知
