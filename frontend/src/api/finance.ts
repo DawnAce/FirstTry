@@ -8,6 +8,10 @@ import type { PostalCommitOut, SimpleImportPreview } from './postal';
 export type InvoiceType = 'normal' | 'red_reversal';
 export type SettlementStatus = 'pending' | 'paid' | 'invoiced' | 'archived';
 export type SettlementDirection = 'receivable' | 'payable';
+export type SettlementPartyType = 'channel' | 'individual';
+export type SettlementType = 'consignment' | 'buyout';
+export type SettlementInvoiceStatus = 'unissued' | 'issued';
+export type SettlementPaymentStatus = 'unpaid' | 'partial' | 'paid';
 export type SettlementAttachmentCategory = 'settlement_sheet' | 'invoice_application' | 'invoice' | 'other';
 export type InvoiceState = 'pending' | 'issued' | 'needs_red_reversal';
 
@@ -72,6 +76,10 @@ export interface Settlement {
   partner_name: string;
   contract_id: number | null;
   direction: SettlementDirection;
+  party_type: SettlementPartyType;
+  settlement_type: SettlementType | null;
+  system_no: string;
+  external_no: string | null;
   settlement_no: string | null;
   period: string | null;
   settlement_start_date: string | null;
@@ -85,6 +93,8 @@ export interface Settlement {
   paid_date: string | null;
   on_time: boolean | null;
   invoice_received: boolean;
+  invoice_status: SettlementInvoiceStatus;
+  payment_status: SettlementPaymentStatus;
   invoice_no: string | null;
   invoice_title: string | null;
   invoice_tax_no: string | null;
@@ -110,6 +120,8 @@ export interface SettlementAttachment {
   category: SettlementAttachmentCategory;
   filename: string;
   content_type: string | null;
+  file_size: number | null;
+  sha256: string | null;
   created_at: string;
 }
 
@@ -117,6 +129,9 @@ export interface SettlementPayload {
   partner_id: number;
   contract_id?: number | null;
   direction?: SettlementDirection;
+  party_type?: SettlementPartyType;
+  settlement_type?: SettlementType | null;
+  external_no?: string | null;
   settlement_no?: string | null;
   period?: string | null;
   settlement_start_date?: string | null;
@@ -159,6 +174,10 @@ export const settlementQueryKeys = {
 export interface SettlementListParams {
   partner_id?: number;
   direction?: SettlementDirection;
+  party_type?: SettlementPartyType;
+  settlement_type?: SettlementType;
+  invoice_status?: SettlementInvoiceStatus;
+  payment_status?: SettlementPaymentStatus;
   status?: SettlementStatus;
   settlement_from?: string;
   settlement_to?: string;
@@ -210,6 +229,43 @@ export function listSettlements(params?: SettlementListParams): Promise<AxiosRes
 }
 export function createSettlement(body: SettlementPayload): Promise<AxiosResponse<Settlement>> {
   return api.post('/settlements', body);
+}
+export function createSettlementWithAttachments(
+  body: SettlementPayload,
+  attachments: Array<{ category: SettlementAttachmentCategory; file: File }>,
+): Promise<AxiosResponse<Settlement>> {
+  const fd = new FormData();
+  fd.append('payload_json', JSON.stringify(body));
+  fd.append('categories_json', JSON.stringify(attachments.map((item) => item.category)));
+  attachments.forEach((item) => fd.append('files', item.file));
+  return api.post('/settlements/with-attachments', fd);
+}
+
+export interface SettlementExcelPreview {
+  recognized: boolean;
+  parser_version: string;
+  filename: string;
+  supplier_name: string | null;
+  external_no: string | null;
+  settlement_start_date: string | null;
+  settlement_end_date: string | null;
+  return_start_date: string | null;
+  return_end_date: string | null;
+  gross_amount: string | null;
+  return_deduction_amount: string;
+  amount_due: string | null;
+  invoice_item_name: string | null;
+  invoice_quantity: string | null;
+  invoice_unit_price: string | null;
+  invoice_amount: string | null;
+  detail_count: number;
+  return_detail_count: number;
+  warnings: string[];
+}
+export function previewSettlementExcel(file: File): Promise<AxiosResponse<SettlementExcelPreview>> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api.post('/settlements/import/preview', fd);
 }
 export function updateSettlement(id: number, body: SettlementUpdatePayload): Promise<AxiosResponse<Settlement>> {
   return api.put(`/settlements/${id}`, body);
