@@ -51,7 +51,13 @@ from app.models.bs_issue import BsIssue
 from app.models.partner import Partner, PartnerType
 from app.models.contract import Contract, ContractStatus
 from app.models.invoice import Invoice, InvoiceType
-from app.models.channel_settlement import ChannelSettlement, SettlementStatus
+from app.models.channel_settlement import (
+    ChannelSettlement,
+    SettlementAttachment,
+    SettlementAttachmentCategory,
+    SettlementDirection,
+    SettlementStatus,
+)
 from app.models.postal_delivery import (
     PostalDelivery,
     PostalDeliverySourceType,
@@ -122,7 +128,8 @@ __all__ = [
     "Contract", "ContractStatus",
     # 财务管理（订单发票 + 渠道结算）
     "Invoice", "InvoiceType",
-    "ChannelSettlement", "SettlementStatus",
+    "ChannelSettlement", "SettlementAttachment", "SettlementAttachmentCategory",
+    "SettlementDirection", "SettlementStatus",
     # 邮局投递（投递记录层）
     "PostalDelivery", "PostalDeliverySourceType",
     "PostalTicket", "PostalTicketType", "PostalTicketEventType",

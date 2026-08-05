@@ -14,6 +14,14 @@ export interface Partner {
   contact_person: string | null;
   contact_phone: string | null;
   settlement_account: string | null;
+  invoice_title: string | null;
+  tax_no: string | null;
+  taxpayer_type: string | null;
+  default_invoice_type: string | null;
+  default_tax_rate: string | null;
+  default_invoice_content: string | null;
+  default_invoice_unit: string | null;
+  default_invoice_unit_price: string | null;
   notes: string | null;
   active: boolean;
   created_at: string;
@@ -26,6 +34,14 @@ export interface PartnerPayload {
   contact_person?: string | null;
   contact_phone?: string | null;
   settlement_account?: string | null;
+  invoice_title?: string | null;
+  tax_no?: string | null;
+  taxpayer_type?: string | null;
+  default_invoice_type?: string | null;
+  default_tax_rate?: string | number | null;
+  default_invoice_content?: string | null;
+  default_invoice_unit?: string | null;
+  default_invoice_unit_price?: string | number | null;
   notes?: string | null;
   active?: boolean;
 }

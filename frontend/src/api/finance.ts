@@ -7,6 +7,8 @@ import type { PostalCommitOut, SimpleImportPreview } from './postal';
 
 export type InvoiceType = 'normal' | 'red_reversal';
 export type SettlementStatus = 'pending' | 'paid' | 'invoiced' | 'archived';
+export type SettlementDirection = 'receivable' | 'payable';
+export type SettlementAttachmentCategory = 'settlement_sheet' | 'invoice_application' | 'invoice' | 'other';
 export type InvoiceState = 'pending' | 'issued' | 'needs_red_reversal';
 
 export interface Invoice {
@@ -69,31 +71,76 @@ export interface Settlement {
   partner_id: number;
   partner_name: string;
   contract_id: number | null;
+  direction: SettlementDirection;
+  settlement_no: string | null;
   period: string | null;
+  settlement_start_date: string | null;
+  settlement_end_date: string | null;
+  return_start_date: string | null;
+  return_end_date: string | null;
+  gross_amount: string | null;
+  return_deduction_amount: string;
   amount_due: string | null;
   paid_amount: string | null;
   paid_date: string | null;
   on_time: boolean | null;
   invoice_received: boolean;
   invoice_no: string | null;
+  invoice_title: string | null;
+  invoice_tax_no: string | null;
+  invoice_taxpayer_type: string | null;
+  invoice_type: string | null;
+  invoice_item_name: string | null;
+  invoice_unit: string | null;
+  invoice_quantity: string | null;
+  invoice_unit_price: string | null;
+  invoice_tax_rate: string | null;
+  invoice_amount: string | null;
   status: SettlementStatus;
   attachment_filename: string | null;
   has_attachment: boolean;
+  attachments: SettlementAttachment[];
   notes: string | null;
   created_at: string;
   updated_at: string;
 }
 
+export interface SettlementAttachment {
+  id: number;
+  category: SettlementAttachmentCategory;
+  filename: string;
+  content_type: string | null;
+  created_at: string;
+}
+
 export interface SettlementPayload {
   partner_id: number;
   contract_id?: number | null;
+  direction?: SettlementDirection;
+  settlement_no?: string | null;
   period?: string | null;
+  settlement_start_date?: string | null;
+  settlement_end_date?: string | null;
+  return_start_date?: string | null;
+  return_end_date?: string | null;
+  gross_amount?: string | number | null;
+  return_deduction_amount?: string | number;
   amount_due?: string | number | null;
   paid_amount?: string | number | null;
   paid_date?: string | null;
   on_time?: boolean | null;
   invoice_received?: boolean;
   invoice_no?: string | null;
+  invoice_title?: string | null;
+  invoice_tax_no?: string | null;
+  invoice_taxpayer_type?: string | null;
+  invoice_type?: string | null;
+  invoice_item_name?: string | null;
+  invoice_unit?: string | null;
+  invoice_quantity?: string | number | null;
+  invoice_unit_price?: string | number | null;
+  invoice_tax_rate?: string | number | null;
+  invoice_amount?: string | number | null;
   status?: SettlementStatus;
   notes?: string | null;
 }
@@ -105,9 +152,18 @@ export const invoiceQueryKeys = {
 };
 export const settlementQueryKeys = {
   all: ['settlements'] as const,
-  list: (params?: { partner_id?: number; status?: SettlementStatus; q?: string }) =>
+  list: (params?: SettlementListParams) =>
     ['settlements', params ?? {}] as const,
 };
+
+export interface SettlementListParams {
+  partner_id?: number;
+  direction?: SettlementDirection;
+  status?: SettlementStatus;
+  settlement_from?: string;
+  settlement_to?: string;
+  q?: string;
+}
 
 // --- 发票工作台 + 发票 CRUD ---
 export function getInvoiceOrders(params?: {
@@ -149,11 +205,7 @@ export async function downloadInvoiceAttachment(invoice: Invoice): Promise<void>
 }
 
 // --- 渠道结算 CRUD + 附件 ---
-export function listSettlements(params?: {
-  partner_id?: number;
-  status?: SettlementStatus;
-  q?: string;
-}): Promise<AxiosResponse<Settlement[]>> {
+export function listSettlements(params?: SettlementListParams): Promise<AxiosResponse<Settlement[]>> {
   return api.get('/settlements', { params });
 }
 export function createSettlement(body: SettlementPayload): Promise<AxiosResponse<Settlement>> {
@@ -165,20 +217,27 @@ export function updateSettlement(id: number, body: SettlementUpdatePayload): Pro
 export function deleteSettlement(id: number): Promise<AxiosResponse<void>> {
   return api.delete(`/settlements/${id}`);
 }
-export function uploadSettlementAttachment(id: number, file: File): Promise<AxiosResponse<Settlement>> {
+export function uploadSettlementAttachment(
+  id: number,
+  category: SettlementAttachmentCategory,
+  file: File,
+): Promise<AxiosResponse<Settlement>> {
   const fd = new FormData();
   fd.append('file', file);
-  return api.post(`/settlements/${id}/attachment`, fd);
+  return api.post(`/settlements/${id}/attachments`, fd, { params: { category } });
 }
-export function deleteSettlementAttachment(id: number): Promise<AxiosResponse<Settlement>> {
-  return api.delete(`/settlements/${id}/attachment`);
+export function deleteSettlementAttachment(id: number, attachmentId: number): Promise<AxiosResponse<Settlement>> {
+  return api.delete(`/settlements/${id}/attachments/${attachmentId}`);
 }
-export async function downloadSettlementAttachment(s: Settlement): Promise<void> {
-  const res = await api.get(`/settlements/${s.id}/attachment`, { responseType: 'blob' });
+export async function downloadSettlementAttachment(
+  s: Settlement,
+  attachment: SettlementAttachment,
+): Promise<void> {
+  const res = await api.get(`/settlements/${s.id}/attachments/${attachment.id}`, { responseType: 'blob' });
   const url = URL.createObjectURL(res.data as Blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = s.attachment_filename ?? `settlement-${s.id}`;
+  a.download = attachment.filename;
   document.body.appendChild(a);
   a.click();
   a.remove();

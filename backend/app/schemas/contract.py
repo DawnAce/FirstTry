@@ -23,6 +23,14 @@ class PartnerBase(BaseModel):
     contact_person: Optional[str] = Field(default=None, max_length=64)
     contact_phone: Optional[str] = Field(default=None, max_length=64)
     settlement_account: Optional[str] = Field(default=None, max_length=255)
+    invoice_title: Optional[str] = Field(default=None, max_length=255)
+    tax_no: Optional[str] = Field(default=None, max_length=64)
+    taxpayer_type: Optional[str] = Field(default=None, max_length=32)
+    default_invoice_type: Optional[str] = Field(default=None, max_length=32)
+    default_tax_rate: Optional[Decimal] = Field(default=None, ge=0, le=1)
+    default_invoice_content: Optional[str] = Field(default=None, max_length=255)
+    default_invoice_unit: Optional[str] = Field(default=None, max_length=32)
+    default_invoice_unit_price: Optional[Decimal] = Field(default=None, ge=0)
     notes: Optional[str] = None
     active: bool = True
 
@@ -37,6 +45,14 @@ class PartnerUpdate(BaseModel):
     contact_person: Optional[str] = Field(default=None, max_length=64)
     contact_phone: Optional[str] = Field(default=None, max_length=64)
     settlement_account: Optional[str] = Field(default=None, max_length=255)
+    invoice_title: Optional[str] = Field(default=None, max_length=255)
+    tax_no: Optional[str] = Field(default=None, max_length=64)
+    taxpayer_type: Optional[str] = Field(default=None, max_length=32)
+    default_invoice_type: Optional[str] = Field(default=None, max_length=32)
+    default_tax_rate: Optional[Decimal] = Field(default=None, ge=0, le=1)
+    default_invoice_content: Optional[str] = Field(default=None, max_length=255)
+    default_invoice_unit: Optional[str] = Field(default=None, max_length=32)
+    default_invoice_unit_price: Optional[Decimal] = Field(default=None, ge=0)
     notes: Optional[str] = None
     active: Optional[bool] = None
 

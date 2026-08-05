@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   DatePicker,
+  Divider,
   Form,
   Input,
   InputNumber,
@@ -115,6 +116,14 @@ interface PartnerFormValues {
   contact_person?: string;
   contact_phone?: string;
   settlement_account?: string;
+  invoice_title?: string;
+  tax_no?: string;
+  taxpayer_type?: string;
+  default_invoice_type?: string;
+  default_tax_rate?: number | null;
+  default_invoice_content?: string;
+  default_invoice_unit?: string;
+  default_invoice_unit_price?: number | null;
   notes?: string;
   active: boolean;
 }
@@ -169,6 +178,14 @@ function PartnersPanel({ isAdmin }: { isAdmin: boolean }) {
       contact_person: p.contact_person ?? undefined,
       contact_phone: p.contact_phone ?? undefined,
       settlement_account: p.settlement_account ?? undefined,
+      invoice_title: p.invoice_title ?? undefined,
+      tax_no: p.tax_no ?? undefined,
+      taxpayer_type: p.taxpayer_type ?? undefined,
+      default_invoice_type: p.default_invoice_type ?? undefined,
+      default_tax_rate: p.default_tax_rate == null ? undefined : Number(p.default_tax_rate) * 100,
+      default_invoice_content: p.default_invoice_content ?? undefined,
+      default_invoice_unit: p.default_invoice_unit ?? undefined,
+      default_invoice_unit_price: p.default_invoice_unit_price == null ? undefined : Number(p.default_invoice_unit_price),
       notes: p.notes ?? undefined,
       active: p.active,
     });
@@ -231,9 +248,17 @@ function PartnersPanel({ isAdmin }: { isAdmin: boolean }) {
         onOk={() => form.submit()}
         okText="保存"
         confirmLoading={saveMutation.isPending}
+        width={760}
         destroyOnHidden
       >
-        <Form<PartnerFormValues> form={form} layout="vertical" onFinish={(v) => saveMutation.mutate(v)}>
+        <Form<PartnerFormValues>
+          form={form}
+          layout="vertical"
+          onFinish={(v) => saveMutation.mutate({
+            ...v,
+            default_tax_rate: v.default_tax_rate == null ? null : v.default_tax_rate / 100,
+          })}
+        >
           <Form.Item name="name" label="渠道名称" rules={[{ required: true, message: '请填写渠道名称' }]}>
             <Input placeholder="如：中通 / 北京市报刊发行局" />
           </Form.Item>
@@ -251,6 +276,44 @@ function PartnersPanel({ isAdmin }: { isAdmin: boolean }) {
           <Form.Item name="settlement_account" label="结算账户 / 开户信息">
             <Input placeholder="给财务渠道结算用（可空）" />
           </Form.Item>
+          <Divider titlePlacement="start" plain>开票档案（结算时自动带出）</Divider>
+          <Space style={{ display: 'flex' }} align="start">
+            <Form.Item name="invoice_title" label="发票抬头" style={{ width: 330 }}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="tax_no" label="纳税人识别号" style={{ width: 330 }}>
+              <Input />
+            </Form.Item>
+          </Space>
+          <Space style={{ display: 'flex' }} align="start">
+            <Form.Item name="taxpayer_type" label="纳税人类型" style={{ width: 210 }}>
+              <Select allowClear options={[
+                { label: '一般纳税人', value: 'general' },
+                { label: '小规模纳税人', value: 'small_scale' },
+                { label: '其他', value: 'other' },
+              ]} />
+            </Form.Item>
+            <Form.Item name="default_invoice_type" label="默认发票类型" style={{ width: 210 }}>
+              <Select allowClear options={[
+                { label: '增值税普通发票', value: 'vat_normal' },
+                { label: '增值税专用发票', value: 'vat_special' },
+              ]} />
+            </Form.Item>
+            <Form.Item name="default_tax_rate" label="默认税率" style={{ width: 210 }}>
+              <InputNumber min={0} max={100} precision={2} suffix="%" style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="default_invoice_content" label="默认发票内容">
+            <Input placeholder="如：*印刷品*中国经营报" />
+          </Form.Item>
+          <Space style={{ display: 'flex' }} align="start">
+            <Form.Item name="default_invoice_unit" label="默认单位" style={{ width: 210 }}>
+              <Input placeholder="如：份" />
+            </Form.Item>
+            <Form.Item name="default_invoice_unit_price" label="默认单价" style={{ width: 210 }}>
+              <InputNumber min={0} precision={4} prefix="¥" style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} />
           </Form.Item>
@@ -375,7 +438,7 @@ function ContractsPanel({ isAdmin }: { isAdmin: boolean }) {
     {
       title: '合同', key: 'title',
       render: (_: unknown, row) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Text strong>{row.title}</Text>
           {row.contract_no && <Text type="secondary" style={{ fontSize: 12 }}>{row.contract_no}</Text>}
         </Space>
