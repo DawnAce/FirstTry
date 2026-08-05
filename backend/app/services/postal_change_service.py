@@ -166,7 +166,7 @@ def list_address_changes(
 def get_address_change(db: Session, change_id: int) -> PostalAddressChange:
     rec = db.query(PostalAddressChange).filter(PostalAddressChange.id == change_id).first()
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"信息变更工单 {change_id} 不存在")
     return rec
 
 
@@ -334,9 +334,9 @@ def apply_address_change(db: Session, change_id: int, operator_id: Optional[int]
         .first()
     )
     if ac is None:
-        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"信息变更工单 {change_id} 不存在")
     if ac.applied_to_order:
-        raise HTTPException(status_code=409, detail="该收件信息变更已应用，请勿重复")
+        raise HTTPException(status_code=409, detail="该信息变更已应用，请勿重复")
     if not ac.postal_delivery_id:
         raise HTTPException(
             status_code=400,
@@ -431,11 +431,11 @@ def update_address_change(db: Session, change_id: int, patch: dict) -> PostalAdd
         .first()
     )
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"信息变更工单 {change_id} 不存在")
     if rec.applied_to_order:
         raise HTTPException(
             status_code=409,
-            detail="该收件信息变更已应用，不能再编辑；如需更正请新建收件信息变更工单",
+            detail="该信息变更已应用，不能再编辑；如需更正请新建信息变更工单",
         )
     patch = dict(patch)
     allocations = patch.pop("copy_allocations", _MISSING)
@@ -480,9 +480,9 @@ def resolve_address_allocation(
         .first()
     )
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"信息变更工单 {change_id} 不存在")
     if not rec.applied_to_order:
-        raise HTTPException(status_code=409, detail="请先应用收件信息变更，再确认剩余份数去向")
+        raise HTTPException(status_code=409, detail="请先应用信息变更，再确认剩余份数去向")
 
     rows = address_change_allocations(rec)
     pending = sum(row["copies"] for row in rows if row["kind"] == "pending")
@@ -532,11 +532,11 @@ def delete_address_change(db: Session, change_id: int) -> None:
         .first()
     )
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"收件信息变更工单 {change_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"信息变更工单 {change_id} 不存在")
     if rec.applied_to_order:
         raise HTTPException(
             status_code=409,
-            detail="该收件信息变更已应用，不能删除；如需更正请新建收件信息变更工单",
+            detail="该信息变更已应用，不能删除；如需更正请新建信息变更工单",
         )
     db.delete(rec)
     db.commit()

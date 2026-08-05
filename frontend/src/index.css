@@ -3154,7 +3154,7 @@ body {
 
 .postal-ticket-card {
   display: grid;
-  grid-template-columns: 42px minmax(170px, 1fr) minmax(135px, 0.7fr) minmax(210px, 1.15fr) minmax(190px, 0.9fr) max-content;
+  grid-template-columns: 42px minmax(120px, 0.65fr) minmax(150px, 0.85fr) minmax(100px, 0.5fr) minmax(180px, 1fr) minmax(115px, 0.65fr) minmax(80px, 0.45fr) 96px;
   gap: 16px;
   align-items: center;
   min-height: 78px;
@@ -3206,9 +3206,12 @@ body {
   display: block;
 }
 
-.postal-ticket-card-reader > .ant-typography:first-child,
-.postal-ticket-card-association > .ant-typography:nth-child(2) {
+.postal-ticket-card-reader > .ant-typography:first-child {
   margin-bottom: 4px;
+}
+
+.postal-ticket-card-number > .ant-typography {
+  color: var(--color-primary);
 }
 
 .postal-ticket-card-meta {
@@ -3223,23 +3226,23 @@ body {
   font-size: 12px;
 }
 
-.postal-ticket-card-phone .ant-typography,
-.postal-ticket-card-progress .ant-typography {
+.postal-ticket-card-reader-phone,
+.postal-ticket-card-date .ant-typography {
   font-variant-numeric: tabular-nums;
 }
 
-.postal-ticket-card-association > .ant-typography {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.postal-ticket-card-handling .ant-tag {
+  margin-inline-end: 0;
 }
 
-.postal-ticket-card-progress .ant-tag {
+.postal-ticket-card-status .ant-tag {
   margin-inline-end: 0;
 }
 
 .postal-ticket-card-actions {
-  justify-self: end;
+  width: 100%;
+  justify-self: stretch;
+  justify-content: flex-start;
 }
 
 .postal-ticket-pagination {
@@ -3253,7 +3256,7 @@ body {
   }
 
   .postal-ticket-card {
-    grid-template-columns: 38px minmax(150px, 1fr) minmax(125px, 0.7fr) minmax(180px, 1fr) minmax(170px, 0.9fr) max-content;
+    grid-template-columns: 38px minmax(105px, 0.65fr) minmax(135px, 0.85fr) minmax(85px, 0.5fr) minmax(150px, 1fr) minmax(105px, 0.65fr) minmax(75px, 0.45fr) 96px;
     gap: 12px;
   }
 }
@@ -3273,29 +3276,42 @@ body {
     grid-row: 1;
   }
 
+  .postal-ticket-card-number {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   .postal-ticket-card-reader {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .postal-ticket-card-phone {
     grid-column: 3;
     grid-row: 1;
   }
 
-  .postal-ticket-card-association {
+  .postal-ticket-card-kind {
     grid-column: 2;
     grid-row: 2;
   }
 
-  .postal-ticket-card-progress {
+  .postal-ticket-card-handling {
     grid-column: 3;
     grid-row: 2;
+  }
+
+  .postal-ticket-card-date {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .postal-ticket-card-status {
+    grid-column: 3;
+    grid-row: 3;
   }
 
   .postal-ticket-card-actions {
     grid-column: 2 / -1;
-    grid-row: 3;
+    grid-row: 4;
+    width: auto;
+    justify-self: end;
+    justify-content: flex-end;
   }
 }
 
@@ -3314,9 +3330,11 @@ body {
   }
 
   .postal-ticket-card-reader,
-  .postal-ticket-card-phone,
-  .postal-ticket-card-association,
-  .postal-ticket-card-progress,
+  .postal-ticket-card-number,
+  .postal-ticket-card-kind,
+  .postal-ticket-card-handling,
+  .postal-ticket-card-date,
+  .postal-ticket-card-status,
   .postal-ticket-card-actions {
     grid-column: 2;
     grid-row: auto;

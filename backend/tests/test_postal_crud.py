@@ -358,7 +358,7 @@ def test_applied_address_change_cannot_be_edited_or_deleted(client):
         "new_address": "不应写入的地址",
     })
     assert unified_update.status_code == 409
-    assert "如需更正请新建收件信息变更工单" in unified_update.json()["detail"]
+    assert "如需更正请新建信息变更工单" in unified_update.json()["detail"]
 
     legacy_update = client.put(
         f"/api/postal/address-changes/{change_id}",
