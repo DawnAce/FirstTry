@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.models.operation_log import OperationLog
@@ -48,7 +49,10 @@ def record_operation(
         record_id=record_id,
         record_name=record_name,
         action=action,
-        changes=changes,
+        # Keep operation logging from breaking the business transaction when
+        # MySQL aggregate values arrive as Decimal (or payloads contain dates /
+        # enums). SQLAlchemy's JSON serializer only accepts JSON-native types.
+        changes=jsonable_encoder(changes) if changes is not None else None,
         user_id=user_id,
         username=username,
         issue_number=issue_number,

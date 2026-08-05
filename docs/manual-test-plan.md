@@ -927,6 +927,13 @@
 ### 3.7 期数 · 报数 · 印数排期
 
 ---
+**[P0] MySQL 报数确认的操作日志可序列化，失败提示不误导为已确认**
+- 前置：MySQL 环境；某期草稿报数与至少一条 ZTO-MF 明细，使 `SUM(quantity)` 返回 `Decimal`。
+- 步骤：1) 点击「确认报数」，核对锁定说明后二次确认。2) 检查接口响应、期状态与 `operation_logs.changes`。3) 断网或模拟 500 后对另一草稿期再次确认。
+- 预期：正常请求成功且期状态变 `confirmed`，日志内 `zt_shipping_total` / `delta` 为 JSON 数字；异常请求保持 `draft`，页面明确提示“本次报数没有确认成功”，网络与服务器异常分别给出可执行建议。
+- 自动化：`test_operation_log_workbench.py::RecordOperationTests::test_record_operation_serializes_mysql_decimal_values` 覆盖 `Decimal` 日志载荷；本用例补充真实 MySQL 事务与前端提示核对。
+
+---
 **[P0] 报数「确认」自动复制上期明细→`order_generated` 溯源丢成 manual、下期双计（读码已确认属实）**
 - 前置：N 期（如 2654）既有手工行也有 `order_generated` 行；N+1 期（2655）**当前 0 条发货明细**、报数 draft。
 - 步骤：1) 确认 2655 当前 0 明细。2) 2655 报数编辑页填好变动项→`确认报数`。3) 回 ZTO-MF 页看复制来的行：逐行看 `source_type`/`sync_status`/`order_id`。4) 对 2655 再跑一次订单同步（给同一订户建 order_generated 行），或看报数对账「发货明细合计」是否把复制来的订单份数又算一遍。

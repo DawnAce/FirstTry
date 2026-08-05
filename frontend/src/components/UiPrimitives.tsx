@@ -4,6 +4,22 @@ import './ui-primitives.css'
 
 export type SemanticTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'purple'
 
+type SuccessCheckIconProps = {
+  className?: string
+}
+
+export function SuccessCheckIcon({ className = '' }: SuccessCheckIconProps) {
+  return (
+    <svg
+      className={`ui-success-check-icon ${className}`.trim()}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path d="M4 12.5 9.5 18 20 6.5" />
+    </svg>
+  )
+}
+
 type PageHeaderProps = {
   title: ReactNode
   description?: ReactNode

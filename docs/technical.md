@@ -1013,6 +1013,8 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 #### POST /api/issues/{issue_id}/report/confirm
 确认报数（状态变更为 confirmed）。需要用户认证。若当期没有ZTO-MF，系统会自动从上一期复制明细，并清空 `confirmation` 与 `shipped_at`；确认响应会同时校验报数目的地"中通物流公司"合计与当期发货明细份数是否一致。
 
+MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读取与确认路径中显式归一为 `int`。通用 `record_operation` 在持久化 JSON 日志前还会调用 FastAPI `jsonable_encoder`，统一处理 `Decimal`、日期和枚举等非原生 JSON 类型，避免日志序列化异常中断报数确认事务。
+
 **验证规则**：
 - 所有变动项必须有值
 - 总印数不能为 0
@@ -1494,7 +1496,7 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 
 **响应**：OperationLog 数组，按时间倒序排列
 
-**说明**：ZTO-MF的新增/编辑/删除/批量复制操作会自动写入操作日志。编辑操作仅记录实际变化的字段差异。
+**说明**：ZTO-MF的新增/编辑/删除/批量复制操作会自动写入操作日志。编辑操作仅记录实际变化的字段差异。所有 `changes` 载荷写入数据库前统一经过 `jsonable_encoder`，因此 MySQL `Decimal` 聚合值、日期和枚举可安全写入 JSON 字段。
 
 ### 4.13 往期导入
 
@@ -2090,7 +2092,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 #### 前端设计系统与 Storybook
 - `frontend/src/theme.tsx` 是 Ant Design token 与 CSS variables 的唯一主题入口；生产应用和 Storybook 均通过 `DesignSystemProvider` 使用同一套配置。
 - 登录页使用 `Login.tsx` + `Login.css` 实现无边框全屏双栏布局，960px 以下切换为单栏；认证接口、表单校验、密码显隐和提交状态继续复用现有 Ant Design 与认证上下文。
-- `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard`、`StatusPill` 和 `DrawerTitle`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。
+- `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard`、`StatusPill`、`DrawerTitle` 和 `SuccessCheckIcon`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。大号绿色圆形成功徽标统一使用 `SuccessCheckIcon`：30px 白色对号、3.25px 圆角描边，当前用于 ZTO-MF 对账一致状态和订单创建成功提示。
 - 印数管理各模块标题以“报数流程”为视觉基准，统一字号、字重、颜色和行高；次要文本及成功/警告状态文字使用主题中的高对比度语义色。
 - 普通 DOM/CSS 使用 `var(--color-*)` 等语义变量；Canvas/ECharts 等不能直接消费 CSS 的渲染器通过 `theme.useToken()` 取得当前主题色。
 - 所有 Ant Design `Modal` 在 `frontend/src/index.css` 统一复用“邮局工单”弹窗的遮罩、容器、标题、表单和操作栏样式；新增弹窗直接使用 `Modal`，仅在业务布局确有差异时添加局部类名。

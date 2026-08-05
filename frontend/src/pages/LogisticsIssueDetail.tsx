@@ -30,7 +30,6 @@ import {
   LeftOutlined,
   FileTextOutlined,
   InboxOutlined,
-  CheckOutlined,
   CloseOutlined,
   ReloadOutlined,
   MoreOutlined,
@@ -60,7 +59,7 @@ import {
 } from '../api/exports';
 import dayjs from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
-import { DrawerTitle, StatusPill } from '../components/UiPrimitives';
+import { DrawerTitle, StatusPill, SuccessCheckIcon } from '../components/UiPrimitives';
 
 const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '库房留存', '报社留存'] as const;
 const SUB_CHANNEL_OPTIONS = ['监管', '政府'] as const;
@@ -599,7 +598,7 @@ export default function LogisticsIssueDetail() {
               {!uploaded
                 ? <InboxOutlined />
                 : currentIsMatch === true
-                  ? <CheckOutlined />
+                  ? <SuccessCheckIcon />
                   : currentIsMatch === false
                     ? <CloseOutlined />
                     : <ReloadOutlined />}

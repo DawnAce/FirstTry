@@ -145,14 +145,14 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         .order_by(IssueAuditSnapshot.created_at.desc(), IssueAuditSnapshot.id.desc())
         .first()
     )
-    current_shipping_total = (
+    current_shipping_total = int((
         db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
         .filter(
             ShippingDetail.issue_number == issue.issue_number,
             ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
         )
         .scalar()
-    )
+    ) or 0)
     report_zt_total = destination_totals.get(DESTINATION_ZTO, 0)
     shipping_check = ShippingCheck(
         report_zt_total=report_zt_total,
@@ -254,14 +254,16 @@ def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = De
         if e.sub_category not in _REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES
         and resolve_report_destination(e.category, e.sub_category, e.destination) == DESTINATION_ZTO
     )
-    zt_shipping_total = (
+    # MySQL returns Decimal for SUM even though quantity is an integer column.
+    # Normalize before writing the value into the JSON operation log.
+    zt_shipping_total = int((
         db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
         .filter(
             ShippingDetail.issue_number == issue.issue_number,
             ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
         )
         .scalar()
-    )
+    ) or 0)
 
     db.add(
         IssueAuditSnapshot(
