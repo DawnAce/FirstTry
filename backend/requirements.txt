@@ -8,6 +8,7 @@ python-jose[cryptography]==3.5.0
 alembic==1.13.2
 python-dotenv==1.0.1
 openpyxl==3.1.5
+msoffcrypto-tool==6.0.0
 pandas==2.2.2
 xlrd==2.0.1
 pydantic==2.9.0

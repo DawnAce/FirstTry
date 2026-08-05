@@ -23,6 +23,40 @@ export interface HistoryImportPreview {
   manual_temp_print_required_quantity: number;
   manual_temp_print_self_quantity: number;
   manual_temp_rows: TempPrintDetailDraft[];
+  report_rows: HistoryReportRow[];
+  source_total: number;
+  mapped_total: number;
+  unmapped_report_items: UnmappedReportItem[];
+  report_mapping_options: ReportMappingOption[];
+}
+
+export interface HistoryReportRow {
+  category: string;
+  display_name: string;
+  sub_category: string;
+  destination: string;
+  is_variable: boolean;
+  value: number;
+}
+
+export interface UnmappedReportItem {
+  item_id: string;
+  sheet_name: string;
+  source_label: string;
+  cell_reference: string;
+  value: number;
+}
+
+export interface ReportMappingOption {
+  category: string;
+  sub_category: string;
+  display_name: string;
+}
+
+export interface ManualReportMappingDraft {
+  item_id: string;
+  category: string;
+  sub_category: string;
 }
 
 export interface TempPrintDetailDraft {
@@ -52,18 +86,25 @@ export const downloadShippingTemplate = (): Promise<AxiosResponse<Blob>> =>
 export const previewHistoryImport = (
   reportFile: File,
   shippingFile: File,
+  reportPassword?: string,
 ): Promise<AxiosResponse<HistoryImportPreview>> => {
   const form = new FormData();
   form.append('report_file', reportFile);
   form.append('shipping_file', shippingFile);
+  const normalizedPassword = reportPassword?.trim();
+  if (normalizedPassword) {
+    form.append('report_password', normalizedPassword);
+  }
   return api.post<HistoryImportPreview>('/history-import/preview', form);
 };
 
 export const commitHistoryImport = (
   importSessionId: string,
   manualTempRows?: TempPrintDetailDraft[],
+  manualReportMappings?: ManualReportMappingDraft[],
 ): Promise<AxiosResponse<HistoryImportCommitResult>> =>
   api.post<HistoryImportCommitResult>('/history-import/commit', {
     import_session_id: importSessionId,
     manual_temp_rows: manualTempRows,
+    manual_report_mappings: manualReportMappings,
   });

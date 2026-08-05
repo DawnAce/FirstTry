@@ -127,6 +127,7 @@ const handlers = [
   http.get('/api/issues/1/report/temp-details', () => HttpResponse.json([])),
   http.put('/api/issues/1/report/temp-details', async ({ request }) => HttpResponse.json(await request.json())),
   http.get('/api/report-sources/issues/1', () => HttpResponse.json(sourceSummary)),
+  http.delete('/api/report-sources/:documentId', () => new HttpResponse(null, { status: 204 })),
   http.patch('/api/report-sources/items/:itemId/shipping', async ({ request }) => HttpResponse.json(await request.json())),
 ]
 

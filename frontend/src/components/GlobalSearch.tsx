@@ -114,7 +114,14 @@ export default function GlobalSearch() {
       }}
       notFoundContent={debounced.length >= 1 ? (isFetching ? '搜索中…' : '无匹配') : null}
     >
-      <Input allowClear prefix={<SearchOutlined />} placeholder="搜索 订单/商品/期数" />
+      <Input
+        allowClear
+        prefix={<SearchOutlined />}
+        placeholder="搜索 订单/商品/期数"
+        name="global_search_query"
+        autoComplete="off"
+        role="searchbox"
+      />
     </AutoComplete>
   );
 }

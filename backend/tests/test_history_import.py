@@ -3,6 +3,7 @@ import unittest
 from datetime import date, datetime as _dt
 
 from fastapi import HTTPException
+from msoffcrypto.format.ooxml import OOXMLFile
 from openpyxl import load_workbook, Workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -18,7 +19,7 @@ from app.services.history_import_template_service import (
 from app.services.history_import_service import preview_history_import, commit_history_import
 from app.services.original_zto_shipping_import_service import read_original_zto_shipping_rows
 from app.services.raw_report_import_service import parse_raw_report_workbook
-from app.schemas.history_import import TempPrintDetailRow
+from app.schemas.history_import import ManualReportMapping, TempPrintDetailRow
 
 
 _SHIPPING_HEADERS = [
@@ -32,6 +33,12 @@ def _wb_to_bytes(wb: Workbook) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _encrypt_workbook_bytes(workbook_bytes: bytes, password: str) -> bytes:
+    encrypted = io.BytesIO()
+    OOXMLFile(io.BytesIO(workbook_bytes)).encrypt(password, encrypted)
+    return encrypted.getvalue()
 
 
 def build_report_upload_with_datetime_date(issue_number: int = 2648) -> bytes:
@@ -315,6 +322,15 @@ def build_raw_report_upload_with_unmapped_item() -> bytes:
     ws.insert_rows(8)
     ws["A8"] = "神秘渠道"
     ws["B8"] = 12
+    wb["北京印厂"]["C12"] = 9277
+    return _wb_to_bytes(wb)
+
+
+def build_raw_report_upload_with_unlabeled_side_values() -> bytes:
+    wb = load_workbook(io.BytesIO(build_raw_report_upload()))
+    ws = wb["社用报`"]
+    ws["J6"] = None   # I6 = 72，旧表缺少“备用”标签
+    ws["J18"] = None  # I18 = 30，旧表缺少“上犹”标签
     return _wb_to_bytes(wb)
 
 
@@ -389,6 +405,22 @@ class RawReportImportParserTests(unittest.TestCase):
         result = parse_raw_report_workbook(workbook)
 
         self.assertEqual(result.unmapped_items, ["收发室自留分发（需打印）：临时新增部门（6份）"])
+        workbook.close()
+
+    def test_retains_unlabeled_legacy_side_values_for_manual_mapping(self):
+        workbook = load_workbook(
+            io.BytesIO(build_raw_report_upload_with_unlabeled_side_values()),
+            data_only=True,
+        )
+
+        result = parse_raw_report_workbook(workbook)
+
+        self.assertEqual(result.source_total, 9265)
+        self.assertEqual(result.mapped_total, 9163)
+        self.assertEqual(
+            [(item.cell_reference, item.value) for item in result.unmapped_rows],
+            [("I6", 72), ("I18", 30)],
+        )
         workbook.close()
 
     def test_treats_department_add_print_rows_as_manual_temp_print(self):
@@ -543,6 +575,55 @@ class HistoryImportTemplateTests(unittest.TestCase):
         db.close()
 
 
+class WorkbookLoaderTests(unittest.TestCase):
+    def test_loads_unencrypted_workbook(self):
+        from app.services.workbook_loader import load_uploaded_workbook
+
+        workbook = load_uploaded_workbook(build_report_upload(), file_label="印数文件")
+
+        self.assertEqual(workbook["基本信息"]["B2"].value, 2648)
+        workbook.close()
+
+    def test_loads_encrypted_workbook_with_password(self):
+        from app.services.workbook_loader import load_uploaded_workbook
+
+        encrypted = _encrypt_workbook_bytes(build_report_upload(), "test-password")
+        workbook = load_uploaded_workbook(
+            encrypted,
+            password="test-password",
+            file_label="印数文件",
+        )
+
+        self.assertEqual(workbook["基本信息"]["B2"].value, 2648)
+        workbook.close()
+
+    def test_encrypted_workbook_without_password_returns_clear_error(self):
+        from app.services.workbook_loader import load_uploaded_workbook
+
+        encrypted = _encrypt_workbook_bytes(build_report_upload(), "test-password")
+
+        with self.assertRaises(HTTPException) as ctx:
+            load_uploaded_workbook(encrypted, file_label="印数文件")
+
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.detail, "印数文件已加密，请输入文件密码后重试")
+
+    def test_encrypted_workbook_with_wrong_password_returns_clear_error(self):
+        from app.services.workbook_loader import load_uploaded_workbook
+
+        encrypted = _encrypt_workbook_bytes(build_report_upload(), "test-password")
+
+        with self.assertRaises(HTTPException) as ctx:
+            load_uploaded_workbook(
+                encrypted,
+                password="wrong-password",
+                file_label="印数文件",
+            )
+
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.detail, "印数文件密码不正确，无法解密")
+
+
 class HistoryImportPreviewTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine(
@@ -635,6 +716,23 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertFalse(result.readiness.issue_exists)
         self.assertTrue(result.readiness.can_commit)
         self.assertEqual(result.readiness.errors, [])
+        db.close()
+
+    def test_preview_accepts_encrypted_report_workbook_with_password(self):
+        db = self.SessionLocal()
+        self._seed_upload_templates(db)
+        encrypted_report = _encrypt_workbook_bytes(build_report_upload(), "test-password")
+
+        result = preview_history_import(
+            db,
+            encrypted_report,
+            build_shipping_upload(),
+            report_password="test-password",
+        )
+
+        self.assertTrue(result.can_commit)
+        self.assertEqual(result.issue_number, 2648)
+        self.assertEqual(result.report_entry_count, 2)
         db.close()
 
     def test_preview_accepts_original_report_workbook_with_template_shipping_file(self):
@@ -836,7 +934,7 @@ class HistoryImportPreviewTests(unittest.TestCase):
         )
         db.close()
 
-    def test_preview_blocks_original_report_with_unmapped_items(self):
+    def test_preview_exposes_unmapped_items_for_manual_classification(self):
         db = self.SessionLocal()
         self._seed_raw_report_templates(db)
 
@@ -847,7 +945,53 @@ class HistoryImportPreviewTests(unittest.TestCase):
         )
 
         self.assertFalse(result.can_commit)
-        self.assertTrue(any("未命中映射项" in error and "神秘渠道" in error for error in result.errors))
+        self.assertTrue(result.readiness.can_commit)
+        self.assertEqual(result.errors, [])
+        self.assertNotEqual(result.import_session_id, "")
+        self.assertEqual(result.source_total, 9277)
+        self.assertEqual(result.mapped_total, 9265)
+        self.assertEqual(len(result.unmapped_report_items), 1)
+        self.assertEqual(result.unmapped_report_items[0].source_label, "神秘渠道")
+        self.assertEqual(result.unmapped_report_items[0].value, 12)
+        self.assertGreater(len(result.report_rows), 0)
+        self.assertGreater(len(result.report_mapping_options), 0)
+        db.close()
+
+    def test_commit_applies_manual_classification_for_legacy_side_values(self):
+        db = self.SessionLocal()
+        self._seed_raw_report_templates(db)
+
+        preview = preview_history_import(
+            db,
+            build_raw_report_upload_with_unlabeled_side_values(),
+            build_shipping_upload(2647, quantity=1412),
+        )
+
+        self.assertEqual(preview.mapped_total, 9163)
+        self.assertEqual(len(preview.unmapped_report_items), 2)
+        item_by_cell = {item.cell_reference: item for item in preview.unmapped_report_items}
+        result = commit_history_import(
+            db,
+            preview.import_session_id,
+            manual_report_mappings=[
+                ManualReportMapping(
+                    item_id=item_by_cell["I6"].item_id,
+                    category="social_use",
+                    sub_category="营报传媒_备用报",
+                ),
+                ManualReportMapping(
+                    item_id=item_by_cell["I18"].item_id,
+                    category="social_use",
+                    sub_category="营报传媒_上犹",
+                ),
+            ],
+        )
+
+        entries = db.query(ReportEntry).filter(ReportEntry.issue_id == result.issue_id).all()
+        entry_map = {(entry.category, entry.sub_category): entry.value for entry in entries}
+        self.assertEqual(entry_map[("social_use", "营报传媒_备用报")], 72)
+        self.assertEqual(entry_map[("social_use", "营报传媒_上犹")], 30)
+        self.assertEqual(sum(entry.value for entry in entries), 9265)
         db.close()
 
     def test_preview_accepts_original_zto_shipping_workbook(self):

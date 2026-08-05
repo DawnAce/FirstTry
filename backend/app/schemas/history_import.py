@@ -47,6 +47,26 @@ class CommitReadiness(BaseModel):
     errors: list[str] = []
 
 
+class UnmappedReportItem(BaseModel):
+    item_id: str
+    sheet_name: str
+    source_label: str
+    cell_reference: str = ""
+    value: int
+
+
+class ReportMappingOption(BaseModel):
+    category: str
+    sub_category: str
+    display_name: str
+
+
+class ManualReportMapping(BaseModel):
+    item_id: str
+    category: str
+    sub_category: str
+
+
 class HistoryImportPreviewOut(BaseModel):
     issue_number: int
     publish_date: str           # normalized ISO date YYYY-MM-DD
@@ -62,11 +82,17 @@ class HistoryImportPreviewOut(BaseModel):
     manual_temp_print_required_quantity: int = 0
     manual_temp_print_self_quantity: int = 0
     manual_temp_rows: list[TempPrintDetailRow] = []
+    report_rows: list[HistoryImportRow] = []
+    source_total: int = 0
+    mapped_total: int = 0
+    unmapped_report_items: list[UnmappedReportItem] = []
+    report_mapping_options: list[ReportMappingOption] = []
 
 
 class HistoryImportCommitIn(BaseModel):
     import_session_id: str
     manual_temp_rows: list[TempPrintDetailRow] | None = None
+    manual_report_mappings: list[ManualReportMapping] | None = None
 
 
 class HistoryImportCommitOut(BaseModel):

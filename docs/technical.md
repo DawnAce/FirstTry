@@ -67,6 +67,7 @@ FirstTry/
 │   │   │   ├── publication_schedule_parser.py  # 刊期 PDF 文本解析与校验
 │   │   │   ├── publication_schedule_upload_service.py # 刊期上传存储与提交
 │   │   │   ├── raw_report_import_service.py    # 原始印数多工作表解析
+│   │   │   ├── workbook_loader.py              # 普通 / Office 加密 OOXML 内存解密与加载
 │   │   │   ├── original_zto_shipping_import_service.py # 原始中通多工作表解析
 │   │   │   ├── report_source_ocr.py        # 渠道模板 OCR 与保守校验
 │   │   │   └── report_source_service.py    # 归档、映射、结算与补发台账
@@ -258,7 +259,7 @@ FirstTry/
 | extraction_json | JSON | OCR 原文、置信度、警告和建议映射 |
 | uploaded_by | INT | 上传用户 |
 
-OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给 `rapidocr_onnxruntime`。单个 PDF 最多 12 页。解析器按稳定渠道模板执行算术校验；异常或低可信结果返回 `pending_review`，上传归档本身仍成功，OCR 不会直接写入报数。
+OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `rapidocr_onnxruntime`（ONNX Runtime），不调用本地 LLM 或外部 AI API。单个 PDF 最多 12 页。解析器按稳定渠道模板执行算术校验；异常或低可信结果返回 `pending_review`，上传归档本身仍成功，OCR 不会直接写入报数。月度来源显示名使用明确的 `YYYY年MM月_渠道_月度报数.扩展名`；优先读取原文件名中的中文年月，再使用 OCR 刊期或来源日期。迁移 `f5c7e9a1b3d6` 会回填已有月度歧义名称。
 
 ### 3.5B report_source_items（来源刊期映射与调整）
 
@@ -1114,7 +1115,7 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 
 #### POST /api/report-sources/upload
 
-上传并归档来源文件，同时返回 OCR 建议。`multipart/form-data` 字段：`file`、`channel`、可选 `issue_number`、`document_type`、`source_date`。支持 PDF、JPG、JPEG、PNG；响应中的 `suggestions` 只能作为人工核对初值。相同渠道和 SHA-256 的文件返回已有文档并标记 `duplicate=true`。
+上传并归档来源文件，同时返回 OCR 建议。`multipart/form-data` 字段：`file`、`channel`、可选 `issue_number`、`document_type`、`source_date`。支持 PDF、JPG、JPEG、PNG；响应中的 `suggestions` 只能作为人工核对初值。相同渠道和 SHA-256 的文件返回已有文档并标记 `duplicate=true`，同时按当前命名规则刷新旧 `display_name`。
 
 #### POST /api/report-sources/{document_id}/confirm
 
@@ -1134,7 +1135,7 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 
 #### DELETE /api/report-sources/{document_id}
 
-管理员删除来源文档、全部刊期映射和对应附件。
+删除来源文档、全部刊期映射和对应附件，并写入 `delete_source` 操作日志。管理员可删除任意来源；普通操作员只能撤销本人上传且仍为 `pending_review` 的文件，不能删除已完成核对的归档。前端「重新上传」通过此接口先撤销错误文件，再恢复文件选择状态。
 
 **确认报数联动**：`POST /api/issues/{issue_id}/report/confirm` 会查询该期 `report_source_items`；存在非 `confirmed` 来源项时返回 422，防止关闭抽屉后遗漏 OCR / 渠道待确认数据。
 
@@ -1525,14 +1526,16 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 1. 系统下载的单表导入模板：`基本信息` + `发货明细`
 2. 原始中通多工作表文件：包含 `每周（对公）`、`每周（读者）`、`高铁展示`/`北京悦途出行（高铁）`、`上犹`、`停发-双周（读者）`、`月底-整月` 等工作表
 
-**请求**：multipart/form-data，包含两个文件字段：
+**请求**：multipart/form-data，包含两个文件字段及一个可选文本字段：
 - `report_file`：报数文件（.xlsx）
 - `shipping_file`：中通发货文件（.xlsx）
+- `report_password`：可选；Office 加密印数文件的打开密码。`workbook_loader` 使用 `msoffcrypto-tool` 在内存中解密，不落库、不记录日志；中通发货文件目前不接收密码。
 
 **校验规则**：
 - 两份文件必须属于同一期（`基本信息.期号` 一致）
 - 原始印数多工作表文件从标题中的“期数 / 版数 / 出版日期”识别基本信息
-- 原始印数表会校验原表总印数与映射后总数一致；存在临时加印未分配，或原始社用报中出现“XX加印”部门加印项时，预览会生成导入会话并返回待手工分配数量和预填明细，前端提交时通过 `manual_temp_rows` 补齐；未命中映射项或总数不一致仍返回错误且不生成导入会话
+- 原始印数表会校验原表总印数与“已识别 + 待归类”合计一致；已识别数据通过 `report_rows` 展示。未命中映射的正数项（包括旧表 I/J 侧栏中无标签的数字）通过 `unmapped_report_items` 返回工作表、单元格、原始标签和数量，前端从 `report_mapping_options` 选择系统报数项，提交时通过 `manual_report_mappings` 补齐。
+- 存在临时加印未分配，或原始社用报中出现“XX加印”部门加印项时，预览会生成导入会话并返回待手工分配数量和预填明细，前端提交时通过 `manual_temp_rows` 补齐。
 - 原始中通多工作表文件从标题中的“总第XXXX期”识别期号；月底多期标题取最大期号作为本次导入期号
 - 目标期号不能已存在（防止重复导入）
 - 报数项行必须与 `report_item_templates` 中的 `(category, sub_category)` 完全匹配
@@ -1548,7 +1551,7 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
   "report_entry_count": 30,
   "temp_detail_count": 2,
   "shipping_detail_count": 81,
-  "can_commit": true,
+  "can_commit": false,
   "import_session_id": "uuid-string",
   "errors": [],
   "warnings": [],
@@ -1560,11 +1563,46 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
   },
   "manual_temp_print_required_quantity": 0,
   "manual_temp_print_self_quantity": 0,
-  "manual_temp_rows": []
+  "manual_temp_rows": [],
+  "report_rows": [
+    {
+      "category": "postal",
+      "display_name": "北京邮发（本市）",
+      "sub_category": "本市",
+      "destination": "北京市报刊发行局",
+      "is_variable": true,
+      "value": 1212
+    }
+  ],
+  "source_total": 9000,
+  "mapped_total": 8896,
+  "unmapped_report_items": [
+    {
+      "item_id": "社用报`:I6",
+      "sheet_name": "社用报`",
+      "source_label": "未标注项目（I6）",
+      "cell_reference": "I6",
+      "value": 74
+    },
+    {
+      "item_id": "社用报`:I7",
+      "sheet_name": "社用报`",
+      "source_label": "未标注项目（I7）",
+      "cell_reference": "I7",
+      "value": 30
+    }
+  ],
+  "report_mapping_options": [
+    {
+      "category": "social_use",
+      "sub_category": "营报传媒_备用报",
+      "display_name": "备用报"
+    }
+  ]
 }
 ```
 
-校验失败时 `can_commit` 为 `false`，`errors` 包含具体错误信息，`import_session_id` 为空字符串。只有临时加印需要手动分配时，`errors` 为空且 `import_session_id` 有值，`manual_temp_print_required_quantity` 返回待分配份数，`manual_temp_rows` 返回从“XX加印”识别出的预填部门明细；前端补齐明细后可提交。
+校验失败时 `can_commit` 为 `false`，`errors` 包含具体错误信息，`import_session_id` 为空字符串。只有临时加印或未识别报数项需要人工处理时，`errors` 为空且 `import_session_id` 有值：`manual_temp_print_required_quantity` / `manual_temp_rows` 用于临时加印分配，`unmapped_report_items` / `report_mapping_options` 用于报数项归类。前端补齐后可提交；服务端会重新校验归类后的总印数和中通份数，防止绕过预览校验。
 
 `warnings` 用于不阻塞导入的提示。当印数表识别出的 `page_count` 与刊期表（`publication_schedule.page_count`）登记的版数不一致时，预览会在 `warnings` 中追加一条提示；提交时服务端会以印数表为准自动更新刊期表的版数（详见下文 commit 响应）。
 
@@ -1577,6 +1615,13 @@ Dashboard 聚合接口，返回最近期数、统计、下一期信息、可创�
 ```json
 {
   "import_session_id": "uuid-string",
+  "manual_report_mappings": [
+    {
+      "item_id": "社用报`:I6",
+      "category": "social_use",
+      "sub_category": "营报传媒_备用报"
+    }
+  ],
   "manual_temp_rows": [
     {
       "department": "财经中心",
@@ -2037,7 +2082,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 ### 8.5 安全性
 - **JWT 认证**：所有业务路由均通过 `get_current_user` 依赖强制认证
 - **管理员权限**：种子数据等管理接口通过 `require_admin` 限制
-- Excel 密码保护（openpyxl）
+- 往期印数表导入支持 Office 加密 OOXML：后端使用 `msoffcrypto-tool` 在内存中解密，再交给 `openpyxl` 解析；上传密码只随本次请求使用，不落库、不写日志、不写入代码或配置。
 - 环境变量管理（python-dotenv）
 - SQL 注入防护（SQLAlchemy ORM）
 - CORS 配置
