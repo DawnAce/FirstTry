@@ -1,3 +1,13 @@
+.ui-success-check-icon {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .ui-page-header {
   display: flex;
   align-items: flex-start;

@@ -3,6 +3,7 @@
 
 import unittest
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -96,6 +97,24 @@ class RecordOperationTests(_SqliteTestCase):
         # 助手只 add 不 commit —— 回滚后应看不到任何行。
         db.rollback()
         self.assertEqual(db.query(OperationLog).count(), 0)
+        db.close()
+
+    def test_record_operation_serializes_mysql_decimal_values(self):
+        db = self.SessionLocal()
+        record_operation(
+            db,
+            user=_admin_user(),
+            table_name="reports",
+            record_id=18,
+            action="confirm",
+            changes={"zt_shipping_total": Decimal("1321"), "delta": Decimal("0")},
+        )
+        db.commit()
+
+        self.assertEqual(
+            db.query(OperationLog).one().changes,
+            {"zt_shipping_total": 1321, "delta": 0},
+        )
         db.close()
 
 

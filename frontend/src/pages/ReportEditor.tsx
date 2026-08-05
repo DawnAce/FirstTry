@@ -422,12 +422,19 @@ export default function ReportEditor() {
       const msg = err.response?.data?.detail;
       if (msg) {
         if (Array.isArray(msg)) {
-          msg.forEach((e: any) => message.error(e.msg || JSON.stringify(e)));
+          msg.forEach((e: any) => {
+            const reason = e.message || e.msg || '存在未处理的数据问题';
+            message.error(e.field ? `${e.field}：${reason}` : reason);
+          });
         } else {
-          message.error(String(msg));
+          message.error(`本次报数没有确认成功：${String(msg)}`);
         }
+      } else if (err.response?.status >= 500) {
+        message.error('本次报数没有确认成功，数据仍是草稿。请刷新页面后重试；如果仍然失败，请联系管理员。');
+      } else if (!err.response) {
+        message.error('无法连接服务器，本次报数没有确认成功。请检查网络后重试。');
       } else {
-        message.error('确认失败：' + (err.message || '未知错误'));
+        message.error('本次报数没有确认成功，请刷新页面后重试。');
       }
       console.error('Confirm failed:', err);
     } finally {
@@ -1360,7 +1367,7 @@ export default function ReportEditor() {
                 icon={<CheckOutlined />}
                 loading={saving}
                 onClick={() => {
-                  if (window.confirm('确认后将无法再修改，是否继续？')) handleConfirm();
+                  if (window.confirm('确认后，本期印数会被锁定，不能直接修改；如需更改，必须先作废本次确认。确定继续吗？')) handleConfirm();
                 }}
               >
                 确认报数

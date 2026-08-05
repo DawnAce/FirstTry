@@ -91,6 +91,7 @@ import type {
   Ticket,
 } from '../api/postal';
 import { useAuth } from '../contexts/AuthContext';
+import { SuccessCheckIcon } from '../components/UiPrimitives';
 import {
   billingTypeLabel,
   canCancelOrder,
@@ -351,7 +352,7 @@ export default function OrderDetail() {
     <div className="order-page order-detail-page">
       {justActivated && (
         <section className="order-detail-success">
-          <div className="order-detail-success-icon"><CheckOutlined /></div>
+          <div className="order-detail-success-icon"><SuccessCheckIcon /></div>
           <div>
             <h3>订单已创建并生效</h3>
             <p>{order.order_code ?? `订单 #${order.id}`} · 履约方案已同步生成</p>
