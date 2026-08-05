@@ -6,6 +6,8 @@ dependency override, a single TestClient whose acting user is switchable.
 
 import os
 import sys
+import json
+from io import BytesIO
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +20,7 @@ os.environ.setdefault("MYSQL_DATABASE", "test")
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -31,6 +34,33 @@ from app.services import attachment_service
 
 ADMIN = User(id=1, username="admin", password_hash="x", role=UserRole.admin)
 OPERATOR = User(id=2, username="op", password_hash="x", role=UserRole.operator)
+
+
+def _beijing_settlement_xlsx() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["结算单产品明细"])
+    sheet.append(["供应商编号：", None, "11014337", None, None, None, "供应商名称：", None, "北京营报传媒文化发展有限责任公司"])
+    sheet.append(["结算单号：", None, "JS100025612600000855", None, None, None, "结算年度：", None, "2026"])
+    sheet.append([])
+    sheet.append([])
+    sheet.append(["序号", "产品名称", "邮发代号", "期数", "结算数量", "价格", "总款额", "结算单价", "结算款额（含税）"])
+    normal_dates = ["060100", "060800", "061500", "062200", "062900"]
+    for index, issue in enumerate(normal_dates, 1):
+        sheet.append([index, "中国经营报", "1-76", issue, 1050, 5, 5250, 2.75, 2887.5])
+    returns = [
+        ("050400", -2, -5.5), ("051100", -2, -5.5),
+        ("051800", -4, -11), ("052500", -4, -11),
+        ("060100", -1009, -2774.75), ("060100", -4, -11),
+        ("060800", -1038, -2854.5), ("061500", -1038, -2854.5),
+        ("062200", -999, -2747.25), ("062900", -916, -2519),
+    ]
+    for offset, (issue, quantity, amount) in enumerate(returns, 6):
+        sheet.append([offset, "中国经营报", "1-76", issue, quantity, -5, None, -2.75, amount])
+    sheet.append(["合计", None, "--", "--", 234, "--", 1170, "--", 643.5])
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
 
 
 @pytest.fixture
@@ -457,6 +487,7 @@ def test_structured_settlement_periods_returns_direction_and_calculations(client
         json={
             "partner_id": p["id"],
             "direction": "receivable",
+            "settlement_type": "consignment",
             "settlement_no": "JS100025612600000855",
             "settlement_start_date": "2026-06-01",
             "settlement_end_date": "2026-06-29",
@@ -472,6 +503,8 @@ def test_structured_settlement_periods_returns_direction_and_calculations(client
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["direction"] == "receivable"
+    assert body["system_no"].startswith("JS-QD-")
+    assert body["external_no"] == "JS100025612600000855"
     assert body["amount_due"] == "643.50"
     assert body["invoice_amount"] == "11.00"
     assert body["invoice_title"] == "北京市报刊零售有限公司"
@@ -492,12 +525,119 @@ def test_structured_settlement_periods_returns_direction_and_calculations(client
         "/api/settlements",
         json={
             "partner_id": p["id"],
+            "settlement_type": "buyout",
             "settlement_no": "JS100025612600000855",
             "settlement_start_date": "2026-07-06",
             "settlement_end_date": "2026-07-27",
         },
     )
-    assert duplicate.status_code == 409
+    assert duplicate.status_code == 201
+    assert duplicate.json()["system_no"] != body["system_no"]
+
+
+def test_settlement_excel_preview_extracts_beijing_retail_fields(client):
+    preview = client.post(
+        "/api/settlements/import/preview",
+        files={
+            "file": (
+                "北京报零.xlsx",
+                _beijing_settlement_xlsx(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["recognized"] is True
+    assert body["supplier_name"] == "北京营报传媒文化发展有限责任公司"
+    assert body["external_no"] == "JS100025612600000855"
+    assert body["settlement_start_date"] == "2026-06-01"
+    assert body["settlement_end_date"] == "2026-06-29"
+    assert body["return_start_date"] == "2026-05-04"
+    assert body["return_end_date"] == "2026-06-29"
+    assert body["gross_amount"] == "14437.50"
+    assert body["return_deduction_amount"] == "13794.00"
+    assert body["amount_due"] == "643.50"
+    assert body["invoice_quantity"] == "234.00"
+    assert body["invoice_unit_price"] == "2.7500"
+    assert body["detail_count"] == 15
+    assert body["return_detail_count"] == 10
+    assert body["warnings"] == []
+
+
+def test_create_settlement_with_attachments_is_atomic_and_invoice_drives_status(
+    client, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
+    partner = _partner(client, "北京报刊零售")
+    payload = {
+        "partner_id": partner["id"],
+        "party_type": "channel",
+        "settlement_type": "consignment",
+        "external_no": "JS100025612600000855",
+        "direction": "receivable",
+        "settlement_start_date": "2026-06-01",
+        "settlement_end_date": "2026-06-29",
+        "return_start_date": "2026-05-04",
+        "return_end_date": "2026-06-29",
+        "gross_amount": 14437.5,
+        "return_deduction_amount": 13794,
+    }
+    response = client.post(
+        "/api/settlements/with-attachments",
+        data={
+            "payload_json": json.dumps(payload),
+            "categories_json": json.dumps(["settlement_sheet", "invoice"]),
+        },
+        files=[
+            (
+                "files",
+                (
+                    "北京报零.xlsx",
+                    _beijing_settlement_xlsx(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            ),
+            ("files", ("发票.pdf", b"%PDF invoice", "application/pdf")),
+        ],
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["system_no"].startswith("JS-QD-")
+    assert body["invoice_received"] is True
+    assert body["invoice_status"] == "issued"
+    assert body["status"] == "invoiced"
+    assert len(body["attachments"]) == 2
+    assert all(item["sha256"] for item in body["attachments"])
+
+    invoice = next(item for item in body["attachments"] if item["category"] == "invoice")
+    deleted = client.delete(
+        f"/api/settlements/{body['id']}/attachments/{invoice['id']}"
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["invoice_received"] is False
+    assert deleted.json()["invoice_status"] == "unissued"
+    assert deleted.json()["status"] == "pending"
+
+
+def test_individual_settlement_gets_distinct_system_number_prefix(client):
+    partner = _partner(client, "个人结算对象")
+    response = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": partner["id"],
+            "party_type": "individual",
+            "settlement_start_date": "2026-08-01",
+            "settlement_end_date": "2026-08-01",
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["system_no"].startswith("JS-GR-")
+    changed = client.put(
+        f"/api/settlements/{response.json()['id']}", json={"party_type": "channel"}
+    )
+    assert changed.status_code == 400
+    assert "不可修改" in changed.json()["detail"]
 
 
 @pytest.mark.parametrize(

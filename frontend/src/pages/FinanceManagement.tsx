@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
+  Alert,
   DatePicker,
   Divider,
   Form,
@@ -38,6 +39,7 @@ import type { Dayjs } from 'dayjs';
 import {
   createInvoice,
   createSettlement,
+  createSettlementWithAttachments,
   deleteInvoice,
   deleteInvoiceAttachment,
   deleteSettlement,
@@ -48,6 +50,7 @@ import {
   getInvoiceAttachment,
   invoiceQueryKeys,
   listSettlements,
+  previewSettlementExcel,
   settlementQueryKeys,
   updateSettlement,
   uploadInvoiceAttachment,
@@ -61,9 +64,14 @@ import type {
   Settlement,
   SettlementAttachmentCategory,
   SettlementDirection,
+  SettlementInvoiceStatus,
   SettlementListParams,
+  SettlementPartyType,
+  SettlementPaymentStatus,
   SettlementPayload,
   SettlementStatus,
+  SettlementType,
+  SettlementExcelPreview,
 } from '../api/finance';
 import { contractQueryKeys, listContracts, listPartners, partnerQueryKeys } from '../api/contracts';
 import { useAuth } from '../contexts/AuthContext';
@@ -109,6 +117,31 @@ const SETTLEMENT_DIRECTION_OPTIONS: Array<{ label: string; value: SettlementDire
 const SETTLEMENT_DIRECTION_LABELS: Record<SettlementDirection, string> = {
   receivable: '应收',
   payable: '应付',
+};
+const SETTLEMENT_PARTY_TYPE_OPTIONS: Array<{ label: string; value: SettlementPartyType }> = [
+  { label: '渠道', value: 'channel' },
+  { label: '个人', value: 'individual' },
+];
+const SETTLEMENT_PARTY_TYPE_LABELS: Record<SettlementPartyType, string> = {
+  channel: '渠道',
+  individual: '个人',
+};
+const SETTLEMENT_TYPE_OPTIONS: Array<{ label: string; value: SettlementType }> = [
+  { label: '代销', value: 'consignment' },
+  { label: '包销', value: 'buyout' },
+];
+const SETTLEMENT_TYPE_LABELS: Record<SettlementType, string> = {
+  consignment: '代销',
+  buyout: '包销',
+};
+const SETTLEMENT_INVOICE_STATUS_LABELS: Record<SettlementInvoiceStatus, string> = {
+  unissued: '未开票',
+  issued: '已开票',
+};
+const SETTLEMENT_PAYMENT_STATUS_LABELS: Record<SettlementPaymentStatus, string> = {
+  unpaid: '未收付',
+  partial: '部分收付',
+  paid: '已收付',
 };
 const ATTACHMENT_CATEGORY_OPTIONS: Array<{ label: string; value: SettlementAttachmentCategory }> = [
   { label: '结算单', value: 'settlement_sheet' },
@@ -670,7 +703,9 @@ interface SettlementFormValues {
   partner_id: number;
   contract_id?: number;
   direction: SettlementDirection;
-  settlement_no?: string;
+  party_type: SettlementPartyType;
+  settlement_type?: SettlementType;
+  external_no?: string;
   settlement_period?: [Dayjs, Dayjs];
   return_period?: [Dayjs, Dayjs];
   gross_amount?: number | null;
@@ -700,7 +735,9 @@ function buildSettlementPayload(v: SettlementFormValues): SettlementPayload {
     partner_id: v.partner_id,
     contract_id: v.contract_id ?? null,
     direction: v.direction,
-    settlement_no: v.settlement_no || null,
+    party_type: v.party_type,
+    settlement_type: v.settlement_type ?? null,
+    external_no: v.external_no || null,
     period: null,
     settlement_start_date: v.settlement_period?.[0].format('YYYY-MM-DD') ?? null,
     settlement_end_date: v.settlement_period?.[1].format('YYYY-MM-DD') ?? null,
@@ -729,6 +766,12 @@ function buildSettlementPayload(v: SettlementFormValues): SettlementPayload {
   };
 }
 
+interface PendingSettlementAttachment {
+  uid: string;
+  category: SettlementAttachmentCategory;
+  file: File;
+}
+
 function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [form] = Form.useForm<SettlementFormValues>();
@@ -736,6 +779,8 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Settlement | null>(null);
   const [attachmentCategory, setAttachmentCategory] = useState<SettlementAttachmentCategory>('settlement_sheet');
+  const [pendingAttachments, setPendingAttachments] = useState<PendingSettlementAttachment[]>([]);
+  const [excelPreview, setExcelPreview] = useState<SettlementExcelPreview | null>(null);
   const selectedPartnerId = Form.useWatch('partner_id', form);
   const selectedDirection = Form.useWatch('direction', form) ?? 'payable';
 
@@ -763,13 +808,19 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
   const saveMutation = useMutation({
     mutationFn: async (values: SettlementFormValues) => {
       const payload = buildSettlementPayload(values);
-      return editing ? updateSettlement(editing.id, payload) : createSettlement(payload);
+      if (editing) return updateSettlement(editing.id, payload);
+      if (pendingAttachments.length) {
+        return createSettlementWithAttachments(payload, pendingAttachments);
+      }
+      return createSettlement(payload);
     },
     onSuccess: () => {
       message.success(editing ? '结算已更新' : '结算已新增');
       invalidate();
       setModalOpen(false);
       setEditing(null);
+      setPendingAttachments([]);
+      setExcelPreview(null);
     },
     onError: (err) => message.error(apiError(err, '保存失败')),
   });
@@ -790,16 +841,48 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
     onSuccess: (response) => { message.success('附件已删除'); setEditing(response.data); invalidate(); },
     onError: (err) => message.error(apiError(err, '删除附件失败')),
   });
+  const previewMutation = useMutation({
+    mutationFn: (file: File) => previewSettlementExcel(file),
+    onSuccess: (response) => {
+      const preview = response.data;
+      setExcelPreview(preview);
+      if (!preview.recognized) {
+        message.warning(preview.warnings[0] ?? '未识别表格内容，文件仍会正常保存');
+        return;
+      }
+      form.setFieldsValue({
+        external_no: preview.external_no ?? undefined,
+        settlement_period: preview.settlement_start_date && preview.settlement_end_date
+          ? [dayjs(preview.settlement_start_date), dayjs(preview.settlement_end_date)]
+          : undefined,
+        return_period: preview.return_start_date && preview.return_end_date
+          ? [dayjs(preview.return_start_date), dayjs(preview.return_end_date)]
+          : undefined,
+        gross_amount: preview.gross_amount == null ? undefined : Number(preview.gross_amount),
+        return_deduction_amount: Number(preview.return_deduction_amount ?? 0),
+        amount_due: preview.amount_due == null ? undefined : Number(preview.amount_due),
+        invoice_item_name: preview.invoice_item_name ?? undefined,
+        invoice_quantity: preview.invoice_quantity == null ? undefined : Number(preview.invoice_quantity),
+        invoice_unit_price: preview.invoice_unit_price == null ? undefined : Number(preview.invoice_unit_price),
+        invoice_amount: preview.invoice_amount == null ? undefined : Number(preview.invoice_amount),
+      });
+      message.success(`已识别 ${preview.detail_count} 条明细，其中退报 ${preview.return_detail_count} 条`);
+    },
+    onError: (err) => message.error(apiError(err, '表格识别失败，文件仍可保存')),
+  });
 
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
       direction: 'payable',
+      party_type: 'channel',
       status: 'pending',
       invoice_received: false,
       return_deduction_amount: 0,
     });
+    setPendingAttachments([]);
+    setExcelPreview(null);
     setModalOpen(true);
   };
   const openEdit = (s: Settlement) => {
@@ -809,7 +892,9 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       partner_id: s.partner_id,
       contract_id: s.contract_id ?? undefined,
       direction: s.direction,
-      settlement_no: s.settlement_no ?? undefined,
+      party_type: s.party_type,
+      settlement_type: s.settlement_type ?? undefined,
+      external_no: s.external_no ?? s.settlement_no ?? undefined,
       settlement_period: s.settlement_start_date && s.settlement_end_date
         ? [dayjs(s.settlement_start_date), dayjs(s.settlement_end_date)]
         : undefined,
@@ -837,6 +922,8 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       status: s.status,
       notes: s.notes ?? undefined,
     });
+    setPendingAttachments([]);
+    setExcelPreview(null);
     setModalOpen(true);
   };
 
@@ -890,10 +977,36 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
     return true;
   };
 
+  const handleSettlementAttachment = (file: File) => {
+    if (!validateSettlementAttachment(file)) return Upload.LIST_IGNORE;
+    if (editing) {
+      uploadMutation.mutate({ id: editing.id, category: attachmentCategory, file });
+      return Upload.LIST_IGNORE;
+    }
+    const duplicate = pendingAttachments.some(
+      (item) => item.file.name === file.name && item.file.size === file.size,
+    );
+    if (duplicate) {
+      message.warning(`${file.name} 已在待保存附件中`);
+      return Upload.LIST_IGNORE;
+    }
+    setPendingAttachments((items) => [
+      ...items,
+      { uid: `${Date.now()}-${file.name}-${file.size}`, category: attachmentCategory, file },
+    ]);
+    if (attachmentCategory === 'settlement_sheet' && file.name.toLowerCase().endsWith('.xlsx')) {
+      previewMutation.mutate(file);
+    }
+    return Upload.LIST_IGNORE;
+  };
+
   const columns: TableColumnsType<Settlement> = [
-    { title: '合作渠道', dataIndex: 'partner_name', key: 'partner_name', render: (v) => <Text strong>{v}</Text> },
+    { title: '结算对象', dataIndex: 'partner_name', key: 'partner_name', render: (v) => <Text strong>{v}</Text> },
+    { title: '对象类型', dataIndex: 'party_type', key: 'party_type', width: 82, render: (v: SettlementPartyType) => <Tag>{SETTLEMENT_PARTY_TYPE_LABELS[v]}</Tag> },
     { title: '方向', dataIndex: 'direction', key: 'direction', width: 72, render: (v: SettlementDirection) => <Tag color={v === 'receivable' ? 'green' : 'blue'}>{SETTLEMENT_DIRECTION_LABELS[v]}</Tag> },
-    { title: '结算单号', dataIndex: 'settlement_no', key: 'settlement_no', width: 170, render: (v) => v || <Text type="secondary">—</Text> },
+    { title: '系统结算单号', dataIndex: 'system_no', key: 'system_no', width: 205, render: (v) => <Text copyable>{v}</Text> },
+    { title: '外部平台单号', dataIndex: 'external_no', key: 'external_no', width: 185, render: (v, r) => v || r.settlement_no || <Text type="secondary">—</Text> },
+    { title: '结算类型', dataIndex: 'settlement_type', key: 'settlement_type', width: 85, render: (v: SettlementType | null) => v ? <Tag color={v === 'consignment' ? 'cyan' : 'purple'}>{SETTLEMENT_TYPE_LABELS[v]}</Tag> : <Text type="secondary">—</Text> },
     { title: '结算周期', key: 'settlement_period', width: 210, render: (_v, r) => formatPeriod(r.settlement_start_date, r.settlement_end_date, r.period) },
     { title: '退报周期', key: 'return_period', width: 210, render: (_v, r) => r.return_start_date ? formatPeriod(r.return_start_date, r.return_end_date) : <Text type="secondary">无退报</Text> },
     { title: '报款/结算总额', dataIndex: 'gross_amount', key: 'gross_amount', width: 130, align: 'right', render: (v: string | null) => money(v) },
@@ -906,14 +1019,11 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       render: (v: boolean | null) => (v == null ? <Text type="secondary">—</Text> : v ? <Tag color="green">按时</Tag> : <Tag color="red">逾期</Tag>),
     },
     {
-      title: '发票', key: 'invoice_received', width: 160,
+      title: '开票状态', key: 'invoice_status', width: 100,
       render: (_: unknown, r) =>
-        r.invoice_received ? (
-          <Space size={4}><Tag color="green">{r.direction === 'receivable' ? '我方已开' : '对方已开'}</Tag>{r.invoice_no && <Text type="secondary" style={{ fontSize: 12 }}>{r.invoice_no}</Text>}</Space>
-        ) : (
-          <Tag>未开</Tag>
-        ),
+        <Tag color={r.invoice_status === 'issued' ? 'green' : 'default'}>{SETTLEMENT_INVOICE_STATUS_LABELS[r.invoice_status]}</Tag>,
     },
+    { title: '收付状态', dataIndex: 'payment_status', key: 'payment_status', width: 100, render: (v: SettlementPaymentStatus) => <Tag color={v === 'paid' ? 'blue' : v === 'partial' ? 'gold' : 'default'}>{SETTLEMENT_PAYMENT_STATUS_LABELS[v]}</Tag> },
     { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (v: SettlementStatus) => <Tag color={SETTLEMENT_STATUS_COLORS[v]}>{SETTLEMENT_STATUS_LABELS[v]}</Tag> },
     {
       title: '附件', key: 'attachment', width: 180,
@@ -953,10 +1063,22 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       <div className="finance-toolbar">
         <div className="finance-toolbar-filters">
           <Select
-            allowClear placeholder="按渠道筛选" className="finance-filter-partner"
+            allowClear placeholder="按结算对象筛选" className="finance-filter-partner"
             options={partnerOptions}
             value={filters.partner_id}
             onChange={(v) => setFilters((f) => ({ ...f, partner_id: v }))}
+          />
+          <Select
+            allowClear placeholder="个人/渠道" style={{ width: 115 }}
+            options={SETTLEMENT_PARTY_TYPE_OPTIONS}
+            value={filters.party_type}
+            onChange={(v) => setFilters((f) => ({ ...f, party_type: v }))}
+          />
+          <Select
+            allowClear placeholder="代销/包销" style={{ width: 115 }}
+            options={SETTLEMENT_TYPE_OPTIONS}
+            value={filters.settlement_type}
+            onChange={(v) => setFilters((f) => ({ ...f, settlement_type: v }))}
           />
           <Select
             allowClear placeholder="按方向筛选" style={{ width: 110 }}
@@ -977,7 +1099,7 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
               settlement_to: value?.[1]?.format('YYYY-MM-DD'),
             }))}
           />
-          <Input.Search placeholder="搜索结算单号 / 发票号" allowClear className="finance-filter-search" onSearch={(v) => setFilters((f) => ({ ...f, q: v || undefined }))} />
+          <Input.Search placeholder="搜索系统/外部单号 / 发票号" allowClear className="finance-filter-search" onSearch={(v) => setFilters((f) => ({ ...f, q: v || undefined }))} />
           <Text type="secondary">共 {listQuery.data?.length ?? 0} 条记录</Text>
         </div>
         <Space>
@@ -994,14 +1116,14 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
         columns={columns}
         dataSource={listQuery.data ?? []}
         pagination={false}
-        scroll={{ x: 2100 }}
+        scroll={{ x: 2500 }}
         locale={{ emptyText: '暂无结算记录（点「新增结算」登记渠道结算与退报周期）' }}
       />
 
       <Modal
-        title={editing ? `编辑结算 · ${editing.partner_name}` : '新增渠道结算'}
+        title={editing ? `编辑结算 · ${editing.system_no}` : '新增结算'}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); }}
+        onCancel={() => { setModalOpen(false); setEditing(null); setPendingAttachments([]); setExcelPreview(null); }}
         onOk={() => form.submit()}
         okText="保存"
         confirmLoading={saveMutation.isPending}
@@ -1011,8 +1133,8 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
         <Form<SettlementFormValues> form={form} layout="vertical" onFinish={(v) => saveMutation.mutate(v)} onValuesChange={syncCalculatedAmounts}>
           <Divider titlePlacement="start" plain>基本信息</Divider>
           <div className="finance-settlement-form-grid">
-            <Form.Item name="partner_id" label="合作渠道" rules={[{ required: true, message: '请选择合作渠道' }]}>
-              <Select options={partnerOptions} placeholder="选择渠道" showSearch optionFilterProp="label" onChange={fillPartnerInvoiceProfile} />
+            <Form.Item name="partner_id" label="结算对象" rules={[{ required: true, message: '请选择结算对象' }]}>
+              <Select options={partnerOptions} placeholder="选择合作方" showSearch optionFilterProp="label" onChange={fillPartnerInvoiceProfile} />
             </Form.Item>
             <Form.Item name="contract_id" label="关联合同">
               <Select allowClear options={contractOptions} loading={contractsQuery.isFetching} placeholder="选填" />
@@ -1020,8 +1142,23 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
             <Form.Item name="direction" label="收付方向" rules={[{ required: true }]}>
               <Select options={SETTLEMENT_DIRECTION_OPTIONS} />
             </Form.Item>
-            <Form.Item name="settlement_no" label="结算单号">
-              <Input placeholder="如 JS1000…" />
+            <Form.Item name="party_type" label="结算对象类型" rules={[{ required: true }]}>
+              <Select options={SETTLEMENT_PARTY_TYPE_OPTIONS} disabled={!!editing} />
+            </Form.Item>
+            <Form.Item label="系统结算单号" extra="保存时由系统生成，生成后不可修改">
+              <Input disabled value={editing?.system_no} placeholder="保存后自动生成" />
+            </Form.Item>
+            <Form.Item name="external_no" label="外部平台单号">
+              <Input placeholder="选填，格式不限" />
+            </Form.Item>
+            <Form.Item name="settlement_type" label="结算类型" dependencies={['partner_id']} rules={[({ getFieldValue }) => ({
+              validator: (_rule, value) => {
+                const partner = (partnersQuery.data ?? []).find((item) => item.id === getFieldValue('partner_id'));
+                const required = partner?.name.includes('北京报刊零售') || partner?.name.includes('北京报零');
+                return required && !value ? Promise.reject(new Error('北京报零结算必须选择代销或包销')) : Promise.resolve();
+              },
+            })]}>
+              <Select allowClear options={SETTLEMENT_TYPE_OPTIONS} placeholder="代销 / 包销" />
             </Form.Item>
             <Form.Item name="settlement_period" label="结算周期" rules={[{ required: true, message: '请选择结算周期' }]}>
               <RangePicker style={{ width: '100%' }} />
@@ -1062,8 +1199,8 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
 
           <Divider titlePlacement="start" plain>{selectedDirection === 'receivable' ? '我方销项开票' : '对方进项开票'}</Divider>
           <div className="finance-settlement-form-grid">
-            <Form.Item name="invoice_received" label={selectedDirection === 'receivable' ? '我方已开票' : '对方已开票'} valuePropName="checked">
-              <Switch checkedChildren="已开" unCheckedChildren="未开" />
+            <Form.Item name="invoice_received" label={selectedDirection === 'receivable' ? '我方已开票' : '对方已开票'} valuePropName="checked" extra="上传“发票”类附件后自动更新">
+              <Switch checkedChildren="已开" unCheckedChildren="未开" disabled />
             </Form.Item>
             <Form.Item name="invoice_no" label={selectedDirection === 'receivable' ? '销项发票号' : '进项发票号'}>
               <Input placeholder="可空" />
@@ -1111,28 +1248,39 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
           </Form.Item>
 
           <Divider titlePlacement="start" plain>附件归档</Divider>
-          {editing ? (
-            <Space orientation="vertical" style={{ width: '100%' }}>
-              {editing.attachments.length ? editing.attachments.map((attachment) => (
-                <Space key={attachment.id}>
-                  <Tag>{ATTACHMENT_CATEGORY_LABELS[attachment.category]}</Tag>
-                  <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadSettlementAttachment(editing, attachment)}>{attachment.filename}</Button>
-                  {isAdmin && <Popconfirm title="删除该附件？" onConfirm={() => delAttachMutation.mutate({ id: editing.id, attachmentId: attachment.id })}>
-                    <Button type="link" size="small" danger>删除</Button>
-                  </Popconfirm>}
-                </Space>
-              )) : <Text type="secondary">暂无附件</Text>}
-              {isAdmin && <Space>
-                <Select value={attachmentCategory} options={ATTACHMENT_CATEGORY_OPTIONS} onChange={setAttachmentCategory} style={{ width: 140 }} />
-                <Upload showUploadList={false} accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" beforeUpload={(file) => {
-                  if (validateSettlementAttachment(file)) uploadMutation.mutate({ id: editing.id, category: attachmentCategory, file });
-                  return Upload.LIST_IGNORE;
-                }}>
-                  <Button icon={<UploadOutlined />} loading={uploadMutation.isPending}>上传附件</Button>
-                </Upload>
-              </Space>}
-            </Space>
-          ) : <Text type="secondary">保存结算后，可在“编辑”中上传结算单、开票申请、发票和其他凭证。</Text>}
+          <Space orientation="vertical" style={{ width: '100%' }}>
+            {editing && (editing.attachments.length ? editing.attachments.map((attachment) => (
+              <Space key={attachment.id}>
+                <Tag>{ATTACHMENT_CATEGORY_LABELS[attachment.category]}</Tag>
+                <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => downloadSettlementAttachment(editing, attachment)}>{attachment.filename}</Button>
+                {isAdmin && <Popconfirm title="删除该附件？" onConfirm={() => delAttachMutation.mutate({ id: editing.id, attachmentId: attachment.id })}>
+                  <Button type="link" size="small" danger>删除</Button>
+                </Popconfirm>}
+              </Space>
+            )) : <Text type="secondary">暂无已保存附件</Text>)}
+            {!editing && (pendingAttachments.length ? pendingAttachments.map((attachment) => (
+              <Space key={attachment.uid}>
+                <Tag>{ATTACHMENT_CATEGORY_LABELS[attachment.category]}</Tag>
+                <Text>{attachment.file.name}</Text>
+                <Text type="secondary">{(attachment.file.size / 1024).toFixed(1)} KB</Text>
+                <Button type="link" size="small" danger onClick={() => setPendingAttachments((items) => items.filter((item) => item.uid !== attachment.uid))}>移除</Button>
+              </Space>
+            )) : <Text type="secondary">可先选择附件，点击“保存”后与结算单一起留存在系统</Text>)}
+            {isAdmin && <Space wrap>
+              <Select value={attachmentCategory} options={ATTACHMENT_CATEGORY_OPTIONS} onChange={setAttachmentCategory} style={{ width: 140 }} />
+              <Upload showUploadList={false} accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" beforeUpload={handleSettlementAttachment}>
+                <Button icon={<UploadOutlined />} loading={uploadMutation.isPending || previewMutation.isPending}>{editing ? '上传附件' : '选择附件'}</Button>
+              </Upload>
+            </Space>}
+            {excelPreview && (
+              <Alert
+                type={excelPreview.recognized ? (excelPreview.warnings.length ? 'warning' : 'success') : 'warning'}
+                showIcon
+                message={excelPreview.recognized ? `已识别 ${excelPreview.detail_count} 条明细（退报 ${excelPreview.return_detail_count} 条）` : '表格未能自动识别，仍会保存原文件'}
+                description={excelPreview.warnings.length ? excelPreview.warnings.join('；') : '识别结果已预填到表单，请核对后保存。'}
+              />
+            )}
+          </Space>
         </Form>
       </Modal>
     </div>

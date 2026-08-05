@@ -56,7 +56,11 @@ from app.models.channel_settlement import (
     SettlementAttachment,
     SettlementAttachmentCategory,
     SettlementDirection,
+    SettlementInvoiceStatus,
+    SettlementPartyType,
+    SettlementPaymentStatus,
     SettlementStatus,
+    SettlementType,
 )
 from app.models.postal_delivery import (
     PostalDelivery,
@@ -129,7 +133,8 @@ __all__ = [
     # 财务管理（订单发票 + 渠道结算）
     "Invoice", "InvoiceType",
     "ChannelSettlement", "SettlementAttachment", "SettlementAttachmentCategory",
-    "SettlementDirection", "SettlementStatus",
+    "SettlementDirection", "SettlementInvoiceStatus", "SettlementPartyType",
+    "SettlementPaymentStatus", "SettlementStatus", "SettlementType",
     # 邮局投递（投递记录层）
     "PostalDelivery", "PostalDeliverySourceType",
     "PostalTicket", "PostalTicketType", "PostalTicketEventType",

@@ -14,7 +14,11 @@ from pydantic import BaseModel, Field
 from app.models.channel_settlement import (
     SettlementAttachmentCategory,
     SettlementDirection,
+    SettlementInvoiceStatus,
+    SettlementPartyType,
+    SettlementPaymentStatus,
     SettlementStatus,
+    SettlementType,
 )
 from app.models.invoice import InvoiceType
 
@@ -94,6 +98,10 @@ class SettlementBase(BaseModel):
     partner_id: int
     contract_id: Optional[int] = None
     direction: SettlementDirection = SettlementDirection.payable
+    party_type: SettlementPartyType = SettlementPartyType.channel
+    settlement_type: Optional[SettlementType] = None
+    external_no: Optional[str] = Field(default=None, max_length=128)
+    # 兼容旧客户端；新客户端使用 external_no，系统编号不接受客户端赋值。
     settlement_no: Optional[str] = Field(default=None, max_length=64)
     period: Optional[str] = Field(default=None, max_length=32)
     settlement_start_date: Optional[date] = None
@@ -107,6 +115,8 @@ class SettlementBase(BaseModel):
     paid_date: Optional[date] = None
     on_time: Optional[bool] = None
     invoice_received: bool = False
+    invoice_status: SettlementInvoiceStatus = SettlementInvoiceStatus.unissued
+    payment_status: SettlementPaymentStatus = SettlementPaymentStatus.unpaid
     invoice_no: Optional[str] = Field(default=None, max_length=64)
     invoice_title: Optional[str] = Field(default=None, max_length=255)
     invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
@@ -130,6 +140,9 @@ class SettlementUpdate(BaseModel):
     partner_id: Optional[int] = None
     contract_id: Optional[int] = None
     direction: Optional[SettlementDirection] = None
+    party_type: Optional[SettlementPartyType] = None
+    settlement_type: Optional[SettlementType] = None
+    external_no: Optional[str] = Field(default=None, max_length=128)
     settlement_no: Optional[str] = Field(default=None, max_length=64)
     period: Optional[str] = Field(default=None, max_length=32)
     settlement_start_date: Optional[date] = None
@@ -143,6 +156,8 @@ class SettlementUpdate(BaseModel):
     paid_date: Optional[date] = None
     on_time: Optional[bool] = None
     invoice_received: Optional[bool] = None
+    invoice_status: Optional[SettlementInvoiceStatus] = None
+    payment_status: Optional[SettlementPaymentStatus] = None
     invoice_no: Optional[str] = Field(default=None, max_length=64)
     invoice_title: Optional[str] = Field(default=None, max_length=255)
     invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
@@ -163,11 +178,14 @@ class SettlementAttachmentOut(BaseModel):
     category: SettlementAttachmentCategory
     filename: str
     content_type: Optional[str] = None
+    file_size: Optional[int] = None
+    sha256: Optional[str] = None
     created_at: datetime
 
 
 class SettlementOut(SettlementBase):
     id: int
+    system_no: str
     partner_name: str = ""
     attachment_filename: Optional[str] = None
     has_attachment: bool = False
@@ -176,3 +194,25 @@ class SettlementOut(SettlementBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SettlementExcelPreviewOut(BaseModel):
+    recognized: bool
+    parser_version: str
+    filename: str
+    supplier_name: Optional[str] = None
+    external_no: Optional[str] = None
+    settlement_start_date: Optional[date] = None
+    settlement_end_date: Optional[date] = None
+    return_start_date: Optional[date] = None
+    return_end_date: Optional[date] = None
+    gross_amount: Optional[Decimal] = None
+    return_deduction_amount: Decimal = Decimal("0")
+    amount_due: Optional[Decimal] = None
+    invoice_item_name: Optional[str] = None
+    invoice_quantity: Optional[Decimal] = None
+    invoice_unit_price: Optional[Decimal] = None
+    invoice_amount: Optional[Decimal] = None
+    detail_count: int = 0
+    return_detail_count: int = 0
+    warnings: List[str] = Field(default_factory=list)

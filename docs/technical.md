@@ -1859,18 +1859,26 @@ draft ──confirm──> active ──void──> void
 
 渠道结算接口位于 `backend/app/api/settlements.py`，前缀 `/api/settlements`。查询和附件下载允许所有登录用户，结算及附件写操作要求管理员。
 
-`channel_settlements` 保留旧 `period` 自由文本作为只读兼容，同时新增 `settlement_start_date/end_date`、可选 `return_start_date/end_date`、`direction(receivable/payable)`、`settlement_no`、`gross_amount`、`return_deduction_amount` 及开票明细。后端统一计算 `amount_due = gross_amount - return_deduction_amount`、`invoice_amount = invoice_quantity × invoice_unit_price`；日期必须成对且起始不晚于结束，退报扣款大于 0 时必须提供退报周期。`settlement_no` 有唯一索引。
+`channel_settlements` 保留旧 `period` 和 `settlement_no` 作为兼容字段。迁移 `c2e4f6a8b0d3` 新增唯一 `system_no`、可重复 `external_no`、`party_type(channel/individual)`、可选 `settlement_type(consignment/buyout)`、独立 `invoice_status` / `payment_status` 以及识别审计快照。系统编号在插入取得数据库主键后生成 `JS-QD|GR-YYYYMM-{id}`，并发安全；历史 `settlement_no` 复制到 `external_no`，历史记录补生成系统编号。
+
+后端统一计算 `amount_due = gross_amount - return_deduction_amount`、`invoice_amount = invoice_quantity × invoice_unit_price` 和收付状态；日期必须成对且起始不晚于结束，退报扣款大于 0 时必须提供退报周期。北京报零合作方必须提供 `settlement_type`。
 
 `partners` 增加渠道开票档案，供结算表单自动带出。`contract_id` 校验所选合同必须属于当前渠道。
 
-附件从单槽升级为 `settlement_attachments` 子表，类别为 `settlement_sheet / invoice_application / invoice / other`，支持 PDF/JPG/PNG/XLS/XLSX。迁移 `b6d8f0a2c4e7` 会把旧 `attachment_path` 复制为 `other` 类型；旧单附件端点暂时保留兼容，新端点如下：
+附件从单槽升级为 `settlement_attachments` 子表，类别为 `settlement_sheet / invoice_application / invoice / other`，支持 PDF/JPG/PNG/XLS/XLSX，并保存 `file_size` 和 `sha256`。迁移 `b6d8f0a2c4e7` 会把旧 `attachment_path` 复制为 `other` 类型；旧单附件端点暂时保留兼容。新建页使用单个 multipart 请求原子写入结算和多份附件，失败时回滚数据库并清理已落盘文件。
+
+`settlement_excel_parser.py` 用表头语义识别北京报零 XLSX，不依赖固定行号。它解析期次代码为日期，以含税结算款额正负区分正常/退报，校验明细净额与合计，并将解析版本、源文件名、字段结果和告警保存到结算记录；识别失败只返回告警，不阻断附件归档。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/api/settlements` | 支持 `partner_id`、`direction`、`status`、`settlement_from/to`、`q` |
+| `GET` | `/api/settlements` | 支持合作方、对象类型、代销/包销、方向、开票/收付/流程状态、日期和关键词筛选 |
 | `POST` / `PUT` / `DELETE` | `/api/settlements[/{id}]` | 结构化渠道结算 CRUD |
+| `POST` | `/api/settlements/import/preview` | 识别 XLSX 并返回可修改的表单预填结果 |
+| `POST` | `/api/settlements/with-attachments` | 新建结算并原子保存多份附件 |
 | `POST` | `/api/settlements/{id}/attachments?category=` | 上传分类附件 |
 | `GET` / `DELETE` | `/api/settlements/{id}/attachments/{attachment_id}` | 下载或删除单份附件 |
+
+`invoice` 类附件写入成功后自动设置 `invoice_status=issued`、`invoice_received=true`、`status=invoiced`；删除最后一份发票时回退开票状态，主流程根据收付状态回到 `paid` 或 `pending`。
 
 
 发货明细的生成遵循以下优先级规则：
