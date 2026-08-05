@@ -273,6 +273,11 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | source_quantity | INT | 原文件中的数量 |
 | applied_quantity | INT | 人工确认后拟写入基础报数的数量 |
 | source_status | VARCHAR(30) | `pending_review` / `channel_pending` / `confirmed` |
+| source_action | VARCHAR(30) | `base` / `prepress_addition` / `postpress_addition` / `damage_reshipment` / `reduction` / `archive_only` |
+| applied_phase | VARCHAR(30) | `pre_confirmation` / `post_confirmation` |
+| print_delta | INT | 当前来源对草稿印数的独立贡献 |
+| effect_status | VARCHAR(20) | `active` 或 `replaced` |
+| supersedes_item_id | INT | 定向替换的旧来源明细，自关联 |
 | adjustment_kind | VARCHAR(30) | `billable_addition` / `replacement` / `reduction` |
 | settlement_delta | INT | 结算增减；补损重发为 0 |
 | shipping_delta / shipped_quantity | INT | 应补发与已补发数量 |
@@ -280,11 +285,12 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 
 写入规则：
 
-1. 只有人工确认、`item_kind=base` 且目标期仍为草稿的 `applied_quantity` 才可更新 `report_entries`。
-2. 创建新期时，`apply_confirmed_source_bases_to_issue()` 在条目初始化后覆盖对应的已确认月度 / 周度来源值；待确认值不会带入。
+1. 只有人工确认、目标期仍为草稿且 `source_action` 为 `base` / `prepress_addition` 的有效条目参与印数；`report_entries` 写入所有有效 `print_delta` 的合计。
+2. 创建新期时，`apply_confirmed_source_bases_to_issue()` 聚合有效基础与印前追加贡献；待确认或已替换值不会带入。
 3. 已确认期的来源确认永不回写 `report_entries`。后续调整只生成结算与补发增量。
 4. 成都汇总为 `settlement_total = base_quantity + settlement_delta`，`pending_shipping = max(0, shipping_delta - shipped_quantity)`。
-5. `report_source_documents` 删除时级联删除映射；删除原文件仅管理员可执行，并同步清理附件。
+5. 定向重传将旧明细置为 `replaced`，新明细通过 `supersedes_item_id` 追溯旧项并继承其基础 / 追加角色。迁移 `a8c1e4f7b2d5` 回填历史贡献，并重算未确认期的来源合计。
+6. `report_source_documents` 删除时级联删除映射；删除原文件仅管理员可执行，并同步清理附件。
 
 ### 3.6 recipients（收件人）
 管理所有收件人信息。

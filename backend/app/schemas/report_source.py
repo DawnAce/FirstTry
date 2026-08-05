@@ -9,6 +9,16 @@ DocumentType = Literal["weekly", "monthly", "adjustment"]
 ItemKind = Literal["base", "adjustment"]
 SourceStatus = Literal["pending_review", "channel_pending", "confirmed"]
 AdjustmentKind = Literal["billable_addition", "replacement", "reduction"]
+SourceAction = Literal[
+    "base",
+    "prepress_addition",
+    "postpress_addition",
+    "damage_reshipment",
+    "reduction",
+    "archive_only",
+]
+AppliedPhase = Literal["pre_confirmation", "post_confirmation"]
+EffectStatus = Literal["active", "replaced"]
 
 
 class SourceSuggestion(BaseModel):
@@ -22,6 +32,8 @@ class SourceSuggestion(BaseModel):
     applied_quantity: Optional[int] = None
     source_status: SourceStatus = "pending_review"
     adjustment_kind: Optional[AdjustmentKind] = None
+    source_action: SourceAction = "base"
+    supersedes_item_id: Optional[int] = None
     confidence: Optional[float] = Field(default=None, ge=0, le=1)
     notes: Optional[str] = None
 
@@ -36,6 +48,8 @@ class ReportSourceItemConfirmIn(BaseModel):
     applied_quantity: Optional[int] = None
     source_status: SourceStatus = "confirmed"
     adjustment_kind: Optional[AdjustmentKind] = None
+    source_action: SourceAction = "base"
+    supersedes_item_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -55,6 +69,11 @@ class ReportSourceItemOut(BaseModel):
     source_quantity: Optional[int] = None
     applied_quantity: Optional[int] = None
     source_status: str
+    source_action: str
+    applied_phase: str
+    print_delta: int
+    effect_status: str
+    supersedes_item_id: Optional[int] = None
     adjustment_kind: Optional[str] = None
     settlement_delta: int
     shipping_delta: int
@@ -95,6 +114,9 @@ class ChannelSourceSummary(BaseModel):
     channel: str
     document_count: int = 0
     base_quantity: int = 0
+    source_total: int = 0
+    source_difference: int = 0
+    active_source_count: int = 0
     settlement_delta: int = 0
     settlement_total: int = 0
     shipping_delta: int = 0
