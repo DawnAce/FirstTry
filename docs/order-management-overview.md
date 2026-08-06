@@ -1,7 +1,7 @@
 # 订单管理 — 全景概览
 
 > 一页看懂整个订单管理模块:建单 → 建模 → 生命周期 → 商品库 → 履约发货 → 财务 → 统计 → 列表运营。
-> 思维导图用 Mermaid,GitHub / 支持 Mermaid 的 Markdown 预览里会渲染成脑图。最后更新:2026-08-03。
+> 思维导图用 Mermaid,GitHub / 支持 Mermaid 的 Markdown 预览里会渲染成脑图。最后更新:2026-08-06。
 
 ## 思维导图
 
@@ -51,6 +51,7 @@ mindmap
       退款净收
       收款台账 欠款汇总
       未付清筛选
+      订单详情深链查看发票
     统计分析
       按活动 折扣 净额
       按期销量
@@ -83,7 +84,7 @@ mindmap
 | **履约发货** | 覆盖期→单期中通发货明细同步(preview/apply,冲突保护) | `order_shipping_sync_service` |
 | | 按期批量排发 + 漏期报表(A) | `order_shipping_batch_service`:gap_report/apply_all_for_issue |
 | | 已发货回写(实发份数/运单)+ 应发vs实发对账缺口(B) | shipped_at/shipped_quantity/tracking_no、reconcile_issue/ship_all_for_issue |
-| **财务** | 应收/实付/欠款追踪 + 收款流水 + 退款净收 + 欠款汇总(C1) | `payment_collections`、record_payment、outstanding、`/analytics/outstanding` |
+| **财务** | 应收/实付/欠款追踪 + 收款流水 + 退款净收 + 欠款汇总(C1)；订单详情深链打开发票记录 | `payment_collections`、record_payment、outstanding、`/analytics/outstanding`、`/finance?invoice_order_id=` |
 | **统计分析** | 按活动(折扣+净额)/按期销量/商学院按期发行量/欠款汇总 | `order_analytics_service`、`/api/analytics/*` |
 | **列表运营** | 单号搜索/服务端排序/多筛选/多选批量确认作废/导出 Excel/行内确认(E) | `list_orders`、bulk_confirm/void、`/orders/export`、`OrderList.tsx` |
 | **全局搜索** | 顶栏跨订单/收报人/商品/期数检索 + 下拉快速跳转(PR #42) | `GET /api/search?q=`、顶栏 AutoComplete |
@@ -124,7 +125,7 @@ mindmap
 | 页面 | 路由 | 作用 |
 |---|---|---|
 | 订单列表 | `/orders` | 邮局工单风格总览；状态视图、集中搜索、折叠高级筛选、分组订单信息、真实履约进度、浮动批量操作和快速预览抽屉 |
-| 订单详情 | `/orders/:id` | 邮局工单风格的摘要、履约进度与 6 个图标化标签页；履约方案采用版本工单卡，收款/快递/邮局/事件流采用统一卡片和时间线。邮局按刊期表已到出刊日的期数计算履约进度；投诉与中通补发从邮局工单同步显示到订单目标、关联邮局和关联快递，但补发不重复累计主履约进度；收报人也可发起信息变更并查看工单状态。 |
+| 订单详情 | `/orders/:id` | 邮局工单风格的摘要、履约进度与 6 个图标化标签页；履约方案采用版本工单卡，收款/快递/邮局/事件流采用统一卡片和时间线。邮局按刊期表已到出刊日的期数计算履约进度；投诉与中通补发从邮局工单同步显示到订单目标、关联邮局和关联快递，但补发不重复累计主履约进度；收报人也可发起信息变更并查看工单状态；已有正票时可从「收款与发票」直接打开财务工作台的对应发票记录。 |
 | 订单编辑 | `/orders/new`、`/orders/:id/edit` | 单页快速建单/改单；来源与已付信息必填，发票/备注折叠，右侧实时摘要 |
 | 电商导入 | `/orders/import` | CBJ/淘宝 上传→预览→导入 |
 | 按期排发 | `/orders/dispatch` | 漏期报表 + 一键排发 + 本期对账(应发/已发/缺口)+ 标已发 |

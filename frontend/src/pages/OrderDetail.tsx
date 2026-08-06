@@ -32,6 +32,7 @@ import {
   DollarOutlined,
   EditOutlined,
   EnvironmentOutlined,
+  EyeOutlined,
   FileTextOutlined,
   HistoryOutlined,
   InboxOutlined,
@@ -577,6 +578,17 @@ export default function OrderDetail() {
                 )}
                 {order.invoice_state === 'needs_red_reversal' && (
                   <small>已开 {formatCurrency(order.normal_invoiced_amount)} · 已退款 {formatCurrency(order.refunded_amount)}</small>
+                )}
+                {Number(order.normal_invoiced_amount) > 0 && (
+                  <Button
+                    className="order-detail-view-invoice"
+                    type="link"
+                    size="small"
+                    icon={<EyeOutlined />}
+                    onClick={() => navigate(`/finance?invoice_order_id=${order.id}`)}
+                  >
+                    查看发票
+                  </Button>
                 )}
               </div>
             </div>

@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse, delay } from 'msw'
 import { expect, within, waitFor } from 'storybook/test'
+import { withRouter, reactRouterParameters } from 'storybook-addon-remix-react-router'
 import FinanceManagement from './FinanceManagement'
 
 // 财务管理：GET /api/invoices/orders（发票工作台）+ GET /api/settlements（渠道结算）
@@ -56,6 +57,7 @@ const meta = {
   title: '页面/合同与财务/财务管理',
   component: FinanceManagement,
   tags: ['ai-generated'],
+  decorators: [withRouter],
   parameters: {
     layout: 'fullscreen',
     docs: {
@@ -120,6 +122,26 @@ export const ViewInvoiceRecords: Story = {
     expect(within(dialog).queryByRole('button', { name: /删除/ })).toBeNull()
     await expect(await within(dialog).findByRole('button', { name: /预览/ })).toBeVisible()
     await expect(await within(dialog).findByRole('button', { name: /下载/ })).toBeVisible()
+  },
+}
+
+// 深链接：从订单详情进入后，直接打开该订单的发票记录。
+export const DeepLinkedInvoiceRecords: Story = {
+  name: '订单详情跳转查看发票',
+  parameters: {
+    auth: operatorAuth,
+    msw: { handlers: dataHandlers },
+    reactRouter: reactRouterParameters({
+      location: { path: '/finance', searchParams: { invoice_order_id: '2' } },
+      routing: { path: '/finance' },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    const dialog = await page.findByRole('dialog')
+    await waitFor(() => expect(dialog).toBeVisible())
+    await expect(await within(dialog).findByText(/发票记录 · CBJ-2026-0002/)).toBeVisible()
+    await expect(await within(dialog).findByText(/发票号 INV-2002/)).toBeVisible()
   },
 }
 

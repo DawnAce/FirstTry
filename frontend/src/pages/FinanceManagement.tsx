@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   Button,
   Alert,
@@ -190,12 +191,13 @@ interface InvoiceFormValues {
 
 function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [form] = Form.useForm<InvoiceFormValues>();
   const selectedInvoiceType = Form.useWatch('invoice_type', form);
   const [status, setStatus] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<InvoiceOrderRow | null>(null);
-  const [viewing, setViewing] = useState<InvoiceOrderRow | null>(null);
+  const [viewingOverride, setViewing] = useState<InvoiceOrderRow | null>(null);
   const [pendingInvoiceFile, setPendingInvoiceFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{
     invoice: Invoice;
@@ -213,6 +215,26 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
     queryKey: invoiceQueryKeys.orders(params),
     queryFn: async () => (await getInvoiceOrders(params)).data,
   });
+  const requestedOrderId = Number(searchParams.get('invoice_order_id')) || null;
+  const deepLinkedViewing = requestedOrderId == null
+    ? null
+    : ordersQuery.data?.rows.find((row) => row.order_id === requestedOrderId && row.invoices.length > 0) ?? null;
+  const viewing = viewingOverride ?? deepLinkedViewing;
+
+  const openInvoiceRecords = (row: InvoiceOrderRow) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('invoice_order_id', String(row.order_id));
+    setSearchParams(next, { replace: true });
+    setViewing(row);
+  };
+
+  const closeInvoiceRecords = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('invoice_order_id');
+    setSearchParams(next, { replace: true });
+    setViewing(null);
+  };
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
 
   const createMutation = useMutation({
@@ -243,14 +265,17 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
   });
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteInvoice(id),
-    onSuccess: () => { message.success('已删除发票登记'); invalidate(); setViewing(null); },
+    onSuccess: () => { message.success('已删除发票登记'); invalidate(); closeInvoiceRecords(); },
     onError: (err) => message.error(apiError(err, '删除失败')),
   });
   const replaceViewedInvoice = (updated: Invoice) => {
-    setViewing((current) => current ? {
-      ...current,
-      invoices: current.invoices.map((invoice) => invoice.id === updated.id ? updated : invoice),
-    } : current);
+    setViewing((current) => {
+      const source = current ?? viewing;
+      return source ? {
+        ...source,
+        invoices: source.invoices.map((invoice) => invoice.id === updated.id ? updated : invoice),
+      } : current;
+    });
   };
   const attachmentUploadMutation = useMutation({
     mutationFn: ({ invoice, file }: { invoice: Invoice; file: File }) =>
@@ -406,7 +431,7 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
             <Button type="link" size="small" danger onClick={() => openRegister(r, 'red_reversal')}>登记红冲</Button>
           )}
           {r.invoices.length > 0 && (
-            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setViewing(r)}>查看记录</Button>
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openInvoiceRecords(r)}>查看记录</Button>
           )}
           {!isAdmin && r.invoices.length === 0 && <Text type="secondary">—</Text>}
         </Space>
@@ -553,8 +578,8 @@ function InvoicesPanel({ isAdmin }: { isAdmin: boolean }) {
       <Modal
         title={viewing ? `发票记录 · ${viewing.order_code || `#${viewing.order_id}`}（${viewing.payer_name}）` : '发票记录'}
         open={viewing !== null}
-        onCancel={() => setViewing(null)}
-        footer={<Button onClick={() => setViewing(null)}>关闭</Button>}
+        onCancel={closeInvoiceRecords}
+        footer={<Button onClick={closeInvoiceRecords}>关闭</Button>}
         width={760}
         destroyOnHidden
       >

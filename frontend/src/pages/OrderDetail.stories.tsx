@@ -215,6 +215,7 @@ export const Overview: Story = {
     await expect(await canvas.findByText('1 / 49 期')).toBeVisible()
     await expect(canvas.getByText('已开具')).toBeVisible()
     await expect(canvas.getByText('累计已开 ¥240.00')).toBeVisible()
+    await expect(canvas.getByRole('button', { name: /查看发票/ })).toBeVisible()
     await expect(canvas.getByText('已履约')).toBeVisible()
     await expect(await canvas.findByText('已关联 · 1 条')).toBeVisible()
     await expect(canvas.getByText(/邮局投递 · 履约中/)).toBeVisible()
