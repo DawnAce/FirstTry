@@ -30,8 +30,6 @@ import {
   FilterOutlined,
   LeftOutlined,
   FileTextOutlined,
-  InboxOutlined,
-  CloseOutlined,
   ReloadOutlined,
   MoreOutlined,
   RightOutlined,
@@ -61,7 +59,7 @@ import {
 } from '../api/exports';
 import dayjs from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
-import { DrawerTitle, StatusPill, SuccessCheckIcon } from '../components/UiPrimitives';
+import { DrawerTitle, LargeStatusIcon, StatusPill } from '../components/UiPrimitives';
 import type { WaybillImportBatch } from '../api/shippingWaybills';
 import {
   addManualPackage,
@@ -748,12 +746,12 @@ export default function LogisticsIssueDetail() {
           <div className={`zto-reconcile-result ${currentIsMatch === true ? 'is-match' : currentIsMatch === false ? 'is-mismatch' : 'is-pending'}`}>
             <div className="zto-reconcile-icon">
               {!uploaded
-                ? <InboxOutlined />
+                ? <LargeStatusIcon variant="inbox" />
                 : currentIsMatch === true
-                  ? <SuccessCheckIcon />
+                  ? <LargeStatusIcon variant="check" />
                   : currentIsMatch === false
-                    ? <CloseOutlined />
-                    : <ReloadOutlined />}
+                    ? <LargeStatusIcon variant="close" />
+                    : <LargeStatusIcon variant="reload" />}
             </div>
             <div>
               <span>本期对账结果</span>
@@ -811,7 +809,11 @@ export default function LogisticsIssueDetail() {
         <div className="zto-reconcile-main">
           <div className={`zto-reconcile-result ${fulfillment?.status === 'shipped' ? 'is-match' : fulfillment?.status === 'exception' ? 'is-mismatch' : 'is-pending'}`}>
             <div className="zto-reconcile-icon">
-              {fulfillment?.status === 'shipped' ? <SuccessCheckIcon /> : fulfillment?.status === 'exception' ? <CloseOutlined /> : <InboxOutlined />}
+              {fulfillment?.status === 'shipped'
+                ? <LargeStatusIcon variant="check" />
+                : fulfillment?.status === 'exception'
+                  ? <LargeStatusIcon variant="close" />
+                  : <LargeStatusIcon variant="inbox" />}
             </div>
             <div>
               <span>发货核销</span>

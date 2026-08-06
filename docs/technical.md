@@ -1895,7 +1895,7 @@ draft ──confirm──> active ──void──> void
 
 附件复用 `attachment_service` 落盘与路径穿越防护；数据库只存原始文件名和相对路径。替换附件或删除发票记录时会清理旧文件。附件完全选填：先登记、不传文件，以及登记后补传均受支持。
 
-订单详情 `GET /api/orders/{id}` 同时返回 `invoice_state`、`normal_invoiced_amount`、`remaining_invoice_amount`、`needs_red_reversal`。它与财务工作台统一调用 `finance_service.summarize_order_invoices()`，避免订单详情仅凭 `invoice_required` 固定显示「待开具」。无开票需求且无历史记录时额外使用 `not_required`；其余 `pending / issued / needs_red_reversal` 与工作台完全一致。
+订单详情 `GET /api/orders/{id}` 同时返回 `invoice_state`、`normal_invoiced_amount`、`remaining_invoice_amount`、`needs_red_reversal`。它与财务工作台统一调用 `finance_service.summarize_order_invoices()`，避免订单详情仅凭 `invoice_required` 固定显示「待开具」。无开票需求且无历史记录时额外使用 `not_required`；其余 `pending / issued / needs_red_reversal` 与工作台完全一致。已有正票金额时，订单详情展示「查看发票」，跳转到 `/finance?invoice_order_id={order_id}`；订单发票面板读取该深链接参数，并在工作台数据加载后直接打开对应订单的发票记录弹窗。弹窗关闭时会清理参数，财务列表内的「查看记录」也复用同一 URL 状态。
 
 ### 4.19 财务管理 · 渠道结算
 
@@ -2142,7 +2142,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 #### 前端设计系统与 Storybook
 - `frontend/src/theme.tsx` 是 Ant Design token 与 CSS variables 的唯一主题入口；生产应用和 Storybook 均通过 `DesignSystemProvider` 使用同一套配置。
 - 登录页使用 `Login.tsx` + `Login.css` 实现无边框全屏双栏布局，960px 以下切换为单栏；认证接口、表单校验、密码显隐和提交状态继续复用现有 Ant Design 与认证上下文。
-- `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard`、`StatusPill`、`DrawerTitle` 和 `SuccessCheckIcon`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。大号绿色圆形成功徽标统一使用 `SuccessCheckIcon`：30px 白色对号、3.25px 圆角描边，当前用于 ZTO-MF 对账一致状态和订单创建成功提示。
+- `frontend/src/components/UiPrimitives.tsx` 统一提供 `PageHeader`、`MetricCard`、`StatusPill`、`DrawerTitle` 和 `LargeStatusIcon`；对应 Story 位于 `UiPrimitives.stories.tsx`，业务页面优先复用这些模式。大号实色圆形状态徽标统一使用 `LargeStatusIcon`：内部线性图标固定为白色、30px、3.25px 圆角描边，覆盖成功、等待、异常和重新校验状态；`SuccessCheckIcon` 作为成功对号的兼容封装继续供订单创建成功提示使用。
 - 印数管理各模块标题以“报数流程”为视觉基准，统一字号、字重、颜色和行高；次要文本及成功/警告状态文字使用主题中的高对比度语义色。
 - 普通 DOM/CSS 使用 `var(--color-*)` 等语义变量；Canvas/ECharts 等不能直接消费 CSS 的渲染器通过 `theme.useToken()` 取得当前主题色。
 - 所有 Ant Design `Modal` 在 `frontend/src/index.css` 统一复用“邮局工单”弹窗的遮罩、容器、标题、表单和操作栏样式；新增弹窗直接使用 `Modal`，仅在业务布局确有差异时添加局部类名。

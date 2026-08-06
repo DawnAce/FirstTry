@@ -4,20 +4,43 @@ import './ui-primitives.css'
 
 export type SemanticTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'purple'
 
-type SuccessCheckIconProps = {
+type LargeStatusIconProps = {
+  variant: 'check' | 'inbox' | 'close' | 'reload'
   className?: string
 }
 
-export function SuccessCheckIcon({ className = '' }: SuccessCheckIconProps) {
+export function LargeStatusIcon({ variant, className = '' }: LargeStatusIconProps) {
   return (
     <svg
-      className={`ui-success-check-icon ${className}`.trim()}
+      className={`ui-large-status-icon ${className}`.trim()}
       viewBox="0 0 24 24"
       aria-hidden="true"
     >
-      <path d="M4 12.5 9.5 18 20 6.5" />
+      {variant === 'check' && <path d="M4 12.5 9.5 18 20 6.5" />}
+      {variant === 'inbox' && (
+        <>
+          <path d="M5.5 5h13l2.5 8v6H3v-6l2.5-8Z" />
+          <path d="M3.5 13h5l1.5 2h4l1.5-2h5" />
+        </>
+      )}
+      {variant === 'close' && (
+        <>
+          <path d="M6 6 18 18" />
+          <path d="M18 6 6 18" />
+        </>
+      )}
+      {variant === 'reload' && (
+        <>
+          <path d="M20 11a8 8 0 1 0-2.35 5.65" />
+          <path d="M20 4v7h-7" />
+        </>
+      )}
     </svg>
   )
+}
+
+export function SuccessCheckIcon({ className = '' }: Omit<LargeStatusIconProps, 'variant'>) {
+  return <LargeStatusIcon variant="check" className={className} />
 }
 
 type PageHeaderProps = {
