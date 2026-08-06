@@ -13,6 +13,13 @@ from app.models.shipping_detail import (
     ShippingDetailSourceType,
     ShippingDetailSyncStatus,
 )
+from app.models.shipping_waybill import (
+    ShippingPackage,
+    ShippingWaybillImportBatch,
+    ShippingWaybillImportRow,
+    WaybillImportStatus,
+    WaybillMatchStatus,
+)
 from app.models.operation_log import OperationLog
 from app.models.issue_audit_snapshot import IssueAuditSnapshot
 from app.models.report_source import ReportSourceDocument, ReportSourceItem
@@ -109,6 +116,8 @@ __all__ = [
     "ReportRevision",
     "TempPrintDetail",
     "ShippingDetail", "ShippingDetailSourceType", "ShippingDetailSyncStatus",
+    "ShippingPackage", "ShippingWaybillImportBatch", "ShippingWaybillImportRow",
+    "WaybillImportStatus", "WaybillMatchStatus",
     "OperationLog",
     "IssueAuditSnapshot",
     "ReportSourceDocument", "ReportSourceItem",

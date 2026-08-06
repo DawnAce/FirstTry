@@ -33,6 +33,12 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireMutationAccess({ children, fallback }: { children: ReactNode; fallback: string }) {
+  const { isViewer } = useAuth();
+  if (isViewer) return <Navigate to={fallback} replace />;
+  return <>{children}</>;
+}
+
 function LegacyShippingRedirect() {
   const { issueId } = useParams<{ issueId: string }>();
   const target = issueId ? `/logistics/issues/${issueId}` : '/logistics/issues';
@@ -68,15 +74,15 @@ function App() {
             <Route path="/shipping/:issueId" element={<LegacyShippingRedirect />} />
             <Route path="/history" element={<History />} />
             <Route path="/templates" element={<Templates />} />
-            <Route path="/history-import" element={<HistoryImport />} />
+            <Route path="/history-import" element={<RequireMutationAccess fallback="/history"><HistoryImport /></RequireMutationAccess>} />
             <Route path="/schedule" element={<ScheduleView />} />
-            <Route path="/schedule/import" element={<ScheduleImport />} />
+            <Route path="/schedule/import" element={<RequireMutationAccess fallback="/schedule"><ScheduleImport /></RequireMutationAccess>} />
             <Route path="/orders" element={<OrderList />} />
-            <Route path="/orders/new" element={<OrderEditor />} />
-            <Route path="/orders/import" element={<OrderImport />} />
-            <Route path="/orders/dispatch" element={<IssueDispatch />} />
+            <Route path="/orders/new" element={<RequireMutationAccess fallback="/orders"><OrderEditor /></RequireMutationAccess>} />
+            <Route path="/orders/import" element={<RequireMutationAccess fallback="/orders"><OrderImport /></RequireMutationAccess>} />
+            <Route path="/orders/dispatch" element={<RequireMutationAccess fallback="/orders"><IssueDispatch /></RequireMutationAccess>} />
             <Route path="/orders/:id" element={<OrderDetail />} />
-            <Route path="/orders/:id/edit" element={<OrderEditor />} />
+            <Route path="/orders/:id/edit" element={<RequireMutationAccess fallback="/orders"><OrderEditor /></RequireMutationAccess>} />
             <Route path="/products" element={<ProductCatalog />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/customers" element={<CustomerList />} />

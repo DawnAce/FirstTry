@@ -39,10 +39,12 @@ import { getDashboard, createIssue, deleteIssue } from '../api/issues';
 import type { Issue } from '../api/issues';
 import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton';
 import { MetricCard, PageHeader, StatusPill } from '../components/UiPrimitives';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canMutate } = useAuth();
   const { token } = theme.useToken();
   const [creating, setCreating] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<string | undefined>(undefined);
@@ -189,7 +191,7 @@ export default function Dashboard() {
             size="small"
             onClick={(e) => { e.stopPropagation(); navigate(`/report/${record.id}`); }}
           >
-            {record.status === 'draft' ? '去确认' : '编辑'}
+            {canMutate ? (record.status === 'draft' ? '去确认' : '编辑') : '查看'}
           </Button>
           <Button
             type="text"
@@ -198,16 +200,18 @@ export default function Dashboard() {
           >
             明细
           </Button>
-          <IssueDeleteConfirmButton
-            issueNumber={record.issue_number}
-            onConfirm={() => handleDeleteIssue(record)}
-            buttonProps={{
-              type: 'text',
-              size: 'small',
-              danger: true,
-              onClick: (event) => event.stopPropagation(),
-            }}
-          />
+          {canMutate && (
+            <IssueDeleteConfirmButton
+              issueNumber={record.issue_number}
+              onConfirm={() => handleDeleteIssue(record)}
+              buttonProps={{
+                type: 'text',
+                size: 'small',
+                danger: true,
+                onClick: (event) => event.stopPropagation(),
+              }}
+            />
+          )}
         </Space>
       ),
     },
@@ -281,7 +285,7 @@ export default function Dashboard() {
         <Col xs={24} lg={17}>
           {/* Create Section - unified container */}
           <div className="dashboard-create-wrapper" style={{ marginBottom: 20 }}>
-            {nextIssue && (
+            {canMutate && nextIssue && (
               <div
                 className="dashboard-create-main"
                 onClick={() => handleCreateIssue(nextIssue.issue_number)}
@@ -300,7 +304,7 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
-            <div className="dashboard-backfill-section">
+            {canMutate && <div className="dashboard-backfill-section">
               <div className="dashboard-backfill-title">补录其他期数</div>
               <div className="dashboard-backfill-body">
                 <Select
@@ -326,7 +330,7 @@ export default function Dashboard() {
                 </Button>
               </div>
               <div className="dashboard-backfill-hint">选择历史期数进行补录，便于完善历史数据</div>
-            </div>
+            </div>}
           </div>
 
           {/* Workflow Steps */}

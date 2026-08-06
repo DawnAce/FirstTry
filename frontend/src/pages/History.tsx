@@ -19,6 +19,7 @@ import type { TableColumnsType } from 'antd';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { MetricCard, PageHeader, StatusPill } from '../components/UiPrimitives';
+import { useAuth } from '../contexts/AuthContext';
 
 const { RangePicker } = DatePicker;
 
@@ -37,6 +38,7 @@ function StatusTag({ status }: { status: Issue['status'] }) {
 
 export default function History() {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const [searchNumber, setSearchNumber] = useState('');
   const [filterStatus, setFilterStatus] = useState<string | undefined>(undefined);
   const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
@@ -220,7 +222,7 @@ export default function History() {
       <PageHeader
         title="历史印数期数"
         description="检索所有历史报数期数，直达报数、中通明细与导出。"
-        actions={<Button icon={<UploadOutlined />} onClick={() => navigate('/history-import')}>导入往期</Button>}
+        actions={canMutate ? <Button icon={<UploadOutlined />} onClick={() => navigate('/history-import')}>导入往期</Button> : undefined}
       />
 
       <Row gutter={16} style={{ marginBottom: 20 }}>

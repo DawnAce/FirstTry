@@ -1,4 +1,4 @@
-import { Layout, Menu, Badge, Avatar, Dropdown, Tooltip } from 'antd';
+import { Layout, Menu, Badge, Avatar, Dropdown, Tooltip, Alert } from 'antd';
 import {
   UserOutlined,
   BellOutlined,
@@ -90,7 +90,9 @@ export default function AppLayout() {
                 <Avatar size={38} icon={<UserOutlined />} style={{ background: 'var(--color-accent)', flexShrink: 0 }} />
                 <div className="app-sider-user-info">
                   <span className="app-sider-user-name">{user?.username}</span>
-                  <span className="app-sider-user-role">{user?.role === 'admin' ? '管理员' : '操作员'}</span>
+                  <span className="app-sider-user-role">
+                    {user?.role === 'admin' ? '管理员' : user?.role === 'viewer' ? '演示访客 · 只读' : '操作员'}
+                  </span>
                 </div>
               </div>
             </Dropdown>
@@ -114,6 +116,14 @@ export default function AppLayout() {
             <Tooltip title="通知"><Badge count={0} overflowCount={99}><button className="app-header-icon-btn" aria-label="通知"><BellOutlined /></button></Badge></Tooltip>
           </div>
         </Header>
+        {user?.role === 'viewer' && (
+          <Alert
+            banner
+            showIcon
+            type="info"
+            message="演示只读模式：可以浏览和下载，所有新增、修改、删除、导入与确认操作均已禁用。"
+          />
+        )}
         <Content className="app-content"><Outlet /></Content>
       </Layout>
     </Layout>

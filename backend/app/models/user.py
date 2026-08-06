@@ -7,6 +7,7 @@ import enum
 class UserRole(str, enum.Enum):
     admin = "admin"
     operator = "operator"
+    viewer = "viewer"
 
 
 class User(Base):

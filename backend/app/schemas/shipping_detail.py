@@ -114,6 +114,11 @@ class ShippingDetailOut(BaseModel):
     shipped_at: Optional[datetime]
     shipped_quantity: Optional[int]
     tracking_no: Optional[str]
+    shipping_requirement: Optional[str] = None
+    handled_quantity: int
+    package_count: int
+    fulfillment_status: str
+    packages: list["ShippingPackageOut"] = []
     order_id: Optional[int]
     order_item_id: Optional[int]
     fulfillment_target_id: Optional[int]
@@ -127,3 +132,16 @@ class ShippingDetailOut(BaseModel):
     updated_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
+
+
+class ShippingPackageOut(BaseModel):
+    id: int
+    carrier: str
+    tracking_no: str
+    quantity: int
+    shipped_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+ShippingDetailOut.model_rebuild()

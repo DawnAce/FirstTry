@@ -38,7 +38,8 @@ from app.api.postal_finance import router as postal_finance_router
 from app.api.subscription import router as subscription_router
 from app.api.search import router as search_router
 from app.api.report_sources import router as report_sources_router
-from app.auth import get_current_user, require_admin
+from app.api.shipping_waybills import router as shipping_waybills_router
+from app.auth import get_current_user, require_admin, require_mutation_permission
 from app.models import Issue, PublicationSchedule, ReportEntry
 from app.services.issue_service import build_issue_out, PRINT_TOTAL_EXCLUDED_SUBS
 
@@ -60,31 +61,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(schedule_router, dependencies=[Depends(get_current_user)])
-app.include_router(issues_router, dependencies=[Depends(get_current_user)])
-app.include_router(reports_router, dependencies=[Depends(get_current_user)])
-app.include_router(recipients_router, dependencies=[Depends(get_current_user)])
-app.include_router(shipping_router, dependencies=[Depends(get_current_user)])
-app.include_router(exports_router, dependencies=[Depends(get_current_user)])
-app.include_router(templates_router, dependencies=[Depends(get_current_user)])
+app.include_router(schedule_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(issues_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(reports_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(recipients_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(shipping_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(exports_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(templates_router, dependencies=[Depends(require_mutation_permission)])
 app.include_router(auth_router)
-app.include_router(shipping_details_router, dependencies=[Depends(get_current_user)])
-app.include_router(operation_logs_router, dependencies=[Depends(get_current_user)])
-app.include_router(history_import_router, dependencies=[Depends(get_current_user)])
-app.include_router(orders_router, dependencies=[Depends(get_current_user)])
-app.include_router(products_router, dependencies=[Depends(get_current_user)])
-app.include_router(order_import_router, dependencies=[Depends(get_current_user)])
-app.include_router(analytics_router, dependencies=[Depends(get_current_user)])
-app.include_router(customers_router, dependencies=[Depends(get_current_user)])
-app.include_router(partners_router, dependencies=[Depends(get_current_user)])
-app.include_router(contracts_router, dependencies=[Depends(get_current_user)])
-app.include_router(invoices_router, dependencies=[Depends(get_current_user)])
-app.include_router(settlements_router, dependencies=[Depends(get_current_user)])
-app.include_router(postal_router, dependencies=[Depends(get_current_user)])
-app.include_router(postal_finance_router, dependencies=[Depends(get_current_user)])
-app.include_router(subscription_router, dependencies=[Depends(get_current_user)])
-app.include_router(search_router, dependencies=[Depends(get_current_user)])
-app.include_router(report_sources_router, dependencies=[Depends(get_current_user)])
+app.include_router(shipping_details_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(operation_logs_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(history_import_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(orders_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(products_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(order_import_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(analytics_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(customers_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(partners_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(contracts_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(invoices_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(settlements_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(postal_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(postal_finance_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(subscription_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(search_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(report_sources_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(shipping_waybills_router, dependencies=[Depends(require_mutation_permission)])
 
 
 @app.get("/api/health")

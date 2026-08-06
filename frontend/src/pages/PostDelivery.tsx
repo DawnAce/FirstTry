@@ -422,7 +422,7 @@ function DeliveriesTab() {
   const [followForm, setFollowForm] = useState(false);
   const [ticketReader, setTicketReader] = useState<PostalDelivery | null>(null);
   const PAGE_SIZE = 50;
-  const { isAdmin } = useAuth();
+  const { isAdmin, canMutate } = useAuth();
   const qc = useQueryClient();
   const requestedDeliveryId = Number(searchParams.get('delivery_id')) || null;
   const requestedTicketId = Number(searchParams.get('ticket_id')) || null;
@@ -556,7 +556,7 @@ function DeliveriesTab() {
         description={`投递记录 ${(q.data?.total ?? 0).toLocaleString()} 条`}
         actions={<Space>
           {isAdmin && <Button loading={bulkLinkMut.isPending} onClick={() => bulkLinkMut.mutate()}>补齐来源关联</Button>}
-          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入</Button>
+          {canMutate && <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入</Button>}
           {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setFormOpen(true); }}>新增记录</Button>}
         </Space>}
       />
@@ -600,7 +600,7 @@ function DeliveriesTab() {
           scroll={{ x: 1100 }}
           pagination={{ current: page, pageSize: PAGE_SIZE, total: q.data?.total ?? 0, onChange: setPage, showTotal: (t) => `共 ${t} 条投递记录`, showSizeChanger: false }} />
       </Card>
-      <ReaderImportModal open={importOpen} onClose={() => setImportOpen(false)} />
+      {canMutate && <ReaderImportModal open={importOpen} onClose={() => setImportOpen(false)} />}
       <DeliveryDetailDrawer record={detail ?? deepLinkQ.data ?? null} isAdmin={isAdmin} deleting={deleteMut.isPending}
         linking={linkMut.isPending}
         onClose={() => setDetailUrl(null)}
@@ -2319,7 +2319,7 @@ function FollowDetailDrawer({ followId, modal = false, readOnly = false, onEdit,
 
 /** Tab：邮局工单（投诉 / 改地址 / 回访 统一） */
 function TicketsTab() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, canMutate } = useAuth();
   const qc = useQueryClient();
   const [type, setType] = useState<TicketType | undefined>();
   const [year, setYear] = useState<number | undefined>();
@@ -2460,13 +2460,15 @@ function TicketsTab() {
         title="邮局工单"
         description={`共 ${data?.total ?? 0} 条工单`}
         actions={<Space wrap>
-          <Dropdown menu={{ items: [
-            { key: 'complaint', label: '导入投诉', onClick: () => setImportType('complaint') },
-            { key: 'address', label: '导入信息变更', onClick: () => setImportType('address') },
-            { key: 'follow', label: '导入回访', onClick: () => setImportType('follow') },
-          ] }}>
-            <Button icon={<UploadOutlined />}>导入</Button>
-          </Dropdown>
+          {canMutate && (
+            <Dropdown menu={{ items: [
+              { key: 'complaint', label: '导入投诉', onClick: () => setImportType('complaint') },
+              { key: 'address', label: '导入信息变更', onClick: () => setImportType('address') },
+              { key: 'follow', label: '导入回访', onClick: () => setImportType('follow') },
+            ] }}>
+              <Button icon={<UploadOutlined />}>导入</Button>
+            </Dropdown>
+          )}
           {isAdmin && (
             <Dropdown menu={{ items: [
               { key: 'complaint', label: '新增投诉', onClick: () => { setComplaintPrefill(null); setComplaintForm({ open: true, editing: null }); } },
@@ -2579,32 +2581,34 @@ function TicketsTab() {
       <FollowUpFormModal open={followForm.open} editing={followForm.editing} onClose={() => setFollowForm({ open: false, editing: null })} onContinue={continueFromFollowUp} />
 
       {/* 导入弹窗 */}
-      <ComplaintImportModal open={importType === 'complaint'} onClose={() => setImportType(null)} />
-      <SimpleImportModal<AddrImportRow>
-        open={importType === 'address'} onClose={() => setImportType(null)} title="导入信息变更" unit="条" linkedLabel="已关联" invalidateKey="postalTickets"
-        hint="点击或拖拽含《改地址》的 .xlsx"
-        previewFn={previewAddressChangeImport} commitFn={commitAddressChangeImport}
-        rowKey={(r, i) => `${r.external_order_no}-${i}`}
-        columns={[
-          { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
-          { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string) => formatPostalNo(v) },
-          { title: '原姓名', dataIndex: 'old_name', width: 100 },
-          { title: '新地址', dataIndex: 'new_address', ellipsis: true },
-        ]}
-      />
-      <SimpleImportModal<FollowImportRow>
-        open={importType === 'follow'} onClose={() => setImportType(null)} title="导入回访" unit="条" linkedLabel="已关联" invalidateKey="postalTickets"
-        hint="点击或拖拽含《回访》的 .xlsx"
-        previewFn={previewFollowUpImport} commitFn={commitFollowUpImport}
-        rowKey={(r, i) => `${r.external_order_no}-${i}`}
-        columns={[
-          { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
-          { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string) => formatPostalNo(v) },
-          { title: '姓名', dataIndex: 'name', width: 100 },
-          { title: '批次', dataIndex: 'batch_label', width: 130 },
-          { title: '结果', dataIndex: 'result', ellipsis: true },
-        ]}
-      />
+      {canMutate && <>
+        <ComplaintImportModal open={importType === 'complaint'} onClose={() => setImportType(null)} />
+        <SimpleImportModal<AddrImportRow>
+          open={importType === 'address'} onClose={() => setImportType(null)} title="导入信息变更" unit="条" linkedLabel="已关联" invalidateKey="postalTickets"
+          hint="点击或拖拽含《改地址》的 .xlsx"
+          previewFn={previewAddressChangeImport} commitFn={commitAddressChangeImport}
+          rowKey={(r, i) => `${r.external_order_no}-${i}`}
+          columns={[
+            { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
+            { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string) => formatPostalNo(v) },
+            { title: '原姓名', dataIndex: 'old_name', width: 100 },
+            { title: '新地址', dataIndex: 'new_address', ellipsis: true },
+          ]}
+        />
+        <SimpleImportModal<FollowImportRow>
+          open={importType === 'follow'} onClose={() => setImportType(null)} title="导入回访" unit="条" linkedLabel="已关联" invalidateKey="postalTickets"
+          hint="点击或拖拽含《回访》的 .xlsx"
+          previewFn={previewFollowUpImport} commitFn={commitFollowUpImport}
+          rowKey={(r, i) => `${r.external_order_no}-${i}`}
+          columns={[
+            { title: '结果', dataIndex: 'decision', width: 90, render: (d: string) => <Tag color={d === 'import' ? 'green' : 'blue'}>{d === 'import' ? '✅ 导入' : '♻ 重复'}</Tag> },
+            { title: '编号', dataIndex: 'external_order_no', width: 120, render: (v: string) => formatPostalNo(v) },
+            { title: '姓名', dataIndex: 'name', width: 100 },
+            { title: '批次', dataIndex: 'batch_label', width: 130 },
+            { title: '结果', dataIndex: 'result', ellipsis: true },
+          ]}
+        />
+      </>}
     </>
   );
 }

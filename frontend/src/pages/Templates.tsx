@@ -33,6 +33,7 @@ import {
 } from '../api/templates';
 import { categoryLabels, categoryOrder, categoryFrequency, categoryLabel } from './reportCategories';
 import { MetricCard, PageHeader } from '../components/UiPrimitives';
+import { useAuth } from '../contexts/AuthContext';
 
 const categoryOptions = categoryOrder
   .filter((c) => categoryLabels[c])
@@ -44,6 +45,7 @@ interface Group {
 }
 
 export default function Templates() {
+  const { canMutate } = useAuth();
   const queryClient = useQueryClient();
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Template | null>(null);
@@ -243,7 +245,7 @@ export default function Templates() {
       <PageHeader
         title="报数模板"
         description="定义每期《报数》包含哪些项目；新建报数时按母表逐行生成，并与印数报数的分组结构保持一致。"
-        actions={<Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新增项目</Button>}
+        actions={canMutate ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新增项目</Button> : undefined}
       />
 
       <Row gutter={16} style={{ marginBottom: 20 }}>
@@ -309,9 +311,9 @@ export default function Templates() {
                       <span className="tmpl-grp-meta">
                         <b>{group.items.length}</b> 项 · 合计 <b>{subtotal.toLocaleString()}</b> 份
                       </span>
-                      <span className="tmpl-grp-add" onClick={() => openCreate(group.category)}>
+                      {canMutate && <span className="tmpl-grp-add" onClick={() => openCreate(group.category)}>
                         <PlusOutlined /> 在此类别新增
-                      </span>
+                      </span>}
                     </div>
                   </td>
                 </tr>
@@ -319,13 +321,13 @@ export default function Templates() {
                   <tr
                     key={item.id}
                     className={`tmpl-item ${dragOverId === item.id ? 'tmpl-dragover' : ''}`}
-                    draggable
-                    onDragStart={() => handleDragStart(item)}
-                    onDragOver={(e) => handleDragOver(e, item)}
-                    onDrop={() => handleDrop(item)}
-                    onDragEnd={handleDragEnd}
+                    draggable={canMutate}
+                    onDragStart={canMutate ? () => handleDragStart(item) : undefined}
+                    onDragOver={canMutate ? (e) => handleDragOver(e, item) : undefined}
+                    onDrop={canMutate ? () => handleDrop(item) : undefined}
+                    onDragEnd={canMutate ? handleDragEnd : undefined}
                   >
-                    <td className="tmpl-drag" title="拖动改排序">⠿</td>
+                    <td className="tmpl-drag" title={canMutate ? '拖动改排序' : undefined}>{canMutate ? '⠿' : '—'}</td>
                     <td className="tmpl-sub">{item.sub_category}</td>
                     <td className="tmpl-disp">{item.display_name}</td>
                     <td className="r tmpl-num">{item.default_value.toLocaleString()}</td>
@@ -337,7 +339,7 @@ export default function Templates() {
                     </td>
                     <td className="r tmpl-num tmpl-sortnum">{item.sort_order}</td>
                     <td className="c">
-                      <Space size={2}>
+                      {canMutate ? <Space size={2}>
                         <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
                         <Popconfirm
                           title="确定删除此项目？"
@@ -347,7 +349,7 @@ export default function Templates() {
                         >
                           <Button type="text" size="small" danger icon={<DeleteOutlined />} />
                         </Popconfirm>
-                      </Space>
+                      </Space> : '—'}
                     </td>
                   </tr>
                 ))}

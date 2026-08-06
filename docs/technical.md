@@ -35,6 +35,7 @@ FirstTry/
 │   │   │   ├── schedule.py     # 刊期查询、年度刊期 PDF 上传预览与提交
 │   │   │   ├── shipping.py     # 发货管理
 │   │   │   ├── shipping_details.py # ZTO-MF CRUD
+│   │   │   ├── shipping_waybills.py # 运单预览、确认与逐包裹核销
 │   │   │   ├── operation_logs.py  # 操作日志查询
 │   │   │   └── templates.py    # 模板管理
 │   │   ├── models/             # SQLAlchemy 模型
@@ -48,6 +49,7 @@ FirstTry/
 │   │   │   ├── report_source.py    # 来源文档及跨刊期映射 / 调整
 │   │   │   ├── shipping_record.py
 │   │   │   ├── shipping_detail.py  # ZTO-MF
+│   │   │   ├── shipping_waybill.py # 运单导入批次、行与包裹
 │   │   │   ├── operation_log.py   # 操作日志
 │   │   │   ├── subscription.py
 │   │   │   ├── temp_print_detail.py # 临时加印归属明细
@@ -69,6 +71,7 @@ FirstTry/
 │   │   │   ├── raw_report_import_service.py    # 原始印数多工作表解析
 │   │   │   ├── workbook_loader.py              # 普通 / Office 加密 OOXML 内存解密与加载
 │   │   │   ├── original_zto_shipping_import_service.py # 原始中通多工作表解析
+│   │   │   ├── shipping_waybill_service.py # 运单解析、匹配与发货核销
 │   │   │   ├── report_source_ocr.py        # 渠道模板 OCR 与保守校验
 │   │   │   └── report_source_service.py    # 归档、映射、结算与补发台账
 │   │   ├── templates/          # Excel 模板
@@ -92,6 +95,7 @@ FirstTry/
 │   │   ├── contexts/
 │   │   │   └── AuthContext.tsx  # 认证上下文
 │   │   ├── businessPortalConfig.ts  # 五大业务中心、模块及路由归属配置
+│   │   ├── permissions.ts      # admin/operator/viewer 能力映射
 │   │   ├── pages/              # 页面组件
 │   │   │   ├── BusinessPortal.tsx # 业务首页、五大业务中心门户及邮局管理三级入口
 │   │   │   ├── DashboardPage.tsx  # 印数管理仪表盘（/print）— 统计卡片、一键创建/补录、报数流程、近期印数表、趋势图（ECharts）、待处理/快捷入口侧栏
@@ -343,10 +347,20 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | id | INT | 主键 |
 | username | VARCHAR | 用户名（唯一） |
 | password_hash | VARCHAR | bcrypt 密码哈希 |
-| role | ENUM | 角色：admin/operator |
+| role | ENUM | 角色：admin/operator/viewer |
 | created_at | DATETIME | 创建时间 |
 
-系统不内置默认密码。管理员账户通过 `python -m scripts.set_admin_password [用户名]` 创建或重置。
+系统不内置默认密码。管理员账户通过 `python -m scripts.set_admin_password [用户名]` 创建或重置；其它角色通过 `python -m scripts.set_user_password <用户名> --role operator|viewer` 创建或轮换密码。
+
+角色能力固定为：
+
+| 角色 | 浏览/下载 | 日常写操作 | 管理员敏感操作 |
+|------|-----------|------------|----------------|
+| admin | 允许 | 允许 | 允许 |
+| operator | 允许 | 允许 | 禁止 |
+| viewer | 允许 | 禁止 | 禁止 |
+
+`viewer` 是演示访客账号：前端通过 `permissions.ts`、`AuthContext.canMutate` 和编辑路由守卫隐藏写入口，后端通过 `require_mutation_permission` 拦截所有非 GET/HEAD/OPTIONS 请求。权限必须以后端为最终边界，前端显隐只负责避免误导。GET 接口不得写数据库；访客下载导出文件时不写操作日志或审计快照。
 
 ### 3.9 report_revisions（作废记录）
 记录报数确认和作废的修订历史。
@@ -427,6 +441,9 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | confirmation | VARCHAR(50) | 信息确认（高铁展示用） |
 | company | VARCHAR(100) | 签约公司（如：北京悦途出行、广州日报） |
 | shipped_at | DATETIME | 发货时间（可选，手动填写） |
+| shipped_quantity | INT | 兼容旧接口的实发份数；有逐包裹记录时等于包裹份数合计 |
+| tracking_no | VARCHAR(64) | 兼容旧接口的单个运单号；一条明细对应多包裹时为空 |
+| shipping_requirement | VARCHAR(32) | `tracking_required` / `no_tracking_required`，与数据质量 `status` 独立 |
 | order_id | INT | 订单发货同步来源订单；手工行为空 |
 | order_item_id | INT | 订单发货同步来源明细；手工行为空 |
 | fulfillment_target_id | INT | 订单发货同步来源履约目标；手工行为空 |
@@ -437,6 +454,18 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 
 订单发货同步行通过唯一索引 `uq_shipping_detail_order_target_issue`
 约束 `(issue_number, order_id, order_item_id, fulfillment_target_id)`，避免同一期同一订单履约目标在并发同步时生成重复发货明细；历史手工行的关联字段为 `NULL`，仍允许多行共存。
+
+### 3.12A 运单导入与逐包裹核销（3 张表）
+
+| 表 | 说明 |
+|----|------|
+| `shipping_waybill_import_batches` | 一次 Excel 预览/确认批次，保存文件哈希、确认印数、解析/匹配/待补/超额份数与告警统计；同一期同一文件哈希唯一 |
+| `shipping_waybill_import_rows` | 文件中的逐行解析结果，保留来源 sheet/行号、承运商、运单号、收件信息、份数、匹配状态与对应 `shipping_detail_id` |
+| `shipping_packages` | 已确认或人工补录的实际包裹；一条发货明细可对应多个包裹，`(carrier, tracking_no)` 全局唯一 |
+
+发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。已处理份数 = 运单包裹份数 + 标记“无需运单”的明细计划份数，待补/超额按确认印数与累计已处理份数计算。导入文件存在未匹配行或仍有待补时，只提示差异，不阻断已匹配行确认；后续可继续导入补充文件、逐条补录运单或标记无需运单。上传运单即视为已发货，当前版本不查询物流轨迹。
+
+迁移链为 `c2e4f6a8b0d3`（结算流程）→ `c8f0a2b4d6e9`（viewer 角色）→ `d9e1f3a5b7c9`（运单核销），保持单一 Alembic head。
 
 ### 3.13 issue_audit_snapshots（确认/导出快照）
 记录当期报数与ZTO-MF之间的关键校验快照，用于追溯确认时和导出时采用的数量状态。
@@ -662,11 +691,11 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 ```
 
 **说明**：
-- JWT 令牌有效期为 72 小时
+- JWT 令牌有效期默认 12 小时，可通过 `ACCESS_TOKEN_EXPIRE_HOURS` 调整（1–24 小时）
 - 前端通过 localStorage 存储令牌
 - 所有需要认证的 API 通过 axios 拦截器自动附加 `Authorization: Bearer <token>` 请求头
 - 令牌过期或无效时返回 401，前端自动跳转到登录页面
-- **所有业务 API 均需认证**：在 `main.py` 中通过 `dependencies=[Depends(get_current_user)]` 对所有业务路由强制认证，仅 `/api/auth/login` 为公开接口
+- **所有业务 API 均需认证**：在 `main.py` 中通过 `dependencies=[Depends(require_mutation_permission)]` 对业务路由统一认证，并禁止 `viewer` 发起写请求；仅 `/api/auth/login` 为公开接口
 - `/api/admin/seed` 需要管理员权限（`require_admin`）
 - 前端启动时无论 localStorage 是否有缓存用户，都会调用 `/api/auth/me` 验证 token 有效性
 - axios 全局超时设置为 120 秒（`timeout: 120000`），适配远程数据库延迟
@@ -1483,6 +1512,19 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
   "message": "Normalized 14 addresses out of 81 total"
 }
 ```
+
+#### 运单核销 API（/api/shipping-waybills）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/issues/{issue_id}/preview` | 上传 `.xlsx/.xlsm` 运单文件，解析中通、顺丰、邮政、挂号及备用/社用工作表，按明细 ID 或收件人/电话/地址匹配，只生成预览批次 |
+| `POST` | `/imports/{batch_id}/confirm` | 确认批次；仅写入匹配成功的包裹或无需运单标记，未匹配/重复/歧义/无效行保留为告警 |
+| `GET` | `/issues/{issue_id}/summary` | 返回确认印数、计划、累计已处理、运单/无需运单、待补/超额、包裹数及期级状态 |
+| `POST` | `/details/{detail_id}/packages` | 为某条发货明细人工补录一个包裹/运单 |
+| `DELETE` | `/packages/{package_id}` | 删除一个包裹并重新计算该明细的兼容实发字段 |
+| `POST` | `/details/{detail_id}/no-tracking` | 设置或取消“无需运单”；已有包裹时必须先删除包裹 |
+
+匹配状态为 `matched / unmatched / ambiguous / duplicate / invalid`。预览按当前累计已处理量计算导入后的 `pending_quantity`，因此补充导入最后缺少的份数会把待补正确归零；同一承运商+运单号在文件内或数据库中重复时不会再次建包裹。
 
 ### 4.12 操作日志
 

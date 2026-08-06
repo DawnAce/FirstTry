@@ -80,21 +80,27 @@ def _persist_export_snapshot(
     db.commit()
 
 
+def _should_audit_export(user: User) -> bool:
+    """Viewer downloads must not change logs or audit snapshots."""
+    return user.role.value != "viewer"
+
+
 @router.get("/report")
 def export_report(issue_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     issue, report_total, shipping_total = _get_export_ready_issue(db, issue_id)
 
     output = export_report_excel(issue_id, db)
-    record_operation(
-        db,
-        user=user,
-        table_name="exports",
-        record_id=issue.id,
-        record_name=f"第{issue.issue_number}期",
-        action="export_report",
-        issue_number=issue.issue_number,
-    )
-    _persist_export_snapshot(issue, "report_export", report_total, shipping_total, db)
+    if _should_audit_export(user):
+        record_operation(
+            db,
+            user=user,
+            table_name="exports",
+            record_id=issue.id,
+            record_name=f"第{issue.issue_number}期",
+            action="export_report",
+            issue_number=issue.issue_number,
+        )
+        _persist_export_snapshot(issue, "report_export", report_total, shipping_total, db)
     filename = get_report_filename(issue)
     return StreamingResponse(
         output,
@@ -108,16 +114,17 @@ def export_shipping(issue_id: int, db: Session = Depends(get_db), user: User = D
     issue, report_total, shipping_total = _get_export_ready_issue(db, issue_id)
 
     output = export_shipping_excel(issue_id, db)
-    record_operation(
-        db,
-        user=user,
-        table_name="exports",
-        record_id=issue.id,
-        record_name=f"第{issue.issue_number}期",
-        action="export_shipping",
-        issue_number=issue.issue_number,
-    )
-    _persist_export_snapshot(issue, "shipping_export", report_total, shipping_total, db)
+    if _should_audit_export(user):
+        record_operation(
+            db,
+            user=user,
+            table_name="exports",
+            record_id=issue.id,
+            record_name=f"第{issue.issue_number}期",
+            action="export_shipping",
+            issue_number=issue.issue_number,
+        )
+        _persist_export_snapshot(issue, "shipping_export", report_total, shipping_total, db)
     filename = get_shipping_filename(issue)
     return StreamingResponse(
         output,
@@ -132,17 +139,18 @@ def export_all(issue_id: int, db: Session = Depends(get_db), user: User = Depend
 
     report_bytes = export_report_excel(issue_id, db)
     shipping_bytes = export_shipping_excel(issue_id, db)
-    record_operation(
-        db,
-        user=user,
-        table_name="exports",
-        record_id=issue.id,
-        record_name=f"第{issue.issue_number}期",
-        action="export_all",
-        issue_number=issue.issue_number,
-    )
-    _persist_export_snapshot(issue, "report_export", report_total, shipping_total, db)
-    _persist_export_snapshot(issue, "shipping_export", report_total, shipping_total, db)
+    if _should_audit_export(user):
+        record_operation(
+            db,
+            user=user,
+            table_name="exports",
+            record_id=issue.id,
+            record_name=f"第{issue.issue_number}期",
+            action="export_all",
+            issue_number=issue.issue_number,
+        )
+        _persist_export_snapshot(issue, "report_export", report_total, shipping_total, db)
+        _persist_export_snapshot(issue, "shipping_export", report_total, shipping_total, db)
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:

@@ -91,24 +91,7 @@ def list_schedule_uploads(
     query = db.query(PublicationScheduleUpload)
     if year is not None:
         query = query.filter(PublicationScheduleUpload.year == year)
-    uploads = query.order_by(PublicationScheduleUpload.created_at.desc()).all()
-
-    # Auto-cleanup: if a committed upload exists for a year,
-    # delete all previewed uploads for that year (stale leftovers)
-    committed_years = {u.year for u in uploads if u.status == PublicationScheduleUploadStatus.committed}
-    if committed_years:
-        stale_ids = [
-            u.id for u in uploads
-            if u.status == PublicationScheduleUploadStatus.previewed and u.year in committed_years
-        ]
-        if stale_ids:
-            db.query(PublicationScheduleUpload).filter(
-                PublicationScheduleUpload.id.in_(stale_ids)
-            ).delete(synchronize_session=False)
-            db.commit()
-            uploads = [u for u in uploads if u.id not in stale_ids]
-
-    return uploads
+    return query.order_by(PublicationScheduleUpload.created_at.desc()).all()
 
 
 @router.post("/uploads/preview", response_model=SchedulePreviewOut)
@@ -204,7 +187,15 @@ def commit_schedule_upload_endpoint(
 ):
     """Persist server-stored preview rows from an upload into publication_schedule."""
     try:
-        return commit_schedule_upload(db, upload_id, page_count=page_count)
+        committed = commit_schedule_upload(db, upload_id, page_count=page_count)
+        # Cleanup belongs to this explicit write operation, never to GET /uploads.
+        db.query(PublicationScheduleUpload).filter(
+            PublicationScheduleUpload.year == committed.year,
+            PublicationScheduleUpload.status == PublicationScheduleUploadStatus.previewed,
+            PublicationScheduleUpload.id != committed.id,
+        ).delete(synchronize_session=False)
+        db.commit()
+        return committed
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

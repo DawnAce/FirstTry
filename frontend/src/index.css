@@ -2626,6 +2626,34 @@ body {
   overflow: hidden;
 }
 
+.zto-fulfillment-card {
+  margin-bottom: 18px;
+  overflow: hidden;
+  border-color: #dbe9f7 !important;
+}
+
+.zto-fulfillment-warning {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  border-top: 1px solid #f3dfb7;
+  color: #6f4b16;
+  background: var(--color-warning-soft);
+}
+
+.zto-fulfillment-warning strong,
+.zto-fulfillment-warning span {
+  display: block;
+}
+
+.zto-fulfillment-warning span {
+  margin-top: 2px;
+  color: #826434;
+  font-size: 12px;
+}
+
 .zto-reconcile-main {
   display: grid;
   grid-template-columns: minmax(250px, 1.2fr) repeat(4, minmax(100px, 0.65fr));
@@ -2984,6 +3012,22 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.zto-fulfillment-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.zto-fulfillment-cell .ant-tag {
+  margin: 0;
+}
+
+.zto-fulfillment-cell small {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 .zto-row-actions {
   display: inline-flex;
   align-items: center;
@@ -3056,6 +3100,98 @@ body {
 .zto-expand .zto-cell .v {
   font-size: 13px;
   color: var(--color-text-primary);
+}
+
+.zto-package-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 260px;
+}
+
+.zto-package-list > span {
+  white-space: nowrap;
+}
+
+.zto-import-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 82px;
+  padding: 16px 18px;
+  overflow: hidden;
+  border: 1px dashed #9fc4ea;
+  border-radius: 8px;
+  background: #f7fbff;
+}
+
+.zto-import-picker > .anticon {
+  color: var(--color-accent);
+  font-size: 28px;
+}
+
+.zto-import-picker strong,
+.zto-import-picker span {
+  display: block;
+}
+
+.zto-import-picker span {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.zto-import-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.zto-import-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.zto-import-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.zto-import-metrics > div {
+  padding: 12px 14px;
+  border-right: 1px solid var(--color-border);
+}
+
+.zto-import-metrics > div:last-child {
+  border-right: 0;
+}
+
+.zto-import-metrics span,
+.zto-import-metrics b {
+  display: block;
+}
+
+.zto-import-metrics span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.zto-import-metrics b {
+  margin-top: 3px;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.zto-import-metrics .is-warning b {
+  color: var(--color-warning-text);
 }
 
 .zto-batchbar {

@@ -24,7 +24,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
-from app.models import PublicationSchedule
+from app.models import PublicationSchedule, PublicationScheduleUpload, PublicationScheduleUploadStatus
 from app.models.user import User, UserRole
 
 
@@ -93,3 +93,39 @@ def test_years_returns_distinct_sorted_years(client_with_db):
     assert r.status_code == 200, r.text
     # distinct (no dupes despite multiple rows) and ascending — 2024 must be present
     assert r.json() == [2024, 2025, 2026]
+
+
+def test_listing_uploads_never_deletes_stale_previews(client_with_db):
+    client, SessionLocal = client_with_db
+    db = SessionLocal()
+    try:
+        db.add_all([
+            PublicationScheduleUpload(
+                year=2026,
+                original_filename="committed.pdf",
+                stored_path="/tmp/committed.pdf",
+                status=PublicationScheduleUploadStatus.committed,
+            ),
+            PublicationScheduleUpload(
+                year=2026,
+                original_filename="preview.pdf",
+                stored_path="/tmp/preview.pdf",
+                status=PublicationScheduleUploadStatus.previewed,
+            ),
+        ])
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/schedule/uploads?year=2026")
+    assert response.status_code == 200, response.text
+    assert {item["original_filename"] for item in response.json()} == {
+        "committed.pdf",
+        "preview.pdf",
+    }
+
+    db = SessionLocal()
+    try:
+        assert db.query(PublicationScheduleUpload).count() == 2
+    finally:
+        db.close()

@@ -40,10 +40,12 @@ import {
   subscriptionTermLabel,
 } from './orderUtils';
 import { PageHeader } from '../components/UiPrimitives';
+import { useAuth } from '../contexts/AuthContext';
 
 const { Text } = Typography;
 
 export default function ProductCatalog() {
+  const { canMutate } = useAuth();
   const queryClient = useQueryClient();
   const [form] = Form.useForm<ProductFormValues>();
   const [modalOpen, setModalOpen] = useState(false);
@@ -199,13 +201,13 @@ export default function ProductCatalog() {
         fixed: 'right',
         render: (_: unknown, row) => (
           <Space size={4}>
-            <Button type="link" size="small" onClick={() => openEdit(row)}>编辑</Button>
-            {row.active ? (
+            {canMutate && <Button type="link" size="small" onClick={() => openEdit(row)}>编辑</Button>}
+            {canMutate && (row.active ? (
               <Button type="link" size="small" onClick={() => deactivateMutation.mutate(row.id)}>停用</Button>
             ) : (
               <Button type="link" size="small" onClick={() => reactivate(row)}>启用</Button>
-            )}
-            <Popconfirm
+            ))}
+            {canMutate && <Popconfirm
               title="删除该商品？"
               description="删除后不可恢复；已导入的订单不受影响（明细是独立快照）。"
               okText="删除"
@@ -214,13 +216,12 @@ export default function ProductCatalog() {
               onConfirm={() => deleteMutation.mutate(row.id)}
             >
               <Button type="link" size="small" danger>删除</Button>
-            </Popconfirm>
+            </Popconfirm>}
           </Space>
         ),
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [canMutate],
   );
 
   return (
@@ -231,7 +232,7 @@ export default function ProductCatalog() {
         actions={<Space>
           <Input.Search placeholder="搜索编码 / 名称" allowClear style={{ width: 220 }} value={search} onChange={(e) => setSearch(e.target.value)} onSearch={setSearch} />
           <Button icon={<ReloadOutlined />} onClick={() => productsQuery.refetch()} loading={productsQuery.isFetching}>刷新</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增商品</Button>
+          {canMutate && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增商品</Button>}
         </Space>}
       />
 

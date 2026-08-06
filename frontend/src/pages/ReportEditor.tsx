@@ -134,7 +134,7 @@ export default function ReportEditor() {
   const { issueId } = useParams<{ issueId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isAdmin } = useAuth();
+  const { isAdmin, canMutate } = useAuth();
   const [saving, setSaving] = useState(false);
   const [entries, setEntries] = useState<ReportEntry[]>([]);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -836,7 +836,7 @@ export default function ReportEditor() {
       ? currentSourceTotal + previewContribution
       : previewContribution;
 
-  const renderEntryControl = (entry: ReportEntry) => isConfirmed ? (
+  const renderEntryControl = (entry: ReportEntry) => isConfirmed || !canMutate ? (
     <span className="report-editor-static-count">{formatCount(entry.value)}</span>
   ) : (
     <InputNumber
@@ -914,7 +914,7 @@ export default function ReportEditor() {
               )}
               <label className="report-editor-page-count">
                 实际
-                {isConfirmed ? (
+                {isConfirmed || !canMutate ? (
                   <b>{issue.page_count ?? 24}</b>
                 ) : (
                   <InputNumber
@@ -953,7 +953,7 @@ export default function ReportEditor() {
               <Button danger icon={<UndoOutlined />} onClick={() => setRevokeModalVisible(true)}>作废</Button>
             )}
             <Button icon={<DownloadOutlined />} onClick={handleExport}>导出</Button>
-            {isConfirmed && (
+            {canMutate && isConfirmed && (
               <IssueDeleteConfirmButton
                 issueNumber={issue.issue_number}
                 onConfirm={handleDeleteIssue}
@@ -991,7 +991,7 @@ export default function ReportEditor() {
                   <div className="report-editor-field-grid">
                     <div className="report-editor-field">
                       <label>临时加印总数</label>
-                      {isConfirmed ? renderReadOnlyField(tempEntry.value, '临时加印总数') : (
+                      {isConfirmed || !canMutate ? renderReadOnlyField(tempEntry.value, '临时加印总数') : (
                         <div className="report-editor-editable-count">
                           <InputNumber
                             aria-label="临时加印总数"
@@ -1008,7 +1008,7 @@ export default function ReportEditor() {
                     </div>
                     <div className="report-editor-field">
                       <label>自留分发</label>
-                      {tempDetails.length > 0 || isConfirmed || !tempSelfEntry
+                      {tempDetails.length > 0 || isConfirmed || !canMutate || !tempSelfEntry
                         ? renderReadOnlyField(tempSelfValue, '自留分发')
                         : (
                           <div className="report-editor-editable-count">
@@ -1036,17 +1036,17 @@ export default function ReportEditor() {
                     <div className="report-editor-temp-details">
                       <div className="report-editor-temp-details-head">
                         <span><b>＋</b>{tempDetails.length > 0 ? '归属明细' : '尚无归属明细；需要按部门归属时，点击“添加”。'}</span>
-                        {!isConfirmed && <Button size="small" icon={<PlusOutlined />} onClick={handleAddTempDetail}>添加</Button>}
+                        {!isConfirmed && canMutate && <Button size="small" icon={<PlusOutlined />} onClick={handleAddTempDetail}>添加</Button>}
                       </div>
                       {tempDetails.length > 0 && (
                         <div className="report-editor-table-scroll">
                           <table className="report-editor-temp-table">
-                            <thead><tr><th>部门</th><th>份数</th><th>自留</th><th>快递</th>{!isConfirmed && <th>操作</th>}</tr></thead>
+                            <thead><tr><th>部门</th><th>份数</th><th>自留</th><th>快递</th>{!isConfirmed && canMutate && <th>操作</th>}</tr></thead>
                             <tbody>
                               {tempDetails.map((detail, index) => (
                                 <tr key={detail.id ?? index}>
                                   <td>
-                                    {isConfirmed ? (
+                                    {isConfirmed || !canMutate ? (
                                       detail.department === '其他' ? (detail.custom_name || '其他') : detail.department
                                     ) : (
                                       <div className="report-editor-department-control">
@@ -1068,10 +1068,10 @@ export default function ReportEditor() {
                                       </div>
                                     )}
                                   </td>
-                                  <td>{isConfirmed ? detail.quantity : <InputNumber size="small" aria-label={`第${index + 1}条份数`} controls={false} value={detail.quantity} min={0} precision={0} onChange={(value) => handleTempDetailChange(index, 'quantity', value ?? 0)} />}</td>
-                                  <td>{isConfirmed ? detail.self_quantity : <InputNumber size="small" aria-label={`第${index + 1}条自留`} controls={false} value={detail.self_quantity} min={0} max={detail.quantity} precision={0} onChange={(value) => handleTempDetailChange(index, 'self_quantity', value ?? 0)} />}</td>
+                                  <td>{isConfirmed || !canMutate ? detail.quantity : <InputNumber size="small" aria-label={`第${index + 1}条份数`} controls={false} value={detail.quantity} min={0} precision={0} onChange={(value) => handleTempDetailChange(index, 'quantity', value ?? 0)} />}</td>
+                                  <td>{isConfirmed || !canMutate ? detail.self_quantity : <InputNumber size="small" aria-label={`第${index + 1}条自留`} controls={false} value={detail.self_quantity} min={0} max={detail.quantity} precision={0} onChange={(value) => handleTempDetailChange(index, 'self_quantity', value ?? 0)} />}</td>
                                   <td>{formatCount(detail.quantity - detail.self_quantity)}</td>
-                                  {!isConfirmed && <td><Button size="small" type="text" danger aria-label={`删除第${index + 1}条归属明细`} icon={<DeleteOutlined />} onClick={() => handleRemoveTempDetail(index)} /></td>}
+                                  {!isConfirmed && canMutate && <td><Button size="small" type="text" danger aria-label={`删除第${index + 1}条归属明细`} icon={<DeleteOutlined />} onClick={() => handleRemoveTempDetail(index)} /></td>}
                                 </tr>
                               ))}
                             </tbody>
@@ -1225,9 +1225,9 @@ export default function ReportEditor() {
                           <div className="report-editor-source-group-head">
                             <strong>{categoryLabels[channel]}</strong>
                             <StatusPill tone={state.tone}>{state.label}</StatusPill>
-                            <Button type="link" size="small" onClick={() => openSourceDrawer(channel)}>
+                            {canMutate && <Button type="link" size="small" onClick={() => openSourceDrawer(channel)}>
                               {isConfirmed ? '登记调整' : (channelSummary?.active_source_count ?? 0) > 0 ? '追加' : '上传'}
-                            </Button>
+                            </Button>}
                           </div>
                           {(channelSummary?.active_source_count ?? 0) > 0 && (
                             <div className={`report-editor-source-total ${channelSummary?.source_difference ? 'has-difference' : ''}`}>
@@ -1264,10 +1264,10 @@ export default function ReportEditor() {
                                       {' · '}{Math.max(1, Math.round(document.size / 1024))} KB
                                     </small>
                                   </button>
-                                  {document.items.some(item => item.source_status !== 'confirmed') && (
+                                  {canMutate && document.items.some(item => item.source_status !== 'confirmed') && (
                                     <Button size="small" type="link" onClick={() => openSourceReview(document)}>核对</Button>
                                   )}
-                                  {!isConfirmed && document.extraction_status === 'confirmed' && !isReplaced && documentItems.some(item => (
+                                  {canMutate && !isConfirmed && document.extraction_status === 'confirmed' && !isReplaced && documentItems.some(item => (
                                     item.source_status === 'confirmed' && item.effect_status === 'active'
                                   )) && (
                                     <Button size="small" type="link" onClick={() => openSourceReplacement(document)}>重新上传</Button>
@@ -1296,18 +1296,18 @@ export default function ReportEditor() {
                           {' · '}应发 {item.shipping_delta} · 已发 {item.shipped_quantity}
                           {item.shipping_delta > 0 && ` · 待发 ${Math.max(0, item.shipping_delta - item.shipped_quantity)}`}
                         </small>
-                        {item.shipping_delta > 0 && <Button size="small" onClick={() => openShippingModal(item)}>登记</Button>}
+                        {canMutate && item.shipping_delta > 0 && <Button size="small" onClick={() => openShippingModal(item)}>登记</Button>}
                       </div>
                     ))}
                   </div>
-                <Button
+                {canMutate && <Button
                   block
                   className="report-editor-source-primary"
                   icon={<PaperClipOutlined />}
                   onClick={() => openSourceDrawer('postal')}
                 >
                   上传原始来源 / 补发凭证
-                </Button>
+                </Button>}
               </aside>
             </div>
           </div>
@@ -1359,7 +1359,7 @@ export default function ReportEditor() {
             {!isConfirmed && saveStatus === 'error' && '保存失败，请重试'}
             {!isConfirmed && saveStatus === 'idle' && '修改自动暂存；确认后将锁定报数数据'}
           </span>
-          {!isConfirmed && (
+          {!isConfirmed && canMutate && (
             <>
               <Button className="report-editor-save-button" loading={saveStatus === 'saving'} onClick={() => { void doSave(); }}>保存草稿</Button>
               <Button
