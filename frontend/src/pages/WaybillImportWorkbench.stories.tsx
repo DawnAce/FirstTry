@@ -74,6 +74,12 @@ const batch: WaybillImportBatch = {
   rows: [...matchedRows, ...unresolvedRows],
 };
 
+const confirmedBatch: WaybillImportBatch = {
+  ...batch,
+  status: 'confirmed',
+  confirmed_at: '2026-01-26T16:00:00',
+};
+
 const details = [
   { id: 1, name: '收件人 1', phone: '13800000001', address: '北京市朝阳区示例路 1 号', quantity: 10 },
   { id: 201, name: '库房', phone: '13900000000', address: '中通库房', quantity: 74 },
@@ -188,6 +194,25 @@ export const Unresolved: Story = {
     const linkButton = await canvas.findByRole('button', { name: /关联这 4 个运单/ });
     await expect(linkButton).toBeVisible();
     await expect(getComputedStyle(linkButton).color).toBe('rgb(255, 255, 255)');
+  },
+};
+
+export const ConfirmedWithPending: Story = {
+  name: '已确认并保留待处理行',
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/shipping-waybills/issues/18/draft', () => HttpResponse.json(confirmedBatch)),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    const returnButtons = await canvas.findAllByRole('button', { name: /返回第 2638 期快递管理/ });
+    const returnButton = returnButtons.find((button) => button.classList.contains('waybill-return-button'))!;
+    await expect(returnButton).toBeVisible();
+    await expect(getComputedStyle(returnButton).color).toBe('rgb(255, 255, 255)');
+    await expect(getComputedStyle(returnButton).backgroundColor).toBe('rgb(0, 113, 227)');
   },
 };
 
