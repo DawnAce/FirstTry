@@ -3775,23 +3775,27 @@ body {
   background: #f1f7ff;
 }
 
-.waybill-match-suggestion b,
-.waybill-match-suggestion span,
-.waybill-gap-panel b,
-.waybill-gap-panel span {
+.waybill-match-suggestion > div > b,
+.waybill-match-suggestion > div > span,
+.waybill-gap-panel > div > b,
+.waybill-gap-panel > div > span {
   display: block;
 }
 
-.waybill-match-suggestion b,
-.waybill-gap-panel b {
+.waybill-match-suggestion > div > b,
+.waybill-gap-panel > div > b {
   font-size: 12px;
 }
 
-.waybill-match-suggestion span,
-.waybill-gap-panel span {
+.waybill-match-suggestion > div > span,
+.waybill-gap-panel > div > span {
   margin-top: 3px;
   color: var(--color-text-secondary);
   font-size: 11px;
+}
+
+.waybill-match-suggestion .ant-btn-primary {
+  color: #fff !important;
 }
 
 .waybill-gap-panel {

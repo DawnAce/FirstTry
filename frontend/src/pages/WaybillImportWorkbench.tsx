@@ -528,7 +528,7 @@ export default function WaybillImportWorkbench() {
             icon={<LinkOutlined />}
             loading={bulkMatching}
             onClick={() => void handleBulkMatch(groupSuggestions[0].rowIds, groupSuggestions[0].shippingDetailId)}
-          >将{groupSuggestions[0].rowIds.length}个运单关联到此明细</Button>
+          >关联这 {groupSuggestions[0].rowIds.length} 个运单</Button>
         </div>}
         {filter === 'gap' ? <div className="waybill-gap-panel">
           {remainingFileGap ? <>

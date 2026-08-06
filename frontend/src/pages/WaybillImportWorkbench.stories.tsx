@@ -47,10 +47,10 @@ const matchedRows = Array.from({ length: 55 }, (_, index) =>
   makeRow(index + 1, 'matched', index === 54 ? 415 : 10),
 );
 const unresolvedRows = [
-  makeRow(101, 'unmatched', 299, { source_sheet: '299（备用74+社用225）', tracking_no: null, no_tracking_required: true, carrier: '无需运单', recipient_name: '库房与社用汇总', match_reason: '未找到对应发货明细' }),
-  makeRow(102, 'ambiguous', 50, { recipient_name: '发行部', match_reason: '匹配到多条发货明细，请人工选择' }),
-  makeRow(103, 'invalid', 15, { recipient_name: '', match_reason: '未能按当前工作表格式识别，请人工补充' }),
-  makeRow(104, 'duplicate', 1, { match_reason: '待导入数据中运单号重复' }),
+  makeRow(101, 'unmatched', 65, { recipient_name: '肖波', phone: '15719468023', address: '成都市双流文星镇通关路86号A1－A4杂志铺' }),
+  makeRow(102, 'unmatched', 100, { recipient_name: '肖波', phone: '15719468023', address: '成都市双流文星镇通关路86号A1－A4杂志铺' }),
+  makeRow(103, 'unmatched', 100, { recipient_name: '肖波', phone: '15719468023', address: '成都市双流文星镇通关路86号A1－A4杂志铺' }),
+  makeRow(104, 'unmatched', 100, { recipient_name: '肖波', phone: '15719468023', address: '成都市双流文星镇通关路86号A1－A4杂志铺' }),
 ];
 
 const batch: WaybillImportBatch = {
@@ -80,6 +80,7 @@ const details = [
   { id: 202, name: '社用报', phone: '13900000001', address: '报社', quantity: 225 },
   { id: 203, name: '发行部', phone: '13800000102', address: '北京市朝阳区示例路 102 号', quantity: 30 },
   { id: 204, name: '发行部', phone: '13800000102', address: '北京市朝阳区示例路 102 号', quantity: 20 },
+  { id: 205, name: '肖波', phone: '15719468023', address: '成都市双流文星镇通关路86号A1－A4杂志铺', quantity: 365 },
 ].map((detail) => ({
   ...detail,
   issue_number: 2638,
@@ -184,6 +185,9 @@ export const Unresolved: Story = {
     await expect(await canvas.findByText('运单核对工作台')).toBeVisible();
     await expect(await canvas.findByText('发货计划对账')).toBeVisible();
     await expect(await canvas.findByText('待人工关联')).toBeVisible();
+    const linkButton = await canvas.findByRole('button', { name: /关联这 4 个运单/ });
+    await expect(linkButton).toBeVisible();
+    await expect(getComputedStyle(linkButton).color).toBe('rgb(255, 255, 255)');
   },
 };
 
