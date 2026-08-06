@@ -2958,7 +2958,7 @@ body {
 
 .zto-detail-card-row {
   display: grid;
-  grid-template-columns: 28px 42px minmax(120px, 1fr) minmax(88px, .65fr) minmax(100px, .72fr) minmax(145px, 1.08fr) minmax(84px, .6fr) 30px;
+  grid-template-columns: 28px 30px 42px minmax(120px, 1fr) minmax(88px, .65fr) minmax(100px, .72fr) minmax(145px, 1.08fr) minmax(84px, .6fr) 30px;
   align-items: center;
   gap: 12px;
   min-width: 0;
@@ -2984,6 +2984,14 @@ body {
   display: grid;
   place-items: center;
   align-self: center;
+}
+
+.zto-card-ordinal {
+  align-self: center;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .zto-card-status-icon {
@@ -4122,7 +4130,7 @@ body {
 
 @media (max-width: 980px) {
   .zto-detail-card-row {
-    grid-template-columns: 28px 42px minmax(120px, 1fr) minmax(88px, .65fr) minmax(100px, .72fr) minmax(84px, .6fr) 30px;
+    grid-template-columns: 28px 30px 42px minmax(120px, 1fr) minmax(88px, .65fr) minmax(100px, .72fr) minmax(84px, .6fr) 30px;
   }
 
   .zto-card-package {
@@ -4179,7 +4187,7 @@ body {
   }
 
   .zto-detail-card-row {
-    grid-template-columns: 24px 38px minmax(0, 1fr) 30px;
+    grid-template-columns: 24px 26px 38px minmax(0, 1fr) 30px;
     gap: 10px;
   }
 
@@ -4188,24 +4196,29 @@ body {
     grid-row: 1 / 4;
   }
 
-  .zto-card-status-icon {
+  .zto-card-ordinal {
     grid-column: 2;
     grid-row: 1 / 4;
   }
 
-  .zto-card-recipient {
+  .zto-card-status-icon {
     grid-column: 3;
+    grid-row: 1 / 4;
+  }
+
+  .zto-card-recipient {
+    grid-column: 4;
     grid-row: 1;
   }
 
   .zto-card-channel {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 2;
   }
 
   .zto-card-fulfillment {
     display: block;
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 3;
   }
 
@@ -4219,7 +4232,7 @@ body {
   }
 
   .zto-card-detail-button {
-    grid-column: 4;
+    grid-column: 5;
     grid-row: 1 / 4;
   }
 
