@@ -3200,6 +3200,342 @@ body {
   color: var(--color-warning-text);
 }
 
+/* 运单核对工作台 */
+.waybill-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding-bottom: 96px;
+}
+
+.waybill-page-loading {
+  display: grid;
+  min-height: 55vh;
+  place-items: center;
+}
+
+.waybill-file-input {
+  display: none;
+}
+
+.waybill-back {
+  align-self: flex-start;
+  height: auto;
+  padding: 0;
+}
+
+.waybill-head,
+.waybill-title-line,
+.waybill-head-actions,
+.waybill-table-toolbar,
+.waybill-confirm-bar {
+  display: flex;
+  align-items: center;
+}
+
+.waybill-head,
+.waybill-table-toolbar,
+.waybill-confirm-bar {
+  justify-content: space-between;
+}
+
+.waybill-head {
+  gap: 24px;
+}
+
+.waybill-title-line,
+.waybill-head-actions {
+  gap: 10px;
+}
+
+.waybill-title-line h1 {
+  margin: 0;
+  font-size: 27px;
+  letter-spacing: -.02em;
+}
+
+.waybill-head p {
+  margin: 5px 0 0;
+  color: var(--color-text-secondary);
+}
+
+.waybill-empty-card .ant-card-body {
+  padding: 0;
+}
+
+.waybill-upload-zone {
+  display: flex;
+  min-height: 350px;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px;
+  cursor: pointer;
+  text-align: center;
+  background: linear-gradient(145deg, #f8fbff, #fff);
+  border: 1px dashed #9fc4ea;
+  border-radius: 10px;
+}
+
+.waybill-upload-zone > .anticon {
+  color: var(--color-accent);
+  font-size: 54px;
+}
+
+.waybill-upload-zone h2 {
+  margin: 18px 0 6px;
+}
+
+.waybill-upload-zone p {
+  max-width: 540px;
+  margin: 0 0 22px;
+  color: var(--color-text-secondary);
+}
+
+.waybill-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.waybill-metrics .ant-card-body {
+  padding: 15px 16px;
+}
+
+.waybill-metrics span,
+.waybill-metrics b,
+.waybill-metrics small {
+  display: block;
+}
+
+.waybill-metrics span,
+.waybill-metrics small {
+  color: var(--color-text-secondary);
+}
+
+.waybill-metrics span {
+  font-size: 12px;
+}
+
+.waybill-metrics b {
+  margin: 4px 0 2px;
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+}
+
+.waybill-metrics small {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waybill-metrics .is-warning {
+  border-color: #f2c879;
+  background: #fffbf1;
+}
+
+.waybill-metrics .is-warning b {
+  color: var(--color-warning-text);
+}
+
+.waybill-metrics .is-success b {
+  color: var(--color-success);
+}
+
+.waybill-table-card {
+  overflow: hidden;
+}
+
+.waybill-table-toolbar {
+  gap: 20px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.waybill-table-toolbar > span {
+  flex: none;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.waybill-source b,
+.waybill-source span,
+.waybill-recipient b,
+.waybill-recipient span,
+.waybill-tracking b,
+.waybill-tracking span,
+.waybill-status-cell span {
+  display: block;
+}
+
+.waybill-source span,
+.waybill-recipient span,
+.waybill-tracking span,
+.waybill-status-cell span {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waybill-row-actions {
+  display: flex;
+}
+
+.waybill-row-actions .ant-btn {
+  padding-inline: 3px;
+}
+
+.waybill-expanded {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 22px;
+  padding: 18px 24px 20px 52px;
+  background: #f8fafc;
+}
+
+.waybill-expanded h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.waybill-raw-values {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.waybill-raw-values > span {
+  max-width: 100%;
+  padding: 5px 8px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waybill-raw-values small {
+  margin-right: 6px;
+  color: var(--color-text-tertiary);
+  font-family: inherit;
+}
+
+.waybill-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.waybill-detail-card.is-current {
+  border-color: #8fc5a7;
+  background: #f4fbf7;
+}
+
+.waybill-detail-card span,
+.waybill-detail-card small,
+.waybill-muted {
+  color: var(--color-text-secondary);
+}
+
+.waybill-alternatives {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.waybill-confirm-bar {
+  position: fixed;
+  z-index: 20;
+  right: 24px;
+  bottom: 20px;
+  left: calc(var(--sidebar-width, 230px) + 24px);
+  gap: 24px;
+  padding: 13px 18px;
+  background: rgba(255, 255, 255, .96);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(17, 35, 55, .13);
+  backdrop-filter: blur(12px);
+}
+
+.waybill-confirm-bar b,
+.waybill-confirm-bar span {
+  display: block;
+}
+
+.waybill-confirm-bar span {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.waybill-editor-note {
+  margin-bottom: 18px;
+}
+
+.waybill-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+.waybill-form-grid .is-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1180px) {
+  .waybill-metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .waybill-expanded {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .waybill-head,
+  .waybill-confirm-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .waybill-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .waybill-confirm-bar {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+  }
+
+  .waybill-confirm-bar .ant-btn {
+    width: 100%;
+    white-space: normal;
+  }
+
+  .waybill-form-grid {
+    display: block;
+  }
+}
+
 .zto-batchbar {
   display: flex;
   align-items: center;

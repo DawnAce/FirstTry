@@ -13,7 +13,9 @@ export interface WaybillImportRow {
   address: string | null;
   quantity: number;
   no_tracking_required: boolean;
-  match_status: 'matched' | 'unmatched' | 'ambiguous' | 'duplicate' | 'invalid';
+  raw_values: unknown[] | null;
+  manual_reviewed: boolean;
+  match_status: 'matched' | 'unmatched' | 'ambiguous' | 'duplicate' | 'invalid' | 'ignored';
   match_reason: string | null;
   shipping_detail_id: number | null;
 }
@@ -53,11 +55,47 @@ export interface FulfillmentSummary {
   latest_import: WaybillImportBatch | null;
 }
 
-export const previewWaybillImport = (issueId: number, file: File): Promise<AxiosResponse<WaybillImportBatch>> => {
+export interface WaybillImportRowInput {
+  carrier?: string | null;
+  tracking_no?: string | null;
+  recipient_name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  quantity?: number | null;
+  no_tracking_required?: boolean;
+  shipping_detail_id?: number | null;
+  ignored?: boolean;
+}
+
+export const previewWaybillImport = (
+  issueId: number,
+  file: File,
+  reparse = false,
+): Promise<AxiosResponse<WaybillImportBatch>> => {
   const data = new FormData();
   data.append('file', file);
+  data.append('reparse', String(reparse));
   return api.post<WaybillImportBatch>(`/shipping-waybills/issues/${issueId}/preview`, data);
 };
+
+export const getWaybillImportDraft = (issueId: number): Promise<AxiosResponse<WaybillImportBatch | null>> =>
+  api.get<WaybillImportBatch | null>(`/shipping-waybills/issues/${issueId}/draft`);
+
+export const getWaybillImport = (batchId: number): Promise<AxiosResponse<WaybillImportBatch>> =>
+  api.get<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}`);
+
+export const updateWaybillImportRow = (
+  batchId: number,
+  rowId: number,
+  data: WaybillImportRowInput,
+): Promise<AxiosResponse<WaybillImportBatch>> =>
+  api.patch<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}/rows/${rowId}`, data);
+
+export const addWaybillImportRow = (
+  batchId: number,
+  data: WaybillImportRowInput,
+): Promise<AxiosResponse<WaybillImportBatch>> =>
+  api.post<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}/rows`, data);
 
 export const confirmWaybillImport = (batchId: number): Promise<AxiosResponse<WaybillImportBatch>> =>
   api.post<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}/confirm`);
