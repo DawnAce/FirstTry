@@ -19,6 +19,7 @@ import {
   Tooltip,
   Popover,
   Empty,
+  Alert,
 } from 'antd';
 import {
   PlusOutlined,
@@ -34,6 +35,7 @@ import {
   ReloadOutlined,
   MoreOutlined,
   RightOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TableColumnsType, TableProps } from 'antd';
@@ -60,6 +62,15 @@ import {
 import dayjs from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
 import { DrawerTitle, StatusPill, SuccessCheckIcon } from '../components/UiPrimitives';
+import type { WaybillImportBatch } from '../api/shippingWaybills';
+import {
+  addManualPackage,
+  confirmWaybillImport,
+  deleteShippingPackage,
+  getFulfillmentSummary,
+  previewWaybillImport,
+  setNoTrackingRequired,
+} from '../api/shippingWaybills';
 
 const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '库房留存', '报社留存'] as const;
 const SUB_CHANNEL_OPTIONS = ['监管', '政府'] as const;
@@ -105,14 +116,22 @@ interface ShippingFilters {
   status?: string;
   search?: string;
   company?: string[];
+  fulfillment_status?: string;
 }
+
+const fulfillmentMeta: Record<string, { label: string; color: string }> = {
+  pending: { label: '待发货', color: 'default' },
+  partial: { label: '部分已发货', color: 'orange' },
+  shipped: { label: '已发货', color: 'green' },
+  no_tracking_required: { label: '无需发货', color: 'blue' },
+};
 
 export default function LogisticsIssueDetail() {
   const { id } = useParams<{ id: string }>();
   const issueId = Number(id);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, canMutate } = useAuth();
   const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ShippingDetail | null>(null);
@@ -127,6 +146,13 @@ export default function LogisticsIssueDetail() {
   const [exporting, setExporting] = useState(false);
   const [clearingIssue, setClearingIssue] = useState(false);
   const [changeLogOpen, setChangeLogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<WaybillImportBatch | null>(null);
+  const [previewingImport, setPreviewingImport] = useState(false);
+  const [confirmingImport, setConfirmingImport] = useState(false);
+  const [packageRecord, setPackageRecord] = useState<ShippingDetail | null>(null);
+  const [packageForm] = Form.useForm();
 
   const { data: currentIssue } = useQuery({
     queryKey: ['issue', issueId],
@@ -209,6 +235,12 @@ export default function LogisticsIssueDetail() {
     enabled: Number.isFinite(issueId),
   });
 
+  const { data: fulfillment } = useQuery({
+    queryKey: ['shippingFulfillment', issueId],
+    queryFn: async () => (await getFulfillmentSummary(issueId)).data,
+    enabled: Number.isFinite(issueId),
+  });
+
   const { data: operationLogs = [], isLoading: logsLoading } = useQuery({
     queryKey: ['operationLogs', logRecordId],
     queryFn: async () => {
@@ -239,6 +271,82 @@ export default function LogisticsIssueDetail() {
     queryClient.invalidateQueries({ queryKey: ['shippingCompanies'] });
     queryClient.invalidateQueries({ queryKey: ['operationLogs'] });
     queryClient.invalidateQueries({ queryKey: ['report', issueId] });
+    queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] });
+  };
+
+  const handlePreviewWaybills = async () => {
+    if (!importFile) {
+      message.warning('请先选择运单Excel文件');
+      return;
+    }
+    setPreviewingImport(true);
+    try {
+      const res = await previewWaybillImport(issueId, importFile);
+      setImportPreview(res.data);
+      if (res.data.status === 'confirmed') message.info('该文件已经导入过，未重复创建运单');
+    } catch {
+      message.error('运单文件解析失败');
+    } finally {
+      setPreviewingImport(false);
+    }
+  };
+
+  const handleConfirmWaybills = async () => {
+    if (!importPreview) return;
+    setConfirmingImport(true);
+    try {
+      await confirmWaybillImport(importPreview.id);
+      message.success(`已核销 ${importPreview.matched_quantity.toLocaleString()} 份，待补 ${importPreview.pending_quantity.toLocaleString()} 份`);
+      setImportOpen(false);
+      setImportFile(null);
+      setImportPreview(null);
+      refreshShippingDetails();
+    } catch {
+      message.error('确认导入失败');
+    } finally {
+      setConfirmingImport(false);
+    }
+  };
+
+  const handleOpenPackage = (record: ShippingDetail) => {
+    setActionMenuRecordId(null);
+    setPackageRecord(record);
+    packageForm.setFieldsValue({ carrier: '中通', quantity: Math.max(record.quantity - record.handled_quantity, 1) });
+  };
+
+  const handleAddPackage = async () => {
+    if (!packageRecord) return;
+    try {
+      const values = await packageForm.validateFields();
+      await addManualPackage(packageRecord.id, values);
+      message.success('运单已补录');
+      setPackageRecord(null);
+      packageForm.resetFields();
+      refreshShippingDetails();
+    } catch {
+      message.error('补录运单失败');
+    }
+  };
+
+  const handleDeletePackage = async (packageId: number) => {
+    try {
+      await deleteShippingPackage(packageId);
+      message.success('运单已删除');
+      refreshShippingDetails();
+    } catch {
+      message.error('删除运单失败');
+    }
+  };
+
+  const handleNoTracking = async (record: ShippingDetail, value: boolean) => {
+    setActionMenuRecordId(null);
+    try {
+      await setNoTrackingRequired(record.id, value);
+      message.success(value ? '已标记为无需发货' : '已恢复为需要运单');
+      refreshShippingDetails();
+    } catch {
+      message.error(value ? '标记失败，请先检查是否已有运单' : '恢复失败');
+    }
   };
 
   const handleEdit = (record: ShippingDetail) => {
@@ -386,7 +494,11 @@ export default function LogisticsIssueDetail() {
     || shippingFilters.status
     || shippingFilters.search
     || shippingFilters.company?.length
+    || shippingFilters.fulfillment_status
   );
+  const visibleDetails = shippingFilters.fulfillment_status
+    ? details.filter((detail) => detail.fulfillment_status === shippingFilters.fulfillment_status)
+    : details;
 
   const toggleExpanded = (recordId: number) => {
     setExpandedRowKeys((keys) => (
@@ -450,6 +562,20 @@ export default function LogisticsIssueDetail() {
       render: (v: number) => <span className="zto-quantity">{v ?? '—'}</span>,
     },
     {
+      title: '发货进度',
+      key: 'fulfillment',
+      width: 130,
+      render: (_: unknown, r: ShippingDetail) => {
+        const meta = fulfillmentMeta[r.fulfillment_status] || fulfillmentMeta.pending;
+        return (
+          <div className="zto-fulfillment-cell">
+            <Tag color={meta.color}>{meta.label}</Tag>
+            <small>{r.handled_quantity.toLocaleString()} / {r.quantity.toLocaleString()}份{r.package_count ? ` · ${r.package_count}单` : ''}</small>
+          </div>
+        );
+      },
+    },
+    {
       title: '来源 / 同步',
       key: 'mark',
       width: 116,
@@ -463,7 +589,7 @@ export default function LogisticsIssueDetail() {
       ),
     },
     {
-      title: '状态',
+      title: '数据状态',
       dataIndex: 'status',
       key: 'status',
       width: 70,
@@ -478,6 +604,7 @@ export default function LogisticsIssueDetail() {
       align: 'right',
       render: (_: unknown, record: ShippingDetail) => (
         <div className="zto-row-actions">
+          {canMutate ? <>
           <Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button>
           <Popover
             trigger="click"
@@ -486,6 +613,14 @@ export default function LogisticsIssueDetail() {
             onOpenChange={(open) => setActionMenuRecordId(open ? record.id : null)}
             content={
               <div className="zto-action-menu">
+                {record.shipping_requirement === 'no_tracking_required' ? (
+                  <Button type="text" onClick={() => handleNoTracking(record, false)}>恢复需要运单</Button>
+                ) : (
+                  <>
+                    <Button type="text" onClick={() => handleOpenPackage(record)}>补录运单</Button>
+                    {!record.package_count && <Button type="text" onClick={() => handleNoTracking(record, true)}>标记无需发货</Button>}
+                  </>
+                )}
                 <Button type="text" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)}>操作日志</Button>
                 {record.source_type !== 'complaint_makeup' ? <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
                   <Button type="text" danger icon={<DeleteOutlined />}>删除</Button>
@@ -495,6 +630,7 @@ export default function LogisticsIssueDetail() {
           >
             <Button type="text" size="small" icon={<MoreOutlined />} aria-label={`${record.name}更多操作`} />
           </Popover>
+          </> : <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)}>操作日志</Button>}
         </div>
       ),
     },
@@ -511,6 +647,21 @@ export default function LogisticsIssueDetail() {
       { k: '发货时间', v: r.shipped_at ? dayjs(r.shipped_at).format('YYYY-MM-DD') : '—' },
       { k: '实发份数', v: r.shipped_quantity ?? '—' },
       { k: '快递单号', v: r.tracking_no || '—' },
+      {
+        k: '包裹 / 运单',
+        v: r.packages.length ? (
+          <div className="zto-package-list">
+            {r.packages.map((pkg) => (
+              <span key={pkg.id}>
+                <Tag>{pkg.carrier}</Tag><b>{pkg.tracking_no}</b> · {pkg.quantity}份
+                {canMutate && <Popconfirm title="确认删除这个运单？" onConfirm={() => handleDeletePackage(pkg.id)}>
+                  <Button type="link" size="small" danger>删除</Button>
+                </Popconfirm>}
+              </span>
+            ))}
+          </div>
+        ) : r.shipping_requirement === 'no_tracking_required' ? '无需运单' : '待补运单',
+      },
       { k: '站点 / 站厅', v: station || '—' },
       { k: '联系人', v: r.contact_person || '—' },
       {
@@ -567,7 +718,8 @@ export default function LogisticsIssueDetail() {
         <div className="zto-head-actions">
           <Button icon={<FileTextOutlined />} onClick={() => navigate(`/report/${issueId}`)}>去报数</Button>
           <Button icon={<DownloadOutlined />} onClick={handleExportShipping} disabled={currentIssue?.id == null} loading={exporting}>导出本期</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增明细</Button>
+          {canMutate && <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入运单</Button>}
+          {canMutate && <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增明细</Button>}
           {isAdmin && (
             <Popover
               trigger="click"
@@ -649,8 +801,49 @@ export default function LogisticsIssueDetail() {
             </span>
             <div className="zto-change-actions">
               <Button size="small" onClick={() => setChangeLogOpen(true)}>查看变更</Button>
-              <Button size="small" className="zto-reverify-btn" icon={<ReloadOutlined />} onClick={handleReverify}>重新校验</Button>
+              {canMutate && <Button size="small" className="zto-reverify-btn" icon={<ReloadOutlined />} onClick={handleReverify}>重新校验</Button>}
             </div>
+          </div>
+        )}
+      </Card>
+
+      <Card className="zto-fulfillment-card" styles={{ body: { padding: 0 } }}>
+        <div className="zto-reconcile-main">
+          <div className={`zto-reconcile-result ${fulfillment?.status === 'shipped' ? 'is-match' : fulfillment?.status === 'exception' ? 'is-mismatch' : 'is-pending'}`}>
+            <div className="zto-reconcile-icon">
+              {fulfillment?.status === 'shipped' ? <SuccessCheckIcon /> : fulfillment?.status === 'exception' ? <CloseOutlined /> : <InboxOutlined />}
+            </div>
+            <div>
+              <span>发货核销</span>
+              <strong>{fulfillment?.status === 'shipped' ? '本期已发货' : fulfillment?.status === 'partial' ? '部分已发货' : fulfillment?.status === 'exception' ? '存在超额' : '待发货'}</strong>
+              <small>上传运单即视为已发货，暂不查询物流轨迹</small>
+            </div>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>确认印数</span>
+            <strong>{fulfillment?.expected_quantity?.toLocaleString() ?? '—'}</strong>
+            <small>份 · 固定基准</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>已处理</span>
+            <strong>{fulfillment?.handled_quantity?.toLocaleString() ?? '—'}</strong>
+            <small>{fulfillment ? `运单 ${fulfillment.tracked_quantity.toLocaleString()} + 无需运单 ${fulfillment.no_tracking_quantity.toLocaleString()}` : '份'}</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>待补</span>
+            <strong className={fulfillment?.pending_quantity ? 'is-danger' : 'is-success'}>{fulfillment?.pending_quantity?.toLocaleString() ?? '—'}</strong>
+            <small>份</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>运单</span>
+            <strong>{fulfillment?.package_count?.toLocaleString() ?? '—'}</strong>
+            <small>个</small>
+          </div>
+        </div>
+        {!!fulfillment?.pending_quantity && (
+          <div className="zto-fulfillment-warning">
+            <span className="zto-change-icon">!</span>
+            <div><strong>还有 {fulfillment.pending_quantity.toLocaleString()} 份待补</strong><span>已匹配结果会正常保留，可稍后补录运单或标记为无需发货。</span></div>
           </div>
         )}
       </Card>
@@ -666,7 +859,7 @@ export default function LogisticsIssueDetail() {
               </div>
             }
           >
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增第一条</Button>
+            {canMutate && <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增第一条</Button>}
           </Empty>
         </Card>
       ) : (
@@ -715,6 +908,15 @@ export default function LogisticsIssueDetail() {
             >
               {SHIPPING_STATUS_OPTIONS.map((st) => <Select.Option key={st} value={st}>{st}</Select.Option>)}
             </Select>
+            <Select
+              placeholder="全部发货状态"
+              className="zto-filter-status"
+              allowClear
+              value={shippingFilters.fulfillment_status}
+              onChange={(value) => setShippingFilters((f) => ({ ...f, fulfillment_status: value }))}
+            >
+              {Object.entries(fulfillmentMeta).map(([value, meta]) => <Select.Option key={value} value={value}>{meta.label}</Select.Option>)}
+            </Select>
             <Popover
               trigger="click"
               placement="bottomLeft"
@@ -738,12 +940,12 @@ export default function LogisticsIssueDetail() {
             <div className="zto-toolbar-tail">
               <Button type="link" disabled={!hasShippingFilters} onClick={() => setShippingFilters({})}>清除筛选</Button>
               <span className="zto-toolbar-count">
-                共 <b>{details.length}</b> 条 · 合计 <b>{currentShippingTotal.toLocaleString()}</b> 份
+                共 <b>{visibleDetails.length}</b> 条 · 合计 <b>{currentShippingTotal.toLocaleString()}</b> 份
               </span>
             </div>
           </div>
 
-          {selectedRowKeys.length > 0 && (
+          {canMutate && selectedRowKeys.length > 0 && (
             <div className="zto-batchbar">
               <span className="zto-batch-lbl">已选 {selectedRowKeys.length} 条</span>
               <Button size="small" onClick={() => handleBatchStatus('正常')}>设为正常</Button>
@@ -761,9 +963,9 @@ export default function LogisticsIssueDetail() {
             className="zto-table"
             loading={isLoading}
             columns={shippingColumns}
-            dataSource={details}
+            dataSource={visibleDetails}
             rowKey="id"
-            rowSelection={rowSelection}
+            rowSelection={canMutate ? rowSelection : undefined}
             tableLayout="fixed"
             scroll={{ x: 960 }}
             expandable={{
@@ -775,6 +977,77 @@ export default function LogisticsIssueDetail() {
           />
         </Card>
       )}
+
+      <Modal
+        title="导入运单"
+        open={importOpen}
+        width={860}
+        onCancel={() => { setImportOpen(false); setImportFile(null); setImportPreview(null); }}
+        footer={[
+          <Button key="cancel" onClick={() => { setImportOpen(false); setImportFile(null); setImportPreview(null); }}>取消</Button>,
+          <Button key="preview" icon={<UploadOutlined />} loading={previewingImport} onClick={handlePreviewWaybills}>解析并预览</Button>,
+          <Button key="confirm" type="primary" disabled={!importPreview || importPreview.status === 'confirmed'} loading={confirmingImport} onClick={handleConfirmWaybills}>确认导入</Button>,
+        ]}
+      >
+        <div className="zto-import-picker">
+          <UploadOutlined />
+          <div><strong>{importFile?.name || '选择运单Excel文件'}</strong><span>支持当前中通、顺丰、邮政、挂号及备用/社用工作表</span></div>
+          <input
+            type="file"
+            accept=".xlsx,.xlsm"
+            onChange={(event) => {
+              setImportFile(event.target.files?.[0] || null);
+              setImportPreview(null);
+            }}
+          />
+        </div>
+        {importPreview && (
+          <div className="zto-import-preview">
+            <div className="zto-import-metrics">
+              <div><span>确认印数</span><b>{importPreview.expected_quantity.toLocaleString()}</b></div>
+              <div><span>文件份数</span><b>{importPreview.parsed_quantity.toLocaleString()}</b></div>
+              <div><span>可核销</span><b>{importPreview.matched_quantity.toLocaleString()}</b></div>
+              <div className={importPreview.pending_quantity ? 'is-warning' : ''}><span>待补</span><b>{importPreview.pending_quantity.toLocaleString()}</b></div>
+              <div><span>需关注</span><b>{importPreview.warning_count.toLocaleString()}</b></div>
+            </div>
+            {importPreview.pending_quantity > 0 && (
+              <Alert showIcon type="warning" message={`仍有 ${importPreview.pending_quantity.toLocaleString()} 份待补；不会阻止已匹配数据导入。`} />
+            )}
+            <Table
+              size="small"
+              rowKey="id"
+              dataSource={importPreview.rows}
+              pagination={{ pageSize: 6, showSizeChanger: false }}
+              columns={[
+                { title: '来源', key: 'source', width: 180, render: (_: unknown, row) => `${row.source_sheet} · 第${row.source_row}行` },
+                { title: '收件人', dataIndex: 'recipient_name', width: 110 },
+                { title: '承运/运单', key: 'tracking', render: (_: unknown, row) => row.no_tracking_required ? '无需运单' : `${row.carrier} · ${row.tracking_no || '—'}` },
+                { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' as const },
+                { title: '匹配结果', key: 'match', width: 150, render: (_: unknown, row) => <Tag color={row.match_status === 'matched' ? 'green' : 'orange'}>{row.match_status === 'matched' ? '已匹配' : row.match_reason || row.match_status}</Tag> },
+              ]}
+            />
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        title={`补录运单${packageRecord ? ` · ${packageRecord.name}` : ''}`}
+        open={!!packageRecord}
+        onOk={handleAddPackage}
+        onCancel={() => { setPackageRecord(null); packageForm.resetFields(); }}
+      >
+        <Form form={packageForm} layout="vertical">
+          <Form.Item name="carrier" label="快递公司" rules={[{ required: true, message: '请输入快递公司' }]}>
+            <Select options={["中通", "顺丰", "邮政", "邮政挂号"].map((value) => ({ value, label: value }))} />
+          </Form.Item>
+          <Form.Item name="tracking_no" label="运单号" rules={[{ required: true, message: '请输入运单号' }]}>
+            <Input placeholder="请输入运单号" />
+          </Form.Item>
+          <Form.Item name="quantity" label="本包裹份数" rules={[{ required: true, message: '请输入份数' }]}>
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title={editingRecord ? '编辑记录' : '新增记录'}

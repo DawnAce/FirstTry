@@ -14,6 +14,7 @@ import { getSchedule, getScheduleYears } from '../api/schedule';
 import type { ScheduleEntry } from '../api/schedule';
 import { formatIssueRange, groupScheduleRowsByMonth, summarizeScheduleRows } from './publicationScheduleUtils';
 import { MetricCard, PageHeader } from '../components/UiPrimitives';
+import { useAuth } from '../contexts/AuthContext';
 
 const { RangePicker } = DatePicker;
 
@@ -92,6 +93,7 @@ function renderMatrixCell(row: ScheduleEntry | undefined): ReactNode {
 }
 
 export default function ScheduleView() {
+  const { canMutate } = useAuth();
   const [year, setYear] = useState(DEFAULT_YEAR);
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
@@ -218,7 +220,7 @@ export default function ScheduleView() {
         title="期刊表"
         description="按年份查看出版安排、休刊情况与版数信息"
         actions={<>
-          <Button type="primary" icon={<UploadOutlined />} href="/schedule/import">导入期刊表</Button>
+          {canMutate && <Button type="primary" icon={<UploadOutlined />} href="/schedule/import">导入期刊表</Button>}
           <Select
             value={year}
             options={yearOptions}

@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 from jose import jwt
 from pydantic import ValidationError
 
@@ -26,3 +28,31 @@ def test_settings_reject_short_jwt_secret():
             JWT_SECRET="too-short",
             _env_file=None,
         )
+
+
+def test_viewer_cannot_mutate_but_can_read():
+    viewer = SimpleNamespace(role=SimpleNamespace(value="viewer"))
+
+    assert auth.require_mutation_permission(SimpleNamespace(method="GET"), viewer) is viewer
+    with pytest.raises(HTTPException) as exc_info:
+        auth.require_mutation_permission(SimpleNamespace(method="POST"), viewer)
+
+    assert exc_info.value.status_code == 403
+    assert "只读" in exc_info.value.detail
+
+
+def test_operator_can_mutate():
+    operator = SimpleNamespace(role=SimpleNamespace(value="operator"))
+
+    assert auth.require_mutation_permission(SimpleNamespace(method="POST"), operator) is operator
+
+
+def test_mutation_permission_accepts_string_roles_from_integrations():
+    admin = SimpleNamespace(role="admin")
+    viewer = SimpleNamespace(role="viewer")
+
+    assert auth.require_mutation_permission(SimpleNamespace(method="POST"), admin) is admin
+    with pytest.raises(HTTPException) as exc_info:
+        auth.require_mutation_permission(SimpleNamespace(method="DELETE"), viewer)
+
+    assert exc_info.value.status_code == 403

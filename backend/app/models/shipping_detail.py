@@ -63,6 +63,10 @@ class ShippingDetail(Base):
     # 「已发」标记 = shipped_at 非空。应发(Σquantity) − 已发(Σshipped_quantity) = 缺口。
     shipped_quantity = Column(Integer, nullable=True)
     tracking_no = Column(String(64), nullable=True)
+    # 运单核销要求。数据质量状态仍由 ``status`` 表达，二者不可混用。
+    shipping_requirement = Column(
+        String(32), nullable=False, default="tracking_required", server_default="tracking_required", index=True
+    )
     # V1.1: order management linkage. All five are nullable so existing
     # rows (legacy manual entries) keep working unchanged. source_type
     # and sync_status get server_default so the DDL upgrade is clean.
@@ -95,6 +99,41 @@ class ShippingDetail(Base):
         back_populates="shipping_detail",
         foreign_keys=[complaint_makeup_item_id],
     )
+    packages = relationship(
+        "ShippingPackage",
+        back_populates="shipping_detail",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
+        order_by="ShippingPackage.id",
+    )
+
+    @property
+    def handled_quantity(self) -> int:
+        if self.shipping_requirement == "no_tracking_required":
+            return self.quantity or 0
+        package_quantity = sum((package.quantity or 0) for package in self.packages)
+        if package_quantity:
+            return package_quantity
+        if self.shipped_at is not None:
+            return self.shipped_quantity if self.shipped_quantity is not None else (self.quantity or 0)
+        return 0
+
+    @property
+    def package_count(self) -> int:
+        return len(self.packages)
+
+    @property
+    def fulfillment_status(self) -> str:
+        if self.shipping_requirement == "no_tracking_required":
+            return "no_tracking_required"
+        handled = self.handled_quantity
+        planned = self.quantity or 0
+        if handled <= 0:
+            return "pending"
+        if handled < planned:
+            return "partial"
+        return "shipped"
 
     @property
     def complaint_makeup_task_id(self):

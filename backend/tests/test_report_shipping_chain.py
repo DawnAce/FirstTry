@@ -12,11 +12,15 @@ from sqlalchemy.pool import StaticPool
 from app.api.exports import export_all, export_report, export_shipping
 from app.api.reports import confirm_report, get_report
 from app.database import Base
-from app.models import Issue, IssueAuditSnapshot, IssueStatus, PublicationSchedule, ReportEntry, ShippingDetail, User, UserRole
+from app.models import Issue, IssueAuditSnapshot, IssueStatus, OperationLog, PublicationSchedule, ReportEntry, ShippingDetail, User, UserRole
 
 
 def _admin_user() -> User:
     return User(id=1, username="admin", role=UserRole.admin, password_hash="x")
+
+
+def _viewer_user() -> User:
+    return User(id=2, username="viewer", role=UserRole.viewer, password_hash="x")
 
 
 class ReportShippingChainTests(unittest.TestCase):
@@ -265,6 +269,23 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(snapshot.shipping_total, 18)
         self.assertEqual(snapshot.delta, 0)
         self.assertEqual(snapshot.is_match, True)
+
+    def test_viewer_export_does_not_write_audit_state(self):
+        db = self.SessionLocal()
+        issue = Issue(issue_number=3006, publish_date=date(2026, 6, 29), status=IssueStatus.confirmed)
+        db.add(issue)
+        db.flush()
+        db.add_all([
+            ReportEntry(issue_id=issue.id, category="social_use", sub_category="营报传媒_读者", value=18),
+            ShippingDetail(issue_number=3006, sheet_name="测试", channel="渠道订阅", name="甲", quantity=18),
+        ])
+        db.commit()
+
+        response = export_report(issue.id, db=db, user=_viewer_user())
+
+        self.assertIn("spreadsheetml.sheet", response.media_type)
+        self.assertEqual(db.query(IssueAuditSnapshot).filter_by(issue_id=issue.id).count(), 0)
+        self.assertEqual(db.query(OperationLog).filter_by(username="viewer").count(), 0)
 
     def test_report_export_header_includes_annual_sequence_label(self):
         db = self.SessionLocal()

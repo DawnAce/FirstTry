@@ -172,7 +172,7 @@ function orderStatusTone(status: OrderStatus): 'neutral' | 'info' | 'success' | 
 export default function OrderList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isAdmin } = useAuth();
+  const { isAdmin, canMutate } = useAuth();
   const [form] = Form.useForm<FilterState>();
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
   const [view, setView] = useState<OrderView>('all');
@@ -452,7 +452,7 @@ export default function OrderList() {
 
   const actionMenu = (row: OrderListRow): MenuProps['items'] => {
     const items: MenuProps['items'] = [];
-    if (canConfirmOrder(row.status)) {
+    if (canMutate && canConfirmOrder(row.status)) {
       items.push({ key: 'confirm', icon: <CheckOutlined />, label: '确认生效', onClick: () => confirmMutation.mutate(row.id) });
     }
     if (isAdmin && canVoidOrder(row.status)) {
@@ -573,13 +573,13 @@ export default function OrderList() {
               导出
             </Button>
           )}
-          <Button
+          {canMutate && <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => navigate('/orders/new')}
           >
             新建订单
-          </Button>
+          </Button>}
         </Space>}
       />
 

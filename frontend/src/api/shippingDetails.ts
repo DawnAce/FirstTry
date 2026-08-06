@@ -31,6 +31,11 @@ export interface ShippingDetail {
   shipped_at: string | null;
   shipped_quantity: number | null;
   tracking_no: string | null;
+  shipping_requirement: string | null;
+  handled_quantity: number;
+  package_count: number;
+  fulfillment_status: 'pending' | 'partial' | 'shipped' | 'no_tracking_required';
+  packages: ShippingPackage[];
   order_id: number | null;
   order_item_id: number | null;
   fulfillment_target_id: number | null;
@@ -42,6 +47,14 @@ export interface ShippingDetail {
   sync_status: ShippingDetailSyncStatus;
   created_at: string;
   updated_at: string;
+}
+
+export interface ShippingPackage {
+  id: number;
+  carrier: string;
+  tracking_no: string;
+  quantity: number;
+  shipped_at: string;
 }
 
 export interface ShippingDetailCreate {

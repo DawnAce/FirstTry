@@ -3,7 +3,7 @@ from typing import Optional
 
 import bcrypt
 from jose import jwt, JWTError
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -58,4 +58,18 @@ def get_current_user(
 def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role.value != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+    return user
+
+
+def require_mutation_permission(
+    request: Request,
+    user: User = Depends(get_current_user),
+) -> User:
+    """Allow viewers to browse and download, but never mutate business data."""
+    role_value = getattr(user.role, "value", user.role)
+    if role_value == "viewer" and request.method not in {"GET", "HEAD", "OPTIONS"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="演示账号为只读权限，不能执行修改操作",
+        )
     return user

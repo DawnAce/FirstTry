@@ -117,7 +117,7 @@ import './OrderManagement.css';
 const { Text } = Typography;
 
 export default function OrderDetail() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, canMutate } = useAuth();
   const params = useParams<{ id: string }>();
   const orderId = params.id ? Number(params.id) : NaN;
   const navigate = useNavigate();
@@ -357,7 +357,7 @@ export default function OrderDetail() {
             <h3>订单已创建并生效</h3>
             <p>{order.order_code ?? `订单 #${order.id}`} · 履约方案已同步生成</p>
           </div>
-          <Button onClick={() => navigate('/orders/new')}>再建一单</Button>
+          {canMutate && <Button onClick={() => navigate('/orders/new')}>再建一单</Button>}
         </section>
       )}
 
@@ -383,7 +383,7 @@ export default function OrderDetail() {
           </div>
         </div>
         <div className="order-detail-actions">
-          {canEditOrder(order.status) && (
+          {canMutate && canEditOrder(order.status) && (
             <Button
               icon={<EditOutlined />}
               onClick={() => navigate(`/orders/${order.id}/edit`)}
@@ -391,7 +391,7 @@ export default function OrderDetail() {
               编辑
             </Button>
           )}
-          {order.status === 'active' && (
+          {canMutate && order.status === 'active' && (
             <Button icon={<DollarOutlined />} onClick={openPaymentModal}>
               记一笔收款
             </Button>
@@ -497,6 +497,7 @@ export default function OrderDetail() {
                     addressTickets={addressTickets}
                     complaintTickets={complaintTickets}
                     loading={postalDeliveriesQuery.isLoading || postalTicketsQuery.isLoading}
+                    canMutate={canMutate}
                     onStartAddressChange={setAddressFormDelivery}
                     onOpenAddressChange={setAddressDetailId}
                   />
@@ -512,7 +513,7 @@ export default function OrderDetail() {
                     totalAmount={order.total_amount}
                     paidAmount={order.paid_amount}
                     outstandingAmount={order.outstanding_amount}
-                    canRecordPayment={order.status === 'active'}
+                    canRecordPayment={canMutate && order.status === 'active'}
                     onRecordPayment={openPaymentModal}
                   />
                 ),
@@ -520,7 +521,7 @@ export default function OrderDetail() {
               {
                 key: 'shipping',
                 label: <DetailTabLabel icon={<TruckOutlined />} label="关联快递" count={makeupTasks.length || undefined} />,
-                children: <ShippingSyncTab orderId={order.id} items={order.items} makeups={makeupTasks} />,
+                children: <ShippingSyncTab orderId={order.id} items={order.items} makeups={makeupTasks} canMutate={canMutate} />,
               },
               {
                 key: 'postal',
@@ -546,7 +547,7 @@ export default function OrderDetail() {
           <Card
             className="order-detail-side-card"
             title={<span><DollarOutlined />收款与发票</span>}
-            extra={order.status === 'active' ? <Button type="link" onClick={openPaymentModal}>记一笔收款</Button> : null}
+            extra={canMutate && order.status === 'active' ? <Button type="link" onClick={openPaymentModal}>记一笔收款</Button> : null}
           >
             <div className="order-detail-money-panel">
               <div><span>订单应收</span><strong>{formatCurrency(order.total_amount)}</strong></div>
@@ -584,7 +585,7 @@ export default function OrderDetail() {
           <Card
             className="order-detail-side-card"
             title={<span><FileTextOutlined />订单信息</span>}
-            extra={canEditOrder(order.status) ? <Button type="link" onClick={() => navigate(`/orders/${order.id}/edit`)}>编辑</Button> : null}
+            extra={canMutate && canEditOrder(order.status) ? <Button type="link" onClick={() => navigate(`/orders/${order.id}/edit`)}>编辑</Button> : null}
           >
             <dl className="order-detail-info-list">
               <div><dt>下单日期</dt><dd>{order.order_date}</dd></div>
@@ -1109,6 +1110,7 @@ function FulfillmentDossierTab({
   addressTickets,
   complaintTickets,
   loading,
+  canMutate,
   onStartAddressChange,
   onOpenAddressChange,
 }: {
@@ -1117,6 +1119,7 @@ function FulfillmentDossierTab({
   addressTickets: Ticket[];
   complaintTickets: Ticket[];
   loading: boolean;
+  canMutate: boolean;
   onStartAddressChange: (delivery: PostalDelivery) => void;
   onOpenAddressChange: (id: number) => void;
 }) {
@@ -1204,13 +1207,13 @@ function FulfillmentDossierTab({
               <div className="order-detail-dossier-current-action">
                 {pendingTicket ? (
                   <Tag color="orange">地址变更处理中</Tag>
-                ) : delivery ? (
+                ) : delivery && canMutate ? (
                   <Button type="primary" icon={<EnvironmentOutlined />} onClick={() => onStartAddressChange(delivery)}>
                     修改收件信息
                   </Button>
-                ) : (
+                ) : !delivery ? (
                   <Button disabled>需先关联邮局投递</Button>
-                )}
+                ) : null}
               </div>
             </article>
           ))}
@@ -1810,7 +1813,7 @@ function OrderMakeupCards({ makeups }: { makeups: ComplaintMakeupTask[] }) {
   );
 }
 
-function ShippingSyncTab({ orderId, items, makeups }: { orderId: number; items: OrderItemOut[]; makeups: ComplaintMakeupTask[] }) {
+function ShippingSyncTab({ orderId, items, makeups, canMutate }: { orderId: number; items: OrderItemOut[]; makeups: ComplaintMakeupTask[]; canMutate: boolean }) {
   const queryClient = useQueryClient();
   const postalOnly = items.length > 0 && items.every((item) => item.delivery_method === 'post_office');
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number | null>(null);
@@ -1988,7 +1991,7 @@ function ShippingSyncTab({ orderId, items, makeups }: { orderId: number; items: 
       <TabSectionHeader kicker="EXPRESS LINK" title="关联快递" description="选择刊期预览并同步订单履约目标到中通发货明细。" />
       {makeups.length > 0 && <><Alert type="warning" showIcon title="下方投诉补发独立于订单正常快递履约，不参与应发与已发进度统计。" /><OrderMakeupCards makeups={makeups} /></>}
       <div className="order-detail-sync-stack">
-      <Card size="small" className="order-detail-sync-controls">
+      {canMutate && <Card size="small" className="order-detail-sync-controls">
         <Space wrap>
           <Select<number>
             style={{ width: 220 }}
@@ -2029,7 +2032,7 @@ function ShippingSyncTab({ orderId, items, makeups }: { orderId: number; items: 
             同步全部期
           </Button>
         </Space>
-      </Card>
+      </Card>}
 
       {preview?.message && (
         <Alert type="warning" showIcon title={preview.message} />

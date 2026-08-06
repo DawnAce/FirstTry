@@ -2,10 +2,13 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { getMe } from '../api/auth';
 import type { UserInfo } from '../api/auth';
+import { capabilitiesForRole } from '../permissions';
 
 interface AuthContextType {
   user: UserInfo | null;
   isAdmin: boolean;
+  isViewer: boolean;
+  canMutate: boolean;
   isLoggedIn: boolean;
   setAuth: (token: string, user: UserInfo) => void;
   logout: () => void;
@@ -15,6 +18,8 @@ interface AuthContextType {
 export const AuthContext = createContext<AuthContextType>({
   user: null,
   isAdmin: false,
+  isViewer: false,
+  canMutate: false,
   isLoggedIn: false,
   setAuth: () => {},
   logout: () => {},
@@ -58,10 +63,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = '/login';
   };
 
+  const capabilities = capabilitiesForRole(user?.role);
+
   return (
     <AuthContext.Provider value={{
       user,
-      isAdmin: user?.role === 'admin',
+      isAdmin: capabilities.isAdmin,
+      isViewer: capabilities.isViewer,
+      canMutate: capabilities.canMutate,
       isLoggedIn: !!user,
       setAuth,
       logout,

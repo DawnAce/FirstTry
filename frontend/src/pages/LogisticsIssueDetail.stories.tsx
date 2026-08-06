@@ -44,6 +44,11 @@ const makeDetail = (id: number, overrides: Partial<ShippingDetail>): ShippingDet
   shipped_at: null,
   shipped_quantity: null,
   tracking_no: null,
+  shipping_requirement: 'tracking_required',
+  handled_quantity: 0,
+  package_count: 0,
+  fulfillment_status: 'pending',
+  packages: [],
   order_id: null,
   order_item_id: null,
   fulfillment_target_id: null,
@@ -86,6 +91,21 @@ const handlers = [
     },
   })),
   http.get('/api/shipping-details/companies', () => HttpResponse.json(['广州日报', '成都杂志铺', '上海站', '广州站', '示例签约公司'])),
+  http.get('/api/shipping-waybills/issues/1/summary', () => HttpResponse.json({
+    issue_id: 1,
+    issue_number: 2653,
+    expected_quantity: 1473,
+    planned_quantity: 1473,
+    handled_quantity: 1472,
+    tracked_quantity: 1402,
+    no_tracking_quantity: 70,
+    pending_quantity: 1,
+    extra_quantity: 0,
+    package_count: 76,
+    pending_detail_count: 1,
+    status: 'partial',
+    latest_import: null,
+  })),
   http.get('/api/shipping-details', ({ request }) => {
     const params = new URL(request.url).searchParams
     const search = params.get('search')?.toLowerCase()
@@ -105,7 +125,7 @@ const meta = {
   component: LogisticsIssueDetail,
   decorators: [withRouter],
   parameters: {
-    auth: { user: { username: 'admin', role: 'admin' }, isAdmin: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} },
+    auth: { user: { username: 'admin', role: 'admin' }, isAdmin: true, canMutate: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} },
     reactRouter: reactRouterParameters({
       routing: { path: '/logistics/issues/:id' },
       location: { pathParams: { id: '1' } },

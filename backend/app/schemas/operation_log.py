@@ -24,6 +24,10 @@ ACTION_LABELS: dict[str, str] = {
     "import_history": "导入历史数据",
     "upload_source": "上传报数来源文件",
     "confirm_source": "确认来源识别与映射",
+    "import_waybills": "导入运单",
+    "add_package": "补录运单",
+    "delete_package": "删除运单",
+    "set_shipping_requirement": "调整发货要求",
 }
 
 
