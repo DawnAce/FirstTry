@@ -66,10 +66,11 @@ export default function ShippingDetailCardList({
   return (
     <>
       <div className="zto-card-list" role="list">
-        {pageRecords.map((record) => {
+        {pageRecords.map((record, index) => {
           const fulfillment = fulfillmentMeta[record.fulfillment_status] || fulfillmentMeta.pending;
           const packageCopy = getPackageCopy(record);
           const selected = selectedRowKeys.some((key) => Number(key) === record.id);
+          const ordinal = (currentPage - 1) * PAGE_SIZE + index + 1;
           return (
             <article
               key={record.id}
@@ -88,6 +89,10 @@ export default function ShippingDetailCardList({
                   />
                 </span>
               ) : <span />}
+
+              <span className="zto-card-ordinal" aria-label={`序号 ${ordinal}`} title={`序号 ${ordinal}`}>
+                {ordinal}
+              </span>
 
               <span className={`zto-card-status-icon is-${getRowTone(record)}`} aria-hidden>
                 <StatusIcon record={record} />
