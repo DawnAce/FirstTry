@@ -9,8 +9,9 @@ from app.history_import_cache import save_history_import_session, pop_history_im
 from app.models import Issue, IssueStatus, PublicationSchedule, ReportEntry, ReportItemTemplate, ShippingDetail, TempPrintDetail
 from app.services.original_zto_shipping_import_service import (
     is_original_zto_shipping_workbook,
+    normalize_shipping_sub_channels,
     read_original_zto_shipping_basic_info,
-    read_original_zto_shipping_rows,
+    read_original_zto_shipping_rows_with_warnings,
 )
 from app.services.raw_report_import_service import parse_raw_report_workbook
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
@@ -368,11 +369,13 @@ def preview_history_import(
     else:
         report_rows = raw_report.report_rows
         temp_rows = []
-    shipping_rows = (
-        _read_shipping_rows(shipping_wb)
-        if uses_template_shipping
-        else read_original_zto_shipping_rows(shipping_wb)
-    )
+    shipping_import_warnings: list[str] = []
+    if uses_template_shipping:
+        shipping_rows, shipping_import_warnings = normalize_shipping_sub_channels(
+            _read_shipping_rows(shipping_wb)
+        )
+    else:
+        shipping_rows, shipping_import_warnings = read_original_zto_shipping_rows_with_warnings(shipping_wb)
 
     manual_temp_print_required_quantity = 0
     manual_temp_print_self_quantity = 0
@@ -417,7 +420,7 @@ def preview_history_import(
     session_id = save_history_import_session(payload) if not validation_errors else ""
 
     # Compare against publication_schedule.page_count, warn on mismatch
-    warnings: list[str] = []
+    warnings: list[str] = list(shipping_import_warnings)
     schedule_row = _find_schedule_row(db, issue_number, publish_date)
     if schedule_row is not None and schedule_row.page_count is not None and schedule_row.page_count != page_count:
         warnings.append(

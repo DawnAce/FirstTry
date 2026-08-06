@@ -16,6 +16,8 @@ _KNOWN_SHEETS = {
     "月底-整月",
 }
 
+_STANDARD_SUB_CHANNELS = {"监管", "政府"}
+
 
 def _str(value: Any) -> str:
     if value is None:
@@ -272,9 +274,44 @@ _SHEET_PARSERS: dict[str, Callable[[Any], list[ShippingImportRow]]] = {
 }
 
 
-def read_original_zto_shipping_rows(wb) -> list[ShippingImportRow]:
+def normalize_shipping_sub_channels(
+    rows: list[ShippingImportRow],
+) -> tuple[list[ShippingImportRow], list[str]]:
+    """Keep legacy annotations without treating them as business sub-channels."""
+    normalized: list[ShippingImportRow] = []
+    moved_values: list[str] = []
+    for row in rows:
+        value = row.sub_channel.strip()
+        if not value or value in _STANDARD_SUB_CHANNELS:
+            normalized.append(row)
+            continue
+
+        moved_values.append(value)
+        legacy_note = f"历史说明：{value}"
+        notes = "；".join(part for part in (row.notes.strip(), legacy_note) if part)
+        normalized.append(row.model_copy(update={"sub_channel": "", "notes": notes}))
+
+    if not moved_values:
+        return normalized, []
+
+    examples = "、".join(dict.fromkeys(moved_values[:3]))
+    warning = (
+        f"发现 {len(moved_values)} 条非标准子渠道，已自动移入备注并清空子渠道"
+        f"（示例：{examples}）。"
+    )
+    return normalized, [warning]
+
+
+def read_original_zto_shipping_rows_with_warnings(
+    wb,
+) -> tuple[list[ShippingImportRow], list[str]]:
     rows: list[ShippingImportRow] = []
     for sheet_name, parser in _SHEET_PARSERS.items():
         if sheet_name in wb.sheetnames:
             rows.extend(parser(wb[sheet_name]))
+    return normalize_shipping_sub_channels(rows)
+
+
+def read_original_zto_shipping_rows(wb) -> list[ShippingImportRow]:
+    rows, _warnings = read_original_zto_shipping_rows_with_warnings(wb)
     return rows
