@@ -84,7 +84,7 @@ export interface ShippingDetailCreate {
 
 export interface ShippingDetailUpdate {
   channel?: string;
-  sub_channel?: string;
+  sub_channel?: string | null;
   transport?: string;
   frequency?: string;
   status?: string;

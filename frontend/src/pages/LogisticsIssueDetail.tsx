@@ -387,15 +387,17 @@ export default function LogisticsIssueDetail() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      const sub_channel = form.getFieldValue('sub_channel') || null;
       const shipped_at = values.shipped_at ? dayjs(values.shipped_at).format('YYYY-MM-DD') : null;
       if (editingRecord) {
-        const updateData: ShippingDetailUpdate = { ...values, shipped_at };
+        const updateData: ShippingDetailUpdate = { ...values, sub_channel, shipped_at };
         await updateShippingDetail(editingRecord.id, updateData);
         message.success('更新成功');
       } else {
         if (currentIssueNumber == null) return;
         const createData: ShippingDetailCreate = {
           ...values,
+          sub_channel: sub_channel || undefined,
           shipped_at,
           issue_number: currentIssueNumber,
           sheet_name: '手动添加',
@@ -902,20 +904,44 @@ export default function LogisticsIssueDetail() {
             <Input placeholder="请输入姓名" />
           </Form.Item>
           <Form.Item label="渠道" name="channel" rules={[{ required: true, message: '请选择渠道' }]}>
-            <Select placeholder="请选择渠道">
+            <Select
+              placeholder="请选择渠道"
+              onChange={(value) => {
+                if (value !== '赠阅') form.setFieldValue('sub_channel', null);
+              }}
+            >
               {CHANNEL_OPTIONS.map((ch) => <Select.Option key={ch} value={ch}>{ch}</Select.Option>)}
             </Select>
           </Form.Item>
-          <Form.Item noStyle dependencies={['channel']}>
-            {({ getFieldValue }) =>
-              getFieldValue('channel') === '赠阅' ? (
+          <Form.Item noStyle shouldUpdate={(previous, current) => (
+            previous.channel !== current.channel || previous.sub_channel !== current.sub_channel
+          )}>
+            {({ getFieldValue, setFieldValue }) => {
+              const channel = getFieldValue('channel');
+              const legacySubChannel = getFieldValue('sub_channel');
+              if (channel === '赠阅') {
+                return (
                 <Form.Item label="子渠道" name="sub_channel">
                   <Select placeholder="请选择子渠道" allowClear>
                     {SUB_CHANNEL_OPTIONS.map((sc) => <Select.Option key={sc} value={sc}>{sc}</Select.Option>)}
                   </Select>
                 </Form.Item>
-              ) : null
-            }
+                );
+              }
+              if (!legacySubChannel) return null;
+              return (
+                <Form.Item
+                  label="历史子渠道"
+                  help="该值来自旧文件导入，不属于当前标准子渠道。"
+                >
+                  <Input
+                    value={legacySubChannel}
+                    readOnly
+                    addonAfter={<Button type="link" size="small" onClick={() => setFieldValue('sub_channel', null)}>清空</Button>}
+                  />
+                </Form.Item>
+              );
+            }}
           </Form.Item>
           <Form.Item label="签约公司" name="company">
             <Input placeholder="请输入签约公司（如：北京悦途出行）" />
@@ -1050,6 +1076,7 @@ export default function LogisticsIssueDetail() {
               <div className="zto-detail-facts">
                 <div><span>联系电话</span><strong>{detailDrawerRecord.phone || '—'}</strong></div>
                 <div><span>渠道</span><strong><Tag color={channelColors[detailDrawerRecord.channel] || 'default'}>{detailDrawerRecord.channel || '—'}</Tag></strong></div>
+                <div><span>子渠道</span><strong>{detailDrawerRecord.sub_channel || '—'}</strong></div>
                 <div className="is-wide"><span>收件地址</span><strong>{detailDrawerRecord.address || '—'}</strong></div>
                 <div><span>签约公司</span><strong>{detailDrawerRecord.company || '—'}</strong></div>
                 <div><span>运输方式</span><strong><Tag color={transportColors[detailDrawerRecord.transport] || 'default'}>{detailDrawerRecord.transport || '—'}</Tag></strong></div>

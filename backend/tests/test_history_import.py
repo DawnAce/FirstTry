@@ -1065,6 +1065,37 @@ class HistoryImportPreviewTests(unittest.TestCase):
         row = next(row for row in rows if row.name == "马飞")
         self.assertFalse(hasattr(row, "city"))
 
+    def test_original_zto_parser_moves_nonstandard_sub_channel_to_notes(self):
+        wb = load_workbook(io.BytesIO(build_original_zto_shipping_upload()))
+        wb["每周（读者）"]["H3"] = "20260122新增"
+        wb["每周（读者）"]["M3"] = "送前联系"
+
+        rows = read_original_zto_shipping_rows(wb)
+
+        row = next(row for row in rows if row.name == "黄雪")
+        self.assertEqual(row.sub_channel, "")
+        self.assertEqual(row.notes, "送前联系；历史说明：20260122新增")
+
+    def test_preview_warns_when_nonstandard_sub_channel_is_moved(self):
+        db = self.SessionLocal()
+        self._seed_upload_templates(db)
+        wb = load_workbook(io.BytesIO(build_original_zto_shipping_upload()))
+        wb["每周（读者）"]["H3"] = "20260122新增"
+
+        result = preview_history_import(
+            db,
+            build_report_upload(),
+            _wb_to_bytes(wb),
+        )
+
+        self.assertTrue(result.can_commit)
+        self.assertTrue(any("1 条非标准子渠道" in warning for warning in result.warnings))
+        payload = get_history_import_session(result.import_session_id)
+        row = next(row for row in payload["shipping_rows"] if row["name"] == "黄雪")
+        self.assertEqual(row["sub_channel"], "")
+        self.assertEqual(row["notes"], "历史说明：20260122新增")
+        db.close()
+
     def test_preview_accepts_original_zto_high_speed_alias_sheet(self):
         db = self.SessionLocal()
         self._seed_upload_templates(db)
