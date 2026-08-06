@@ -60,9 +60,20 @@ const makeDetail = (id: number, overrides: Partial<ShippingDetail>): ShippingDet
 })
 
 const featured = [
-  makeDetail(1, { name: '马飞', channel: '库房留存', company: null, address: '中通库房', phone: '18515617341', quantity: 70, notes: '库房留存' }),
-  makeDetail(2, { name: '叶剑', company: '广州日报', address: '广州市白云区增槎路1113号广州日报印务中心', phone: '13556046615', quantity: 531 }),
-  makeDetail(3, { name: '肖波', company: '成都杂志铺', address: '成都市双流文星镇通关路86号A1-A4杂志铺', phone: '157191468023 / 028-85312807', quantity: 366 }),
+  makeDetail(1, {
+    name: '马飞', channel: '库房留存', company: null, address: '中通库房', phone: '18515617341', quantity: 70, notes: '库房留存',
+    shipping_requirement: 'no_tracking_required', handled_quantity: 70, fulfillment_status: 'no_tracking_required',
+  }),
+  makeDetail(2, {
+    name: '叶剑', company: '广州日报', address: '广州市白云区增槎路1113号广州日报印务中心', phone: '13556046615', quantity: 531,
+    handled_quantity: 531, package_count: 1, fulfillment_status: 'shipped',
+    packages: [{ id: 21, carrier: '中通', tracking_no: '73592817527861', quantity: 531, shipped_at: '2026-05-25' }],
+  }),
+  makeDetail(3, {
+    name: '肖波', company: '成都杂志铺', address: '成都市双流文星镇通关路86号A1-A4杂志铺', phone: '157191468023 / 028-85312807', quantity: 366,
+    handled_quantity: 300, package_count: 1, fulfillment_status: 'partial',
+    packages: [{ id: 31, carrier: '中通', tracking_no: '73592817528444', quantity: 300, shipped_at: '2026-05-25' }],
+  }),
   makeDetail(4, { name: '李广', channel: '记者站', company: '上海站', address: '上海市徐汇区漕溪北路737弄2号楼2106', phone: '13564653181', quantity: 20, notes: '记者站' }),
   makeDetail(5, { name: '纪玉文', channel: '记者站', company: '广州站', address: '广州市越秀区寺右新马路111-115号五羊新城广场', phone: '13661331923', quantity: 30, notes: '记者站' }),
 ]

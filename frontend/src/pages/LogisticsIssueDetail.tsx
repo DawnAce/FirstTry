@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Key, ReactNode } from 'react';
+import type { Key } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Table,
@@ -16,10 +16,11 @@ import {
   InputNumber,
   Popconfirm,
   Card,
-  Tooltip,
   Popover,
   Empty,
   Alert,
+  Segmented,
+  Spin,
 } from 'antd';
 import {
   PlusOutlined,
@@ -32,11 +33,9 @@ import {
   FileTextOutlined,
   ReloadOutlined,
   MoreOutlined,
-  RightOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { TableColumnsType, TableProps } from 'antd';
 import type { ShippingDetail, ShippingDetailCreate, ShippingDetailUpdate } from '../api/shippingDetails';
 import {
   getShippingDetails,
@@ -71,6 +70,7 @@ import {
   resolveFulfillmentPanelState,
   resolvePlanReconciliationState,
 } from './logisticsIssueState';
+import ShippingDetailCardList from './ShippingDetailCardList';
 
 const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '库房留存', '报社留存'] as const;
 const SUB_CHANNEL_OPTIONS = ['监管', '政府'] as const;
@@ -126,6 +126,16 @@ const fulfillmentMeta: Record<string, { label: string; color: string }> = {
   no_tracking_required: { label: '无需运单', color: 'blue' },
 };
 
+const matchesFulfillmentView = (detail: ShippingDetail, filter?: string) => {
+  if (!filter || filter === 'all') return true;
+  if (filter === 'completed') {
+    return detail.fulfillment_status === 'shipped' || detail.fulfillment_status === 'no_tracking_required';
+  }
+  if (filter === 'pending') return detail.fulfillment_status === 'pending';
+  if (filter === 'issue') return detail.fulfillment_status === 'partial' || detail.sync_status !== 'synced';
+  return true;
+};
+
 export default function LogisticsIssueDetail() {
   const { id } = useParams<{ id: string }>();
   const issueId = Number(id);
@@ -141,7 +151,7 @@ export default function LogisticsIssueDetail() {
   const [logRecordName, setLogRecordName] = useState<string>('');
   const [actionMenuRecordId, setActionMenuRecordId] = useState<number | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
-  const [expandedRowKeys, setExpandedRowKeys] = useState<Key[]>([]);
+  const [detailDrawerRecord, setDetailDrawerRecord] = useState<ShippingDetail | null>(null);
   const [batchDeadline, setBatchDeadline] = useState<dayjs.Dayjs | null>(null);
   const [exporting, setExporting] = useState(false);
   const [clearingIssue, setClearingIssue] = useState(false);
@@ -271,6 +281,7 @@ export default function LogisticsIssueDetail() {
 
   const handleShowLogs = (record: ShippingDetail) => {
     setActionMenuRecordId(null);
+    setDetailDrawerRecord(null);
     setLogRecordId(record.id);
     setLogRecordName(record.name);
     setLogDrawerOpen(true);
@@ -294,6 +305,7 @@ export default function LogisticsIssueDetail() {
 
   const handleOpenPackage = (record: ShippingDetail) => {
     setActionMenuRecordId(null);
+    setDetailDrawerRecord(null);
     setPackageRecord(record);
     packageForm.setFieldsValue({ carrier: '中通', quantity: Math.max(record.quantity - record.handled_quantity, 1) });
   };
@@ -316,6 +328,7 @@ export default function LogisticsIssueDetail() {
     try {
       await deleteShippingPackage(packageId);
       message.success('运单已删除');
+      setDetailDrawerRecord(null);
       refreshShippingDetails();
     } catch (error) {
       message.error(logisticsApiErrorMessage(error, '删除运单失败'));
@@ -324,6 +337,7 @@ export default function LogisticsIssueDetail() {
 
   const handleNoTracking = async (record: ShippingDetail, value: boolean) => {
     setActionMenuRecordId(null);
+    setDetailDrawerRecord(null);
     try {
       await setNoTrackingRequired(record.id, value);
       message.success(value ? '已标记为无需发货' : '已恢复为需要运单');
@@ -337,6 +351,7 @@ export default function LogisticsIssueDetail() {
   };
 
   const handleEdit = (record: ShippingDetail) => {
+    setDetailDrawerRecord(null);
     setEditingRecord(record);
     form.setFieldsValue({
       ...record,
@@ -349,6 +364,7 @@ export default function LogisticsIssueDetail() {
     try {
       await deleteShippingDetail(recordId);
       message.success('删除成功');
+      setDetailDrawerRecord(null);
       refreshShippingDetails();
     } catch {
       message.error('删除失败');
@@ -452,14 +468,7 @@ export default function LogisticsIssueDetail() {
     }
   };
 
-  const rowSelection: TableProps<ShippingDetail>['rowSelection'] = {
-    selectedRowKeys,
-    onChange: (keys) => setSelectedRowKeys(keys),
-    columnWidth: 44,
-    getCheckboxProps: (record) => ({ disabled: record.source_type === 'complaint_makeup' }),
-  };
   const confirmationSummary = report?.confirmation_summary;
-  const currentShippingTotal = details.filter((detail) => detail.source_type !== 'complaint_makeup').reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
   const allShippingTotal = allDetails.filter((detail) => detail.source_type !== 'complaint_makeup').reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
   const check = report?.shipping_check;
   const advancedFilterCount = [shippingFilters.frequency, shippingFilters.transport, shippingFilters.sub_channel].filter(Boolean).length;
@@ -503,9 +512,16 @@ export default function LogisticsIssueDetail() {
     || shippingFilters.company?.length
     || shippingFilters.fulfillment_status
   );
-  const visibleDetails = shippingFilters.fulfillment_status
-    ? details.filter((detail) => detail.fulfillment_status === shippingFilters.fulfillment_status)
-    : details;
+  const visibleDetails = details.filter((detail) => matchesFulfillmentView(detail, shippingFilters.fulfillment_status));
+  const visibleShippingTotal = visibleDetails
+    .filter((detail) => detail.source_type !== 'complaint_makeup')
+    .reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const fulfillmentTabCounts = {
+    all: details.length,
+    completed: details.filter((detail) => matchesFulfillmentView(detail, 'completed')).length,
+    pending: details.filter((detail) => matchesFulfillmentView(detail, 'pending')).length,
+    issue: details.filter((detail) => matchesFulfillmentView(detail, 'issue')).length,
+  };
 
   const retryPlanData = () => {
     void Promise.all([refetchAllDetails(), refetchDetails(), refetchReport()]);
@@ -513,194 +529,6 @@ export default function LogisticsIssueDetail() {
 
   const retryFulfillmentData = () => {
     void refetchFulfillment();
-  };
-
-  const toggleExpanded = (recordId: number) => {
-    setExpandedRowKeys((keys) => (
-      keys.includes(recordId) ? keys.filter((key) => key !== recordId) : [...keys, recordId]
-    ));
-  };
-
-  const shippingColumns: TableColumnsType<ShippingDetail> = [
-    {
-      title: '姓名 / 渠道',
-      dataIndex: 'name',
-      key: 'name',
-      width: 170,
-      render: (_: unknown, r: ShippingDetail) => (
-        <div className="zto-person-cell">
-          <Button
-            type="text"
-            size="small"
-            className={`zto-expand-btn ${expandedRowKeys.includes(r.id) ? 'open' : ''}`}
-            icon={<RightOutlined />}
-            aria-label={expandedRowKeys.includes(r.id) ? `收起${r.name}详情` : `展开${r.name}详情`}
-            onClick={() => toggleExpanded(r.id)}
-          />
-          <div className="zto-person-copy">
-            <strong>{r.name}</strong>
-            <div className="zto-person-tags">
-              {r.channel ? <Tag color={channelColors[r.channel] || 'default'}>{r.channel}</Tag> : null}
-              {r.sub_channel ? <Tag color={r.sub_channel === '监管' ? 'orange' : 'gold'}>{r.sub_channel}</Tag> : null}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: '签约公司',
-      dataIndex: 'company',
-      key: 'company',
-      width: 135,
-      render: (v: string | null) => (
-        <Tooltip title={v || ''}><span className="zto-company">{v || '—'}</span></Tooltip>
-      ),
-    },
-    {
-      title: '收件信息',
-      key: 'recv',
-      render: (_: unknown, r: ShippingDetail) => (
-        <div>
-          <Tooltip title={r.address || ''}>
-            <div className="zto-recv-addr">{r.address || '—'}</div>
-          </Tooltip>
-          <div className="zto-sub">{r.phone || '—'}</div>
-        </div>
-      ),
-    },
-    {
-      title: '份数',
-      dataIndex: 'quantity',
-      key: 'quantity',
-      align: 'right',
-      width: 66,
-      render: (v: number) => <span className="zto-quantity">{v ?? '—'}</span>,
-    },
-    {
-      title: '发货进度',
-      key: 'fulfillment',
-      width: 130,
-      render: (_: unknown, r: ShippingDetail) => {
-        const meta = fulfillmentMeta[r.fulfillment_status] || fulfillmentMeta.pending;
-        return (
-          <div className="zto-fulfillment-cell">
-            <Tag color={meta.color}>{meta.label}</Tag>
-            <small>{r.handled_quantity.toLocaleString()} / {r.quantity.toLocaleString()}份{r.package_count ? ` · ${r.package_count}单` : ''}</small>
-          </div>
-        );
-      },
-    },
-    {
-      title: '来源 / 同步',
-      key: 'mark',
-      width: 116,
-      render: (_: unknown, r: ShippingDetail) => (
-        <div className="zto-mark">
-          <span className="zto-source">{sourceTypeMeta[r.source_type]?.label || r.source_type}</span>
-          <span className={`zto-sync zto-sync--${r.sync_status}`}>
-            {r.sync_status === 'synced' ? '✓ ' : ''}{syncStatusMeta[r.sync_status]?.label || r.sync_status}
-          </span>
-        </div>
-      ),
-    },
-    {
-      title: '数据状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 70,
-      render: (v: string) => (
-        <span className="zto-status"><span className="zto-status-dot" style={{ background: v === '正常' ? 'var(--color-success)' : 'var(--color-danger)' }} />{v || '—'}</span>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 92,
-      align: 'right',
-      render: (_: unknown, record: ShippingDetail) => (
-        <div className="zto-row-actions">
-          {canMutate ? <>
-          <Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button>
-          <Popover
-            trigger="click"
-            placement="bottomRight"
-            open={actionMenuRecordId === record.id}
-            onOpenChange={(open) => setActionMenuRecordId(open ? record.id : null)}
-            content={
-              <div className="zto-action-menu">
-                {record.shipping_requirement === 'no_tracking_required' ? (
-                  <Button type="text" onClick={() => handleNoTracking(record, false)}>恢复需要运单</Button>
-                ) : (
-                  <>
-                    <Button type="text" onClick={() => handleOpenPackage(record)}>补录运单</Button>
-                    {!record.package_count && <Button type="text" onClick={() => handleNoTracking(record, true)}>标记无需发货</Button>}
-                  </>
-                )}
-                <Button type="text" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)}>操作日志</Button>
-                {record.source_type !== 'complaint_makeup' ? <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id)}>
-                  <Button type="text" danger icon={<DeleteOutlined />}>删除</Button>
-                </Popconfirm> : <Button type="text" disabled>请在邮局工单取消</Button>}
-              </div>
-            }
-          >
-            <Button type="text" size="small" icon={<MoreOutlined />} aria-label={`${record.name}更多操作`} />
-          </Popover>
-          </> : <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => handleShowLogs(record)}>操作日志</Button>}
-        </div>
-      ),
-    },
-  ];
-
-  const renderExpanded = (r: ShippingDetail) => {
-    const deadlineText = (!r.deadline || r.deadline === '-' || r.deadline === '长期') ? '长期' : r.deadline;
-    const station = [r.station_name, r.station_hall].filter(Boolean).join(' / ');
-    const cells: { k: string; v: ReactNode }[] = [
-      { k: '子渠道', v: r.sub_channel || '—' },
-      { k: '频率', v: r.frequency || '—' },
-      { k: '运输方式', v: r.transport ? <Tag color={transportColors[r.transport] || 'default'}>{r.transport}</Tag> : '—' },
-      { k: '截止日期', v: deadlineText },
-      { k: '发货时间', v: r.shipped_at ? dayjs(r.shipped_at).format('YYYY-MM-DD') : '—' },
-      { k: '实发份数', v: r.shipped_quantity ?? '—' },
-      { k: '快递单号', v: r.tracking_no || '—' },
-      {
-        k: '包裹 / 运单',
-        v: r.packages.length ? (
-          <div className="zto-package-list">
-            {r.packages.map((pkg) => (
-              <span key={pkg.id}>
-                <Tag>{pkg.carrier}</Tag><b>{pkg.tracking_no}</b> · {pkg.quantity}份
-                {canMutate && <Popconfirm title="确认删除这个运单？" onConfirm={() => handleDeletePackage(pkg.id)}>
-                  <Button type="link" size="small" danger>删除</Button>
-                </Popconfirm>}
-              </span>
-            ))}
-          </div>
-        ) : r.shipping_requirement === 'no_tracking_required' ? '无需运单' : '待补运单',
-      },
-      { k: '站点 / 站厅', v: station || '—' },
-      { k: '联系人', v: r.contact_person || '—' },
-      {
-        k: '来源订单',
-        v: r.order_id ? <a onClick={() => navigate(`/orders/${r.order_id}`)}>查看订单 #{r.order_id}</a> : '—',
-      },
-      ...(r.source_type === 'complaint_makeup' ? [
-        { k: '投诉工单', v: r.complaint_ticket_id ? `邮局投诉 #${r.complaint_ticket_id}` : '—' },
-        { k: '补发任务', v: r.complaint_makeup_task_id ? `中通补发 #${r.complaint_makeup_task_id}` : '—' },
-        { k: '邮局投递', v: r.postal_delivery_id ? `邮局投递 #${r.postal_delivery_id}` : '—' },
-      ] : []),
-      { k: '备注', v: r.notes || '—' },
-      { k: '附加信息', v: r.extra_info || '—' },
-    ];
-    return (
-      <div className="zto-expand">
-        {cells.map((c) => (
-          <div className="zto-cell" key={c.k}>
-            <div className="k">{c.k}</div>
-            <div className="v">{c.v}</div>
-          </div>
-        ))}
-      </div>
-    );
   };
 
   return (
@@ -905,9 +733,35 @@ export default function LogisticsIssueDetail() {
         <Card className="zto-list-card" styles={{ body: { padding: 0 } }}>
           <div className="zto-list-head">
             <div className="zto-list-title">
-              <h2>发货明细</h2>
-              <span>收件人、地址与同步状态统一在此维护</span>
+              <h2>应发清单</h2>
+              <span>上传运单前后始终保留同一份计划，点击整行查看完整信息</span>
             </div>
+            <div className="zto-list-head-actions">
+              <span><b>{allDetails.length.toLocaleString()}</b> 条 · <b>{allShippingTotal.toLocaleString()}</b> 份</span>
+              {!!fulfillment?.latest_import?.unmatched_rows && (
+                <Button
+                  className="zto-import-exception-button"
+                  onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}
+                >
+                  导入异常 {fulfillment.latest_import.unmatched_rows.toLocaleString()} 行
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="zto-fulfillment-tabs">
+            <Segmented<string>
+              value={shippingFilters.fulfillment_status ?? 'all'}
+              options={[
+                { value: 'all', label: <>全部 <b>{fulfillmentTabCounts.all}</b></> },
+                { value: 'completed', label: <>已核销 <b>{fulfillmentTabCounts.completed}</b></> },
+                { value: 'pending', label: <>待发 <b>{fulfillmentTabCounts.pending}</b></> },
+                { value: 'issue', label: <>有异常 <b>{fulfillmentTabCounts.issue}</b></> },
+              ]}
+              onChange={(value) => setShippingFilters((filters) => ({
+                ...filters,
+                fulfillment_status: value === 'all' ? undefined : value,
+              }))}
+            />
           </div>
           <div className="zto-toolbar">
             <Input
@@ -947,15 +801,6 @@ export default function LogisticsIssueDetail() {
             >
               {SHIPPING_STATUS_OPTIONS.map((st) => <Select.Option key={st} value={st}>{st}</Select.Option>)}
             </Select>
-            <Select
-              placeholder="全部发货状态"
-              className="zto-filter-status"
-              allowClear
-              value={shippingFilters.fulfillment_status}
-              onChange={(value) => setShippingFilters((f) => ({ ...f, fulfillment_status: value }))}
-            >
-              {Object.entries(fulfillmentMeta).map(([value, meta]) => <Select.Option key={value} value={value}>{meta.label}</Select.Option>)}
-            </Select>
             <Popover
               trigger="click"
               placement="bottomLeft"
@@ -979,7 +824,7 @@ export default function LogisticsIssueDetail() {
             <div className="zto-toolbar-tail">
               <Button type="link" disabled={!hasShippingFilters} onClick={() => setShippingFilters({})}>清除筛选</Button>
               <span className="zto-toolbar-count">
-                共 <b>{detailsIsError ? '—' : visibleDetails.length}</b> 条 · 合计 <b>{detailsIsError ? '—' : currentShippingTotal.toLocaleString()}</b> 份
+                共 <b>{detailsIsError ? '—' : visibleDetails.length}</b> 条 · 合计 <b>{detailsIsError ? '—' : visibleShippingTotal.toLocaleString()}</b> 份
               </span>
             </div>
           </div>
@@ -1008,22 +853,20 @@ export default function LogisticsIssueDetail() {
               action={<Button size="small" icon={<ReloadOutlined />} onClick={() => void refetchDetails()}>重新加载</Button>}
             />
           ) : (
-            <Table
-              className="zto-table"
-              loading={isLoading}
-              columns={shippingColumns}
-              dataSource={visibleDetails}
-              rowKey="id"
-              rowSelection={canMutate ? rowSelection : undefined}
-              tableLayout="fixed"
-              scroll={{ x: 960 }}
-              expandable={{
-                expandedRowRender: renderExpanded,
-                expandedRowKeys,
-                showExpandColumn: false,
-              }}
-              pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条记录` }}
-            />
+            <Spin spinning={isLoading}>
+              {visibleDetails.length ? (
+                <ShippingDetailCardList
+                  key={JSON.stringify(shippingFilters)}
+                  records={visibleDetails}
+                  selectedRowKeys={selectedRowKeys}
+                  canSelect={canMutate}
+                  onSelectedRowKeysChange={setSelectedRowKeys}
+                  onOpenDetail={setDetailDrawerRecord}
+                />
+              ) : (
+                <Empty className="zto-filter-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合当前条件的应发清单" />
+              )}
+            </Spin>
           )}
         </Card>
       )}
@@ -1141,6 +984,127 @@ export default function LogisticsIssueDetail() {
           );
         })()}
       </Modal>
+
+      <Drawer
+        title={detailDrawerRecord ? (
+          <DrawerTitle
+            icon="🚚"
+            title={detailDrawerRecord.name || '发货明细'}
+            description={`${detailDrawerRecord.channel || '未分类'} · 应发清单 #${detailDrawerRecord.id}`}
+            tone={detailDrawerRecord.fulfillment_status === 'partial' ? 'warning' : detailDrawerRecord.fulfillment_status === 'pending' ? 'neutral' : 'success'}
+            status={(
+              <StatusPill tone={detailDrawerRecord.fulfillment_status === 'partial' ? 'warning' : detailDrawerRecord.fulfillment_status === 'pending' ? 'neutral' : 'success'}>
+                {(fulfillmentMeta[detailDrawerRecord.fulfillment_status] || fulfillmentMeta.pending).label}
+              </StatusPill>
+            )}
+          />
+        ) : null}
+        open={!!detailDrawerRecord}
+        onClose={() => setDetailDrawerRecord(null)}
+        size={520}
+        rootClassName="app-drawer-root zto-detail-drawer-root"
+        footer={detailDrawerRecord ? (
+          <div className="app-drawer-footer zto-detail-drawer-footer">
+            <Button icon={<HistoryOutlined />} onClick={() => handleShowLogs(detailDrawerRecord)}>操作日志</Button>
+            {canMutate && detailDrawerRecord.shipping_requirement !== 'no_tracking_required' && (
+              <Button onClick={() => handleOpenPackage(detailDrawerRecord)}>补录运单</Button>
+            )}
+            {canMutate && (
+              <Popover
+                trigger="click"
+                placement="topRight"
+                open={actionMenuRecordId === detailDrawerRecord.id}
+                onOpenChange={(open) => setActionMenuRecordId(open ? detailDrawerRecord.id : null)}
+                content={(
+                  <div className="zto-action-menu">
+                    {detailDrawerRecord.shipping_requirement === 'no_tracking_required' ? (
+                      <Button type="text" onClick={() => handleNoTracking(detailDrawerRecord, false)}>恢复需要运单</Button>
+                    ) : !detailDrawerRecord.package_count ? (
+                      <Button type="text" onClick={() => handleNoTracking(detailDrawerRecord, true)}>标记无需发货</Button>
+                    ) : null}
+                    {detailDrawerRecord.source_type !== 'complaint_makeup' ? (
+                      <Popconfirm title="确认删除？" onConfirm={() => handleDelete(detailDrawerRecord.id)}>
+                        <Button type="text" danger icon={<DeleteOutlined />}>删除明细</Button>
+                      </Popconfirm>
+                    ) : <Button type="text" disabled>请在邮局工单取消</Button>}
+                  </div>
+                )}
+              >
+                <Button icon={<MoreOutlined />}>更多</Button>
+              </Popover>
+            )}
+            {canMutate && <Button type="primary" onClick={() => handleEdit(detailDrawerRecord)}>编辑明细</Button>}
+          </div>
+        ) : null}
+      >
+        {detailDrawerRecord && (
+          <div className="zto-detail-drawer">
+            <div className="zto-detail-metrics">
+              <div><span>应发</span><strong>{detailDrawerRecord.quantity.toLocaleString()}</strong></div>
+              <div><span>已核销</span><strong>{detailDrawerRecord.handled_quantity.toLocaleString()}</strong></div>
+              <div><span>待发</span><strong>{Math.max(detailDrawerRecord.quantity - detailDrawerRecord.handled_quantity, 0).toLocaleString()}</strong></div>
+            </div>
+
+            <section className="zto-detail-section">
+              <h3>收件与计划信息</h3>
+              <div className="zto-detail-facts">
+                <div><span>联系电话</span><strong>{detailDrawerRecord.phone || '—'}</strong></div>
+                <div><span>渠道</span><strong><Tag color={channelColors[detailDrawerRecord.channel] || 'default'}>{detailDrawerRecord.channel || '—'}</Tag></strong></div>
+                <div className="is-wide"><span>收件地址</span><strong>{detailDrawerRecord.address || '—'}</strong></div>
+                <div><span>签约公司</span><strong>{detailDrawerRecord.company || '—'}</strong></div>
+                <div><span>运输方式</span><strong><Tag color={transportColors[detailDrawerRecord.transport] || 'default'}>{detailDrawerRecord.transport || '—'}</Tag></strong></div>
+                <div><span>发送频率</span><strong>{detailDrawerRecord.frequency || '—'}</strong></div>
+                <div><span>数据状态</span><strong>{detailDrawerRecord.status || '—'}</strong></div>
+              </div>
+            </section>
+
+            <section className="zto-detail-section">
+              <h3>实际发货</h3>
+              {detailDrawerRecord.packages.length ? (
+                <div className="zto-drawer-packages">
+                  {detailDrawerRecord.packages.map((item) => (
+                    <div className="zto-drawer-package" key={item.id}>
+                      <div><strong>{item.carrier} · {item.tracking_no}</strong><span>{dayjs(item.shipped_at).format('YYYY-MM-DD')} 发出</span></div>
+                      <div className="zto-drawer-package-quantity">{item.quantity.toLocaleString()} 份</div>
+                      {canMutate && (
+                        <Popconfirm title="确认删除这个运单？" onConfirm={() => handleDeletePackage(item.id)}>
+                          <Button type="link" size="small" danger>删除</Button>
+                        </Popconfirm>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : detailDrawerRecord.shipping_requirement === 'no_tracking_required' ? (
+                <Alert showIcon type="success" title="无需运单，系统已按计划份数完成核销" />
+              ) : (
+                <Alert showIcon type="warning" title="尚未录入运单，本条仍待发货" />
+              )}
+            </section>
+
+            <section className="zto-detail-section">
+              <h3>来源与同步</h3>
+              <div className="zto-detail-facts">
+                <div><span>来源</span><strong>{sourceTypeMeta[detailDrawerRecord.source_type]?.label || detailDrawerRecord.source_type}</strong></div>
+                <div><span>同步状态</span><strong className={`zto-sync zto-sync--${detailDrawerRecord.sync_status}`}>{syncStatusMeta[detailDrawerRecord.sync_status]?.label || detailDrawerRecord.sync_status}</strong></div>
+                <div><span>工作表</span><strong>{detailDrawerRecord.sheet_name || '—'}</strong></div>
+                <div><span>最近更新</span><strong>{dayjs(detailDrawerRecord.updated_at).format('YYYY-MM-DD HH:mm')}</strong></div>
+              </div>
+            </section>
+
+            <section className="zto-detail-section">
+              <h3>更多信息</h3>
+              <div className="zto-detail-facts">
+                <div><span>截止日期</span><strong>{detailDrawerRecord.deadline || '长期'}</strong></div>
+                <div><span>发货时间</span><strong>{detailDrawerRecord.shipped_at ? dayjs(detailDrawerRecord.shipped_at).format('YYYY-MM-DD') : '—'}</strong></div>
+                <div><span>站点 / 站厅</span><strong>{[detailDrawerRecord.station_name, detailDrawerRecord.station_hall].filter(Boolean).join(' / ') || '—'}</strong></div>
+                <div><span>联系人</span><strong>{detailDrawerRecord.contact_person || '—'}</strong></div>
+                <div className="is-wide"><span>来源订单</span><strong>{detailDrawerRecord.order_id ? <a onClick={() => navigate(`/orders/${detailDrawerRecord.order_id}`)}>查看订单 #{detailDrawerRecord.order_id}</a> : '—'}</strong></div>
+                <div className="is-wide"><span>备注 / 附加信息</span><strong>{[detailDrawerRecord.notes, detailDrawerRecord.extra_info].filter(Boolean).join(' · ') || '—'}</strong></div>
+              </div>
+            </section>
+          </div>
+        )}
+      </Drawer>
 
       <Drawer
         title={(
