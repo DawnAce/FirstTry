@@ -13,15 +13,23 @@ from app.models import (
     IssueStatus,
     ShippingDetail,
     ShippingWaybillImportBatch,
+    ShippingWaybillImportRow,
 )
 from app.models.user import User, UserRole
 from app.schemas.shipping_detail import ShippingDetailOut
-from app.schemas.shipping_waybill import WaybillImportBatchOut
+from app.schemas.shipping_waybill import (
+    WaybillImportBatchOut,
+    WaybillImportRowCreate,
+    WaybillImportRowUpdate,
+)
 from app.services.shipping_waybill_service import (
+    add_import_row,
     confirm_import,
     fulfillment_summary,
+    get_draft_import,
     parse_waybill_workbook,
     preview_import,
+    update_import_row,
 )
 
 
@@ -41,12 +49,23 @@ def _workbook_bytes() -> bytes:
     return out.getvalue()
 
 
-def _supplement_workbook_bytes(detail_id: int) -> bytes:
+def _supplement_workbook_bytes(detail_id: int, tracking_no: str = "73592817529999") -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "运单补录"
     ws.append(["发货明细ID", "快递公司", "运单号", "实发份数", "姓名", "电话", "地址"])
-    ws.append([detail_id, "中通", "73592817529999", 1, "待补客户", "13700000000", "北京市测试路2号"])
+    ws.append([detail_id, "中通", tracking_no, 1, "待补客户", "13700000000", "北京市测试路2号"])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _unrecognized_workbook_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "临时格式"
+    ws.append(["说明", "内容"])
+    ws.append(["王五", "此行未按已知列布局排列", 3])
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
@@ -66,6 +85,27 @@ def test_parser_recognizes_packages_and_no_tracking_rows():
     assert sum(row.quantity for row in rows) == 5
     assert sum(bool(row.tracking_no) for row in rows) == 2
     assert sum(row.no_tracking_required for row in rows) == 1
+
+
+def test_parser_retains_unrecognized_candidate_with_raw_cells():
+    rows = parse_waybill_workbook(_unrecognized_workbook_bytes())
+    assert len(rows) == 1
+    assert rows[0].parse_reason == "未能按当前工作表格式识别，请人工补充"
+    assert rows[0].raw_values == ["王五", "此行未按已知列布局排列", "3"]
+
+
+def test_parser_does_not_retain_total_row_as_unrecognized_data():
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "299（备用74+社用225）"
+    ws.append(["姓名", "地址", "电话", "份数"])
+    ws.append(["库房", "中通库房", "13900000000", 299])
+    ws.append([None, None, "合计", 299])
+    out = BytesIO()
+    wb.save(out)
+    rows = parse_waybill_workbook(out.getvalue())
+    assert len(rows) == 1
+    assert rows[0].quantity == 299
 
 
 def test_preview_confirm_keeps_one_copy_pending_and_supports_multiple_packages():
@@ -131,8 +171,21 @@ def test_preview_confirm_keeps_one_copy_pending_and_supports_multiple_packages()
     assert preview.unmatched_rows == 0
     assert len(WaybillImportBatchOut.model_validate(preview).rows) == 3
 
+    first_row = preview.rows[0]
+    edited = update_import_row(
+        db,
+        preview.id,
+        first_row.id,
+        WaybillImportRowUpdate(recipient_name="人工确认张三", shipping_detail_id=recipient.id),
+    )
+    assert edited.rows[0].manual_reviewed is True
+    assert edited.rows[0].recipient_name == "人工确认张三"
+    assert edited.matched_quantity == 5
+
     same_preview = preview_import(db, issue.id, "重命名.xlsx", content, user)
     assert same_preview.id == preview.id
+    assert same_preview.rows[0].recipient_name == "人工确认张三"
+    assert get_draft_import(db, issue.id).id == preview.id
     assert db.query(ShippingWaybillImportBatch).count() == 1
 
     confirmed = confirm_import(db, preview.id, user)
@@ -163,3 +216,104 @@ def test_preview_confirm_keeps_one_copy_pending_and_supports_multiple_packages()
     assert completed.handled_quantity == 6
     assert completed.pending_quantity == 0
     assert completed.status == "shipped"
+
+
+def test_manual_review_ignore_add_and_duplicate_recalculation():
+    db = _db()
+    user = User(username="reviewer", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=3001, publish_date=date(2026, 2, 2), status=IssueStatus.confirmed)
+    db.add_all([user, issue])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=issue.id,
+        snapshot_type="confirm",
+        report_total=2,
+        shipping_total=2,
+        delta=0,
+        is_match=True,
+    ))
+    first = ShippingDetail(
+        issue_number=3001, sheet_name="每周", channel="个人订阅", transport="中通物流",
+        frequency="周", status="正常", name="待补客户", phone="13700000000",
+        address="北京市测试路2号", quantity=1,
+    )
+    second = ShippingDetail(
+        issue_number=3001, sheet_name="每周", channel="个人订阅", transport="中通物流",
+        frequency="周", status="正常", name="人工客户", phone="13600000000",
+        address="北京市测试路3号", quantity=1,
+    )
+    db.add_all([first, second])
+    db.commit()
+
+    batch = preview_import(db, issue.id, "待核对.xlsx", _supplement_workbook_bytes(first.id), user)
+    row = batch.rows[0]
+    ignored = update_import_row(db, batch.id, row.id, WaybillImportRowUpdate(ignored=True))
+    assert ignored.rows[0].match_status == "ignored"
+    assert ignored.unmatched_rows == 0
+    assert ignored.matched_quantity == 0
+
+    restored = update_import_row(
+        db, batch.id, row.id, WaybillImportRowUpdate(ignored=False, shipping_detail_id=first.id)
+    )
+    assert restored.rows[0].match_status == "matched"
+    assert restored.matched_quantity == 1
+
+    with_duplicate = add_import_row(db, batch.id, WaybillImportRowCreate(
+        carrier="中通", tracking_no="73592817529999", quantity=1,
+        recipient_name="人工客户", phone="13600000000", address="北京市测试路3号",
+        shipping_detail_id=second.id,
+    ))
+    duplicate = db.query(ShippingWaybillImportRow).filter(
+        ShippingWaybillImportRow.batch_id == batch.id,
+        ShippingWaybillImportRow.source_sheet == "人工补充",
+    ).one()
+    assert duplicate.match_status == "duplicate"
+    assert with_duplicate.unmatched_rows == 1
+    assert with_duplicate.matched_quantity == 1
+
+    fixed = update_import_row(
+        db,
+        batch.id,
+        duplicate.id,
+        WaybillImportRowUpdate(tracking_no="73592817530000", shipping_detail_id=second.id),
+    )
+    assert fixed.matched_quantity == 2
+    assert fixed.pending_quantity == 0
+
+    confirm_import(db, batch.id, user)
+    try:
+        update_import_row(db, batch.id, duplicate.id, WaybillImportRowUpdate(quantity=2))
+        assert False, "confirmed batches must be immutable"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 409
+
+
+def test_explicit_reparse_replaces_the_active_draft():
+    db = _db()
+    user = User(username="reparser", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=3002, publish_date=date(2026, 2, 9), status=IssueStatus.confirmed)
+    detail = ShippingDetail(
+        issue_number=3002, sheet_name="每周", channel="个人订阅", transport="中通物流",
+        frequency="周", status="正常", name="待补客户", phone="13700000000",
+        address="北京市测试路2号", quantity=1,
+    )
+    db.add_all([user, issue, detail])
+    db.commit()
+
+    original = preview_import(db, issue.id, "旧草稿.xlsx", _supplement_workbook_bytes(detail.id), user)
+    update_import_row(
+        db, original.id, original.rows[0].id,
+        WaybillImportRowUpdate(recipient_name="旧的人工修正", shipping_detail_id=detail.id),
+    )
+    replacement = preview_import(
+        db,
+        issue.id,
+        "新草稿.xlsx",
+        _supplement_workbook_bytes(detail.id, "73592817531111"),
+        user,
+        reparse=True,
+    )
+    assert db.query(ShippingWaybillImportBatch).count() == 1
+    assert replacement.filename == "新草稿.xlsx"
+    assert replacement.rows[0].tracking_no == "73592817531111"
+    assert replacement.rows[0].recipient_name == "待补客户"

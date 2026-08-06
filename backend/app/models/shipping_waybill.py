@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -18,6 +18,7 @@ class WaybillMatchStatus(str, enum.Enum):
     ambiguous = "ambiguous"
     duplicate = "duplicate"
     invalid = "invalid"
+    ignored = "ignored"
 
 
 class ShippingWaybillImportBatch(Base):
@@ -74,6 +75,8 @@ class ShippingWaybillImportRow(Base):
     address = Column(Text, nullable=True)
     quantity = Column(Integer, nullable=False, default=0)
     no_tracking_required = Column(Boolean, nullable=False, default=False)
+    raw_values = Column(JSON, nullable=True)
+    manual_reviewed = Column(Boolean, nullable=False, default=False)
     match_status = Column(String(20), nullable=False)
     match_reason = Column(String(255), nullable=True)
     shipping_detail_id = Column(

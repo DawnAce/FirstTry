@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,8 @@ class WaybillImportRowOut(BaseModel):
     address: Optional[str]
     quantity: int
     no_tracking_required: bool
+    raw_values: Optional[list[Any]] = None
+    manual_reviewed: bool
     match_status: str
     match_reason: Optional[str]
     shipping_detail_id: Optional[int]
@@ -68,3 +70,26 @@ class ManualPackageIn(BaseModel):
 
 class NoTrackingRequirementIn(BaseModel):
     no_tracking_required: bool = True
+
+
+class WaybillImportRowUpdate(BaseModel):
+    carrier: Optional[str] = Field(default=None, max_length=50)
+    tracking_no: Optional[str] = Field(default=None, max_length=100)
+    recipient_name: Optional[str] = Field(default=None, max_length=100)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    address: Optional[str] = None
+    quantity: Optional[int] = None
+    no_tracking_required: Optional[bool] = None
+    shipping_detail_id: Optional[int] = None
+    ignored: Optional[bool] = None
+
+
+class WaybillImportRowCreate(BaseModel):
+    carrier: str = Field(default="中通", max_length=50)
+    tracking_no: Optional[str] = Field(default=None, max_length=100)
+    recipient_name: str = Field(default="", max_length=100)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    address: Optional[str] = None
+    quantity: int = 0
+    no_tracking_required: bool = False
+    shipping_detail_id: Optional[int] = None

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -13,13 +13,19 @@ from app.schemas.shipping_waybill import (
     ManualPackageIn,
     NoTrackingRequirementIn,
     WaybillImportBatchOut,
+    WaybillImportRowCreate,
+    WaybillImportRowUpdate,
 )
 from app.services.operation_log_service import record_operation
 from app.services.shipping_waybill_service import (
     confirm_import,
     fulfillment_summary,
+    get_draft_import,
+    get_import_batch,
     preview_import,
     refresh_detail_shipping_fields,
+    add_import_row,
+    update_import_row,
 )
 from app.upload import read_upload
 
@@ -31,11 +37,50 @@ router = APIRouter(prefix="/api/shipping-waybills", tags=["shipping-waybills"])
 async def preview_waybill_import(
     issue_id: int,
     file: UploadFile = File(...),
+    reparse: bool = Form(False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     content = await read_upload(file, label="运单文件")
-    return preview_import(db, issue_id, file.filename or "运单导入.xlsx", content, user)
+    return preview_import(
+        db,
+        issue_id,
+        file.filename or "运单导入.xlsx",
+        content,
+        user,
+        reparse=reparse,
+    )
+
+
+@router.get("/issues/{issue_id}/draft", response_model=WaybillImportBatchOut | None)
+def get_waybill_draft(issue_id: int, db: Session = Depends(get_db)):
+    return get_draft_import(db, issue_id)
+
+
+@router.get("/imports/{batch_id}", response_model=WaybillImportBatchOut)
+def get_waybill_import(batch_id: int, db: Session = Depends(get_db)):
+    return get_import_batch(db, batch_id)
+
+
+@router.patch("/imports/{batch_id}/rows/{row_id}", response_model=WaybillImportBatchOut)
+def patch_waybill_import_row(
+    batch_id: int,
+    row_id: int,
+    body: WaybillImportRowUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    return update_import_row(db, batch_id, row_id, body)
+
+
+@router.post("/imports/{batch_id}/rows", response_model=WaybillImportBatchOut)
+def create_waybill_import_row(
+    batch_id: int,
+    body: WaybillImportRowCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    return add_import_row(db, batch_id, body)
 
 
 @router.post("/imports/{batch_id}/confirm", response_model=WaybillImportBatchOut)

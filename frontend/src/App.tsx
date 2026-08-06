@@ -9,6 +9,7 @@ import SubscriptionGeneration from './pages/SubscriptionGeneration';
 import History from './pages/History';
 import LogisticsIssues from './pages/LogisticsIssues';
 import LogisticsIssueDetail from './pages/LogisticsIssueDetail';
+import WaybillImportWorkbench from './pages/WaybillImportWorkbench';
 import Templates from './pages/Templates';
 import HistoryImport from './pages/HistoryImport';
 import ScheduleView from './pages/ScheduleView';
@@ -68,6 +69,7 @@ function App() {
             <Route path="/recipients" element={<WorkbenchOrRedirect />} />
             <Route path="/logistics/issues" element={<LogisticsIssues />} />
             <Route path="/logistics/issues/:id" element={<LogisticsIssueDetail />} />
+            <Route path="/logistics/issues/:id/waybills/import" element={<RequireMutationAccess fallback="/logistics/issues"><WaybillImportWorkbench /></RequireMutationAccess>} />
             <Route path="/post-delivery" element={<Navigate to="/post-delivery/deliveries" replace />} />
             <Route path="/post-delivery/subscription" element={<SubscriptionGeneration />} />
             <Route path="/post-delivery/:tab" element={<PostDelivery />} />

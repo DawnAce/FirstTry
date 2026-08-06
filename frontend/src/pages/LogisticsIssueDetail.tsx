@@ -60,13 +60,10 @@ import {
 import dayjs from 'dayjs';
 import { useAuth } from '../contexts/AuthContext';
 import { DrawerTitle, LargeStatusIcon, StatusPill } from '../components/UiPrimitives';
-import type { WaybillImportBatch } from '../api/shippingWaybills';
 import {
   addManualPackage,
-  confirmWaybillImport,
   deleteShippingPackage,
   getFulfillmentSummary,
-  previewWaybillImport,
   setNoTrackingRequired,
 } from '../api/shippingWaybills';
 import {
@@ -149,11 +146,6 @@ export default function LogisticsIssueDetail() {
   const [exporting, setExporting] = useState(false);
   const [clearingIssue, setClearingIssue] = useState(false);
   const [changeLogOpen, setChangeLogOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importPreview, setImportPreview] = useState<WaybillImportBatch | null>(null);
-  const [previewingImport, setPreviewingImport] = useState(false);
-  const [confirmingImport, setConfirmingImport] = useState(false);
   const [packageRecord, setPackageRecord] = useState<ShippingDetail | null>(null);
   const [packageForm] = Form.useForm();
 
@@ -298,40 +290,6 @@ export default function LogisticsIssueDetail() {
     queryClient.invalidateQueries({ queryKey: ['operationLogs'] });
     queryClient.invalidateQueries({ queryKey: ['report', issueId] });
     queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] });
-  };
-
-  const handlePreviewWaybills = async () => {
-    if (!importFile) {
-      message.warning('请先选择运单Excel文件');
-      return;
-    }
-    setPreviewingImport(true);
-    try {
-      const res = await previewWaybillImport(issueId, importFile);
-      setImportPreview(res.data);
-      if (res.data.status === 'confirmed') message.info('该文件已经导入过，未重复创建运单');
-    } catch (error) {
-      message.error(logisticsApiErrorMessage(error, '运单文件解析失败'));
-    } finally {
-      setPreviewingImport(false);
-    }
-  };
-
-  const handleConfirmWaybills = async () => {
-    if (!importPreview) return;
-    setConfirmingImport(true);
-    try {
-      await confirmWaybillImport(importPreview.id);
-      message.success(`已核销 ${importPreview.matched_quantity.toLocaleString()} 份，待补 ${importPreview.pending_quantity.toLocaleString()} 份`);
-      setImportOpen(false);
-      setImportFile(null);
-      setImportPreview(null);
-      refreshShippingDetails();
-    } catch (error) {
-      message.error(logisticsApiErrorMessage(error, '确认导入失败'));
-    } finally {
-      setConfirmingImport(false);
-    }
   };
 
   const handleOpenPackage = (record: ShippingDetail) => {
@@ -775,7 +733,7 @@ export default function LogisticsIssueDetail() {
         <div className="zto-head-actions">
           <Button icon={<FileTextOutlined />} onClick={() => navigate(`/report/${issueId}`)}>去报数</Button>
           <Button icon={<DownloadOutlined />} onClick={handleExportShipping} disabled={currentIssue?.id == null} loading={exporting}>导出本期</Button>
-          {canMutate && <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>导入运单</Button>}
+          {canMutate && <Button icon={<UploadOutlined />} onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}>导入运单</Button>}
           {canMutate && <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增明细</Button>}
           {isAdmin && (
             <Popover
@@ -1069,58 +1027,6 @@ export default function LogisticsIssueDetail() {
           )}
         </Card>
       )}
-
-      <Modal
-        title="导入运单"
-        open={importOpen}
-        width={860}
-        onCancel={() => { setImportOpen(false); setImportFile(null); setImportPreview(null); }}
-        footer={[
-          <Button key="cancel" onClick={() => { setImportOpen(false); setImportFile(null); setImportPreview(null); }}>取消</Button>,
-          <Button key="preview" icon={<UploadOutlined />} loading={previewingImport} onClick={handlePreviewWaybills}>解析并预览</Button>,
-          <Button key="confirm" type="primary" disabled={!importPreview || importPreview.status === 'confirmed'} loading={confirmingImport} onClick={handleConfirmWaybills}>确认导入</Button>,
-        ]}
-      >
-        <div className="zto-import-picker">
-          <UploadOutlined />
-          <div><strong>{importFile?.name || '选择运单Excel文件'}</strong><span>支持当前中通、顺丰、邮政、挂号及备用/社用工作表</span></div>
-          <input
-            type="file"
-            accept=".xlsx,.xlsm"
-            onChange={(event) => {
-              setImportFile(event.target.files?.[0] || null);
-              setImportPreview(null);
-            }}
-          />
-        </div>
-        {importPreview && (
-          <div className="zto-import-preview">
-            <div className="zto-import-metrics">
-              <div><span>确认印数</span><b>{importPreview.expected_quantity.toLocaleString()}</b></div>
-              <div><span>文件份数</span><b>{importPreview.parsed_quantity.toLocaleString()}</b></div>
-              <div><span>可核销</span><b>{importPreview.matched_quantity.toLocaleString()}</b></div>
-              <div className={importPreview.pending_quantity ? 'is-warning' : ''}><span>待补</span><b>{importPreview.pending_quantity.toLocaleString()}</b></div>
-              <div><span>需关注</span><b>{importPreview.warning_count.toLocaleString()}</b></div>
-            </div>
-            {importPreview.pending_quantity > 0 && (
-              <Alert showIcon type="warning" title={`仍有 ${importPreview.pending_quantity.toLocaleString()} 份待补；不会阻止已匹配数据导入。`} />
-            )}
-            <Table
-              size="small"
-              rowKey="id"
-              dataSource={importPreview.rows}
-              pagination={{ pageSize: 6, showSizeChanger: false }}
-              columns={[
-                { title: '来源', key: 'source', width: 180, render: (_: unknown, row) => `${row.source_sheet} · 第${row.source_row}行` },
-                { title: '收件人', dataIndex: 'recipient_name', width: 110 },
-                { title: '承运/运单', key: 'tracking', render: (_: unknown, row) => row.no_tracking_required ? '无需运单' : `${row.carrier} · ${row.tracking_no || '—'}` },
-                { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' as const },
-                { title: '匹配结果', key: 'match', width: 150, render: (_: unknown, row) => <Tag color={row.match_status === 'matched' ? 'green' : 'orange'}>{row.match_status === 'matched' ? '已匹配' : row.match_reason || row.match_status}</Tag> },
-              ]}
-            />
-          </div>
-        )}
-      </Modal>
 
       <Modal
         title={`补录运单${packageRecord ? ` · ${packageRecord.name}` : ''}`}
