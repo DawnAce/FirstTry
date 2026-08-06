@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from openpyxl import load_workbook
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -20,6 +20,7 @@ from app.models import (
     IssueAuditSnapshot,
     ShippingDetail,
     ShippingDetailSourceType,
+    ShippingFulfillmentAdjustment,
     ShippingPackage,
     ShippingWaybillImportBatch,
     ShippingWaybillImportRow,
@@ -28,7 +29,9 @@ from app.models import (
 )
 from app.models.user import User
 from app.schemas.shipping_waybill import (
+    FulfillmentAdjustmentIn,
     FulfillmentSummaryOut,
+    WaybillBulkMatchIn,
     WaybillImportRowCreate,
     WaybillImportRowUpdate,
 )
@@ -443,11 +446,24 @@ def get_draft_import(db: Session, issue_id: int) -> ShippingWaybillImportBatch |
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
-    return db.query(ShippingWaybillImportBatch).filter(
+    previewed = db.query(ShippingWaybillImportBatch).filter(
         ShippingWaybillImportBatch.issue_id == issue_id,
         ShippingWaybillImportBatch.status == WaybillImportStatus.previewed.value,
     ).order_by(
         ShippingWaybillImportBatch.created_at.desc(),
+        ShippingWaybillImportBatch.id.desc(),
+    ).first()
+    if previewed:
+        return previewed
+    return db.query(ShippingWaybillImportBatch).filter(
+        ShippingWaybillImportBatch.issue_id == issue_id,
+        ShippingWaybillImportBatch.status == WaybillImportStatus.confirmed.value,
+        or_(
+            ShippingWaybillImportBatch.unmatched_rows > 0,
+            ShippingWaybillImportBatch.pending_quantity > 0,
+        ),
+    ).order_by(
+        ShippingWaybillImportBatch.confirmed_at.desc(),
         ShippingWaybillImportBatch.id.desc(),
     ).first()
 
@@ -501,12 +517,8 @@ def _match_draft_row(
             ShippingPackage.carrier == row.carrier,
             ShippingPackage.tracking_no == row.tracking_no,
         ).first()
-        draft_duplicate = db.query(ShippingWaybillImportRow.id).join(
-            ShippingWaybillImportBatch,
-            ShippingWaybillImportBatch.id == ShippingWaybillImportRow.batch_id,
-        ).filter(
-            ShippingWaybillImportBatch.issue_number == batch.issue_number,
-            ShippingWaybillImportBatch.status == WaybillImportStatus.previewed.value,
+        draft_duplicate = db.query(ShippingWaybillImportRow.id).filter(
+            ShippingWaybillImportRow.batch_id == batch.id,
             ShippingWaybillImportRow.id != row.id,
             ShippingWaybillImportRow.carrier == row.carrier,
             ShippingWaybillImportRow.tracking_no == row.tracking_no,
@@ -549,7 +561,11 @@ def _recalculate_batch(db: Session, batch: ShippingWaybillImportBatch) -> None:
     batch.unmatched_rows = len(unresolved)
     details = _details_for_issue(db, batch.issue_number)
     current_handled = sum(detail.handled_quantity for detail in details)
-    projected = current_handled + batch.matched_quantity
+    projected = (
+        current_handled
+        if batch.status == WaybillImportStatus.confirmed.value
+        else current_handled + batch.matched_quantity
+    )
     batch.pending_quantity = max(batch.expected_quantity - projected, 0)
     batch.extra_quantity = max(projected - batch.expected_quantity, 0)
 
@@ -558,12 +574,20 @@ def _recalculate_batch(db: Session, batch: ShippingWaybillImportBatch) -> None:
         if row.shipping_detail_id is not None:
             quantities_by_detail[row.shipping_detail_id] += row.quantity
     by_id = {detail.id: detail for detail in details}
-    detail_warnings = sum(
-        1
-        for detail_id, imported in quantities_by_detail.items()
-        if detail_id in by_id
-        and by_id[detail_id].handled_quantity + imported != (by_id[detail_id].quantity or 0)
-    )
+    if batch.status == WaybillImportStatus.confirmed.value:
+        detail_warnings = sum(
+            1
+            for detail_id in quantities_by_detail
+            if detail_id in by_id
+            and by_id[detail_id].handled_quantity != (by_id[detail_id].quantity or 0)
+        )
+    else:
+        detail_warnings = sum(
+            1
+            for detail_id, imported in quantities_by_detail.items()
+            if detail_id in by_id
+            and by_id[detail_id].handled_quantity + imported != (by_id[detail_id].quantity or 0)
+        )
     batch.warning_count = len(unresolved) + detail_warnings
 
 
@@ -572,13 +596,17 @@ def update_import_row(
     batch_id: int,
     row_id: int,
     body: WaybillImportRowUpdate,
+    user: User | None = None,
 ) -> ShippingWaybillImportBatch:
     batch = _get_import_batch(db, batch_id)
-    if batch.status == WaybillImportStatus.confirmed.value:
-        raise HTTPException(status_code=409, detail="已确认的导入批次不能修改")
     row = next((candidate for candidate in batch.rows if candidate.id == row_id), None)
     if not row:
         raise HTTPException(status_code=404, detail="运单导入行不存在")
+    if (
+        batch.status == WaybillImportStatus.confirmed.value
+        and row.match_status == WaybillMatchStatus.matched.value
+    ):
+        raise HTTPException(status_code=409, detail="该行已经生成实际运单，不能在导入批次中修改")
 
     fields = body.model_fields_set
     if "carrier" in fields:
@@ -604,8 +632,11 @@ def update_import_row(
 
     ignored = body.ignored if "ignored" in fields else row.match_status == WaybillMatchStatus.ignored.value
     if ignored:
+        reason = (body.ignore_reason or "").strip()
+        if not reason:
+            raise HTTPException(status_code=400, detail="忽略未匹配行时必须填写原因")
         row.match_status = WaybillMatchStatus.ignored.value
-        row.match_reason = "已人工忽略"
+        row.match_reason = f"已人工忽略：{reason}"
         row.shipping_detail_id = None
     else:
         if row.match_status == WaybillMatchStatus.ignored.value:
@@ -613,7 +644,28 @@ def update_import_row(
         preferred = body.shipping_detail_id if "shipping_detail_id" in fields else None
         _match_draft_row(db, batch, row, preferred)
     row.manual_reviewed = True
+    db.flush()
+    if (
+        batch.status == WaybillImportStatus.confirmed.value
+        and row.match_status == WaybillMatchStatus.matched.value
+    ):
+        _materialize_matched_row(db, row)
+        db.flush()
     _recalculate_batch(db, batch)
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_waybill_import_rows",
+        record_id=row.id,
+        record_name=f"{row.source_sheet} 第{row.source_row}行",
+        action="review_waybill",
+        issue_number=batch.issue_number,
+        changes={
+            "match_status": row.match_status,
+            "shipping_detail_id": row.shipping_detail_id,
+            "quantity": row.quantity,
+        },
+    )
     db.commit()
     db.refresh(batch)
     return batch
@@ -623,10 +675,9 @@ def add_import_row(
     db: Session,
     batch_id: int,
     body: WaybillImportRowCreate,
+    user: User | None = None,
 ) -> ShippingWaybillImportBatch:
     batch = _get_import_batch(db, batch_id)
-    if batch.status == WaybillImportStatus.confirmed.value:
-        raise HTTPException(status_code=409, detail="已确认的导入批次不能修改")
     next_row = max((row.source_row for row in batch.rows if row.source_sheet == "人工补充"), default=0) + 1
     row = ShippingWaybillImportRow(
         batch=batch,
@@ -649,7 +700,24 @@ def add_import_row(
     db.add(row)
     db.flush()
     _match_draft_row(db, batch, row, body.shipping_detail_id)
+    db.flush()
+    if (
+        batch.status == WaybillImportStatus.confirmed.value
+        and row.match_status == WaybillMatchStatus.matched.value
+    ):
+        _materialize_matched_row(db, row)
+        db.flush()
     _recalculate_batch(db, batch)
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_waybill_import_rows",
+        record_id=row.id,
+        record_name="人工补充运单",
+        action="add_waybill_row",
+        issue_number=batch.issue_number,
+        changes={"match_status": row.match_status, "quantity": row.quantity},
+    )
     db.commit()
     db.refresh(batch)
     return batch
@@ -669,6 +737,116 @@ def _refresh_legacy_shipping_fields(detail: ShippingDetail) -> None:
     detail.tracking_no = packages[0].tracking_no if len(packages) == 1 else None
 
 
+def _materialize_matched_row(
+    db: Session,
+    row: ShippingWaybillImportRow,
+    *,
+    shipped_at: datetime | None = None,
+) -> ShippingDetail:
+    if row.match_status != WaybillMatchStatus.matched.value or row.shipping_detail_id is None:
+        raise HTTPException(status_code=400, detail="运单行尚未关联发货明细")
+    detail = row.shipping_detail or db.query(ShippingDetail).filter(
+        ShippingDetail.id == row.shipping_detail_id
+    ).first()
+    if not detail:
+        raise HTTPException(status_code=400, detail="关联的发货明细不存在")
+    if row.no_tracking_required:
+        if detail.packages:
+            raise HTTPException(status_code=409, detail="该明细已有运单，不能改为无需运单")
+        detail.shipping_requirement = "no_tracking_required"
+        _refresh_legacy_shipping_fields(detail)
+        return detail
+    if not row.tracking_no:
+        raise HTTPException(status_code=400, detail="缺少运单号")
+    existing_for_row = db.query(ShippingPackage).filter(
+        ShippingPackage.import_row_id == row.id
+    ).first()
+    if existing_for_row:
+        return detail
+    duplicate = db.query(ShippingPackage).filter(
+        ShippingPackage.carrier == row.carrier,
+        ShippingPackage.tracking_no == row.tracking_no,
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="该运单号已经生成实际发货记录")
+    detail.shipping_requirement = "tracking_required"
+    package = ShippingPackage(
+        shipping_detail_id=detail.id,
+        import_row_id=row.id,
+        carrier=row.carrier,
+        tracking_no=row.tracking_no,
+        quantity=row.quantity,
+        shipped_at=shipped_at or datetime.now(),
+    )
+    db.add(package)
+    detail.packages.append(package)
+    db.flush()
+    _refresh_legacy_shipping_fields(detail)
+    return detail
+
+
+def bulk_match_import_rows(
+    db: Session,
+    batch_id: int,
+    body: WaybillBulkMatchIn,
+    user: User | None = None,
+) -> ShippingWaybillImportBatch:
+    batch = _get_import_batch(db, batch_id)
+    requested_ids = list(dict.fromkeys(body.row_ids))
+    rows_by_id = {row.id: row for row in batch.rows}
+    rows = [rows_by_id[row_id] for row_id in requested_ids if row_id in rows_by_id]
+    if len(rows) != len(requested_ids):
+        raise HTTPException(status_code=404, detail="部分运单行不属于当前导入批次")
+    if any(row.match_status == WaybillMatchStatus.matched.value for row in rows):
+        raise HTTPException(status_code=409, detail="所选运单中包含已经关联的行")
+    detail = next(
+        (candidate for candidate in _details_for_issue(db, batch.issue_number) if candidate.id == body.shipping_detail_id),
+        None,
+    )
+    if not detail:
+        raise HTTPException(status_code=400, detail="所选发货明细不属于本期")
+    selected_quantity = sum(max(row.quantity or 0, 0) for row in rows)
+    other_draft_quantity = sum(
+        max(row.quantity or 0, 0)
+        for row in batch.rows
+        if row.id not in requested_ids
+        and row.match_status == WaybillMatchStatus.matched.value
+        and row.shipping_detail_id == detail.id
+        and row.package is None
+    )
+    if detail.handled_quantity + other_draft_quantity + selected_quantity > (detail.quantity or 0):
+        raise HTTPException(status_code=400, detail="所选运单份数超过该发货明细的待核销份数")
+
+    for row in rows:
+        _match_draft_row(db, batch, row, detail.id)
+        if row.match_status != WaybillMatchStatus.matched.value:
+            raise HTTPException(status_code=400, detail=row.match_reason or "运单无法关联")
+        row.manual_reviewed = True
+    db.flush()
+    if batch.status == WaybillImportStatus.confirmed.value:
+        for row in rows:
+            _materialize_matched_row(db, row)
+        db.flush()
+    _recalculate_batch(db, batch)
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_waybill_import_batches",
+        record_id=batch.id,
+        record_name=batch.filename,
+        action="bulk_match_waybills",
+        issue_number=batch.issue_number,
+        changes={
+            "row_ids": requested_ids,
+            "shipping_detail_id": detail.id,
+            "quantity": selected_quantity,
+        },
+    )
+    db.commit()
+    db.refresh(batch)
+    return batch
+
+
 def confirm_import(db: Session, batch_id: int, user: User) -> ShippingWaybillImportBatch:
     batch = db.query(ShippingWaybillImportBatch).filter(
         ShippingWaybillImportBatch.id == batch_id
@@ -678,39 +856,16 @@ def confirm_import(db: Session, batch_id: int, user: User) -> ShippingWaybillImp
     if batch.status == WaybillImportStatus.confirmed.value:
         return batch
 
-    touched: dict[int, ShippingDetail] = {}
     now = datetime.now()
     for row in batch.rows:
         if row.match_status != WaybillMatchStatus.matched.value or row.shipping_detail_id is None:
             continue
-        detail = row.shipping_detail
-        touched[detail.id] = detail
-        if row.no_tracking_required:
-            detail.shipping_requirement = "no_tracking_required"
-            continue
-        detail.shipping_requirement = "tracking_required"
-        exists = db.query(ShippingPackage.id).filter(
-            ShippingPackage.carrier == row.carrier,
-            ShippingPackage.tracking_no == row.tracking_no,
-        ).first()
-        if exists:
-            continue
-        package = ShippingPackage(
-            shipping_detail_id=detail.id,
-            import_row_id=row.id,
-            carrier=row.carrier,
-            tracking_no=row.tracking_no,
-            quantity=row.quantity,
-            shipped_at=now,
-        )
-        db.add(package)
-        detail.packages.append(package)
+        _materialize_matched_row(db, row, shipped_at=now)
 
-    db.flush()
-    for detail in touched.values():
-        _refresh_legacy_shipping_fields(detail)
     batch.status = WaybillImportStatus.confirmed.value
     batch.confirmed_at = now
+    db.flush()
+    _recalculate_batch(db, batch)
     record_operation(
         db,
         user=user,
@@ -744,7 +899,11 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
     no_tracking = sum(
         detail.quantity or 0 for detail in details if detail.shipping_requirement == "no_tracking_required"
     )
-    handled = tracked + no_tracking
+    adjustments = db.query(ShippingFulfillmentAdjustment).filter(
+        ShippingFulfillmentAdjustment.issue_id == issue.id
+    ).order_by(ShippingFulfillmentAdjustment.created_at, ShippingFulfillmentAdjustment.id).all()
+    adjustment_quantity = sum(max(adjustment.quantity or 0, 0) for adjustment in adjustments)
+    handled = tracked + no_tracking + adjustment_quantity
     pending = max(expected - handled, 0)
     extra = max(handled - expected, 0)
     if extra:
@@ -766,13 +925,90 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
         handled_quantity=handled,
         tracked_quantity=tracked,
         no_tracking_quantity=no_tracking,
+        adjustment_quantity=adjustment_quantity,
         pending_quantity=pending,
         extra_quantity=extra,
         package_count=sum(detail.package_count for detail in details),
         pending_detail_count=sum(1 for detail in details if detail.fulfillment_status in {"pending", "partial"}),
         status=status,
         latest_import=latest,
+        adjustments=adjustments,
     )
+
+
+def create_fulfillment_adjustment(
+    db: Session,
+    issue_id: int,
+    body: FulfillmentAdjustmentIn,
+    user: User,
+) -> FulfillmentSummaryOut:
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="刊期不存在")
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="无需发货原因不能为空")
+    before = fulfillment_summary(db, issue_id)
+    if body.quantity > before.pending_quantity:
+        raise HTTPException(status_code=400, detail="无需发货份数不能超过当前待处理份数")
+    adjustment = ShippingFulfillmentAdjustment(
+        issue_id=issue.id,
+        issue_number=issue.issue_number,
+        adjustment_type=body.adjustment_type,
+        quantity=body.quantity,
+        reason=reason,
+        created_by=getattr(user, "id", None),
+    )
+    db.add(adjustment)
+    db.flush()
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_fulfillment_adjustments",
+        record_id=adjustment.id,
+        record_name=adjustment.reason,
+        action="create",
+        issue_number=issue.issue_number,
+        changes={
+            "adjustment_type": adjustment.adjustment_type,
+            "quantity": adjustment.quantity,
+            "reason": adjustment.reason,
+        },
+    )
+    db.commit()
+    return fulfillment_summary(db, issue_id)
+
+
+def delete_fulfillment_adjustment(
+    db: Session,
+    adjustment_id: int,
+    user: User,
+) -> FulfillmentSummaryOut:
+    adjustment = db.query(ShippingFulfillmentAdjustment).filter(
+        ShippingFulfillmentAdjustment.id == adjustment_id
+    ).first()
+    if not adjustment:
+        raise HTTPException(status_code=404, detail="无需发货核销记录不存在")
+    issue_id = adjustment.issue_id
+    issue_number = adjustment.issue_number
+    changes = {
+        "adjustment_type": adjustment.adjustment_type,
+        "quantity": adjustment.quantity,
+        "reason": adjustment.reason,
+    }
+    db.delete(adjustment)
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_fulfillment_adjustments",
+        record_id=adjustment_id,
+        record_name=adjustment.reason,
+        action="delete",
+        issue_number=issue_number,
+        changes=changes,
+    )
+    db.commit()
+    return fulfillment_summary(db, issue_id)
 
 
 def refresh_detail_shipping_fields(detail: ShippingDetail) -> None:

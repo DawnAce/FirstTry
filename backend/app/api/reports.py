@@ -172,6 +172,8 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
             current_delta=current_delta,
             current_is_match=current_delta == 0,
             has_shipping_drift=current_shipping_total != latest_confirmation.shipping_total,
+            plan_delta=current_shipping_total - latest_confirmation.shipping_total,
+            plan_is_match=current_shipping_total == latest_confirmation.shipping_total,
         )
 
     return ReportDataOut(

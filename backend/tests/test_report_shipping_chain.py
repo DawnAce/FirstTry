@@ -89,6 +89,8 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(report.confirmation_summary.current_delta, -85)
         self.assertEqual(report.confirmation_summary.current_is_match, False)
         self.assertEqual(report.confirmation_summary.has_shipping_drift, True)
+        self.assertEqual(report.confirmation_summary.plan_delta, 85)
+        self.assertEqual(report.confirmation_summary.plan_is_match, False)
 
     def test_confirm_report_persists_issue_audit_snapshot_row(self):
         db = self.SessionLocal()
@@ -382,6 +384,8 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(report.confirmation_summary.current_delta, -20)
         self.assertEqual(report.confirmation_summary.current_is_match, False)
         self.assertEqual(report.confirmation_summary.has_shipping_drift, True)
+        self.assertEqual(report.confirmation_summary.plan_delta, 32)
+        self.assertEqual(report.confirmation_summary.plan_is_match, False)
 
 
 if __name__ == "__main__":

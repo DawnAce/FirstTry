@@ -18,13 +18,17 @@ from app.models import (
 from app.models.user import User, UserRole
 from app.schemas.shipping_detail import ShippingDetailOut
 from app.schemas.shipping_waybill import (
+    FulfillmentAdjustmentIn,
+    WaybillBulkMatchIn,
     WaybillImportBatchOut,
     WaybillImportRowCreate,
     WaybillImportRowUpdate,
 )
 from app.services.shipping_waybill_service import (
     add_import_row,
+    bulk_match_import_rows,
     confirm_import,
+    create_fulfillment_adjustment,
     fulfillment_summary,
     get_draft_import,
     parse_waybill_workbook,
@@ -66,6 +70,27 @@ def _unrecognized_workbook_bytes() -> bytes:
     ws.title = "临时格式"
     ws.append(["说明", "内容"])
     ws.append(["王五", "此行未按已知列布局排列", 3])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _split_chengdu_packages_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "中通+顺丰到付970"
+    ws.append([None, None, None, None, "电话", "地址", "姓名", "份数"])
+    for tracking_no, quantity in [
+        ("73592817556132", 65),
+        ("73592817560608", 100),
+        ("73592817561275", 100),
+        ("73592817561872", 100),
+    ]:
+        ws.append([
+            "经营报1-26日", None, tracking_no, None, "15719468023",
+            "成都市双流文星镇通关路86号A1－A4杂志铺/\n028－85312807",
+            "肖波", quantity,
+        ])
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
@@ -247,8 +272,11 @@ def test_manual_review_ignore_add_and_duplicate_recalculation():
 
     batch = preview_import(db, issue.id, "待核对.xlsx", _supplement_workbook_bytes(first.id), user)
     row = batch.rows[0]
-    ignored = update_import_row(db, batch.id, row.id, WaybillImportRowUpdate(ignored=True))
+    ignored = update_import_row(
+        db, batch.id, row.id, WaybillImportRowUpdate(ignored=True, ignore_reason="测试忽略")
+    )
     assert ignored.rows[0].match_status == "ignored"
+    assert ignored.rows[0].match_reason == "已人工忽略：测试忽略"
     assert ignored.unmatched_rows == 0
     assert ignored.matched_quantity == 0
 
@@ -286,6 +314,86 @@ def test_manual_review_ignore_add_and_duplicate_recalculation():
         assert False, "confirmed batches must be immutable"
     except Exception as exc:
         assert getattr(exc, "status_code", None) == 409
+
+
+def test_confirmed_unmatched_split_packages_can_be_bulk_linked_then_close_file_gap():
+    db = _db()
+    user = User(username="operator", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=2638, publish_date=date(2026, 1, 26), status=IssueStatus.confirmed)
+    db.add_all([user, issue])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=issue.id,
+        snapshot_type="confirm",
+        report_total=366,
+        shipping_total=365,
+        delta=1,
+        is_match=False,
+    ))
+    detail = ShippingDetail(
+        issue_number=2638,
+        sheet_name="每周",
+        channel="成都杂志铺",
+        transport="中通物流",
+        frequency="周",
+        status="正常",
+        name="肖波",
+        phone="15719468023/\n028－85312807",
+        address="成都市双流文星镇通关路86号A1－A4杂志铺",
+        quantity=365,
+    )
+    db.add(detail)
+    db.commit()
+
+    batch = preview_import(db, issue.id, "单号-经营报1-26日.xlsx", _split_chengdu_packages_bytes(), user)
+    assert batch.parsed_quantity == 365
+    assert batch.matched_quantity == 0
+    assert batch.unmatched_rows == 4
+    assert sum(row.quantity for row in batch.rows) == 365
+
+    confirmed = confirm_import(db, batch.id, user)
+    assert confirmed.status == "confirmed"
+    assert confirmed.pending_quantity == 366
+    assert get_draft_import(db, issue.id).id == confirmed.id
+
+    linked = bulk_match_import_rows(
+        db,
+        confirmed.id,
+        WaybillBulkMatchIn(row_ids=[row.id for row in confirmed.rows], shipping_detail_id=detail.id),
+        user,
+    )
+    assert linked.matched_rows == 4
+    assert linked.matched_quantity == 365
+    assert linked.unmatched_rows == 0
+    assert linked.pending_quantity == 1
+
+    db.refresh(detail)
+    assert detail.package_count == 4
+    assert detail.handled_quantity == 365
+    assert {package.quantity for package in detail.packages} == {65, 100}
+
+    completed = create_fulfillment_adjustment(
+        db,
+        issue.id,
+        FulfillmentAdjustmentIn(quantity=1, reason="双周停刊"),
+        user,
+    )
+    assert completed.tracked_quantity == 365
+    assert completed.adjustment_quantity == 1
+    assert completed.handled_quantity == 366
+    assert completed.pending_quantity == 0
+    assert completed.status == "shipped"
+
+    try:
+        create_fulfillment_adjustment(
+            db,
+            issue.id,
+            FulfillmentAdjustmentIn(quantity=1, reason=" "),
+            user,
+        )
+        assert False, "blank adjustment reasons must be rejected"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400
 
 
 def test_explicit_reparse_replaces_the_active_draft():

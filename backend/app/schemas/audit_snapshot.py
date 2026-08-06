@@ -10,3 +10,5 @@ class ConfirmationSummary(BaseModel):
     current_delta: int
     current_is_match: bool
     has_shipping_drift: bool
+    plan_delta: int
+    plan_is_match: bool

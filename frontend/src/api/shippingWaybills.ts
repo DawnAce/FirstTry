@@ -34,6 +34,8 @@ export interface WaybillImportBatch {
   matched_rows: number;
   unmatched_rows: number;
   warning_count: number;
+  unresolved_quantity: number;
+  file_gap_quantity: number;
   created_at: string;
   confirmed_at: string | null;
   rows: WaybillImportRow[];
@@ -47,12 +49,25 @@ export interface FulfillmentSummary {
   handled_quantity: number;
   tracked_quantity: number;
   no_tracking_quantity: number;
+  adjustment_quantity: number;
   pending_quantity: number;
   extra_quantity: number;
   package_count: number;
   pending_detail_count: number;
   status: 'pending' | 'partial' | 'shipped' | 'exception';
   latest_import: WaybillImportBatch | null;
+  adjustments: FulfillmentAdjustment[];
+}
+
+export interface FulfillmentAdjustment {
+  id: number;
+  issue_id: number;
+  issue_number: number;
+  adjustment_type: 'no_shipment_required';
+  quantity: number;
+  reason: string;
+  created_by: number | null;
+  created_at: string;
 }
 
 export interface WaybillImportRowInput {
@@ -65,6 +80,7 @@ export interface WaybillImportRowInput {
   no_tracking_required?: boolean;
   shipping_detail_id?: number | null;
   ignored?: boolean;
+  ignore_reason?: string | null;
 }
 
 export const previewWaybillImport = (
@@ -97,11 +113,37 @@ export const addWaybillImportRow = (
 ): Promise<AxiosResponse<WaybillImportBatch>> =>
   api.post<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}/rows`, data);
 
+export const bulkMatchWaybillImportRows = (
+  batchId: number,
+  rowIds: number[],
+  shippingDetailId: number,
+): Promise<AxiosResponse<WaybillImportBatch>> =>
+  api.post<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}/rows/bulk-match`, {
+    row_ids: rowIds,
+    shipping_detail_id: shippingDetailId,
+  });
+
 export const confirmWaybillImport = (batchId: number): Promise<AxiosResponse<WaybillImportBatch>> =>
   api.post<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}/confirm`);
 
 export const getFulfillmentSummary = (issueId: number): Promise<AxiosResponse<FulfillmentSummary>> =>
   api.get<FulfillmentSummary>(`/shipping-waybills/issues/${issueId}/summary`);
+
+export const addFulfillmentAdjustment = (
+  issueId: number,
+  quantity: number,
+  reason: string,
+): Promise<AxiosResponse<FulfillmentSummary>> =>
+  api.post<FulfillmentSummary>(`/shipping-waybills/issues/${issueId}/adjustments`, {
+    adjustment_type: 'no_shipment_required',
+    quantity,
+    reason,
+  });
+
+export const deleteFulfillmentAdjustment = (
+  adjustmentId: number,
+): Promise<AxiosResponse<FulfillmentSummary>> =>
+  api.delete<FulfillmentSummary>(`/shipping-waybills/adjustments/${adjustmentId}`);
 
 export const addManualPackage = (
   detailId: number,

@@ -9,22 +9,27 @@ from app.models import ShippingDetail, ShippingPackage
 from app.models.user import User
 from app.schemas.shipping_detail import ShippingPackageOut
 from app.schemas.shipping_waybill import (
+    FulfillmentAdjustmentIn,
     FulfillmentSummaryOut,
     ManualPackageIn,
     NoTrackingRequirementIn,
     WaybillImportBatchOut,
+    WaybillBulkMatchIn,
     WaybillImportRowCreate,
     WaybillImportRowUpdate,
 )
 from app.services.operation_log_service import record_operation
 from app.services.shipping_waybill_service import (
     confirm_import,
+    create_fulfillment_adjustment,
+    delete_fulfillment_adjustment,
     fulfillment_summary,
     get_draft_import,
     get_import_batch,
     preview_import,
     refresh_detail_shipping_fields,
     add_import_row,
+    bulk_match_import_rows,
     update_import_row,
 )
 from app.upload import read_upload
@@ -68,9 +73,9 @@ def patch_waybill_import_row(
     row_id: int,
     body: WaybillImportRowUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    return update_import_row(db, batch_id, row_id, body)
+    return update_import_row(db, batch_id, row_id, body, user)
 
 
 @router.post("/imports/{batch_id}/rows", response_model=WaybillImportBatchOut)
@@ -78,9 +83,19 @@ def create_waybill_import_row(
     batch_id: int,
     body: WaybillImportRowCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    return add_import_row(db, batch_id, body)
+    return add_import_row(db, batch_id, body, user)
+
+
+@router.post("/imports/{batch_id}/rows/bulk-match", response_model=WaybillImportBatchOut)
+def bulk_match_waybill_import_rows(
+    batch_id: int,
+    body: WaybillBulkMatchIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return bulk_match_import_rows(db, batch_id, body, user)
 
 
 @router.post("/imports/{batch_id}/confirm", response_model=WaybillImportBatchOut)
@@ -95,6 +110,25 @@ def confirm_waybill_import(
 @router.get("/issues/{issue_id}/summary", response_model=FulfillmentSummaryOut)
 def get_fulfillment_summary(issue_id: int, db: Session = Depends(get_db)):
     return fulfillment_summary(db, issue_id)
+
+
+@router.post("/issues/{issue_id}/adjustments", response_model=FulfillmentSummaryOut)
+def add_fulfillment_adjustment(
+    issue_id: int,
+    body: FulfillmentAdjustmentIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return create_fulfillment_adjustment(db, issue_id, body, user)
+
+
+@router.delete("/adjustments/{adjustment_id}", response_model=FulfillmentSummaryOut)
+def remove_fulfillment_adjustment(
+    adjustment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return delete_fulfillment_adjustment(db, adjustment_id, user)
 
 
 @router.post("/details/{detail_id}/packages", response_model=ShippingPackageOut)

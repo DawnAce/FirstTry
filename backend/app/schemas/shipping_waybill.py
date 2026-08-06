@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class WaybillImportRowOut(BaseModel):
@@ -42,6 +42,20 @@ class WaybillImportBatchOut(BaseModel):
     confirmed_at: Optional[datetime]
     rows: list[WaybillImportRowOut] = []
 
+    @computed_field
+    @property
+    def unresolved_quantity(self) -> int:
+        return sum(
+            max(row.quantity, 0)
+            for row in self.rows
+            if row.match_status not in {"matched", "ignored"}
+        )
+
+    @computed_field
+    @property
+    def file_gap_quantity(self) -> int:
+        return max(self.expected_quantity - self.parsed_quantity, 0)
+
     model_config = {"from_attributes": True}
 
 
@@ -53,12 +67,33 @@ class FulfillmentSummaryOut(BaseModel):
     handled_quantity: int
     tracked_quantity: int
     no_tracking_quantity: int
+    adjustment_quantity: int
     pending_quantity: int
     extra_quantity: int
     package_count: int
     pending_detail_count: int
     status: str
     latest_import: Optional[WaybillImportBatchOut] = None
+    adjustments: list["FulfillmentAdjustmentOut"] = Field(default_factory=list)
+
+
+class FulfillmentAdjustmentOut(BaseModel):
+    id: int
+    issue_id: int
+    issue_number: int
+    adjustment_type: str
+    quantity: int
+    reason: str
+    created_by: Optional[int]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FulfillmentAdjustmentIn(BaseModel):
+    adjustment_type: str = Field(default="no_shipment_required", pattern="^no_shipment_required$")
+    quantity: int = Field(gt=0)
+    reason: str = Field(min_length=1, max_length=255)
 
 
 class ManualPackageIn(BaseModel):
@@ -82,6 +117,12 @@ class WaybillImportRowUpdate(BaseModel):
     no_tracking_required: Optional[bool] = None
     shipping_detail_id: Optional[int] = None
     ignored: Optional[bool] = None
+    ignore_reason: Optional[str] = Field(default=None, max_length=255)
+
+
+class WaybillBulkMatchIn(BaseModel):
+    row_ids: list[int] = Field(min_length=1)
+    shipping_detail_id: int
 
 
 class WaybillImportRowCreate(BaseModel):

@@ -99,6 +99,8 @@ const handlers = [
       current_delta: 0,
       current_is_match: true,
       has_shipping_drift: true,
+      plan_delta: 50,
+      plan_is_match: false,
     },
   })),
   http.get('/api/shipping-details/companies', () => HttpResponse.json(['广州日报', '成都杂志铺', '上海站', '广州站', '示例签约公司'])),
@@ -110,12 +112,14 @@ const handlers = [
     handled_quantity: 1472,
     tracked_quantity: 1402,
     no_tracking_quantity: 70,
+    adjustment_quantity: 0,
     pending_quantity: 1,
     extra_quantity: 0,
     package_count: 76,
     pending_detail_count: 1,
     status: 'partial',
     latest_import: null,
+    adjustments: [],
   })),
   http.get('/api/shipping-details', ({ request }) => {
     const params = new URL(request.url).searchParams

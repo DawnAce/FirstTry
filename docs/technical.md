@@ -455,17 +455,18 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 订单发货同步行通过唯一索引 `uq_shipping_detail_order_target_issue`
 约束 `(issue_number, order_id, order_item_id, fulfillment_target_id)`，避免同一期同一订单履约目标在并发同步时生成重复发货明细；历史手工行的关联字段为 `NULL`，仍允许多行共存。
 
-### 3.12A 运单导入与逐包裹核销（3 张表）
+### 3.12A 运单导入与逐包裹核销（4 张表）
 
 | 表 | 说明 |
 |----|------|
 | `shipping_waybill_import_batches` | 一次 Excel 预览/确认批次，保存文件哈希、确认印数、解析/匹配/待补/超额份数与告警统计；同一期同一文件哈希唯一 |
 | `shipping_waybill_import_rows` | 文件中的逐行解析结果，保留来源 sheet/行号、原始单元格 JSON、承运商、运单号、收件信息、份数、人工核对标记、匹配状态与对应 `shipping_detail_id` |
 | `shipping_packages` | 已确认或人工补录的实际包裹；一条发货明细可对应多个包裹，`(carrier, tracking_no)` 全局唯一 |
+| `shipping_fulfillment_adjustments` | 期级无需发货核销项，保存停刊/取消寄送等原因、份数、操作人与时间；不伪造运单号 |
 
-发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。已处理份数 = 运单包裹份数 + 标记“无需运单”的明细计划份数，待补/超额按确认印数与累计已处理份数计算。导入文件存在未匹配行或仍有待补时，只提示差异，不阻断已匹配行确认；后续可继续导入补充文件、逐条补录运单或标记无需运单。解析器会保留有意义但无法按已知版式识别的候选行及原始单元格，工作台允许修正字段、关联本期既有 `shipping_detail`、忽略/恢复或手工补行。每次草稿修改都重算匹配、待补、超额和告警；确认后批次不可再编辑。上传运单即视为已发货，当前版本不查询物流轨迹。
+发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。已处理份数 = 运单包裹份数 + 标记“无需运单”的明细计划份数 + 期级“无需发货”调整份数，待补/超额按确认印数与累计已处理份数计算。导入文件存在未匹配行或仍有待补时，只提示差异，不阻断已匹配行确认；未匹配行在确认后仍可继续人工关联，成功后幂等生成实际包裹。解析器会保留有意义但无法按已知版式识别的候选行及原始单元格；工作台允许修正字段、批量把多个运单关联到同一条本期 `shipping_detail`、填写原因后忽略/恢复或手工补行。工作台将 `unresolved_quantity` 与 `file_gap_quantity = max(expected_quantity - parsed_quantity, 0)` 分开显示，避免把“已有运单但未匹配”与“源文件完全没有记录”混成一个待补数。上传运单即视为已发货，当前版本不查询物流轨迹。
 
-迁移链为 `c2e4f6a8b0d3`（结算流程）→ `c8f0a2b4d6e9`（viewer 角色）→ `d9e1f3a5b7c9`（运单核销）→ `e0b2d4f6a8c1`（原始行与人工核对字段），保持单一 Alembic head。
+迁移链为 `c2e4f6a8b0d3`（结算流程）→ `c8f0a2b4d6e9`（viewer 角色）→ `d9e1f3a5b7c9`（运单核销）→ `e0b2d4f6a8c1`（原始行与人工核对字段）→ `f8c0e2a4b6d9`（期级无需发货核销），保持单一 Alembic head。
 
 ### 3.13 issue_audit_snapshots（确认/导出快照）
 记录当期报数与ZTO-MF之间的关键校验快照，用于追溯确认时和导出时采用的数量状态。
@@ -1518,19 +1519,22 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `POST` | `/issues/{issue_id}/preview` | 上传 `.xlsx/.xlsm` 运单文件，解析中通、顺丰、邮政、挂号及备用/社用工作表，按明细 ID 或收件人/电话/地址匹配，只生成预览批次 |
-| `GET` | `/issues/{issue_id}/draft` | 返回该期最新未确认草稿；同一文件默认恢复草稿和人工修正，预览请求传 `reparse=true` 才重新解析 |
+| `GET` | `/issues/{issue_id}/draft` | 优先返回该期未确认草稿；没有草稿时返回仍有待处理份数的最近确认批次，便于继续人工关联 |
 | `GET` | `/imports/{batch_id}` | 读取指定导入批次和全部解析行 |
-| `PATCH` | `/imports/{batch_id}/rows/{row_id}` | 修正解析字段、选择/取消发货明细、标记忽略或恢复，并重算整批汇总 |
+| `PATCH` | `/imports/{batch_id}/rows/{row_id}` | 修正解析字段、选择/取消发货明细、填写原因后忽略或恢复，并重算整批汇总；确认后仅允许处理尚未生成包裹的行 |
 | `POST` | `/imports/{batch_id}/rows` | 为文件漏行或完全未识别的数据手工补充一行 |
+| `POST` | `/imports/{batch_id}/rows/bulk-match` | 将多个未匹配运单一次关联到同一条本期发货明细；确认后调用会立即生成多个包裹 |
 | `POST` | `/imports/{batch_id}/confirm` | 确认批次；仅写入匹配成功的包裹或无需运单标记，未匹配/重复/歧义/无效行保留为告警 |
-| `GET` | `/issues/{issue_id}/summary` | 返回确认印数、计划、累计已处理、运单/无需运单、待补/超额、包裹数及期级状态 |
+| `GET` | `/issues/{issue_id}/summary` | 返回确认印数、计划、累计已处理、运单/无需运单/无需发货、待补/超额、包裹数及期级状态 |
+| `POST` | `/issues/{issue_id}/adjustments` | 登记停刊、取消寄送等期级无需发货份数与原因 |
+| `DELETE` | `/adjustments/{adjustment_id}` | 撤销一条期级无需发货核销记录 |
 | `POST` | `/details/{detail_id}/packages` | 为某条发货明细人工补录一个包裹/运单 |
 | `DELETE` | `/packages/{package_id}` | 删除一个包裹并重新计算该明细的兼容实发字段 |
 | `POST` | `/details/{detail_id}/no-tracking` | 设置或取消“无需运单”；已有包裹时必须先删除包裹 |
 
-匹配状态为 `matched / unmatched / ambiguous / duplicate / invalid / ignored`。`ignored` 表示用户明确排除的表头、合计、重复或无效行，不计入未解决行，但保留审计痕迹。预览按当前累计已处理量计算导入后的 `pending_quantity`，因此补充导入最后缺少的份数会把待补正确归零；同一承运商+运单号在当前草稿、其他未确认草稿或数据库中重复时不会再次建包裹。
+匹配状态为 `matched / unmatched / ambiguous / duplicate / invalid / ignored`。`ignored` 必须携带人工原因，不计入未解决行，但原始行和原因永久保留。预览按当前累计已处理量计算导入后的 `pending_quantity`；同一承运商+运单号在当前批次或数据库中重复时不会再次建包裹。确认后的已匹配行不可改写，未匹配行仍可编辑或批量关联，避免已入库包裹被反向篡改。
 
-前端路由 `/logistics/issues/:id/waybills/import` 对应 `WaybillImportWorkbench.tsx`。页面直接读取期级草稿和全部本期发货明细，默认聚焦未解决行；展开区展示 `raw_values`、当前关联和候选明细，编辑/新增操作保存后使用服务端返回的整批结果刷新 KPI。确认按钮直接说明实际动作：“导入已核销的 N 份，保留 M 份待处理”。
+前端路由 `/logistics/issues/:id/waybills/import` 对应 `WaybillImportWorkbench.tsx`。页面读取期级草稿或待处理确认批次、确认快照、核销摘要和全部本期发货明细。顶部两条单行状态分别展示计划快照对比和实际核销拆分；默认聚焦未解决行，按同名与剩余份数生成多运单分组建议，并提供“文件未覆盖”独立页签。确认按钮直接说明实际动作：“导入已核销的 N 份，保留 M 份待处理”。
 
 ### 4.12 操作日志
 
