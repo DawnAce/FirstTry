@@ -9,6 +9,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import type { ShippingDetail } from '../api/shippingDetails';
+import { getPackageCopy } from './shippingDetailCardUtils';
 
 const PAGE_SIZE = 20;
 
@@ -25,20 +26,6 @@ interface ShippingDetailCardListProps {
   canSelect: boolean;
   onSelectedRowKeysChange: (keys: Key[]) => void;
   onOpenDetail: (record: ShippingDetail) => void;
-}
-
-function getPackageCopy(record: ShippingDetail) {
-  if (record.shipping_requirement === 'no_tracking_required' || record.fulfillment_status === 'no_tracking_required') {
-    return { title: '无需运单', detail: '系统直接核销' };
-  }
-  if (record.package_count > 0) {
-    const pending = Math.max(record.quantity - record.handled_quantity, 0);
-    return {
-      title: `${record.package_count.toLocaleString()} 个包裹`,
-      detail: pending > 0 ? `还差 ${pending.toLocaleString()} 份` : '运单已录入',
-    };
-  }
-  return { title: '尚未录入运单', detail: '等待发货核销' };
 }
 
 function getRowTone(record: ShippingDetail) {
@@ -128,7 +115,7 @@ export default function ShippingDetailCardList({
                 <Tooltip title={record.packages.map((item) => item.tracking_no).filter(Boolean).join('、')}>
                   <strong>{packageCopy.title}</strong>
                 </Tooltip>
-                <small>{packageCopy.detail}</small>
+                {packageCopy.detail ? <small>{packageCopy.detail}</small> : null}
               </div>
 
               <div className="zto-card-field zto-card-fulfillment">
