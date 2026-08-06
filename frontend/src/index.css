@@ -2723,6 +2723,12 @@ body {
   font-size: 12px;
 }
 
+.zto-inline-retry.ant-btn {
+  height: 26px;
+  margin-top: 9px;
+  padding-inline: 9px;
+}
+
 .zto-reconcile-metric {
   display: flex;
   flex-direction: column;
@@ -3225,6 +3231,10 @@ body {
   margin-top: 4px;
   color: var(--color-text-secondary);
   font-size: 13px;
+}
+
+.zto-list-error.ant-alert {
+  margin: 18px;
 }
 
 @media (max-width: 1380px) {

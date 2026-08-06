@@ -69,6 +69,11 @@ import {
   previewWaybillImport,
   setNoTrackingRequired,
 } from '../api/shippingWaybills';
+import {
+  logisticsApiErrorMessage,
+  resolveFulfillmentPanelState,
+  resolvePlanReconciliationState,
+} from './logisticsIssueState';
 
 const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '库房留存', '报社留存'] as const;
 const SUB_CHANNEL_OPTIONS = ['监管', '政府'] as const;
@@ -118,10 +123,10 @@ interface ShippingFilters {
 }
 
 const fulfillmentMeta: Record<string, { label: string; color: string }> = {
-  pending: { label: '待发货', color: 'default' },
+  pending: { label: '待录入运单', color: 'default' },
   partial: { label: '部分已发货', color: 'orange' },
-  shipped: { label: '已发货', color: 'green' },
-  no_tracking_required: { label: '无需发货', color: 'blue' },
+  shipped: { label: '已完成核销', color: 'green' },
+  no_tracking_required: { label: '无需运单', color: 'blue' },
 };
 
 export default function LogisticsIssueDetail() {
@@ -184,7 +189,13 @@ export default function LogisticsIssueDetail() {
     }
   };
 
-  const { data: details = [], isLoading } = useQuery({
+  const {
+    data: details = [],
+    isLoading,
+    isError: detailsIsError,
+    error: detailsError,
+    refetch: refetchDetails,
+  } = useQuery({
     queryKey: ['shippingDetails', currentIssueNumber, shippingFilters],
     queryFn: async () => {
       if (currentIssueNumber == null) return [];
@@ -203,7 +214,14 @@ export default function LogisticsIssueDetail() {
   });
 
   // Unfiltered per-issue list — powers 摘要条 / 处理状态 / 空态判定（不受筛选影响）。
-  const { data: allDetails = [] } = useQuery({
+  const {
+    data: allDetails = [],
+    isLoading: allDetailsLoading,
+    isError: allDetailsIsError,
+    isSuccess: allDetailsLoaded,
+    error: allDetailsError,
+    refetch: refetchAllDetails,
+  } = useQuery({
     queryKey: ['shippingDetailsAll', currentIssueNumber],
     queryFn: async () => {
       if (currentIssueNumber == null) return [];
@@ -223,7 +241,12 @@ export default function LogisticsIssueDetail() {
     enabled: currentIssueNumber != null,
   });
 
-  const { data: report } = useQuery({
+  const {
+    data: report,
+    isLoading: reportLoading,
+    isError: reportIsError,
+    refetch: refetchReport,
+  } = useQuery({
     queryKey: ['report', issueId],
     queryFn: async () => {
       if (!Number.isFinite(issueId)) return null;
@@ -233,7 +256,12 @@ export default function LogisticsIssueDetail() {
     enabled: Number.isFinite(issueId),
   });
 
-  const { data: fulfillment } = useQuery({
+  const {
+    data: fulfillment,
+    isLoading: fulfillmentLoading,
+    isError: fulfillmentIsError,
+    refetch: refetchFulfillment,
+  } = useQuery({
     queryKey: ['shippingFulfillment', issueId],
     queryFn: async () => (await getFulfillmentSummary(issueId)).data,
     enabled: Number.isFinite(issueId),
@@ -282,8 +310,8 @@ export default function LogisticsIssueDetail() {
       const res = await previewWaybillImport(issueId, importFile);
       setImportPreview(res.data);
       if (res.data.status === 'confirmed') message.info('该文件已经导入过，未重复创建运单');
-    } catch {
-      message.error('运单文件解析失败');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '运单文件解析失败'));
     } finally {
       setPreviewingImport(false);
     }
@@ -299,8 +327,8 @@ export default function LogisticsIssueDetail() {
       setImportFile(null);
       setImportPreview(null);
       refreshShippingDetails();
-    } catch {
-      message.error('确认导入失败');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '确认导入失败'));
     } finally {
       setConfirmingImport(false);
     }
@@ -321,8 +349,8 @@ export default function LogisticsIssueDetail() {
       setPackageRecord(null);
       packageForm.resetFields();
       refreshShippingDetails();
-    } catch {
-      message.error('补录运单失败');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '补录运单失败'));
     }
   };
 
@@ -331,8 +359,8 @@ export default function LogisticsIssueDetail() {
       await deleteShippingPackage(packageId);
       message.success('运单已删除');
       refreshShippingDetails();
-    } catch {
-      message.error('删除运单失败');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '删除运单失败'));
     }
   };
 
@@ -342,8 +370,11 @@ export default function LogisticsIssueDetail() {
       await setNoTrackingRequired(record.id, value);
       message.success(value ? '已标记为无需发货' : '已恢复为需要运单');
       refreshShippingDetails();
-    } catch {
-      message.error(value ? '标记失败，请先检查是否已有运单' : '恢复失败');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(
+        error,
+        value ? '标记失败，请先检查是否已有运单' : '恢复失败',
+      ));
     }
   };
 
@@ -474,13 +505,33 @@ export default function LogisticsIssueDetail() {
   const allShippingTotal = allDetails.filter((detail) => detail.source_type !== 'complaint_makeup').reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
   const check = report?.shipping_check;
   const advancedFilterCount = [shippingFilters.frequency, shippingFilters.transport, shippingFilters.sub_channel].filter(Boolean).length;
-  const uploaded = allDetails.length > 0;
   const anomalyRows = allDetails.filter((d) => d.sync_status !== 'synced');
-  const hasDrift = !!confirmationSummary?.has_shipping_drift;
-  const displayedReportTotal = check?.report_zt_total ?? confirmationSummary?.confirmed_report_total ?? null;
-  const displayedShippingTotal = check?.shipping_total ?? confirmationSummary?.current_shipping_total ?? allShippingTotal;
-  const displayedDelta = check?.delta ?? confirmationSummary?.current_delta ?? null;
   const currentIsMatch = check?.is_match ?? confirmationSummary?.current_is_match ?? null;
+  const planState = resolvePlanReconciliationState({
+    detailsLoading: allDetailsLoading,
+    detailsError: allDetailsIsError,
+    detailsLoaded: allDetailsLoaded,
+    reportLoading,
+    reportError: reportIsError,
+    detailCount: allDetails.length,
+    isMatch: currentIsMatch,
+  });
+  const planMetricsReady = allDetailsLoaded && !allDetailsIsError && !!report && !reportIsError;
+  const displayedReportTotal = planMetricsReady
+    ? check?.report_zt_total ?? confirmationSummary?.confirmed_report_total ?? null
+    : null;
+  const displayedShippingTotal = planMetricsReady
+    ? check?.shipping_total ?? confirmationSummary?.current_shipping_total ?? allShippingTotal
+    : null;
+  const displayedDelta = planMetricsReady
+    ? check?.delta ?? confirmationSummary?.current_delta ?? null
+    : null;
+  const hasDrift = planMetricsReady && !!confirmationSummary?.has_shipping_drift;
+  const fulfillmentPanelState = resolveFulfillmentPanelState({
+    loading: fulfillmentLoading,
+    error: fulfillmentIsError,
+    status: fulfillment?.status,
+  });
   const snapshotDelta = confirmationSummary
     ? confirmationSummary.current_shipping_total - confirmationSummary.confirmed_shipping_total
     : 0;
@@ -497,6 +548,14 @@ export default function LogisticsIssueDetail() {
   const visibleDetails = shippingFilters.fulfillment_status
     ? details.filter((detail) => detail.fulfillment_status === shippingFilters.fulfillment_status)
     : details;
+
+  const retryPlanData = () => {
+    void Promise.all([refetchAllDetails(), refetchDetails(), refetchReport()]);
+  };
+
+  const retryFulfillmentData = () => {
+    void refetchFulfillment();
+  };
 
   const toggleExpanded = (recordId: number) => {
     setExpandedRowKeys((keys) => (
@@ -743,20 +802,23 @@ export default function LogisticsIssueDetail() {
 
       <Card className="zto-reconcile-card" styles={{ body: { padding: 0 } }}>
         <div className="zto-reconcile-main">
-          <div className={`zto-reconcile-result ${currentIsMatch === true ? 'is-match' : currentIsMatch === false ? 'is-mismatch' : 'is-pending'}`}>
+          <div className={`zto-reconcile-result ${planState.tone}`}>
             <div className="zto-reconcile-icon">
-              {!uploaded
-                ? <LargeStatusIcon variant="inbox" />
-                : currentIsMatch === true
+              {planState.kind === 'match'
                   ? <LargeStatusIcon variant="check" />
-                  : currentIsMatch === false
+                  : planState.kind === 'error' || planState.kind === 'mismatch'
                     ? <LargeStatusIcon variant="close" />
-                    : <LargeStatusIcon variant="reload" />}
+                    : planState.kind === 'empty'
+                      ? <LargeStatusIcon variant="inbox" />
+                      : <LargeStatusIcon variant="reload" />}
             </div>
             <div>
-              <span>本期对账结果</span>
-              <strong>{!uploaded ? '等待发货明细' : currentIsMatch === true ? '当前一致' : currentIsMatch === false ? '当前不一致' : '等待校验'}</strong>
-              <small>{!uploaded ? '新增明细后将自动计算差异' : currentIsMatch === true ? '报数与当前发货明细一致' : currentIsMatch === false ? '报数与当前发货明细存在差异' : '暂无可用的报数校验'}</small>
+              <span>发货计划对账</span>
+              <strong>{planState.label}</strong>
+              <small>{planState.description}</small>
+              {planState.kind === 'error' && (
+                <Button className="zto-inline-retry" size="small" icon={<ReloadOutlined />} onClick={retryPlanData}>重新加载</Button>
+              )}
             </div>
           </div>
           <div className="zto-reconcile-metric">
@@ -766,20 +828,20 @@ export default function LogisticsIssueDetail() {
           </div>
           <div className="zto-reconcile-metric">
             <span>发货明细</span>
-            <strong>{displayedShippingTotal.toLocaleString()}</strong>
-            <small>份</small>
+            <strong>{displayedShippingTotal == null ? '—' : displayedShippingTotal.toLocaleString()}</strong>
+            <small>{displayedShippingTotal == null ? '等待数据' : '份'}</small>
           </div>
           <div className="zto-reconcile-metric">
             <span>当前差值</span>
-            <strong className={currentIsMatch === false ? 'is-danger' : currentIsMatch === true ? 'is-success' : ''}>
+            <strong className={planMetricsReady ? (currentIsMatch === false ? 'is-danger' : currentIsMatch === true ? 'is-success' : '') : ''}>
               {displayedDelta == null ? '—' : displayedDelta.toLocaleString()}
             </strong>
             <small>{displayedDelta == null ? '暂无数据' : '份'}</small>
           </div>
           <div className="zto-reconcile-metric">
             <span>明细记录</span>
-            <strong>{allDetails.length.toLocaleString()}</strong>
-            <small>条 · 异常 {anomalyRows.length.toLocaleString()} 条</small>
+            <strong>{allDetailsLoaded && !allDetailsIsError ? allDetails.length.toLocaleString() : '—'}</strong>
+            <small>{allDetailsLoaded && !allDetailsIsError ? `条 · 异常 ${anomalyRows.length.toLocaleString()} 条` : '等待数据'}</small>
           </div>
         </div>
         {hasDrift && confirmationSummary && (
@@ -807,18 +869,23 @@ export default function LogisticsIssueDetail() {
 
       <Card className="zto-fulfillment-card" styles={{ body: { padding: 0 } }}>
         <div className="zto-reconcile-main">
-          <div className={`zto-reconcile-result ${fulfillment?.status === 'shipped' ? 'is-match' : fulfillment?.status === 'exception' ? 'is-mismatch' : 'is-pending'}`}>
+          <div className={`zto-reconcile-result ${fulfillmentPanelState.tone}`}>
             <div className="zto-reconcile-icon">
-              {fulfillment?.status === 'shipped'
+              {fulfillmentPanelState.kind === 'shipped'
                 ? <LargeStatusIcon variant="check" />
-                : fulfillment?.status === 'exception'
+                : fulfillmentPanelState.kind === 'exception' || fulfillmentPanelState.kind === 'error'
                   ? <LargeStatusIcon variant="close" />
-                  : <LargeStatusIcon variant="inbox" />}
+                  : fulfillmentPanelState.kind === 'loading'
+                    ? <LargeStatusIcon variant="reload" />
+                    : <LargeStatusIcon variant="inbox" />}
             </div>
             <div>
-              <span>发货核销</span>
-              <strong>{fulfillment?.status === 'shipped' ? '本期已发货' : fulfillment?.status === 'partial' ? '部分已发货' : fulfillment?.status === 'exception' ? '存在超额' : '待发货'}</strong>
-              <small>上传运单即视为已发货，暂不查询物流轨迹</small>
+              <span>实际发货核销</span>
+              <strong>{fulfillmentPanelState.label}</strong>
+              <small>{fulfillmentPanelState.description}</small>
+              {fulfillmentPanelState.kind === 'error' && (
+                <Button className="zto-inline-retry" size="small" icon={<ReloadOutlined />} onClick={retryFulfillmentData}>重新加载</Button>
+              )}
             </div>
           </div>
           <div className="zto-reconcile-metric">
@@ -833,8 +900,8 @@ export default function LogisticsIssueDetail() {
           </div>
           <div className="zto-reconcile-metric">
             <span>待补</span>
-            <strong className={fulfillment?.pending_quantity ? 'is-danger' : 'is-success'}>{fulfillment?.pending_quantity?.toLocaleString() ?? '—'}</strong>
-            <small>份</small>
+            <strong className={fulfillment ? (fulfillment.pending_quantity ? 'is-danger' : 'is-success') : ''}>{fulfillment?.pending_quantity?.toLocaleString() ?? '—'}</strong>
+            <small>{fulfillment ? '份' : '等待数据'}</small>
           </div>
           <div className="zto-reconcile-metric">
             <span>运单</span>
@@ -850,14 +917,26 @@ export default function LogisticsIssueDetail() {
         )}
       </Card>
 
-      {allDetails.length === 0 ? (
+      {allDetailsIsError ? (
+        <Card className="zto-empty-card">
+          <Alert
+            showIcon
+            type="error"
+            title="发货明细加载失败"
+            description={logisticsApiErrorMessage(allDetailsError, '无法读取本期发货明细')}
+            action={<Button size="small" icon={<ReloadOutlined />} onClick={retryPlanData}>重新加载</Button>}
+          />
+        </Card>
+      ) : allDetailsLoading || !allDetailsLoaded ? (
+        <Card className="zto-empty-card" loading />
+      ) : allDetails.length === 0 ? (
         <Card className="zto-empty-card">
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={
               <div>
-                <div className="zto-empty-title">当前期数尚未上传发货明细</div>
-                <div className="zto-empty-copy">请新建记录，完成后系统将自动计算发货与报数差异。</div>
+                <div className="zto-empty-title">本期确实没有发货计划明细</div>
+                <div className="zto-empty-copy">接口已成功返回 0 条记录；请新建明细后再进行计划对账。</div>
               </div>
             }
           >
@@ -942,7 +1021,7 @@ export default function LogisticsIssueDetail() {
             <div className="zto-toolbar-tail">
               <Button type="link" disabled={!hasShippingFilters} onClick={() => setShippingFilters({})}>清除筛选</Button>
               <span className="zto-toolbar-count">
-                共 <b>{visibleDetails.length}</b> 条 · 合计 <b>{currentShippingTotal.toLocaleString()}</b> 份
+                共 <b>{detailsIsError ? '—' : visibleDetails.length}</b> 条 · 合计 <b>{detailsIsError ? '—' : currentShippingTotal.toLocaleString()}</b> 份
               </span>
             </div>
           </div>
@@ -961,22 +1040,33 @@ export default function LogisticsIssueDetail() {
             </div>
           )}
 
-          <Table
-            className="zto-table"
-            loading={isLoading}
-            columns={shippingColumns}
-            dataSource={visibleDetails}
-            rowKey="id"
-            rowSelection={canMutate ? rowSelection : undefined}
-            tableLayout="fixed"
-            scroll={{ x: 960 }}
-            expandable={{
-              expandedRowRender: renderExpanded,
-              expandedRowKeys,
-              showExpandColumn: false,
-            }}
-            pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条记录` }}
-          />
+          {detailsIsError ? (
+            <Alert
+              className="zto-list-error"
+              showIcon
+              type="error"
+              title="当前筛选结果加载失败"
+              description={logisticsApiErrorMessage(detailsError, '无法读取发货明细')}
+              action={<Button size="small" icon={<ReloadOutlined />} onClick={() => void refetchDetails()}>重新加载</Button>}
+            />
+          ) : (
+            <Table
+              className="zto-table"
+              loading={isLoading}
+              columns={shippingColumns}
+              dataSource={visibleDetails}
+              rowKey="id"
+              rowSelection={canMutate ? rowSelection : undefined}
+              tableLayout="fixed"
+              scroll={{ x: 960 }}
+              expandable={{
+                expandedRowRender: renderExpanded,
+                expandedRowKeys,
+                showExpandColumn: false,
+              }}
+              pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条记录` }}
+            />
+          )}
         </Card>
       )}
 
@@ -1013,7 +1103,7 @@ export default function LogisticsIssueDetail() {
               <div><span>需关注</span><b>{importPreview.warning_count.toLocaleString()}</b></div>
             </div>
             {importPreview.pending_quantity > 0 && (
-              <Alert showIcon type="warning" message={`仍有 ${importPreview.pending_quantity.toLocaleString()} 份待补；不会阻止已匹配数据导入。`} />
+              <Alert showIcon type="warning" title={`仍有 ${importPreview.pending_quantity.toLocaleString()} 份待补；不会阻止已匹配数据导入。`} />
             )}
             <Table
               size="small"

@@ -138,3 +138,24 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const ConfirmedWithChanges: Story = { name: '已确认（确认后有变更）' }
+
+export const LoadFailure: Story = {
+  name: '接口失败（不得显示为空数据）',
+  parameters: {
+    msw: {
+      handlers: [
+        handlers[0],
+        handlers[1],
+        handlers[2],
+        http.get('/api/shipping-waybills/issues/1/summary', () => HttpResponse.json(
+          { detail: '数据库结构未更新，请管理员执行 alembic upgrade head' },
+          { status: 503 },
+        )),
+        http.get('/api/shipping-details', () => HttpResponse.json(
+          { detail: '数据库结构未更新，请管理员执行 alembic upgrade head' },
+          { status: 503 },
+        )),
+      ],
+    },
+  },
+}
