@@ -124,12 +124,13 @@ const fulfillmentMeta: Record<string, { label: string; color: string }> = {
   partial: { label: '部分已发货', color: 'orange' },
   shipped: { label: '已完成核销', color: 'green' },
   no_tracking_required: { label: '无需运单', color: 'blue' },
+  no_shipment_required: { label: '无需发货', color: 'green' },
 };
 
 const matchesFulfillmentView = (detail: ShippingDetail, filter?: string) => {
   if (!filter || filter === 'all') return true;
   if (filter === 'completed') {
-    return detail.fulfillment_status === 'shipped' || detail.fulfillment_status === 'no_tracking_required';
+    return ['shipped', 'no_tracking_required', 'no_shipment_required'].includes(detail.fulfillment_status);
   }
   if (filter === 'pending') return detail.fulfillment_status === 'pending';
   if (filter === 'issue') return detail.fulfillment_status === 'partial' || detail.sync_status !== 'synced';
@@ -474,8 +475,7 @@ export default function LogisticsIssueDetail() {
   const allShippingTotal = allDetails.filter((detail) => detail.source_type !== 'complaint_makeup').reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
   const check = report?.shipping_check;
   const advancedFilterCount = [shippingFilters.frequency, shippingFilters.transport, shippingFilters.sub_channel].filter(Boolean).length;
-  const anomalyRows = allDetails.filter((d) => d.sync_status !== 'synced');
-  const currentIsMatch = confirmationSummary?.plan_is_match ?? null;
+  const currentIsMatch = confirmationSummary?.plan_is_reconciled ?? confirmationSummary?.plan_is_match ?? null;
   const planState = resolvePlanReconciliationState({
     detailsLoading: allDetailsLoading,
     detailsError: allDetailsIsError,
@@ -493,9 +493,10 @@ export default function LogisticsIssueDetail() {
     ? check?.shipping_total ?? confirmationSummary?.current_shipping_total ?? allShippingTotal
     : null;
   const displayedDelta = planMetricsReady
-    ? confirmationSummary?.plan_delta ?? null
+    ? confirmationSummary?.plan_unexplained_delta ?? confirmationSummary?.plan_delta ?? null
     : null;
   const hasDrift = planMetricsReady && !!confirmationSummary?.has_shipping_drift;
+  const hasAttributedChanges = !!fulfillment?.adjustments.length;
   const fulfillmentPanelState = resolveFulfillmentPanelState({
     loading: fulfillmentLoading,
     error: fulfillmentIsError,
@@ -620,27 +621,29 @@ export default function LogisticsIssueDetail() {
             <small>{displayedShippingTotal == null ? '等待数据' : '份'}</small>
           </div>
           <div className="zto-reconcile-metric">
-            <span>明细差异</span>
+            <span>已归因停发</span>
+            <strong className={confirmationSummary?.plan_attributed_quantity ? 'is-success' : ''}>
+              {confirmationSummary?.plan_attributed_quantity?.toLocaleString() ?? '0'}
+            </strong>
+            <small>份</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>未解释差异</span>
             <strong className={planMetricsReady ? (currentIsMatch === false ? 'is-danger' : currentIsMatch === true ? 'is-success' : '') : ''}>
               {displayedDelta == null ? '—' : displayedDelta.toLocaleString()}
             </strong>
             <small>{displayedDelta == null ? '暂无数据' : '份'}</small>
           </div>
-          <div className="zto-reconcile-metric">
-            <span>明细记录</span>
-            <strong>{allDetailsLoaded && !allDetailsIsError ? allDetails.length.toLocaleString() : '—'}</strong>
-            <small>{allDetailsLoaded && !allDetailsIsError ? `条 · 异常 ${anomalyRows.length.toLocaleString()} 条` : '等待数据'}</small>
-          </div>
         </div>
-        {hasDrift && confirmationSummary && (
+        {(hasDrift || hasAttributedChanges) && confirmationSummary && (
           <div className="zto-change-strip">
             <span className="zto-change-icon">!</span>
             <div className="zto-change-copy">
-              <strong>确认后明细有变更</strong>
+              <strong>{confirmationSummary.plan_is_reconciled ? '确认后变更已归因' : '确认后明细有变更'}</strong>
               <span>
-                {currentIsMatch
-                  ? `当前仍与报数一致，请确认这 ${Math.abs(snapshotDelta).toLocaleString()} 份变更是否符合预期。`
-                  : '当前明细已偏离确认时快照，且与报数不一致。'}
+                {confirmationSummary.plan_is_reconciled
+                  ? `${confirmationSummary.confirmed_shipping_total.toLocaleString()} = 当前计划 ${confirmationSummary.current_shipping_total.toLocaleString()} + 已归因停发 ${confirmationSummary.plan_attributed_quantity.toLocaleString()}`
+                  : `仍有 ${Math.abs(confirmationSummary.plan_unexplained_delta).toLocaleString()} 份差异未解释。`}
               </span>
             </div>
             <span className="zto-change-snapshot">
@@ -648,7 +651,7 @@ export default function LogisticsIssueDetail() {
               <b>{snapshotDelta > 0 ? '+' : ''}{snapshotDelta.toLocaleString()} 份</b>
             </span>
             <div className="zto-change-actions">
-              <Button size="small" onClick={() => setChangeLogOpen(true)}>查看变更</Button>
+              <Button size="small" onClick={() => setChangeLogOpen(true)}>查看变更与归因</Button>
               {canMutate && <Button size="small" className="zto-reverify-btn" icon={<ReloadOutlined />} onClick={handleReverify}>重新校验</Button>}
             </div>
           </div>
@@ -668,9 +671,9 @@ export default function LogisticsIssueDetail() {
                     : <LargeStatusIcon variant="inbox" />}
             </div>
             <div>
-              <span>实际发货核销</span>
-              <strong>{fulfillmentPanelState.label}</strong>
-              <small>{fulfillmentPanelState.description}</small>
+              <span>实际发货与核销</span>
+              <strong>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '核销已完成 · 部分发货' : fulfillmentPanelState.label}</strong>
+              <small>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '无需发货份数已明确归因，实际寄出的份数少于确认印数。' : fulfillmentPanelState.description}</small>
               {fulfillmentPanelState.kind === 'error' && (
                 <Button className="zto-inline-retry" size="small" icon={<ReloadOutlined />} onClick={retryFulfillmentData}>重新加载</Button>
               )}
@@ -682,27 +685,31 @@ export default function LogisticsIssueDetail() {
             <small>份 · 固定基准</small>
           </div>
           <div className="zto-reconcile-metric">
-            <span>已处理</span>
-            <strong>{fulfillment?.handled_quantity?.toLocaleString() ?? '—'}</strong>
-            <small>{fulfillment ? `运单 ${fulfillment.tracked_quantity.toLocaleString()} + 无需运单 ${fulfillment.no_tracking_quantity.toLocaleString()}${fulfillment.adjustment_quantity ? ` + 无需发货 ${fulfillment.adjustment_quantity.toLocaleString()}` : ''}` : '份'}</small>
+            <span>实际发出</span>
+            <strong>{fulfillment?.actual_shipped_quantity?.toLocaleString() ?? '—'}</strong>
+            <small>{fulfillment ? `有运单 ${fulfillment.tracked_quantity.toLocaleString()} + 无需运单 ${fulfillment.no_tracking_quantity.toLocaleString()}` : '份'}</small>
           </div>
           <div className="zto-reconcile-metric">
-            <span>待补</span>
+            <span>无需发货</span>
+            <strong>{fulfillment?.adjustment_quantity?.toLocaleString() ?? '—'}</strong>
+            <small>{fulfillment ? `份 · 未归属 ${fulfillment.unattributed_adjustment_quantity.toLocaleString()}` : '等待数据'}</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>核销待补</span>
             <strong className={fulfillment ? (fulfillment.pending_quantity ? 'is-danger' : 'is-success') : ''}>{fulfillment?.pending_quantity?.toLocaleString() ?? '—'}</strong>
             <small>{fulfillment ? '份' : '等待数据'}</small>
           </div>
-          <div className="zto-reconcile-metric">
-            <span>运单</span>
-            <strong>{fulfillment?.package_count?.toLocaleString() ?? '—'}</strong>
-            <small>个</small>
-          </div>
         </div>
-        {!!fulfillment?.pending_quantity && (
+        {!!(fulfillment?.pending_quantity || fulfillment?.unattributed_adjustment_quantity) && (
           <div className="zto-fulfillment-warning">
             <span className="zto-change-icon">!</span>
             <div>
-              <strong>还有 {fulfillment.pending_quantity.toLocaleString()} 份待处理</strong>
-              <span>{fulfillment.latest_import?.unresolved_quantity
+              <strong>{fulfillment.unattributed_adjustment_quantity
+                ? `有 ${fulfillment.unattributed_adjustment_quantity.toLocaleString()} 份无需发货记录待补充归属`
+                : `还有 ${fulfillment.pending_quantity.toLocaleString()} 份待处理`}</strong>
+              <span>{fulfillment.unattributed_adjustment_quantity
+                ? '原因和份数已记录，但尚未对应到具体收件明细，因此不能用于计划对平。'
+                : fulfillment.latest_import?.unresolved_quantity
                 ? `${fulfillment.latest_import.unmatched_rows}个未匹配运单、${fulfillment.latest_import.unresolved_quantity.toLocaleString()}份仍可继续人工关联。`
                 : '可补录运单，或对停刊、取消寄送份数登记无需发货原因。'}</span>
             </div>
@@ -989,7 +996,7 @@ export default function LogisticsIssueDetail() {
       </Modal>
 
       <Modal
-        title="确认后可能变更的明细（人工修改 / 孤立）"
+        title="确认后变更与差异归因"
         open={changeLogOpen}
         onCancel={() => setChangeLogOpen(false)}
         footer={null}
@@ -997,23 +1004,43 @@ export default function LogisticsIssueDetail() {
       >
         {(() => {
           const changed = allDetails.filter((d) => d.sync_status !== 'synced');
-          return changed.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 32, color: 'var(--color-text-secondary)' }}>本期无人工修改 / 孤立明细。</div>
-          ) : (
-            <Table
-              size="small"
-              rowKey="id"
-              dataSource={changed}
-              pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条` }}
-              columns={[
-                { title: '姓名', dataIndex: 'name', width: 100 },
-                { title: '渠道', dataIndex: 'channel', render: (v: string) => v || '—' },
-                { title: '签约公司', dataIndex: 'company', render: (v: string | null) => v || '—' },
-                { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
-                { title: '同步状态', dataIndex: 'sync_status', width: 100, render: (v: string) => <Tag color={v === 'orphaned' ? 'red' : 'orange'}>{v === 'orphaned' ? '孤立' : '人工修改'}</Tag> },
-              ]}
-            />
-          );
+          const adjustments = fulfillment?.adjustments ?? [];
+          return <div className="zto-change-modal-sections">
+            <section>
+              <h3>无需发货归因</h3>
+              {adjustments.length ? <Table
+                size="small"
+                rowKey="id"
+                dataSource={adjustments}
+                pagination={false}
+                columns={[
+                  { title: '收件人', dataIndex: 'detail_name_snapshot', render: (value: string | null) => value || <Tag color="orange">待补充归属</Tag> },
+                  { title: '渠道', dataIndex: 'detail_channel_snapshot', render: (value: string | null) => value || '—' },
+                  { title: '原因', dataIndex: 'reason' },
+                  { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
+                  { title: '状态', key: 'state', width: 110, render: (_: unknown, item) => item.is_attributed
+                    ? <Tag color="green">已归因</Tag>
+                    : <Button type="link" size="small" onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}>补充归属</Button> },
+                ]}
+              /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无无需发货归因记录" />}
+            </section>
+            <section>
+              <h3>人工修改 / 孤立明细</h3>
+              {changed.length ? <Table
+                size="small"
+                rowKey="id"
+                dataSource={changed}
+                pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条` }}
+                columns={[
+                  { title: '姓名', dataIndex: 'name', width: 100 },
+                  { title: '渠道', dataIndex: 'channel', render: (v: string) => v || '—' },
+                  { title: '签约公司', dataIndex: 'company', render: (v: string | null) => v || '—' },
+                  { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
+                  { title: '同步状态', dataIndex: 'sync_status', width: 100, render: (v: string) => <Tag color={v === 'orphaned' ? 'red' : 'orange'}>{v === 'orphaned' ? '孤立' : '人工修改'}</Tag> },
+                ]}
+              /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本期无人工修改 / 孤立明细" />}
+            </section>
+          </div>;
         })()}
       </Modal>
 
@@ -1052,7 +1079,7 @@ export default function LogisticsIssueDetail() {
                     {detailDrawerRecord.shipping_requirement === 'no_tracking_required' ? (
                       <Button type="text" onClick={() => handleNoTracking(detailDrawerRecord, false)}>恢复需要运单</Button>
                     ) : !detailDrawerRecord.package_count ? (
-                      <Button type="text" onClick={() => handleNoTracking(detailDrawerRecord, true)}>标记无需发货</Button>
+                      <Button type="text" onClick={() => handleNoTracking(detailDrawerRecord, true)}>标记无需运单</Button>
                     ) : null}
                     {detailDrawerRecord.source_type !== 'complaint_makeup' ? (
                       <Popconfirm title="确认删除？" onConfirm={() => handleDelete(detailDrawerRecord.id)}>
@@ -1073,7 +1100,7 @@ export default function LogisticsIssueDetail() {
           <div className="zto-detail-drawer">
             <div className="zto-detail-metrics">
               <div><span>应发</span><strong>{detailDrawerRecord.quantity.toLocaleString()}</strong></div>
-              <div><span>已核销</span><strong>{detailDrawerRecord.handled_quantity.toLocaleString()}</strong></div>
+              <div><span>实际发出</span><strong>{detailDrawerRecord.physical_shipped_quantity.toLocaleString()}</strong></div>
               <div><span>待发</span><strong>{Math.max(detailDrawerRecord.quantity - detailDrawerRecord.handled_quantity, 0).toLocaleString()}</strong></div>
             </div>
 
@@ -1106,7 +1133,17 @@ export default function LogisticsIssueDetail() {
                       )}
                     </div>
                   ))}
+                  {!!detailDrawerRecord.no_shipment_quantity && (
+                    <Alert
+                      showIcon
+                      type="success"
+                      title={`${detailDrawerRecord.no_shipment_quantity.toLocaleString()} 份无需发货`}
+                      description={detailDrawerRecord.no_shipment_reason || '已登记无需发货原因'}
+                    />
+                  )}
                 </div>
+              ) : detailDrawerRecord.fulfillment_status === 'no_shipment_required' ? (
+                <Alert showIcon type="success" title="无需发货，已完成核销" description={detailDrawerRecord.no_shipment_reason || '已登记无需发货原因'} />
               ) : detailDrawerRecord.shipping_requirement === 'no_tracking_required' ? (
                 <Alert showIcon type="success" title="无需运单，系统已按计划份数完成核销" />
               ) : (

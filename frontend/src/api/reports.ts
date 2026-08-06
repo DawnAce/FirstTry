@@ -25,6 +25,10 @@ export interface ConfirmationSummary {
   has_shipping_drift: boolean;
   plan_delta: number;
   plan_is_match: boolean;
+  plan_attributed_quantity: number;
+  plan_unexplained_delta: number;
+  plan_is_reconciled: boolean;
+  unattributed_adjustment_quantity: number;
 }
 
 export interface ReportData {

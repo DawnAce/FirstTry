@@ -32,9 +32,12 @@ export interface ShippingDetail {
   shipped_quantity: number | null;
   tracking_no: string | null;
   shipping_requirement: string | null;
+  physical_shipped_quantity: number;
+  no_shipment_quantity: number;
+  no_shipment_reason: string | null;
   handled_quantity: number;
   package_count: number;
-  fulfillment_status: 'pending' | 'partial' | 'shipped' | 'no_tracking_required';
+  fulfillment_status: 'pending' | 'partial' | 'shipped' | 'no_tracking_required' | 'no_shipment_required';
   packages: ShippingPackage[];
   order_id: number | null;
   order_item_id: number | null;

@@ -115,6 +115,9 @@ class ShippingDetailOut(BaseModel):
     shipped_quantity: Optional[int]
     tracking_no: Optional[str]
     shipping_requirement: Optional[str] = None
+    physical_shipped_quantity: int
+    no_shipment_quantity: int
+    no_shipment_reason: Optional[str] = None
     handled_quantity: int
     package_count: int
     fulfillment_status: str

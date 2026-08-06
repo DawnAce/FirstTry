@@ -107,9 +107,16 @@ class ShippingDetail(Base):
         lazy="selectin",
         order_by="ShippingPackage.id",
     )
+    fulfillment_adjustments = relationship(
+        "ShippingFulfillmentAdjustment",
+        back_populates="shipping_detail",
+        passive_deletes=True,
+        lazy="selectin",
+        order_by="ShippingFulfillmentAdjustment.id",
+    )
 
     @property
-    def handled_quantity(self) -> int:
+    def physical_shipped_quantity(self) -> int:
         if self.shipping_requirement == "no_tracking_required":
             return self.quantity or 0
         package_quantity = sum((package.quantity or 0) for package in self.packages)
@@ -118,6 +125,23 @@ class ShippingDetail(Base):
         if self.shipped_at is not None:
             return self.shipped_quantity if self.shipped_quantity is not None else (self.quantity or 0)
         return 0
+
+    @property
+    def no_shipment_quantity(self) -> int:
+        return sum(max(adjustment.quantity or 0, 0) for adjustment in self.fulfillment_adjustments)
+
+    @property
+    def no_shipment_reason(self) -> str | None:
+        reasons = list(dict.fromkeys(
+            adjustment.reason.strip()
+            for adjustment in self.fulfillment_adjustments
+            if adjustment.reason and adjustment.reason.strip()
+        ))
+        return "；".join(reasons) or None
+
+    @property
+    def handled_quantity(self) -> int:
+        return min(self.physical_shipped_quantity + self.no_shipment_quantity, self.quantity or 0)
 
     @property
     def package_count(self) -> int:
@@ -133,6 +157,8 @@ class ShippingDetail(Base):
             return "pending"
         if handled < planned:
             return "partial"
+        if self.no_shipment_quantity and self.physical_shipped_quantity <= 0:
+            return "no_shipment_required"
         return "shipped"
 
     @property

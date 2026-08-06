@@ -1,6 +1,9 @@
 import type { ShippingDetail } from '../api/shippingDetails';
 
 export function getPackageCopy(record: ShippingDetail): { title: string; detail: string | null } {
+  if (record.fulfillment_status === 'no_shipment_required') {
+    return { title: '无需发货', detail: record.no_shipment_reason || null };
+  }
   if (record.shipping_requirement === 'no_tracking_required' || record.fulfillment_status === 'no_tracking_required') {
     return { title: '无需运单', detail: null };
   }

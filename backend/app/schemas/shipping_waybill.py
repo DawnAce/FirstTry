@@ -67,12 +67,16 @@ class FulfillmentSummaryOut(BaseModel):
     handled_quantity: int
     tracked_quantity: int
     no_tracking_quantity: int
+    actual_shipped_quantity: int
     adjustment_quantity: int
+    attributed_adjustment_quantity: int
+    unattributed_adjustment_quantity: int
     pending_quantity: int
     extra_quantity: int
     package_count: int
     pending_detail_count: int
     status: str
+    shipment_status: str
     latest_import: Optional[WaybillImportBatchOut] = None
     adjustments: list["FulfillmentAdjustmentOut"] = Field(default_factory=list)
 
@@ -81,9 +85,17 @@ class FulfillmentAdjustmentOut(BaseModel):
     id: int
     issue_id: int
     issue_number: int
+    shipping_detail_id: Optional[int]
     adjustment_type: str
     quantity: int
     reason: str
+    detail_name_snapshot: Optional[str]
+    detail_phone_snapshot: Optional[str]
+    detail_address_snapshot: Optional[str]
+    detail_channel_snapshot: Optional[str]
+    detail_company_snapshot: Optional[str]
+    detail_quantity_snapshot: Optional[int]
+    is_attributed: bool
     created_by: Optional[int]
     created_at: datetime
 
@@ -94,6 +106,11 @@ class FulfillmentAdjustmentIn(BaseModel):
     adjustment_type: str = Field(default="no_shipment_required", pattern="^no_shipment_required$")
     quantity: int = Field(gt=0)
     reason: str = Field(min_length=1, max_length=255)
+    shipping_detail_id: int
+
+
+class FulfillmentAdjustmentAttributionIn(BaseModel):
+    shipping_detail_id: int
 
 
 class ManualPackageIn(BaseModel):

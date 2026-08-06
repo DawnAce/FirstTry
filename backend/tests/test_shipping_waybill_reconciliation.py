@@ -7,17 +7,20 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
+from app.api.reports import get_report
 from app.models import (
     Issue,
     IssueAuditSnapshot,
     IssueStatus,
     ShippingDetail,
+    ShippingFulfillmentAdjustment,
     ShippingWaybillImportBatch,
     ShippingWaybillImportRow,
 )
 from app.models.user import User, UserRole
 from app.schemas.shipping_detail import ShippingDetailOut
 from app.schemas.shipping_waybill import (
+    FulfillmentAdjustmentAttributionIn,
     FulfillmentAdjustmentIn,
     WaybillBulkMatchIn,
     WaybillImportBatchOut,
@@ -26,6 +29,7 @@ from app.schemas.shipping_waybill import (
 )
 from app.services.shipping_waybill_service import (
     add_import_row,
+    attribute_fulfillment_adjustment,
     bulk_match_import_rows,
     confirm_import,
     create_fulfillment_adjustment,
@@ -325,10 +329,10 @@ def test_confirmed_unmatched_split_packages_can_be_bulk_linked_then_close_file_g
     db.add(IssueAuditSnapshot(
         issue_id=issue.id,
         snapshot_type="confirm",
-        report_total=366,
-        shipping_total=365,
-        delta=1,
-        is_match=False,
+        report_total=1321,
+        shipping_total=1321,
+        delta=0,
+        is_match=True,
     ))
     detail = ShippingDetail(
         issue_number=2638,
@@ -342,7 +346,18 @@ def test_confirmed_unmatched_split_packages_can_be_bulk_linked_then_close_file_g
         address="成都市双流文星镇通关路86号A1－A4杂志铺",
         quantity=365,
     )
-    db.add(detail)
+    base_detail = ShippingDetail(
+        issue_number=2638,
+        sheet_name="确认版",
+        channel="其他发货",
+        transport="中通物流",
+        frequency="周",
+        status="正常",
+        name="已核销基础明细",
+        quantity=955,
+        shipping_requirement="no_tracking_required",
+    )
+    db.add_all([detail, base_detail])
     db.commit()
 
     batch = preview_import(db, issue.id, "单号-经营报1-26日.xlsx", _split_chengdu_packages_bytes(), user)
@@ -375,25 +390,113 @@ def test_confirmed_unmatched_split_packages_can_be_bulk_linked_then_close_file_g
     completed = create_fulfillment_adjustment(
         db,
         issue.id,
-        FulfillmentAdjustmentIn(quantity=1, reason="每月两次合寄 · 暂停寄送"),
+        FulfillmentAdjustmentIn(
+            quantity=1,
+            reason="每月两次合寄 · 暂停寄送",
+            shipping_detail_id=detail.id,
+        ),
         user,
     )
+    assert completed.expected_quantity == 1321
+    assert completed.planned_quantity == 1320
     assert completed.tracked_quantity == 365
+    assert completed.no_tracking_quantity == 955
     assert completed.adjustment_quantity == 1
-    assert completed.handled_quantity == 366
+    assert completed.attributed_adjustment_quantity == 1
+    assert completed.unattributed_adjustment_quantity == 0
+    assert completed.actual_shipped_quantity == 1320
+    assert completed.handled_quantity == 1321
     assert completed.pending_quantity == 0
     assert completed.status == "shipped"
+    assert completed.shipment_status == "partial"
+
+    report = get_report(issue.id, db=db)
+    assert report.confirmation_summary.confirmed_shipping_total == 1321
+    assert report.confirmation_summary.current_shipping_total == 1320
+    assert report.confirmation_summary.plan_attributed_quantity == 1
+    assert report.confirmation_summary.plan_unexplained_delta == 0
+    assert report.confirmation_summary.plan_is_reconciled is True
 
     try:
         create_fulfillment_adjustment(
             db,
             issue.id,
-            FulfillmentAdjustmentIn(quantity=1, reason=" "),
+            FulfillmentAdjustmentIn(quantity=1, reason=" ", shipping_detail_id=detail.id),
             user,
         )
         assert False, "blank adjustment reasons must be rejected"
     except Exception as exc:
         assert getattr(exc, "status_code", None) == 400
+
+
+def test_historical_unassigned_adjustment_can_be_attributed_without_changing_physical_shipment():
+    db = _db()
+    user = User(username="historian", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=4001, publish_date=date(2026, 1, 26), status=IssueStatus.confirmed)
+    detail = ShippingDetail(
+        issue_number=4001,
+        sheet_name="确认版",
+        channel="个人订阅",
+        transport="中通物流",
+        frequency="半月",
+        status="停发",
+        name="暂停寄送客户",
+        quantity=1,
+        shipping_requirement="no_tracking_required",
+    )
+    db.add_all([user, issue, detail])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=issue.id,
+        snapshot_type="confirm",
+        report_total=2,
+        shipping_total=2,
+        delta=0,
+        is_match=True,
+    ))
+    legacy = ShippingFulfillmentAdjustment(
+        issue_id=issue.id,
+        issue_number=issue.issue_number,
+        quantity=1,
+        reason="每月两次合寄 · 暂停寄送",
+        created_by=user.id,
+    )
+    db.add(legacy)
+    db.commit()
+
+    before = fulfillment_summary(db, issue.id)
+    before_report = get_report(issue.id, db=db)
+    assert before_report.confirmation_summary.plan_is_reconciled is False
+    assert before_report.confirmation_summary.unattributed_adjustment_quantity == 1
+    assert before.actual_shipped_quantity == 1
+    assert before.adjustment_quantity == 1
+    assert before.unattributed_adjustment_quantity == 1
+    assert before.pending_quantity == 0
+    assert before.status == "shipped"
+    assert before.shipment_status == "partial"
+    assert before.adjustments[0].is_attributed is False
+
+    after = attribute_fulfillment_adjustment(
+        db,
+        legacy.id,
+        FulfillmentAdjustmentAttributionIn(shipping_detail_id=detail.id),
+        user,
+    )
+    assert after.attributed_adjustment_quantity == 1
+    assert after.unattributed_adjustment_quantity == 0
+    assert after.actual_shipped_quantity == 1
+    assert after.pending_quantity == 0
+    assert after.adjustments[0].detail_name_snapshot == "暂停寄送客户"
+
+    after_report = get_report(issue.id, db=db)
+    assert after_report.confirmation_summary.plan_attributed_quantity == 1
+    assert after_report.confirmation_summary.plan_unexplained_delta == 0
+    assert after_report.confirmation_summary.plan_is_reconciled is True
+    assert after_report.confirmation_summary.unattributed_adjustment_quantity == 0
+
+    db.refresh(detail)
+    assert detail.fulfillment_status == "no_tracking_required"
+    assert detail.handled_quantity == 1
 
 
 def test_explicit_reparse_replaces_the_active_draft():

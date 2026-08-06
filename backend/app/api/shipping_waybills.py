@@ -9,6 +9,7 @@ from app.models import ShippingDetail, ShippingPackage
 from app.models.user import User
 from app.schemas.shipping_detail import ShippingPackageOut
 from app.schemas.shipping_waybill import (
+    FulfillmentAdjustmentAttributionIn,
     FulfillmentAdjustmentIn,
     FulfillmentSummaryOut,
     ManualPackageIn,
@@ -20,6 +21,7 @@ from app.schemas.shipping_waybill import (
 )
 from app.services.operation_log_service import record_operation
 from app.services.shipping_waybill_service import (
+    attribute_fulfillment_adjustment,
     confirm_import,
     create_fulfillment_adjustment,
     delete_fulfillment_adjustment,
@@ -129,6 +131,16 @@ def remove_fulfillment_adjustment(
     user: User = Depends(get_current_user),
 ):
     return delete_fulfillment_adjustment(db, adjustment_id, user)
+
+
+@router.patch("/adjustments/{adjustment_id}/attribution", response_model=FulfillmentSummaryOut)
+def patch_fulfillment_adjustment_attribution(
+    adjustment_id: int,
+    body: FulfillmentAdjustmentAttributionIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return attribute_fulfillment_adjustment(db, adjustment_id, body, user)
 
 
 @router.post("/details/{detail_id}/packages", response_model=ShippingPackageOut)
