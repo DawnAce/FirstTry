@@ -20,6 +20,7 @@ from app.models.shipping_waybill import (
     WaybillImportStatus,
     WaybillMatchStatus,
 )
+from app.models.shipping_fulfillment_adjustment import ShippingFulfillmentAdjustment
 from app.models.operation_log import OperationLog
 from app.models.issue_audit_snapshot import IssueAuditSnapshot
 from app.models.report_source import ReportSourceDocument, ReportSourceItem
@@ -118,6 +119,7 @@ __all__ = [
     "ShippingDetail", "ShippingDetailSourceType", "ShippingDetailSyncStatus",
     "ShippingPackage", "ShippingWaybillImportBatch", "ShippingWaybillImportRow",
     "WaybillImportStatus", "WaybillMatchStatus",
+    "ShippingFulfillmentAdjustment",
     "OperationLog",
     "IssueAuditSnapshot",
     "ReportSourceDocument", "ReportSourceItem",

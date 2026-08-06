@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { WaybillImportRow } from '../api/shippingWaybills';
-import { filterWaybillRows } from './waybillImportUtils';
+import type { ShippingDetail } from '../api/shippingDetails';
+import { buildWaybillGroupSuggestions, filterWaybillRows } from './waybillImportUtils';
 
 const row = (
   id: number,
@@ -45,5 +46,27 @@ describe('filterWaybillRows', () => {
 
   it('can isolate no-tracking rows independently of match status', () => {
     expect(filterWaybillRows(rows, 'no_tracking').map((item) => item.id)).toEqual([6]);
+  });
+
+  it('groups split packages when one plan detail has the same recipient and remaining quantity', () => {
+    const splitRows = [
+      { ...row(11, 'unmatched', 65), recipient_name: '肖波' },
+      { ...row(12, 'unmatched', 100), recipient_name: '肖波' },
+      { ...row(13, 'unmatched', 100), recipient_name: '肖波' },
+      { ...row(14, 'unmatched', 100), recipient_name: '肖波' },
+    ];
+    const detail = {
+      id: 713,
+      name: '肖波',
+      quantity: 365,
+      handled_quantity: 0,
+    } as ShippingDetail;
+    expect(buildWaybillGroupSuggestions(splitRows, [detail])).toEqual([{
+      shippingDetailId: 713,
+      rowIds: [11, 12, 13, 14],
+      recipientName: '肖波',
+      detailQuantity: 365,
+      rowQuantity: 365,
+    }]);
   });
 });

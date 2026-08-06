@@ -67,6 +67,8 @@ const batch: WaybillImportBatch = {
   matched_rows: 55,
   unmatched_rows: 4,
   warning_count: 4,
+  unresolved_quantity: 365,
+  file_gap_quantity: 1,
   created_at: '2026-01-26T15:30:00',
   confirmed_at: null,
   rows: [...matchedRows, ...unresolvedRows],
@@ -116,7 +118,44 @@ const details = [
 
 const handlers = [
   http.get('/api/issues/18', () => HttpResponse.json(issue)),
+  http.get('/api/issues/18/report', () => HttpResponse.json({
+    issue_id: 18,
+    issue_number: 2638,
+    entries: [],
+    total: 1321,
+    destination_summary: [],
+    shipping_check: { is_match: false, report_zt_total: 1321, shipping_total: 1320, delta: 1 },
+    confirmation_summary: {
+      confirmed_report_total: 1321,
+      confirmed_shipping_total: 1320,
+      confirmed_delta: 1,
+      confirmed_is_match: false,
+      current_shipping_total: 1320,
+      current_delta: 1,
+      current_is_match: false,
+      has_shipping_drift: false,
+      plan_delta: 0,
+      plan_is_match: true,
+    },
+  })),
   http.get('/api/shipping-waybills/issues/18/draft', () => HttpResponse.json(batch)),
+  http.get('/api/shipping-waybills/issues/18/summary', () => HttpResponse.json({
+    issue_id: 18,
+    issue_number: 2638,
+    expected_quantity: 1321,
+    planned_quantity: 1320,
+    handled_quantity: 955,
+    tracked_quantity: 656,
+    no_tracking_quantity: 299,
+    adjustment_quantity: 0,
+    pending_quantity: 366,
+    extra_quantity: 0,
+    package_count: 53,
+    pending_detail_count: 1,
+    status: 'partial',
+    latest_import: batch,
+    adjustments: [],
+  })),
   http.get('/api/shipping-details', () => HttpResponse.json(details)),
   http.patch('/api/shipping-waybills/imports/1/rows/:rowId', () => HttpResponse.json(batch)),
   http.post('/api/shipping-waybills/imports/1/rows', () => HttpResponse.json(batch)),
@@ -143,8 +182,8 @@ export const Unresolved: Story = {
   name: '4 行待核对（真实数量示例）',
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('运单核对工作台')).toBeVisible();
-    await expect(await canvas.findByText('确认印数基准')).toBeVisible();
-    await expect(await canvas.findByText('仍有 366 份待处理，但不会阻止 955 份已匹配数据核销。')).toBeVisible();
+    await expect(await canvas.findByText('发货计划对账')).toBeVisible();
+    await expect(await canvas.findByText('待人工关联')).toBeVisible();
   },
 };
 

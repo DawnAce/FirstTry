@@ -475,7 +475,7 @@ export default function LogisticsIssueDetail() {
   const check = report?.shipping_check;
   const advancedFilterCount = [shippingFilters.frequency, shippingFilters.transport, shippingFilters.sub_channel].filter(Boolean).length;
   const anomalyRows = allDetails.filter((d) => d.sync_status !== 'synced');
-  const currentIsMatch = check?.is_match ?? confirmationSummary?.current_is_match ?? null;
+  const currentIsMatch = confirmationSummary?.plan_is_match ?? null;
   const planState = resolvePlanReconciliationState({
     detailsLoading: allDetailsLoading,
     detailsError: allDetailsIsError,
@@ -487,13 +487,13 @@ export default function LogisticsIssueDetail() {
   });
   const planMetricsReady = allDetailsLoaded && !allDetailsIsError && !!report && !reportIsError;
   const displayedReportTotal = planMetricsReady
-    ? check?.report_zt_total ?? confirmationSummary?.confirmed_report_total ?? null
+    ? confirmationSummary?.confirmed_shipping_total ?? null
     : null;
   const displayedShippingTotal = planMetricsReady
     ? check?.shipping_total ?? confirmationSummary?.current_shipping_total ?? allShippingTotal
     : null;
   const displayedDelta = planMetricsReady
-    ? check?.delta ?? confirmationSummary?.current_delta ?? null
+    ? confirmationSummary?.plan_delta ?? null
     : null;
   const hasDrift = planMetricsReady && !!confirmationSummary?.has_shipping_drift;
   const fulfillmentPanelState = resolveFulfillmentPanelState({
@@ -610,17 +610,17 @@ export default function LogisticsIssueDetail() {
             </div>
           </div>
           <div className="zto-reconcile-metric">
-            <span>报数 · 中通</span>
+            <span>确认时计划</span>
             <strong>{displayedReportTotal == null ? '—' : displayedReportTotal.toLocaleString()}</strong>
             <small>{displayedReportTotal == null ? '暂无数据' : '份'}</small>
           </div>
           <div className="zto-reconcile-metric">
-            <span>发货明细</span>
+            <span>当前计划</span>
             <strong>{displayedShippingTotal == null ? '—' : displayedShippingTotal.toLocaleString()}</strong>
             <small>{displayedShippingTotal == null ? '等待数据' : '份'}</small>
           </div>
           <div className="zto-reconcile-metric">
-            <span>当前差值</span>
+            <span>明细差异</span>
             <strong className={planMetricsReady ? (currentIsMatch === false ? 'is-danger' : currentIsMatch === true ? 'is-success' : '') : ''}>
               {displayedDelta == null ? '—' : displayedDelta.toLocaleString()}
             </strong>
@@ -684,7 +684,7 @@ export default function LogisticsIssueDetail() {
           <div className="zto-reconcile-metric">
             <span>已处理</span>
             <strong>{fulfillment?.handled_quantity?.toLocaleString() ?? '—'}</strong>
-            <small>{fulfillment ? `运单 ${fulfillment.tracked_quantity.toLocaleString()} + 无需运单 ${fulfillment.no_tracking_quantity.toLocaleString()}` : '份'}</small>
+            <small>{fulfillment ? `运单 ${fulfillment.tracked_quantity.toLocaleString()} + 无需运单 ${fulfillment.no_tracking_quantity.toLocaleString()}${fulfillment.adjustment_quantity ? ` + 无需发货 ${fulfillment.adjustment_quantity.toLocaleString()}` : ''}` : '份'}</small>
           </div>
           <div className="zto-reconcile-metric">
             <span>待补</span>
@@ -700,7 +700,13 @@ export default function LogisticsIssueDetail() {
         {!!fulfillment?.pending_quantity && (
           <div className="zto-fulfillment-warning">
             <span className="zto-change-icon">!</span>
-            <div><strong>还有 {fulfillment.pending_quantity.toLocaleString()} 份待补</strong><span>已匹配结果会正常保留，可稍后补录运单或标记为无需发货。</span></div>
+            <div>
+              <strong>还有 {fulfillment.pending_quantity.toLocaleString()} 份待处理</strong>
+              <span>{fulfillment.latest_import?.unresolved_quantity
+                ? `${fulfillment.latest_import.unmatched_rows}个未匹配运单、${fulfillment.latest_import.unresolved_quantity.toLocaleString()}份仍可继续人工关联。`
+                : '可补录运单，或对停刊、取消寄送份数登记无需发货原因。'}</span>
+            </div>
+            <Button size="small" onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}>继续处理</Button>
           </div>
         )}
       </Card>

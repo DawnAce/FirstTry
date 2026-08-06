@@ -23,6 +23,8 @@ export interface ConfirmationSummary {
   current_delta: number;
   current_is_match: boolean;
   has_shipping_drift: boolean;
+  plan_delta: number;
+  plan_is_match: boolean;
 }
 
 export interface ReportData {

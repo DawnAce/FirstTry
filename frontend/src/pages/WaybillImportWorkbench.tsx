@@ -24,19 +24,26 @@ import {
   EditOutlined,
   FileExcelOutlined,
   LeftOutlined,
+  LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
+  StopOutlined,
   UploadOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { getIssue } from '../api/issues';
+import { getReport } from '../api/reports';
 import { getShippingDetails } from '../api/shippingDetails';
 import type { ShippingDetail } from '../api/shippingDetails';
 import {
   addWaybillImportRow,
+  addFulfillmentAdjustment,
+  bulkMatchWaybillImportRows,
   confirmWaybillImport,
+  getFulfillmentSummary,
   getWaybillImportDraft,
   previewWaybillImport,
   updateWaybillImportRow,
@@ -47,7 +54,7 @@ import type {
   WaybillImportRowInput,
 } from '../api/shippingWaybills';
 import { logisticsApiErrorMessage } from './logisticsIssueState';
-import { filterWaybillRows, unresolvedStatuses } from './waybillImportUtils';
+import { buildWaybillGroupSuggestions, filterWaybillRows, unresolvedStatuses } from './waybillImportUtils';
 import type { RowFilter } from './waybillImportUtils';
 
 const statusMeta: Record<WaybillImportRow['match_status'], { label: string; color: string }> = {
@@ -89,6 +96,12 @@ export default function WaybillImportWorkbench() {
   const [editingRow, setEditingRow] = useState<WaybillImportRow | null>(null);
   const [addingRow, setAddingRow] = useState(false);
   const [savingRow, setSavingRow] = useState(false);
+  const [bulkMatching, setBulkMatching] = useState(false);
+  const [ignoreRow, setIgnoreRow] = useState<WaybillImportRow | null>(null);
+  const [ignoreReason, setIgnoreReason] = useState('');
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false);
+  const [adjustmentReason, setAdjustmentReason] = useState('双周停刊');
+  const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [rowForm] = Form.useForm<RowFormValues>();
 
   const issueQuery = useQuery({
@@ -102,9 +115,19 @@ export default function WaybillImportWorkbench() {
     enabled: Number.isFinite(issueId),
     retry: false,
   });
+  const reportQuery = useQuery({
+    queryKey: ['report', issueId],
+    queryFn: async () => (await getReport(issueId)).data,
+    enabled: Number.isFinite(issueId),
+  });
+  const fulfillmentQuery = useQuery({
+    queryKey: ['shippingFulfillment', issueId],
+    queryFn: async () => (await getFulfillmentSummary(issueId)).data,
+    enabled: Number.isFinite(issueId),
+  });
   const detailsQuery = useQuery({
     queryKey: ['shippingDetailsAll', issueQuery.data?.issue_number, 'waybill-workbench'],
-    queryFn: async () => (await getShippingDetails({ issue_number: issueQuery.data!.issue_number })).data,
+    queryFn: async () => (await getShippingDetails({ issue_number: issueQuery.data!.issue_number, limit: 5000 })).data,
     enabled: issueQuery.data?.issue_number != null,
   });
 
@@ -117,6 +140,24 @@ export default function WaybillImportWorkbench() {
     [batch],
   );
   const visibleRows = useMemo(() => filterWaybillRows(batch?.rows ?? [], filter), [batch, filter]);
+  const groupSuggestions = useMemo(
+    () => buildWaybillGroupSuggestions(batch?.rows ?? [], details),
+    [batch, details],
+  );
+  const detailsPlanQuantity = useMemo(
+    () => details.filter((detail) => detail.source_type !== 'complaint_makeup')
+      .reduce((sum, detail) => sum + detail.quantity, 0),
+    [details],
+  );
+  const confirmedPlanQuantity = reportQuery.data?.confirmation_summary?.confirmed_shipping_total ?? null;
+  const currentPlanQuantity = reportQuery.data?.confirmation_summary?.current_shipping_total ?? detailsPlanQuantity;
+  const planDelta = confirmedPlanQuantity == null ? null : currentPlanQuantity - confirmedPlanQuantity;
+  const planMatches = planDelta === 0;
+  const adjustmentQuantity = fulfillmentQuery.data?.adjustment_quantity ?? 0;
+  const fileGapQuantity = batch?.file_gap_quantity ?? Math.max((batch?.expected_quantity ?? 0) - (batch?.parsed_quantity ?? 0), 0);
+  const remainingFileGap = Math.max(fileGapQuantity - adjustmentQuantity, 0);
+  const displayedHandledQuantity = (batch?.matched_quantity ?? 0) + adjustmentQuantity;
+  const displayedPendingQuantity = Math.max((batch?.expected_quantity ?? 0) - displayedHandledQuantity, 0);
 
   const openFilePicker = (forceReparse: boolean) => {
     forceReparseRef.current = forceReparse;
@@ -128,8 +169,8 @@ export default function WaybillImportWorkbench() {
     try {
       const response = await previewWaybillImport(issueId, file, forceReparseRef.current);
       setBatch(response.data);
-      setFilter(response.data.unmatched_rows > 0 ? 'unresolved' : 'all');
-      queryClient.setQueryData(['waybillImportDraft', issueId], response.data.status === 'previewed' ? response.data : null);
+      setFilter(response.data.unmatched_rows > 0 ? 'unresolved' : response.data.file_gap_quantity > 0 ? 'gap' : 'all');
+      queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
       message.success(response.data.status === 'confirmed' ? '该文件已经确认导入，未重复创建运单' : '运单文件已解析，草稿会自动保留');
     } catch (error) {
       message.error(logisticsApiErrorMessage(error, '运单文件解析失败'));
@@ -186,6 +227,13 @@ export default function WaybillImportWorkbench() {
         : await addWaybillImportRow(batch.id, payload);
       setBatch(response.data);
       queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
+      if (response.data.status === 'confirmed') {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
+          queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
+          queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] }),
+        ]);
+      }
       closeEditor();
       message.success(editingRow ? '本行修改已自动保存' : '已补充一行并重新核对');
     } catch (error) {
@@ -197,16 +245,77 @@ export default function WaybillImportWorkbench() {
 
   const toggleIgnored = async (row: WaybillImportRow) => {
     if (!batch) return;
+    if (row.match_status !== 'ignored') {
+      setIgnoreRow(row);
+      setIgnoreReason('');
+      return;
+    }
     try {
       const response = await updateWaybillImportRow(batch.id, row.id, {
-        ignored: row.match_status !== 'ignored',
-        shipping_detail_id: row.match_status === 'ignored' ? row.shipping_detail_id : null,
+        ignored: false,
+        shipping_detail_id: row.shipping_detail_id,
       });
       setBatch(response.data);
       queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
-      message.success(row.match_status === 'ignored' ? '已恢复并重新匹配' : '本行已忽略');
+      message.success('已恢复并重新匹配');
     } catch (error) {
       message.error(logisticsApiErrorMessage(error, '操作失败'));
+    }
+  };
+
+  const confirmIgnore = async () => {
+    if (!batch || !ignoreRow || !ignoreReason.trim()) return;
+    setSavingRow(true);
+    try {
+      const response = await updateWaybillImportRow(batch.id, ignoreRow.id, {
+        ignored: true,
+        ignore_reason: ignoreReason.trim(),
+        shipping_detail_id: null,
+      });
+      setBatch(response.data);
+      queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
+      setIgnoreRow(null);
+      setIgnoreReason('');
+      message.success('已记录忽略原因，该行仍保留在“已忽略”中');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '忽略失败'));
+    } finally {
+      setSavingRow(false);
+    }
+  };
+
+  const handleBulkMatch = async (rowIds: number[], shippingDetailId: number) => {
+    if (!batch) return;
+    setBulkMatching(true);
+    try {
+      const response = await bulkMatchWaybillImportRows(batch.id, rowIds, shippingDetailId);
+      setBatch(response.data);
+      queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] }),
+      ]);
+      message.success(`已关联 ${rowIds.length} 个运单`);
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '批量关联失败'));
+    } finally {
+      setBulkMatching(false);
+    }
+  };
+
+  const handleAdjustment = async () => {
+    if (!remainingFileGap || !adjustmentReason.trim()) return;
+    setSavingAdjustment(true);
+    try {
+      const response = await addFulfillmentAdjustment(issueId, remainingFileGap, adjustmentReason.trim());
+      queryClient.setQueryData(['shippingFulfillment', issueId], response.data);
+      setAdjustmentOpen(false);
+      message.success(`已将 ${remainingFileGap} 份标记为无需发货`);
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '标记无需发货失败'));
+    } finally {
+      setSavingAdjustment(false);
     }
   };
 
@@ -216,7 +325,7 @@ export default function WaybillImportWorkbench() {
     try {
       const response = await confirmWaybillImport(batch.id);
       setBatch(response.data);
-      queryClient.setQueryData(['waybillImportDraft', issueId], null);
+      queryClient.setQueryData(['waybillImportDraft', issueId], response.data.unmatched_rows > 0 ? response.data : null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
         queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
@@ -249,35 +358,39 @@ export default function WaybillImportWorkbench() {
 
   const columns: TableColumnsType<WaybillImportRow> = [
     {
-      title: '来源行', key: 'source', width: 190,
+      title: '来源行', key: 'source', width: 170,
       render: (_, row) => <div className="waybill-source"><b>{row.source_sheet}</b><span>第 {row.source_row} 行</span></div>,
     },
     {
-      title: '收件信息', key: 'recipient', width: 260,
+      title: '收件信息', key: 'recipient', width: 240,
       render: (_, row) => <div className="waybill-recipient"><b>{row.recipient_name || '未识别收件人'}</b><span>{row.phone || '无电话'} · {row.address || '无地址'}</span></div>,
     },
     {
-      title: '承运 / 运单', key: 'tracking', width: 220,
+      title: '承运 / 运单', key: 'tracking', width: 180,
       render: (_, row) => row.no_tracking_required
         ? <Tag color="blue">无需运单</Tag>
         : <div className="waybill-tracking"><b>{row.carrier || '—'}</b><span>{row.tracking_no || '缺少运单号'}</span></div>,
     },
-    { title: '份数', dataIndex: 'quantity', width: 90, align: 'right' },
+    { title: '份数', dataIndex: 'quantity', width: 64, align: 'right' },
     {
-      title: '核对结果', key: 'status', width: 190,
+      title: '核对结果', key: 'status', width: 170,
       render: (_, row) => <div className="waybill-status-cell">
         <Tag color={statusMeta[row.match_status].color}>{statusMeta[row.match_status].label}</Tag>
         <span>{row.match_reason || (row.manual_reviewed ? '已人工确认' : '自动匹配')}</span>
       </div>,
     },
     {
-      title: '操作', key: 'actions', width: 130, fixed: 'right',
-      render: (_, row) => batch?.status === 'confirmed' ? '—' : <div className="waybill-row-actions">
-        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>核对</Button>
-        <Button type="link" size="small" danger={row.match_status !== 'ignored'} onClick={() => void toggleIgnored(row)}>
-          {row.match_status === 'ignored' ? '恢复' : '忽略'}
-        </Button>
-      </div>,
+      title: '操作', key: 'actions', width: 120, fixed: 'right',
+      render: (_, row) => (
+        batch?.status === 'confirmed' && row.match_status === 'matched'
+          ? <span className="waybill-muted">已生成运单</span>
+          : <div className="waybill-row-actions">
+            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>核对</Button>
+            <Button type="link" size="small" danger={row.match_status !== 'ignored'} onClick={() => void toggleIgnored(row)}>
+              {row.match_status === 'ignored' ? '恢复' : '忽略'}
+            </Button>
+          </div>
+      ),
     },
   ];
 
@@ -313,6 +426,7 @@ export default function WaybillImportWorkbench() {
 
   const filterOptions: Array<{ label: string; value: RowFilter }> = batch ? [
     { label: `待处理 ${batch.unmatched_rows}`, value: 'unresolved' },
+    { label: `文件未覆盖 ${remainingFileGap}`, value: 'gap' },
     { label: `全部 ${batch.rows.length}`, value: 'all' },
     { label: `已匹配 ${batch.matched_rows}`, value: 'matched' },
     { label: '待人工匹配', value: 'manual' },
@@ -350,19 +464,19 @@ export default function WaybillImportWorkbench() {
         </p>
       </div>
       <div className="waybill-head-actions">
+        {batch && <Button icon={<PlusOutlined />} onClick={openAdd}>手工补充一行</Button>}
         {batch?.status !== 'confirmed' && <>
-          <Button icon={<PlusOutlined />} onClick={openAdd} disabled={!batch}>手工补充一行</Button>
           <Button icon={<ReloadOutlined />} loading={parsing} onClick={() => openFilePicker(true)}>重新上传并解析</Button>
         </>}
-        {batch?.status === 'confirmed' && <Button icon={<UploadOutlined />} onClick={() => { setBatch(null); openFilePicker(false); }}>导入补充文件</Button>}
+        {batch?.status === 'confirmed' && <Button icon={<UploadOutlined />} onClick={() => openFilePicker(false)}>导入补充文件</Button>}
       </div>
     </header>
 
-    {(draftQuery.isError || issueQuery.isError || detailsQuery.isError) && <Alert
+    {(draftQuery.isError || issueQuery.isError || detailsQuery.isError || reportQuery.isError || fulfillmentQuery.isError) && <Alert
       showIcon
       type="error"
       title="工作台部分数据加载失败"
-      description={logisticsApiErrorMessage(draftQuery.error || issueQuery.error || detailsQuery.error, '请重新加载页面')}
+      description={logisticsApiErrorMessage(draftQuery.error || issueQuery.error || detailsQuery.error || reportQuery.error || fulfillmentQuery.error, '请重新加载页面')}
     />}
 
     {!batch ? <Card className="waybill-empty-card">
@@ -373,58 +487,79 @@ export default function WaybillImportWorkbench() {
         <Button type="primary" icon={<UploadOutlined />} loading={parsing}>选择运单 Excel</Button>
       </div>
     </Card> : <>
-      <div className="waybill-metrics">
-        <Card><span>确认印数基准</span><b>{batch.expected_quantity.toLocaleString()}</b><small>不可由运单表改写</small></Card>
-        <Card><span>工作表份数</span><b>{batch.parsed_quantity.toLocaleString()}</b><small>{batch.rows.length} 行已保留</small></Card>
-        <Card><span>可自动 / 人工核销</span><b>{batch.matched_quantity.toLocaleString()}</b><small>{batch.matched_rows} 行已匹配</small></Card>
-        <Card className={unresolvedQuantity ? 'is-warning' : ''}><span>未解决份数</span><b>{unresolvedQuantity.toLocaleString()}</b><small>{batch.unmatched_rows} 行待处理</small></Card>
-        <Card className={batch.warning_count ? 'is-warning' : ''}><span>警告 / 错误</span><b>{batch.warning_count.toLocaleString()}</b><small>含份数不一致提醒</small></Card>
-        <Card className={batch.pending_quantity ? 'is-warning' : 'is-success'}><span>导入后待发货</span><b>{batch.pending_quantity.toLocaleString()}</b><small>{batch.extra_quantity ? `另有超出 ${batch.extra_quantity} 份` : '以确认印数为准'}</small></Card>
-      </div>
+      <Card className="waybill-status-card" styles={{ body: { padding: 0 } }}>
+        <div className="waybill-status-row">
+          <div className={`waybill-status-result ${planMatches ? 'is-success' : 'is-warning'}`}>
+            <span className="waybill-status-icon"><CheckCircleOutlined /></span>
+            <div><small>发货计划对账</small><b>{planMatches ? '计划明细一致' : '计划明细有变更'}</b></div>
+          </div>
+          <div className="waybill-status-metric"><span>确认时计划</span><b>{confirmedPlanQuantity?.toLocaleString() ?? '—'}</b><small>份</small></div>
+          <div className="waybill-status-metric"><span>当前计划</span><b>{currentPlanQuantity.toLocaleString()}</b><small>份</small></div>
+          <div className="waybill-status-metric"><span>明细差异</span><b>{planDelta?.toLocaleString() ?? '—'}</b><small>份</small></div>
+          <div className="waybill-status-metric"><span>计划状态</span><b>{planMatches ? '一致' : '待核对'}</b><small>不受运单影响</small></div>
+        </div>
+      </Card>
 
-      {batch.status === 'previewed' && batch.pending_quantity > 0 && <Alert
-        showIcon
-        type="warning"
-        title={`仍有 ${batch.pending_quantity.toLocaleString()} 份待处理，但不会阻止 ${batch.matched_quantity.toLocaleString()} 份已匹配数据核销。`}
-        description="可先导入确认无误的运单；未匹配的份数继续保留在发货计划中，后续找到单号后再补录。"
-      />}
-      {batch.status === 'confirmed' && <Alert
-        showIcon
-        type="success"
-        title={`已导入并核销 ${batch.matched_quantity.toLocaleString()} 份`}
-        description={`本批次已锁定，仍有 ${batch.pending_quantity.toLocaleString()} 份留待后续补充文件或手工补录。`}
-      />}
+      <Card className="waybill-status-card" styles={{ body: { padding: 0 } }}>
+        <div className="waybill-status-row">
+          <div className={`waybill-status-result ${displayedPendingQuantity ? 'is-partial' : 'is-success'}`}>
+            <span className="waybill-status-icon"><FileExcelOutlined /></span>
+            <div><small>实际发货核销</small><b>{displayedPendingQuantity ? '部分已发货' : '全部已发货'}</b></div>
+          </div>
+          <div className="waybill-status-metric"><span>确认印数</span><b>{batch.expected_quantity.toLocaleString()}</b><small>份 · 核销基准</small></div>
+          <div className="waybill-status-metric"><span>已关联</span><b>{batch.matched_quantity.toLocaleString()}</b><small>{batch.matched_rows} 行</small></div>
+          <div className="waybill-status-metric is-warning"><span>待人工关联</span><b>{unresolvedQuantity.toLocaleString()}</b><small>{batch.unmatched_rows} 个运单</small></div>
+          <div className="waybill-status-metric is-danger"><span>文件未覆盖</span><b>{remainingFileGap.toLocaleString()}</b><small>{remainingFileGap ? '待确认原因' : '已处理'}</small></div>
+        </div>
+      </Card>
 
       <Card className="waybill-table-card" styles={{ body: { padding: 0 } }}>
         <div className="waybill-table-toolbar">
           <Segmented<RowFilter> value={filter} options={filterOptions} onChange={setFilter} />
-          <span>当前显示 {visibleRows.length} 行，按影响份数从高到低排列</span>
+          <span>{filter === 'gap' ? '确认印数与源文件总数的差额' : `当前显示 ${visibleRows.length} 行，按影响份数从高到低排列`}</span>
         </div>
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={visibleRows}
-          pagination={{ pageSize: 15, showSizeChanger: false, showTotal: (total) => `共 ${total} 行` }}
-          scroll={{ x: 1080 }}
-          expandable={{ expandedRowRender: expandedRow }}
-          locale={{ emptyText: <Empty description={filter === 'unresolved' ? '没有待处理行' : '当前筛选没有数据'} /> }}
-        />
+        {filter === 'unresolved' && groupSuggestions[0] && <div className="waybill-match-suggestion">
+          <div>
+            <b>疑似属于同一条计划明细：{groupSuggestions[0].recipientName} · {groupSuggestions[0].detailQuantity}份</b>
+            <span>{groupSuggestions[0].rowIds.length}个运单合计{groupSuggestions[0].rowQuantity}份，姓名一致且份数正好对应。</span>
+          </div>
+          <Button
+            type="primary"
+            icon={<LinkOutlined />}
+            loading={bulkMatching}
+            onClick={() => void handleBulkMatch(groupSuggestions[0].rowIds, groupSuggestions[0].shippingDetailId)}
+          >将{groupSuggestions[0].rowIds.length}个运单关联到此明细</Button>
+        </div>}
+        {filter === 'gap' ? <div className="waybill-gap-panel">
+          {remainingFileGap ? <>
+            <div><WarningOutlined /><b>源文件比确认印数少 {remainingFileGap.toLocaleString()} 份</b><span>这部分没有任何运单行，请确认是否为停刊或取消寄送。</span></div>
+            <Button type="primary" icon={<StopOutlined />} onClick={() => setAdjustmentOpen(true)}>标记停刊／无需发货</Button>
+          </> : <Alert showIcon type="success" title="文件未覆盖份数已经处理" description={fulfillmentQuery.data?.adjustments.map((item) => `${item.reason} ${item.quantity}份`).join('；') || '无需发货原因已登记'} />}
+        </div> : <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={visibleRows}
+            pagination={{ pageSize: 15, showSizeChanger: false, showTotal: (total) => `共 ${total} 行` }}
+            scroll={{ x: 944 }}
+            expandable={{ expandedRowRender: expandedRow }}
+            locale={{ emptyText: <Empty description={filter === 'unresolved' ? '没有待处理行' : '当前筛选没有数据'} /> }}
+          />}
       </Card>
 
       <div className="waybill-confirm-bar">
         <div>
-          <b>{batch.status === 'confirmed' ? '本批次已经确认' : `准备核销 ${batch.matched_quantity.toLocaleString()} 份`}</b>
-          <span>{batch.status === 'confirmed' ? '如有补充运单，请导入新的补充文件。' : `确认后保留 ${batch.pending_quantity.toLocaleString()} 份待处理；未解决行不会写入实际发货。`}</span>
+          <b>{batch.status === 'confirmed' ? `已核销 ${displayedHandledQuantity.toLocaleString()} 份` : `准备核销 ${batch.matched_quantity.toLocaleString()} 份`}</b>
+          <span>{batch.status === 'confirmed' ? `仍有 ${displayedPendingQuantity.toLocaleString()} 份待处理，未匹配行可以继续核对。` : `确认后保留 ${displayedPendingQuantity.toLocaleString()} 份待处理；未解决行仍可继续关联。`}</span>
         </div>
         {batch.status === 'previewed' ? <Popconfirm
           title={`确认导入已核销的 ${batch.matched_quantity.toLocaleString()} 份？`}
-          description={`将保留 ${batch.pending_quantity.toLocaleString()} 份待处理。已确认批次不能再编辑。`}
+          description={`将保留 ${displayedPendingQuantity.toLocaleString()} 份待处理，未匹配行确认后仍可继续关联。`}
           okText="确认导入"
           cancelText="继续核对"
           onConfirm={() => void handleConfirm()}
         >
           <Button type="primary" size="large" icon={<CheckCircleOutlined />} loading={confirming} disabled={batch.matched_rows === 0}>
-            导入已核销的 {batch.matched_quantity.toLocaleString()} 份，保留 {batch.pending_quantity.toLocaleString()} 份待处理
+            导入已核销的 {batch.matched_quantity.toLocaleString()} 份，保留 {displayedPendingQuantity.toLocaleString()} 份待处理
           </Button>
         </Popconfirm> : <Button icon={<LeftOutlined />} onClick={() => navigate(`/logistics/issues/${issueId}`)}>返回快递管理</Button>}
       </div>
@@ -478,6 +613,54 @@ export default function WaybillImportWorkbench() {
           </Form.Item>
         </div>
       </Form>
+    </Modal>
+
+    <Modal
+      title="确认忽略这条源文件记录"
+      open={Boolean(ignoreRow)}
+      okText="记录原因并忽略"
+      okButtonProps={{ danger: true, loading: savingRow, disabled: !ignoreReason.trim() }}
+      onOk={() => void confirmIgnore()}
+      onCancel={() => { setIgnoreRow(null); setIgnoreReason(''); }}
+    >
+      <Alert
+        showIcon
+        type="warning"
+        title={ignoreRow ? `${ignoreRow.tracking_no || '无运单号'} · ${ignoreRow.quantity}份` : ''}
+        description="忽略不会删除原始行，但该运单不会计入实际发货；原因会永久保留在导入记录中。"
+      />
+      <Input.TextArea
+        className="waybill-reason-input"
+        value={ignoreReason}
+        rows={3}
+        maxLength={255}
+        showCount
+        placeholder="请填写忽略原因"
+        onChange={(event) => setIgnoreReason(event.target.value)}
+      />
+    </Modal>
+
+    <Modal
+      title={`标记 ${remainingFileGap.toLocaleString()} 份无需发货`}
+      open={adjustmentOpen}
+      okText="确认核销"
+      okButtonProps={{ loading: savingAdjustment, disabled: !adjustmentReason.trim() || !remainingFileGap }}
+      onOk={() => void handleAdjustment()}
+      onCancel={() => setAdjustmentOpen(false)}
+    >
+      <Alert
+        showIcon
+        type="info"
+        title="该记录用于解释确认印数中没有出现在运单源文件里的份数"
+        description="确认后会计入实际发货核销，但不会生成虚假的运单号。"
+      />
+      <Input
+        className="waybill-reason-input"
+        value={adjustmentReason}
+        maxLength={255}
+        placeholder="例如：双周停刊"
+        onChange={(event) => setAdjustmentReason(event.target.value)}
+      />
     </Modal>
   </div>;
 }

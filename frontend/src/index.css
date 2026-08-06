@@ -3546,7 +3546,7 @@ body {
 
 .waybill-title-line h1 {
   margin: 0;
-  font-size: 27px;
+  font-size: 22px;
   letter-spacing: -.02em;
 }
 
@@ -3639,8 +3639,114 @@ body {
   color: var(--color-success);
 }
 
+.waybill-status-card.ant-card {
+  overflow: hidden;
+  border-color: var(--color-border);
+}
+
+.waybill-status-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.1fr) repeat(4, minmax(96px, .72fr));
+  min-height: 82px;
+}
+
+.waybill-status-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-right: 1px solid var(--color-border);
+}
+
+.waybill-status-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: 50%;
+  font-size: 16px;
+}
+
+.waybill-status-result.is-success .waybill-status-icon,
+.waybill-status-result.is-success b {
+  color: var(--color-success-text);
+}
+
+.waybill-status-result.is-success .waybill-status-icon {
+  background: var(--color-success-soft);
+}
+
+.waybill-status-result.is-warning .waybill-status-icon,
+.waybill-status-result.is-warning b {
+  color: var(--color-warning-text);
+}
+
+.waybill-status-result.is-partial .waybill-status-icon,
+.waybill-status-result.is-partial b {
+  color: var(--color-accent);
+}
+
+.waybill-status-result small,
+.waybill-status-result b,
+.waybill-status-metric span,
+.waybill-status-metric b,
+.waybill-status-metric small {
+  display: block;
+}
+
+.waybill-status-result small,
+.waybill-status-metric span,
+.waybill-status-metric small {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.waybill-status-result b {
+  margin-top: 2px;
+  font-size: 16px;
+}
+
+.waybill-status-metric {
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  min-width: 0;
+  padding: 12px 14px;
+  border-right: 1px solid var(--color-border);
+}
+
+.waybill-status-metric:last-child {
+  border-right: 0;
+}
+
+.waybill-status-metric b {
+  margin: 3px 0 1px;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.waybill-status-metric.is-warning b {
+  color: var(--color-warning-text);
+}
+
+.waybill-status-metric.is-danger b {
+  color: var(--color-danger);
+}
+
 .waybill-table-card {
   overflow: hidden;
+}
+
+.waybill-table-card .ant-table {
+  font-size: 12px;
+}
+
+.waybill-table-card .ant-table-thead > tr > th,
+.waybill-table-card .ant-table-tbody > tr > td {
+  padding-block: 9px;
 }
 
 .waybill-table-toolbar {
@@ -3654,6 +3760,53 @@ body {
   flex: none;
   color: var(--color-text-secondary);
   font-size: 12px;
+}
+
+.waybill-match-suggestion,
+.waybill-gap-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 12px 16px;
+  padding: 10px 12px;
+  border: 1px solid #b9d8fb;
+  border-radius: 7px;
+  background: #f1f7ff;
+}
+
+.waybill-match-suggestion b,
+.waybill-match-suggestion span,
+.waybill-gap-panel b,
+.waybill-gap-panel span {
+  display: block;
+}
+
+.waybill-match-suggestion b,
+.waybill-gap-panel b {
+  font-size: 12px;
+}
+
+.waybill-match-suggestion span,
+.waybill-gap-panel span {
+  margin-top: 3px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.waybill-gap-panel {
+  min-height: 92px;
+  border-color: #f0d7a2;
+  background: var(--color-warning-soft);
+}
+
+.waybill-gap-panel > div > .anticon {
+  margin-right: 7px;
+  color: var(--color-warning-text);
+}
+
+.waybill-reason-input {
+  margin-top: 14px;
 }
 
 .waybill-source b,
@@ -3813,6 +3966,27 @@ body {
 
   .waybill-metrics {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .waybill-status-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .waybill-status-result {
+    grid-column: 1 / -1;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .waybill-status-metric:nth-child(3),
+  .waybill-status-metric:nth-child(5) {
+    border-right: 0;
+  }
+
+  .waybill-match-suggestion,
+  .waybill-gap-panel {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .waybill-confirm-bar {
