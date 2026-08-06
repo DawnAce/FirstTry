@@ -38,4 +38,15 @@ describe('getPackageCopy', () => {
       fulfillment_status: 'partial',
     }))).toEqual({ title: '3 个包裹', detail: '还差 65 份' });
   });
+
+  it('shows the attributed reason when a detail does not require shipment', () => {
+    expect(getPackageCopy(detail({
+      quantity: 1,
+      handled_quantity: 1,
+      physical_shipped_quantity: 0,
+      no_shipment_quantity: 1,
+      no_shipment_reason: '每月两次合寄 · 暂停寄送',
+      fulfillment_status: 'no_shipment_required',
+    }))).toEqual({ title: '无需发货', detail: '每月两次合寄 · 暂停寄送' });
+  });
 });

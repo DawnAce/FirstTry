@@ -3829,6 +3829,45 @@ body {
   color: var(--color-warning-text);
 }
 
+.waybill-adjustment-list {
+  min-width: 320px;
+  display: grid;
+  gap: 7px;
+}
+
+.waybill-adjustment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid #ead7ae;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.waybill-adjustment-item b,
+.waybill-adjustment-item span {
+  display: block;
+  font-size: 12px;
+}
+
+.waybill-adjustment-item span {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.zto-change-modal-sections {
+  display: grid;
+  gap: 20px;
+}
+
+.zto-change-modal-sections h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
 .waybill-reason-input {
   margin-top: 14px;
 }

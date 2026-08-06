@@ -49,12 +49,16 @@ export interface FulfillmentSummary {
   handled_quantity: number;
   tracked_quantity: number;
   no_tracking_quantity: number;
+  actual_shipped_quantity: number;
   adjustment_quantity: number;
+  attributed_adjustment_quantity: number;
+  unattributed_adjustment_quantity: number;
   pending_quantity: number;
   extra_quantity: number;
   package_count: number;
   pending_detail_count: number;
   status: 'pending' | 'partial' | 'shipped' | 'exception';
+  shipment_status: 'pending' | 'partial' | 'shipped' | 'exception';
   latest_import: WaybillImportBatch | null;
   adjustments: FulfillmentAdjustment[];
 }
@@ -63,9 +67,17 @@ export interface FulfillmentAdjustment {
   id: number;
   issue_id: number;
   issue_number: number;
+  shipping_detail_id: number | null;
   adjustment_type: 'no_shipment_required';
   quantity: number;
   reason: string;
+  detail_name_snapshot: string | null;
+  detail_phone_snapshot: string | null;
+  detail_address_snapshot: string | null;
+  detail_channel_snapshot: string | null;
+  detail_company_snapshot: string | null;
+  detail_quantity_snapshot: number | null;
+  is_attributed: boolean;
   created_by: number | null;
   created_at: string;
 }
@@ -133,11 +145,21 @@ export const addFulfillmentAdjustment = (
   issueId: number,
   quantity: number,
   reason: string,
+  shippingDetailId: number,
 ): Promise<AxiosResponse<FulfillmentSummary>> =>
   api.post<FulfillmentSummary>(`/shipping-waybills/issues/${issueId}/adjustments`, {
     adjustment_type: 'no_shipment_required',
     quantity,
     reason,
+    shipping_detail_id: shippingDetailId,
+  });
+
+export const attributeFulfillmentAdjustment = (
+  adjustmentId: number,
+  shippingDetailId: number,
+): Promise<AxiosResponse<FulfillmentSummary>> =>
+  api.patch<FulfillmentSummary>(`/shipping-waybills/adjustments/${adjustmentId}/attribution`, {
+    shipping_detail_id: shippingDetailId,
   });
 
 export const deleteFulfillmentAdjustment = (

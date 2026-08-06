@@ -13,6 +13,7 @@ from app.models import (
     ReportSourceItem,
     ShippingDetail,
     ShippingDetailSourceType,
+    ShippingFulfillmentAdjustment,
     TempPrintDetail,
     User,
 )
@@ -162,6 +163,24 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
     )
     confirmation_summary = None
     if latest_confirmation:
+        adjustments = db.query(ShippingFulfillmentAdjustment).filter(
+            ShippingFulfillmentAdjustment.issue_id == issue.id
+        ).all()
+        attributed_adjustment_quantity = sum(
+            max(adjustment.quantity or 0, 0)
+            for adjustment in adjustments
+            if adjustment.is_attributed
+        )
+        unattributed_adjustment_quantity = sum(
+            max(adjustment.quantity or 0, 0)
+            for adjustment in adjustments
+            if not adjustment.is_attributed
+        )
+        raw_plan_shortage = max(latest_confirmation.shipping_total - current_shipping_total, 0)
+        plan_attributed_quantity = min(attributed_adjustment_quantity, raw_plan_shortage)
+        plan_unexplained_delta = (
+            current_shipping_total + plan_attributed_quantity - latest_confirmation.shipping_total
+        )
         current_delta = latest_confirmation.report_total - current_shipping_total
         confirmation_summary = ConfirmationSummary(
             confirmed_report_total=latest_confirmation.report_total,
@@ -174,6 +193,10 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
             has_shipping_drift=current_shipping_total != latest_confirmation.shipping_total,
             plan_delta=current_shipping_total - latest_confirmation.shipping_total,
             plan_is_match=current_shipping_total == latest_confirmation.shipping_total,
+            plan_attributed_quantity=plan_attributed_quantity,
+            plan_unexplained_delta=plan_unexplained_delta,
+            plan_is_reconciled=plan_unexplained_delta == 0,
+            unattributed_adjustment_quantity=unattributed_adjustment_quantity,
         )
 
     return ReportDataOut(

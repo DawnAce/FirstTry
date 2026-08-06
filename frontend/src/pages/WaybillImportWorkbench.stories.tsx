@@ -110,6 +110,9 @@ const details = [
   shipped_quantity: null,
   tracking_no: null,
   shipping_requirement: 'tracking_required',
+  physical_shipped_quantity: 0,
+  no_shipment_quantity: 0,
+  no_shipment_reason: null,
   handled_quantity: 0,
   package_count: 0,
   fulfillment_status: 'pending',
@@ -143,6 +146,10 @@ const handlers = [
       has_shipping_drift: false,
       plan_delta: 0,
       plan_is_match: true,
+      plan_attributed_quantity: 0,
+      plan_unexplained_delta: 0,
+      plan_is_reconciled: true,
+      unattributed_adjustment_quantity: 0,
     },
   })),
   http.get('/api/shipping-waybills/issues/18/draft', () => HttpResponse.json(batch)),
@@ -154,12 +161,16 @@ const handlers = [
     handled_quantity: 955,
     tracked_quantity: 656,
     no_tracking_quantity: 299,
+    actual_shipped_quantity: 955,
     adjustment_quantity: 0,
+    attributed_adjustment_quantity: 0,
+    unattributed_adjustment_quantity: 0,
     pending_quantity: 366,
     extra_quantity: 0,
     package_count: 53,
     pending_detail_count: 1,
     status: 'partial',
+    shipment_status: 'partial',
     latest_import: batch,
     adjustments: [],
   })),
@@ -190,7 +201,7 @@ export const Unresolved: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('运单核对工作台')).toBeVisible();
     await expect(await canvas.findByText('发货计划对账')).toBeVisible();
-    await expect(await canvas.findByText('待人工关联')).toBeVisible();
+    await expect(await canvas.findByText('核销待补')).toBeVisible();
     const linkButton = await canvas.findByRole('button', { name: /关联这 4 个运单/ });
     await expect(linkButton).toBeVisible();
     await expect(getComputedStyle(linkButton).color).toBe('rgb(255, 255, 255)');

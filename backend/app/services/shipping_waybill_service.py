@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.models.user import User
 from app.schemas.shipping_waybill import (
+    FulfillmentAdjustmentAttributionIn,
     FulfillmentAdjustmentIn,
     FulfillmentSummaryOut,
     WaybillBulkMatchIn,
@@ -894,7 +895,9 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
     expected = _expected_quantity(db, issue)
     planned = sum(detail.quantity or 0 for detail in details)
     tracked = sum(
-        detail.handled_quantity for detail in details if detail.shipping_requirement != "no_tracking_required"
+        detail.physical_shipped_quantity
+        for detail in details
+        if detail.shipping_requirement != "no_tracking_required"
     )
     no_tracking = sum(
         detail.quantity or 0 for detail in details if detail.shipping_requirement == "no_tracking_required"
@@ -903,6 +906,11 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
         ShippingFulfillmentAdjustment.issue_id == issue.id
     ).order_by(ShippingFulfillmentAdjustment.created_at, ShippingFulfillmentAdjustment.id).all()
     adjustment_quantity = sum(max(adjustment.quantity or 0, 0) for adjustment in adjustments)
+    attributed_adjustment_quantity = sum(
+        max(adjustment.quantity or 0, 0) for adjustment in adjustments if adjustment.is_attributed
+    )
+    unattributed_adjustment_quantity = adjustment_quantity - attributed_adjustment_quantity
+    actual_shipped = tracked + no_tracking
     handled = tracked + no_tracking + adjustment_quantity
     pending = max(expected - handled, 0)
     extra = max(handled - expected, 0)
@@ -914,6 +922,14 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
         status = "pending"
     else:
         status = "shipped"
+    if actual_shipped > expected:
+        shipment_status = "exception"
+    elif actual_shipped == expected:
+        shipment_status = "shipped"
+    elif actual_shipped:
+        shipment_status = "partial"
+    else:
+        shipment_status = "pending"
     latest = db.query(ShippingWaybillImportBatch).filter(
         ShippingWaybillImportBatch.issue_number == issue.issue_number
     ).order_by(ShippingWaybillImportBatch.created_at.desc(), ShippingWaybillImportBatch.id.desc()).first()
@@ -925,15 +941,48 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
         handled_quantity=handled,
         tracked_quantity=tracked,
         no_tracking_quantity=no_tracking,
+        actual_shipped_quantity=actual_shipped,
         adjustment_quantity=adjustment_quantity,
+        attributed_adjustment_quantity=attributed_adjustment_quantity,
+        unattributed_adjustment_quantity=unattributed_adjustment_quantity,
         pending_quantity=pending,
         extra_quantity=extra,
         package_count=sum(detail.package_count for detail in details),
         pending_detail_count=sum(1 for detail in details if detail.fulfillment_status in {"pending", "partial"}),
         status=status,
+        shipment_status=shipment_status,
         latest_import=latest,
         adjustments=adjustments,
     )
+
+
+def _detail_for_adjustment(
+    db: Session,
+    *,
+    issue: Issue,
+    shipping_detail_id: int,
+) -> ShippingDetail:
+    detail = db.query(ShippingDetail).filter(
+        ShippingDetail.id == shipping_detail_id,
+        ShippingDetail.issue_number == issue.issue_number,
+        ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+    ).first()
+    if not detail:
+        raise HTTPException(status_code=400, detail="所选发货明细不属于本期确认版计划")
+    return detail
+
+
+def _attribute_adjustment(
+    adjustment: ShippingFulfillmentAdjustment,
+    detail: ShippingDetail,
+) -> None:
+    adjustment.shipping_detail_id = detail.id
+    adjustment.detail_name_snapshot = detail.name
+    adjustment.detail_phone_snapshot = detail.phone
+    adjustment.detail_address_snapshot = detail.address
+    adjustment.detail_channel_snapshot = detail.channel
+    adjustment.detail_company_snapshot = detail.company
+    adjustment.detail_quantity_snapshot = detail.quantity
 
 
 def create_fulfillment_adjustment(
@@ -951,6 +1000,11 @@ def create_fulfillment_adjustment(
     before = fulfillment_summary(db, issue_id)
     if body.quantity > before.pending_quantity:
         raise HTTPException(status_code=400, detail="无需发货份数不能超过当前待处理份数")
+    detail = _detail_for_adjustment(
+        db,
+        issue=issue,
+        shipping_detail_id=body.shipping_detail_id,
+    )
     adjustment = ShippingFulfillmentAdjustment(
         issue_id=issue.id,
         issue_number=issue.issue_number,
@@ -959,6 +1013,7 @@ def create_fulfillment_adjustment(
         reason=reason,
         created_by=getattr(user, "id", None),
     )
+    _attribute_adjustment(adjustment, detail)
     db.add(adjustment)
     db.flush()
     record_operation(
@@ -973,10 +1028,51 @@ def create_fulfillment_adjustment(
             "adjustment_type": adjustment.adjustment_type,
             "quantity": adjustment.quantity,
             "reason": adjustment.reason,
+            "shipping_detail_id": adjustment.shipping_detail_id,
         },
     )
     db.commit()
     return fulfillment_summary(db, issue_id)
+
+
+def attribute_fulfillment_adjustment(
+    db: Session,
+    adjustment_id: int,
+    body: FulfillmentAdjustmentAttributionIn,
+    user: User,
+) -> FulfillmentSummaryOut:
+    adjustment = db.query(ShippingFulfillmentAdjustment).filter(
+        ShippingFulfillmentAdjustment.id == adjustment_id
+    ).first()
+    if not adjustment:
+        raise HTTPException(status_code=404, detail="无需发货核销记录不存在")
+    issue = db.query(Issue).filter(Issue.id == adjustment.issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="刊期不存在")
+    detail = _detail_for_adjustment(
+        db,
+        issue=issue,
+        shipping_detail_id=body.shipping_detail_id,
+    )
+    previous_detail_id = adjustment.shipping_detail_id
+    _attribute_adjustment(adjustment, detail)
+    db.flush()
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_fulfillment_adjustments",
+        record_id=adjustment.id,
+        record_name=adjustment.reason,
+        action="attribute",
+        issue_number=issue.issue_number,
+        changes={
+            "old_shipping_detail_id": previous_detail_id,
+            "shipping_detail_id": detail.id,
+            "quantity": adjustment.quantity,
+        },
+    )
+    db.commit()
+    return fulfillment_summary(db, issue.id)
 
 
 def delete_fulfillment_adjustment(

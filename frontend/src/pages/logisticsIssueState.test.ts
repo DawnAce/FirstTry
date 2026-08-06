@@ -31,7 +31,7 @@ describe('resolvePlanReconciliationState', () => {
   it('recognizes an existing matched confirmation plan', () => {
     const state = resolvePlanReconciliationState(planBase);
     expect(state.kind).toBe('match');
-    expect(state.label).toBe('计划明细一致');
+    expect(state.label).toBe('计划已对平');
   });
 });
 

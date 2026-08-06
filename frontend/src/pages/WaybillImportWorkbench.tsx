@@ -42,6 +42,7 @@ import type { ShippingDetail } from '../api/shippingDetails';
 import {
   addWaybillImportRow,
   addFulfillmentAdjustment,
+  attributeFulfillmentAdjustment,
   bulkMatchWaybillImportRows,
   confirmWaybillImport,
   getFulfillmentSummary,
@@ -51,6 +52,7 @@ import {
 } from '../api/shippingWaybills';
 import type {
   WaybillImportBatch,
+  FulfillmentAdjustment,
   WaybillImportRow,
   WaybillImportRowInput,
 } from '../api/shippingWaybills';
@@ -59,7 +61,6 @@ import {
   buildWaybillGroupSuggestions,
   filterWaybillRows,
   isSupportedWaybillFilename,
-  unresolvedStatuses,
 } from './waybillImportUtils';
 import type { RowFilter } from './waybillImportUtils';
 
@@ -115,6 +116,8 @@ export default function WaybillImportWorkbench() {
   const [ignoreReason, setIgnoreReason] = useState('');
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [adjustmentReason, setAdjustmentReason] = useState(suspendedConsolidatedShippingReason);
+  const [adjustmentDetailId, setAdjustmentDetailId] = useState<number | undefined>();
+  const [attributionAdjustment, setAttributionAdjustment] = useState<FulfillmentAdjustment | null>(null);
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [rowForm] = Form.useForm<RowFormValues>();
 
@@ -148,11 +151,6 @@ export default function WaybillImportWorkbench() {
   const batch = batchOverride === undefined ? draftQuery.data ?? null : batchOverride;
   const details = useMemo(() => detailsQuery.data ?? [], [detailsQuery.data]);
   const detailsById = useMemo(() => new Map(details.map((detail) => [detail.id, detail])), [details]);
-  const unresolvedQuantity = useMemo(
-    () => batch?.rows.filter((row) => unresolvedStatuses.has(row.match_status))
-      .reduce((sum, row) => sum + Math.max(row.quantity, 0), 0) ?? 0,
-    [batch],
-  );
   const visibleRows = useMemo(() => filterWaybillRows(batch?.rows ?? [], filter), [batch, filter]);
   const groupSuggestions = useMemo(
     () => buildWaybillGroupSuggestions(batch?.rows ?? [], details),
@@ -165,13 +163,31 @@ export default function WaybillImportWorkbench() {
   );
   const confirmedPlanQuantity = reportQuery.data?.confirmation_summary?.confirmed_shipping_total ?? null;
   const currentPlanQuantity = reportQuery.data?.confirmation_summary?.current_shipping_total ?? detailsPlanQuantity;
+  const confirmationSummary = reportQuery.data?.confirmation_summary;
   const planDelta = confirmedPlanQuantity == null ? null : currentPlanQuantity - confirmedPlanQuantity;
-  const planMatches = planDelta === 0;
+  const planAttributedQuantity = confirmationSummary?.plan_attributed_quantity ?? 0;
+  const planUnexplainedDelta = confirmationSummary?.plan_unexplained_delta ?? planDelta;
+  const planReconciled = confirmationSummary?.plan_is_reconciled ?? planDelta === 0;
   const adjustmentQuantity = fulfillmentQuery.data?.adjustment_quantity ?? 0;
   const fileGapQuantity = batch?.file_gap_quantity ?? Math.max((batch?.expected_quantity ?? 0) - (batch?.parsed_quantity ?? 0), 0);
   const remainingFileGap = Math.max(fileGapQuantity - adjustmentQuantity, 0);
   const displayedHandledQuantity = (batch?.matched_quantity ?? 0) + adjustmentQuantity;
   const displayedPendingQuantity = Math.max((batch?.expected_quantity ?? 0) - displayedHandledQuantity, 0);
+  const unassignedAdjustments = fulfillmentQuery.data?.adjustments.filter((item) => !item.is_attributed) ?? [];
+
+  const suggestedAdjustmentDetail = useMemo(() => {
+    if (!remainingFileGap) return undefined;
+    const candidates = details.filter((detail) => (
+      detail.source_type !== 'complaint_makeup'
+      && Math.max(detail.quantity - detail.handled_quantity, 0) === remainingFileGap
+    ));
+    return candidates.length === 1 ? candidates[0] : undefined;
+  }, [details, remainingFileGap]);
+
+  const openAdjustment = () => {
+    setAdjustmentDetailId(suggestedAdjustmentDetail?.id);
+    setAdjustmentOpen(true);
+  };
 
   const openFilePicker = (forceReparse: boolean) => {
     forceReparseRef.current = forceReparse;
@@ -358,15 +374,46 @@ export default function WaybillImportWorkbench() {
   };
 
   const handleAdjustment = async () => {
-    if (!remainingFileGap || !adjustmentReason.trim()) return;
+    if (!remainingFileGap || !adjustmentReason.trim() || !adjustmentDetailId) return;
     setSavingAdjustment(true);
     try {
-      const response = await addFulfillmentAdjustment(issueId, remainingFileGap, adjustmentReason.trim());
+      const response = await addFulfillmentAdjustment(
+        issueId,
+        remainingFileGap,
+        adjustmentReason.trim(),
+        adjustmentDetailId,
+      );
       queryClient.setQueryData(['shippingFulfillment', issueId], response.data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['report', issueId] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
+      ]);
       setAdjustmentOpen(false);
       message.success(`已将 ${remainingFileGap} 份标记为无需发货`);
     } catch (error) {
       message.error(logisticsApiErrorMessage(error, '标记无需发货失败'));
+    } finally {
+      setSavingAdjustment(false);
+    }
+  };
+
+  const handleAttribution = async () => {
+    if (!attributionAdjustment || !adjustmentDetailId) return;
+    setSavingAdjustment(true);
+    try {
+      const response = await attributeFulfillmentAdjustment(attributionAdjustment.id, adjustmentDetailId);
+      queryClient.setQueryData(['shippingFulfillment', issueId], response.data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['report', issueId] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
+      ]);
+      setAttributionAdjustment(null);
+      setAdjustmentDetailId(undefined);
+      message.success('已补充无需发货记录的明细归属');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '补充归属失败'));
     } finally {
       setSavingAdjustment(false);
     }
@@ -549,27 +596,27 @@ export default function WaybillImportWorkbench() {
     </Card> : <>
       <Card className="waybill-status-card" styles={{ body: { padding: 0 } }}>
         <div className="waybill-status-row">
-          <div className={`waybill-status-result ${planMatches ? 'is-success' : 'is-warning'}`}>
+          <div className={`waybill-status-result ${planReconciled ? 'is-success' : 'is-warning'}`}>
             <span className="waybill-status-icon"><CheckCircleOutlined /></span>
-            <div><small>发货计划对账</small><b>{planMatches ? '计划明细一致' : '计划明细有变更'}</b></div>
+            <div><small>发货计划对账</small><b>{planReconciled ? '计划已对平' : '计划仍有差异'}</b></div>
           </div>
           <div className="waybill-status-metric"><span>确认时计划</span><b>{confirmedPlanQuantity?.toLocaleString() ?? '—'}</b><small>份</small></div>
           <div className="waybill-status-metric"><span>当前计划</span><b>{currentPlanQuantity.toLocaleString()}</b><small>份</small></div>
-          <div className="waybill-status-metric"><span>明细差异</span><b>{planDelta?.toLocaleString() ?? '—'}</b><small>份</small></div>
-          <div className="waybill-status-metric"><span>计划状态</span><b>{planMatches ? '一致' : '待核对'}</b><small>不受运单影响</small></div>
+          <div className="waybill-status-metric"><span>已归因停发</span><b>{planAttributedQuantity.toLocaleString()}</b><small>份</small></div>
+          <div className="waybill-status-metric"><span>未解释差异</span><b>{planUnexplainedDelta?.toLocaleString() ?? '—'}</b><small>份</small></div>
         </div>
       </Card>
 
       <Card className="waybill-status-card" styles={{ body: { padding: 0 } }}>
         <div className="waybill-status-row">
-          <div className={`waybill-status-result ${displayedPendingQuantity ? 'is-partial' : 'is-success'}`}>
+          <div className={`waybill-status-result ${fulfillmentQuery.data?.shipment_status === 'partial' ? 'is-partial' : displayedPendingQuantity ? 'is-partial' : 'is-success'}`}>
             <span className="waybill-status-icon"><FileExcelOutlined /></span>
-            <div><small>实际发货核销</small><b>{displayedPendingQuantity ? '部分已发货' : '全部已发货'}</b></div>
+            <div><small>实际发货与核销</small><b>{fulfillmentQuery.data?.status === 'shipped' && fulfillmentQuery.data.shipment_status === 'partial' ? '核销已完成 · 部分发货' : displayedPendingQuantity ? '部分已发货' : '全部已发货'}</b></div>
           </div>
           <div className="waybill-status-metric"><span>确认印数</span><b>{batch.expected_quantity.toLocaleString()}</b><small>份 · 核销基准</small></div>
-          <div className="waybill-status-metric"><span>已关联</span><b>{batch.matched_quantity.toLocaleString()}</b><small>{batch.matched_rows} 行</small></div>
-          <div className="waybill-status-metric is-warning"><span>待人工关联</span><b>{unresolvedQuantity.toLocaleString()}</b><small>{batch.unmatched_rows} 个运单</small></div>
-          <div className="waybill-status-metric is-danger"><span>文件未覆盖</span><b>{remainingFileGap.toLocaleString()}</b><small>{remainingFileGap ? '待确认原因' : '已处理'}</small></div>
+          <div className="waybill-status-metric"><span>实际发出</span><b>{(fulfillmentQuery.data?.actual_shipped_quantity ?? batch.matched_quantity).toLocaleString()}</b><small>份</small></div>
+          <div className="waybill-status-metric"><span>无需发货</span><b>{adjustmentQuantity.toLocaleString()}</b><small>份</small></div>
+          <div className="waybill-status-metric is-danger"><span>核销待补</span><b>{(fulfillmentQuery.data?.pending_quantity ?? displayedPendingQuantity).toLocaleString()}</b><small>份</small></div>
         </div>
       </Card>
 
@@ -593,8 +640,24 @@ export default function WaybillImportWorkbench() {
         {filter === 'gap' ? <div className="waybill-gap-panel">
           {remainingFileGap ? <>
             <div><WarningOutlined /><b>源文件比确认印数少 {remainingFileGap.toLocaleString()} 份</b><span>这部分没有任何运单行，请确认是否为停刊或取消寄送。</span></div>
-            <Button type="primary" icon={<StopOutlined />} onClick={() => setAdjustmentOpen(true)}>标记停刊／无需发货</Button>
-          </> : <Alert showIcon type="success" title="文件未覆盖份数已经处理" description={fulfillmentQuery.data?.adjustments.map((item) => `${adjustmentReasonLabel(item.reason)} ${item.quantity}份`).join('；') || '无需发货原因已登记'} />}
+            <Button type="primary" icon={<StopOutlined />} onClick={openAdjustment}>标记暂停寄送／无需发货</Button>
+          </> : <Alert showIcon type={unassignedAdjustments.length ? 'warning' : 'success'} title={unassignedAdjustments.length ? '无需发货原因已记录，归属待补充' : '文件未覆盖份数已经处理'} description={fulfillmentQuery.data?.adjustments.map((item) => item.is_attributed
+            ? `${item.detail_name_snapshot || '已归属明细'} · ${adjustmentReasonLabel(item.reason)} ${item.quantity}份`
+            : `${adjustmentReasonLabel(item.reason)} ${item.quantity}份 · 待补充归属`).join('；') || '无需发货原因已登记'} />}
+          {!!fulfillmentQuery.data?.adjustments.length && <div className="waybill-adjustment-list">
+            {fulfillmentQuery.data.adjustments.map((item) => <div key={item.id} className="waybill-adjustment-item">
+              <div>
+                <b>{adjustmentReasonLabel(item.reason)} · {item.quantity}份</b>
+                <span>{item.is_attributed
+                  ? `${item.detail_name_snapshot || '已归属'} · ${item.detail_channel_snapshot || '未记录渠道'}`
+                  : '历史记录尚未关联具体收件明细'}</span>
+              </div>
+              {item.is_attributed ? <Tag color="green">已归属</Tag> : <Button size="small" type="primary" onClick={() => {
+                setAttributionAdjustment(item);
+                setAdjustmentDetailId(suggestedAdjustmentDetail?.id);
+              }}>补充归属</Button>}
+            </div>)}
+          </div>}
         </div> : <Table
             rowKey="id"
             columns={columns}
@@ -710,7 +773,7 @@ export default function WaybillImportWorkbench() {
       title={`标记 ${remainingFileGap.toLocaleString()} 份无需发货`}
       open={adjustmentOpen}
       okText="确认核销"
-      okButtonProps={{ loading: savingAdjustment, disabled: !adjustmentReason.trim() || !remainingFileGap }}
+      okButtonProps={{ loading: savingAdjustment, disabled: !adjustmentReason.trim() || !remainingFileGap || !adjustmentDetailId }}
       onOk={() => void handleAdjustment()}
       onCancel={() => setAdjustmentOpen(false)}
     >
@@ -720,12 +783,52 @@ export default function WaybillImportWorkbench() {
         title="该记录用于解释确认印数中没有出现在运单源文件里的份数"
         description="确认后会计入实际发货核销，但不会生成虚假的运单号。"
       />
+      <Select
+        className="waybill-reason-input"
+        showSearch
+        optionFilterProp="label"
+        value={adjustmentDetailId}
+        placeholder="选择这笔无需发货对应的收件明细"
+        options={details.filter((detail) => detail.source_type !== 'complaint_makeup').map((detail) => ({
+          value: detail.id,
+          label: detailLabel(detail),
+        }))}
+        onChange={setAdjustmentDetailId}
+      />
       <Input
         className="waybill-reason-input"
         value={adjustmentReason}
         maxLength={255}
         placeholder={`例如：${suspendedConsolidatedShippingReason}`}
         onChange={(event) => setAdjustmentReason(event.target.value)}
+      />
+    </Modal>
+
+    <Modal
+      title="补充无需发货记录的归属"
+      open={Boolean(attributionAdjustment)}
+      okText="确认归属"
+      okButtonProps={{ loading: savingAdjustment, disabled: !adjustmentDetailId }}
+      onOk={() => void handleAttribution()}
+      onCancel={() => { setAttributionAdjustment(null); setAdjustmentDetailId(undefined); }}
+    >
+      <Alert
+        showIcon
+        type="warning"
+        title={attributionAdjustment ? `${adjustmentReasonLabel(attributionAdjustment.reason)} · ${attributionAdjustment.quantity}份` : ''}
+        description="历史记录只有原因和份数，尚不能说明具体是哪条计划发生停发。补充后才会用于计划对平，并永久保留收件信息快照。"
+      />
+      <Select
+        className="waybill-reason-input"
+        showSearch
+        optionFilterProp="label"
+        value={adjustmentDetailId}
+        placeholder="按姓名、电话或地址搜索本期发货明细"
+        options={details.filter((detail) => detail.source_type !== 'complaint_makeup').map((detail) => ({
+          value: detail.id,
+          label: detailLabel(detail),
+        }))}
+        onChange={setAdjustmentDetailId}
       />
     </Modal>
   </div>;
