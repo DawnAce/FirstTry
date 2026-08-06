@@ -462,7 +462,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | `shipping_waybill_import_batches` | 一次 Excel 预览/确认批次，保存文件哈希、确认印数、解析/匹配/待补/超额份数与告警统计；同一期同一文件哈希唯一 |
 | `shipping_waybill_import_rows` | 文件中的逐行解析结果，保留来源 sheet/行号、原始单元格 JSON、承运商、运单号、收件信息、份数、人工核对标记、匹配状态与对应 `shipping_detail_id` |
 | `shipping_packages` | 已确认或人工补录的实际包裹；一条发货明细可对应多个包裹，`(carrier, tracking_no)` 全局唯一 |
-| `shipping_fulfillment_adjustments` | 期级无需发货核销项，保存停刊/取消寄送等原因、份数、操作人与时间；不伪造运单号 |
+| `shipping_fulfillment_adjustments` | 期级无需发货核销项，保存暂停寄送/停刊/取消寄送等原因、份数、操作人与时间；不伪造运单号。每月两次合寄订单暂时停止寄送时，标准原因是“每月两次合寄 · 暂停寄送” |
 
 发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。已处理份数 = 运单包裹份数 + 标记“无需运单”的明细计划份数 + 期级“无需发货”调整份数，待补/超额按确认印数与累计已处理份数计算。导入文件存在未匹配行或仍有待补时，只提示差异，不阻断已匹配行确认；未匹配行在确认后仍可继续人工关联，成功后幂等生成实际包裹。解析器会保留有意义但无法按已知版式识别的候选行及原始单元格；工作台允许修正字段、批量把多个运单关联到同一条本期 `shipping_detail`、填写原因后忽略/恢复或手工补行。工作台将 `unresolved_quantity` 与 `file_gap_quantity = max(expected_quantity - parsed_quantity, 0)` 分开显示，避免把“已有运单但未匹配”与“源文件完全没有记录”混成一个待补数。上传运单即视为已发货，当前版本不查询物流轨迹。
 

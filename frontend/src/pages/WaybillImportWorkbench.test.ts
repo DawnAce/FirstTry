@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { WaybillImportRow } from '../api/shippingWaybills';
 import type { ShippingDetail } from '../api/shippingDetails';
-import { buildWaybillGroupSuggestions, filterWaybillRows } from './waybillImportUtils';
+import {
+  buildWaybillGroupSuggestions,
+  filterWaybillRows,
+  isSupportedWaybillFilename,
+} from './waybillImportUtils';
 
 const row = (
   id: number,
@@ -68,5 +72,17 @@ describe('filterWaybillRows', () => {
       detailQuantity: 365,
       rowQuantity: 365,
     }]);
+  });
+});
+
+describe('isSupportedWaybillFilename', () => {
+  it('accepts supported Excel files case-insensitively', () => {
+    expect(isSupportedWaybillFilename('运单.xlsx')).toBe(true);
+    expect(isSupportedWaybillFilename('运单.XLSM')).toBe(true);
+  });
+
+  it('rejects other files and misleading suffixes', () => {
+    expect(isSupportedWaybillFilename('运单.xls')).toBe(false);
+    expect(isSupportedWaybillFilename('运单.xlsx.pdf')).toBe(false);
   });
 });

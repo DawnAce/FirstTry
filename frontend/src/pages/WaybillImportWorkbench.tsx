@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
@@ -54,7 +55,12 @@ import type {
   WaybillImportRowInput,
 } from '../api/shippingWaybills';
 import { logisticsApiErrorMessage } from './logisticsIssueState';
-import { buildWaybillGroupSuggestions, filterWaybillRows, unresolvedStatuses } from './waybillImportUtils';
+import {
+  buildWaybillGroupSuggestions,
+  filterWaybillRows,
+  isSupportedWaybillFilename,
+  unresolvedStatuses,
+} from './waybillImportUtils';
 import type { RowFilter } from './waybillImportUtils';
 
 const statusMeta: Record<WaybillImportRow['match_status'], { label: string; color: string }> = {
@@ -65,6 +71,12 @@ const statusMeta: Record<WaybillImportRow['match_status'], { label: string; colo
   invalid: { label: '未识别 / 无效', color: 'volcano' },
   ignored: { label: '已忽略', color: 'default' },
 };
+
+const suspendedConsolidatedShippingReason = '每月两次合寄 · 暂停寄送';
+
+function adjustmentReasonLabel(reason: string): string {
+  return reason === '双周停刊' ? suspendedConsolidatedShippingReason : reason;
+}
 
 interface RowFormValues {
   carrier: string;
@@ -89,9 +101,11 @@ export default function WaybillImportWorkbench() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const forceReparseRef = useRef(false);
+  const dragDepthRef = useRef(0);
   const [batchOverride, setBatch] = useState<WaybillImportBatch | null | undefined>(undefined);
   const [filter, setFilter] = useState<RowFilter>('unresolved');
   const [parsing, setParsing] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editingRow, setEditingRow] = useState<WaybillImportRow | null>(null);
   const [addingRow, setAddingRow] = useState(false);
@@ -100,7 +114,7 @@ export default function WaybillImportWorkbench() {
   const [ignoreRow, setIgnoreRow] = useState<WaybillImportRow | null>(null);
   const [ignoreReason, setIgnoreReason] = useState('');
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
-  const [adjustmentReason, setAdjustmentReason] = useState('双周停刊');
+  const [adjustmentReason, setAdjustmentReason] = useState(suspendedConsolidatedShippingReason);
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [rowForm] = Form.useForm<RowFormValues>();
 
@@ -179,6 +193,45 @@ export default function WaybillImportWorkbench() {
       forceReparseRef.current = false;
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const acceptFile = (file: File, forceReparse = false) => {
+    if (!isSupportedWaybillFilename(file.name)) {
+      message.error('仅支持 .xlsx / .xlsm 格式的运单文件');
+      return;
+    }
+    forceReparseRef.current = forceReparse;
+    void handleFile(file);
+  };
+
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current += 1;
+    if (!parsing) setIsDraggingFile(true);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = parsing ? 'none' : 'copy';
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFile(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsDraggingFile(false);
+    if (parsing) return;
+    const file = event.dataTransfer.files[0];
+    if (file) acceptFile(file);
   };
 
   const openEdit = (row: WaybillImportRow) => {
@@ -446,7 +499,7 @@ export default function WaybillImportWorkbench() {
       className="waybill-file-input"
       type="file"
       accept=".xlsx,.xlsm"
-      onChange={(event) => event.target.files?.[0] && void handleFile(event.target.files[0])}
+      onChange={(event) => event.target.files?.[0] && acceptFile(event.target.files[0], forceReparseRef.current)}
     />
     <Button type="link" size="small" icon={<LeftOutlined />} className="waybill-back" onClick={() => navigate(`/logistics/issues/${issueId}`)}>
       返回第 {issueQuery.data?.issue_number ?? '—'} 期快递管理
@@ -480,10 +533,17 @@ export default function WaybillImportWorkbench() {
     />}
 
     {!batch ? <Card className="waybill-empty-card">
-      <div className="waybill-upload-zone" onClick={() => openFilePicker(false)}>
+      <div
+        className={`waybill-upload-zone${isDraggingFile ? ' is-dragging' : ''}`}
+        onClick={() => !parsing && openFilePicker(false)}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <FileExcelOutlined />
-        <h2>上传发货表，开始核对运单</h2>
-        <p>支持 .xlsx / .xlsm。解析不出的原始行也会保留，可在工作台中手工补充。</p>
+        <h2>{isDraggingFile ? '松开即可上传并解析' : '上传发货表，开始核对运单'}</h2>
+        <p>拖拽到此处或点击选择 .xlsx / .xlsm。解析不出的原始行也会保留，可在工作台中手工补充。</p>
         <Button type="primary" icon={<UploadOutlined />} loading={parsing}>选择运单 Excel</Button>
       </div>
     </Card> : <>
@@ -534,7 +594,7 @@ export default function WaybillImportWorkbench() {
           {remainingFileGap ? <>
             <div><WarningOutlined /><b>源文件比确认印数少 {remainingFileGap.toLocaleString()} 份</b><span>这部分没有任何运单行，请确认是否为停刊或取消寄送。</span></div>
             <Button type="primary" icon={<StopOutlined />} onClick={() => setAdjustmentOpen(true)}>标记停刊／无需发货</Button>
-          </> : <Alert showIcon type="success" title="文件未覆盖份数已经处理" description={fulfillmentQuery.data?.adjustments.map((item) => `${item.reason} ${item.quantity}份`).join('；') || '无需发货原因已登记'} />}
+          </> : <Alert showIcon type="success" title="文件未覆盖份数已经处理" description={fulfillmentQuery.data?.adjustments.map((item) => `${adjustmentReasonLabel(item.reason)} ${item.quantity}份`).join('；') || '无需发货原因已登记'} />}
         </div> : <Table
             rowKey="id"
             columns={columns}
@@ -664,7 +724,7 @@ export default function WaybillImportWorkbench() {
         className="waybill-reason-input"
         value={adjustmentReason}
         maxLength={255}
-        placeholder="例如：双周停刊"
+        placeholder={`例如：${suspendedConsolidatedShippingReason}`}
         onChange={(event) => setAdjustmentReason(event.target.value)}
       />
     </Modal>
