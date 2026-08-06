@@ -7,6 +7,10 @@ export const unresolvedStatuses = new Set<WaybillImportRow['match_status']>([
   'unmatched', 'ambiguous', 'duplicate', 'invalid',
 ]);
 
+export function isSupportedWaybillFilename(filename: string): boolean {
+  return /\.(xlsx|xlsm)$/i.test(filename.trim());
+}
+
 export function filterWaybillRows(rows: WaybillImportRow[], filter: RowFilter): WaybillImportRow[] {
   const filtered = rows.filter((row) => {
     if (filter === 'gap') return false;

@@ -375,7 +375,7 @@ def test_confirmed_unmatched_split_packages_can_be_bulk_linked_then_close_file_g
     completed = create_fulfillment_adjustment(
         db,
         issue.id,
-        FulfillmentAdjustmentIn(quantity=1, reason="双周停刊"),
+        FulfillmentAdjustmentIn(quantity=1, reason="每月两次合寄 · 暂停寄送"),
         user,
     )
     assert completed.tracked_quantity == 365
