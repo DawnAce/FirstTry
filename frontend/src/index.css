@@ -3937,6 +3937,18 @@ body {
   font-size: 12px;
 }
 
+.waybill-confirm-bar .waybill-return-button {
+  min-width: 210px;
+  color: #fff !important;
+  box-shadow: 0 5px 14px rgba(0, 113, 227, .24);
+}
+
+.waybill-confirm-bar .waybill-return-button span {
+  margin-top: 0;
+  color: inherit;
+  font-size: 14px;
+}
+
 .waybill-editor-note {
   margin-bottom: 18px;
 }

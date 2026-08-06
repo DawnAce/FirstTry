@@ -561,7 +561,13 @@ export default function WaybillImportWorkbench() {
           <Button type="primary" size="large" icon={<CheckCircleOutlined />} loading={confirming} disabled={batch.matched_rows === 0}>
             导入已核销的 {batch.matched_quantity.toLocaleString()} 份，保留 {displayedPendingQuantity.toLocaleString()} 份待处理
           </Button>
-        </Popconfirm> : <Button icon={<LeftOutlined />} onClick={() => navigate(`/logistics/issues/${issueId}`)}>返回快递管理</Button>}
+        </Popconfirm> : <Button
+          type="primary"
+          size="large"
+          className="waybill-return-button"
+          icon={<LeftOutlined />}
+          onClick={() => navigate(`/logistics/issues/${issueId}`)}
+        >返回第 {issueQuery.data?.issue_number ?? '—'} 期快递管理</Button>}
       </div>
     </>}
 
