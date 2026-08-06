@@ -2135,6 +2135,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - 客户端路由（react-router-dom）
 - 类型安全（TypeScript）
 - 组件库（Ant Design）
+- ZTO-MF 单期页通过 `logisticsIssueState.ts` 显式区分 Query 的 loading / error / success-empty 状态：请求失败不得回退为 `[]` 后渲染业务空态。计划区使用「发货计划对账」，核销区使用「实际发货核销」；后者只有取得核销摘要后才显示「待录入运单 / 部分已发货 / 已完成发货核销」。运单操作优先展示后端 `detail`，500 错误提示检查数据库迁移状态。
 - 表格固定列使用 `fixed: 'end'` + `scroll={{ x: 'max-content' }}`，操作列固定在右侧
 - 表格行 hover 使用不透明语义背景色（`var(--color-bg-subtle)`），避免固定列穿透问题
 - 操作按钮使用图标 + Tooltip 替代文字按钮，节省空间
