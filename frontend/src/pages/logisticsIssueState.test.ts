@@ -60,4 +60,11 @@ describe('logisticsApiErrorMessage', () => {
       '运单文件解析失败',
     )).toContain('检查数据库迁移状态');
   });
+
+  it('distinguishes a client timeout from an unavailable backend', () => {
+    expect(logisticsApiErrorMessage(
+      { code: 'ECONNABORTED' },
+      '运单文件解析失败',
+    )).toBe('运单文件解析失败：处理超时，后台可能已经完成，请刷新页面确认。');
+  });
 });

@@ -60,6 +60,7 @@ import { logisticsApiErrorMessage } from './logisticsIssueState';
 import {
   buildWaybillGroupSuggestions,
   filterWaybillRows,
+  isRecoverableWaybillDraft,
   isSupportedWaybillFilename,
 } from './waybillImportUtils';
 import type { RowFilter } from './waybillImportUtils';
@@ -195,6 +196,8 @@ export default function WaybillImportWorkbench() {
   };
 
   const handleFile = async (file: File) => {
+    const wasForceReparse = forceReparseRef.current;
+    const previousBatchId = batch?.id;
     setParsing(true);
     try {
       const response = await previewWaybillImport(issueId, file, forceReparseRef.current);
@@ -203,6 +206,20 @@ export default function WaybillImportWorkbench() {
       queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
       message.success(response.data.status === 'confirmed' ? '该文件已经确认导入，未重复创建运单' : '运单文件已解析，草稿会自动保留');
     } catch (error) {
+      if (!(error as { response?: unknown })?.response) {
+        try {
+          const recovered = (await getWaybillImportDraft(issueId)).data;
+          if (isRecoverableWaybillDraft(recovered, file.name, previousBatchId, wasForceReparse)) {
+            setBatch(recovered);
+            setFilter(recovered.unmatched_rows > 0 ? 'unresolved' : recovered.file_gap_quantity > 0 ? 'gap' : 'all');
+            queryClient.setQueryData(['waybillImportDraft', issueId], recovered);
+            message.warning('上传响应中断，但后台已完成解析，已自动恢复最新草稿');
+            return;
+          }
+        } catch {
+          // Fall through to the original upload error when the recovery request also fails.
+        }
+      }
       message.error(logisticsApiErrorMessage(error, '运单文件解析失败'));
     } finally {
       setParsing(false);

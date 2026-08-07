@@ -2,7 +2,7 @@ from datetime import date
 from io import BytesIO
 
 from openpyxl import Workbook
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -117,6 +117,27 @@ def _split_chengdu_packages_bytes() -> bytes:
             "经营报1-26日", None, tracking_no, None, "15719468023",
             "成都市双流文星镇通关路86号A1－A4杂志铺/\n028－85312807",
             "肖波", quantity,
+        ])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _bulk_waybill_workbook_bytes(row_count: int = 67) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "中通批量运单"
+    ws.append([None, None, None, None, "电话", "地址", "姓名", "份数"])
+    for index in range(row_count):
+        ws.append([
+            "经营报",
+            None,
+            f"73592817{index:06d}",
+            None,
+            f"138000{index:05d}",
+            f"北京市测试路{index}号",
+            f"批量客户{index}",
+            1,
         ])
     out = BytesIO()
     wb.save(out)
@@ -561,6 +582,37 @@ def test_explicit_reparse_replaces_the_active_draft():
         reparse=True,
     )
     assert db.query(ShippingWaybillImportBatch).count() == 1
+    assert db.query(ShippingWaybillImportRow).count() == 1
     assert replacement.filename == "新草稿.xlsx"
     assert replacement.rows[0].tracking_no == "73592817531111"
     assert replacement.rows[0].recipient_name == "待补客户"
+
+
+def test_preview_bulk_inserts_waybill_rows_in_one_database_statement():
+    db = _db()
+    user = User(username="bulk-importer", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=3003, publish_date=date(2026, 2, 16), status=IssueStatus.confirmed)
+    db.add_all([user, issue])
+    db.commit()
+
+    insert_calls: list[tuple[bool, int]] = []
+
+    def capture_row_insert(_conn, _cursor, statement, parameters, _context, executemany):
+        if "INSERT INTO shipping_waybill_import_rows" in statement:
+            insert_calls.append((executemany, len(parameters) if executemany else 1))
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture_row_insert)
+    try:
+        batch = preview_import(
+            db,
+            issue.id,
+            "67条运单.xlsx",
+            _bulk_waybill_workbook_bytes(),
+            user,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_row_insert)
+
+    assert len(batch.rows) == 67
+    assert insert_calls == [(True, 67)]

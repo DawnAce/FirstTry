@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from openpyxl import load_workbook
-from sqlalchemy import func, or_
+from sqlalchemy import func, insert, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -295,27 +295,35 @@ def preview_import(
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
     digest = sha256(content).hexdigest()
-    existing = db.query(ShippingWaybillImportBatch).filter(
+    existing = db.query(
+        ShippingWaybillImportBatch.id,
+        ShippingWaybillImportBatch.status,
+    ).filter(
         ShippingWaybillImportBatch.issue_number == issue.issue_number,
         ShippingWaybillImportBatch.file_hash == digest,
     ).first()
     if existing:
         if existing.status == WaybillImportStatus.confirmed.value or not reparse:
-            return existing
+            return _get_import_batch(db, existing.id)
     if reparse:
-        drafts = db.query(ShippingWaybillImportBatch).filter(
+        draft_ids = [row.id for row in db.query(ShippingWaybillImportBatch.id).filter(
             ShippingWaybillImportBatch.issue_id == issue.id,
             ShippingWaybillImportBatch.status == WaybillImportStatus.previewed.value,
-        ).all()
-        for draft in drafts:
-            db.delete(draft)
-        db.flush()
+        ).all()]
+        if draft_ids:
+            db.query(ShippingWaybillImportRow).filter(
+                ShippingWaybillImportRow.batch_id.in_(draft_ids)
+            ).delete(synchronize_session="evaluate")
+            db.query(ShippingWaybillImportBatch).filter(
+                ShippingWaybillImportBatch.id.in_(draft_ids)
+            ).delete(synchronize_session="evaluate")
+            db.flush()
     else:
-        active_draft = db.query(ShippingWaybillImportBatch).filter(
+        active_draft_id = db.query(ShippingWaybillImportBatch.id).filter(
             ShippingWaybillImportBatch.issue_id == issue.id,
             ShippingWaybillImportBatch.status == WaybillImportStatus.previewed.value,
-        ).order_by(ShippingWaybillImportBatch.id.desc()).first()
-        if active_draft:
+        ).order_by(ShippingWaybillImportBatch.id.desc()).scalar()
+        if active_draft_id:
             raise HTTPException(status_code=409, detail="本期已有运单核对草稿，请先继续处理或选择重新解析")
 
     parsed = parse_waybill_workbook(content)
@@ -332,10 +340,7 @@ def preview_import(
         if name and address:
             name_address[(name, address)].append(detail)
 
-    existing_tracking = {
-        (package.carrier, package.tracking_no)
-        for package in db.query(ShippingPackage).all()
-    }
+    existing_tracking = set(db.query(ShippingPackage.carrier, ShippingPackage.tracking_no).all())
     seen_tracking: set[tuple[str, str]] = set()
     row_results: list[tuple[ParsedWaybillRow, str, str | None, int | None]] = []
     quantities_by_detail: dict[int, int] = defaultdict(int)
@@ -411,27 +416,29 @@ def preview_import(
     )
     db.add(batch)
     db.flush()
-    for row, status, reason, detail_id in row_results:
-        db.add(ShippingWaybillImportRow(
-            batch_id=batch.id,
-            source_sheet=row.source_sheet,
-            source_row=row.source_row,
-            carrier=row.carrier,
-            tracking_no=row.tracking_no,
-            recipient_name=row.recipient_name,
-            phone=row.phone or None,
-            address=row.address or None,
-            quantity=row.quantity,
-            no_tracking_required=row.no_tracking_required,
-            raw_values=row.raw_values,
-            manual_reviewed=False,
-            match_status=status,
-            match_reason=reason,
-            shipping_detail_id=detail_id,
-        ))
+    db.execute(insert(ShippingWaybillImportRow), [
+        {
+            "batch_id": batch.id,
+            "source_sheet": row.source_sheet,
+            "source_row": row.source_row,
+            "carrier": row.carrier,
+            "tracking_no": row.tracking_no,
+            "recipient_name": row.recipient_name,
+            "phone": row.phone or None,
+            "address": row.address or None,
+            "quantity": row.quantity,
+            "no_tracking_required": row.no_tracking_required,
+            "raw_values": row.raw_values,
+            "manual_reviewed": False,
+            "match_status": status,
+            "match_reason": reason,
+            "shipping_detail_id": detail_id,
+        }
+        for row, status, reason, detail_id in row_results
+    ])
+    batch_id = batch.id
     db.commit()
-    db.refresh(batch)
-    return batch
+    return _get_import_batch(db, batch_id)
 
 
 def _get_import_batch(db: Session, batch_id: int) -> ShippingWaybillImportBatch:
