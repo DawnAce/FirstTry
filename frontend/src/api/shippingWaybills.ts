@@ -51,6 +51,8 @@ export interface FulfillmentSummary {
   no_tracking_quantity: number;
   actual_shipped_quantity: number;
   adjustment_quantity: number;
+  deferred_quantity: number;
+  unexplained_pending_quantity: number;
   attributed_adjustment_quantity: number;
   unattributed_adjustment_quantity: number;
   pending_quantity: number;
@@ -61,6 +63,42 @@ export interface FulfillmentSummary {
   shipment_status: 'pending' | 'partial' | 'shipped' | 'exception';
   latest_import: WaybillImportBatch | null;
   adjustments: FulfillmentAdjustment[];
+  deferrals: ShippingDeferral[];
+  gap_details: ShippingGapDetail[];
+}
+
+export interface ShippingGapDetail {
+  shipping_detail_id: number;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  channel: string;
+  sheet_name: string;
+  frequency: string;
+  planned_quantity: number;
+  source_quantity: number;
+  deferred_quantity: number;
+  remaining_quantity: number;
+  suggested_month_end: boolean;
+}
+
+export interface ShippingDeferral {
+  id: number;
+  issue_id: number;
+  issue_number: number;
+  shipping_detail_id: number | null;
+  deferral_type: 'month_end_consolidation';
+  quantity: number;
+  reason: string;
+  status: 'pending' | 'fulfilled' | 'cancelled';
+  fulfilled_package_id: number | null;
+  detail_name_snapshot: string | null;
+  detail_phone_snapshot: string | null;
+  detail_address_snapshot: string | null;
+  detail_channel_snapshot: string | null;
+  created_by: number | null;
+  created_at: string;
+  fulfilled_at: string | null;
 }
 
 export interface FulfillmentAdjustment {
@@ -183,3 +221,60 @@ export const setNoTrackingRequired = (
   api.post<FulfillmentSummary>(`/shipping-waybills/details/${detailId}/no-tracking`, {
     no_tracking_required: noTrackingRequired,
   });
+
+export const addShippingDeferrals = (
+  issueId: number,
+  items: Array<{ shipping_detail_id: number; quantity: number }>,
+  reason: string,
+): Promise<AxiosResponse<FulfillmentSummary>> =>
+  api.post<FulfillmentSummary>(`/shipping-waybills/issues/${issueId}/deferrals`, {
+    deferral_type: 'month_end_consolidation',
+    reason,
+    items,
+  });
+
+export const getPendingShippingDeferrals = (): Promise<AxiosResponse<ShippingDeferral[]>> =>
+  api.get<ShippingDeferral[]>('/shipping-waybills/deferrals/pending');
+
+export const deleteShippingDeferral = (deferralId: number): Promise<AxiosResponse<FulfillmentSummary>> =>
+  api.delete<FulfillmentSummary>(`/shipping-waybills/deferrals/${deferralId}`);
+
+export const addConsolidatedPackage = (
+  carrier: string,
+  trackingNo: string,
+  deferralIds: number[],
+): Promise<AxiosResponse<{
+  package_id: number;
+  carrier: string;
+  tracking_no: string;
+  quantity: number;
+  fulfilled_deferral_ids: number[];
+}>> => api.post('/shipping-waybills/packages/consolidated', {
+  carrier,
+  tracking_no: trackingNo,
+  deferrals: deferralIds.map((deferral_id) => ({ deferral_id })),
+});
+
+export interface ShippingPlanTransferInput {
+  source_detail_id: number;
+  quantity: number;
+  reason: string;
+  target_detail_id?: number;
+  target_name?: string;
+  target_phone?: string;
+  target_address?: string;
+  target_channel?: string;
+  target_sheet_name?: string;
+  target_frequency?: string;
+}
+
+export const transferShippingPlanQuantity = (
+  issueId: number,
+  data: ShippingPlanTransferInput,
+): Promise<AxiosResponse<{
+  source_detail_id: number;
+  source_quantity: number;
+  target_detail_id: number;
+  target_quantity: number;
+  planned_quantity: number;
+}>> => api.post(`/shipping-waybills/issues/${issueId}/plan-transfer`, data);

@@ -116,6 +116,14 @@ class ShippingPackage(Base):
 
     shipping_detail = relationship("ShippingDetail", back_populates="packages")
     import_row = relationship("ShippingWaybillImportRow", back_populates="package")
+    allocations = relationship(
+        "ShippingPackageAllocation",
+        back_populates="package",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
+        order_by="ShippingPackageAllocation.id",
+    )
 
     __table_args__ = (
         Index("uq_shipping_package_carrier_tracking", "carrier", "tracking_no", unique=True),

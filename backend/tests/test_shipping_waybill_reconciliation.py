@@ -13,7 +13,9 @@ from app.models import (
     IssueAuditSnapshot,
     IssueStatus,
     ShippingDetail,
+    ShippingDeferral,
     ShippingFulfillmentAdjustment,
+    ShippingPackageAllocation,
     ShippingWaybillImportBatch,
     ShippingWaybillImportRow,
 )
@@ -22,6 +24,11 @@ from app.schemas.shipping_detail import ShippingDetailOut
 from app.schemas.shipping_waybill import (
     FulfillmentAdjustmentAttributionIn,
     FulfillmentAdjustmentIn,
+    ConsolidatedAllocationIn,
+    ConsolidatedPackageIn,
+    ShippingDeferralBulkIn,
+    ShippingDeferralItemIn,
+    ShippingPlanTransferIn,
     WaybillBulkMatchIn,
     WaybillImportBatchOut,
     WaybillImportRowCreate,
@@ -33,10 +40,13 @@ from app.services.shipping_waybill_service import (
     bulk_match_import_rows,
     confirm_import,
     create_fulfillment_adjustment,
+    create_shipping_deferrals,
+    create_consolidated_package,
     fulfillment_summary,
     get_draft_import,
     parse_waybill_workbook,
     preview_import,
+    transfer_shipping_plan_quantity,
     update_import_row,
 )
 
@@ -139,6 +149,17 @@ def _bulk_waybill_workbook_bytes(row_count: int = 67) -> bytes:
             f"批量客户{index}",
             1,
         ])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _single_waybill_bytes(name: str, phone: str, address: str, quantity: int = 1) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "中通运单"
+    ws.append([None, None, None, None, "电话", "地址", "姓名", "份数"])
+    ws.append(["经营报", None, f"735928176{phone[-5:]}", None, phone, address, name, quantity])
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
@@ -616,3 +637,155 @@ def test_preview_bulk_inserts_waybill_rows_in_one_database_statement():
 
     assert len(batch.rows) == 67
     assert insert_calls == [(True, 67)]
+
+
+def test_month_end_deferrals_are_separate_from_unexplained_pending_quantity():
+    db = _db()
+    user = User(username="month-end", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=5001, publish_date=date(2026, 5, 18), status=IssueStatus.confirmed)
+    normal = ShippingDetail(
+        issue_number=5001, sheet_name="每周", channel="个人订阅", transport="中通物流",
+        frequency="周", status="正常", name="本期客户", phone="13800000001",
+        address="北京市本期路1号", quantity=1,
+    )
+    month_end = ShippingDetail(
+        issue_number=5001, sheet_name="月底-整月", channel="个人订阅", transport="中通物流",
+        frequency="月", status="正常", name="月底客户", phone="13800000002",
+        address="北京市月底路2号", quantity=3,
+    )
+    db.add_all([user, issue, normal, month_end])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=issue.id, snapshot_type="confirm", report_total=4, shipping_total=4,
+        delta=0, is_match=True,
+    ))
+    db.commit()
+
+    batch = preview_import(
+        db, issue.id, "本期运单.xlsx",
+        _single_waybill_bytes(normal.name, normal.phone, normal.address), user,
+    )
+    before = fulfillment_summary(db, issue.id)
+    gap = next(item for item in before.gap_details if item.shipping_detail_id == month_end.id)
+    assert gap.remaining_quantity == 3
+    assert gap.suggested_month_end is True
+
+    deferred = create_shipping_deferrals(
+        db,
+        issue.id,
+        ShippingDeferralBulkIn(
+            reason="月底合寄 · 本期报纸随月底最后一期统一寄送",
+            items=[ShippingDeferralItemIn(shipping_detail_id=month_end.id, quantity=3)],
+        ),
+        user,
+    )
+    assert deferred.deferred_quantity == 3
+    assert deferred.unexplained_pending_quantity == 1
+    gap = next(item for item in deferred.gap_details if item.shipping_detail_id == month_end.id)
+    assert gap.deferred_quantity == 3
+    assert gap.remaining_quantity == 0
+
+    confirm_import(db, batch.id, user)
+    confirmed = fulfillment_summary(db, issue.id)
+    assert confirmed.actual_shipped_quantity == 1
+    assert confirmed.pending_quantity == 3
+    assert confirmed.deferred_quantity == 3
+    assert confirmed.unexplained_pending_quantity == 0
+
+
+def test_one_consolidated_package_fulfills_same_recipient_across_issues():
+    db = _db()
+    user = User(username="consolidator", password_hash="x", role=UserRole.admin)
+    deferrals = []
+    issues = []
+    for index, quantity in enumerate((1, 2), start=1):
+        issue = Issue(
+            issue_number=5100 + index,
+            publish_date=date(2026, 5, 11 + index * 7),
+            status=IssueStatus.confirmed,
+        )
+        normal = ShippingDetail(
+            issue_number=issue.issue_number, sheet_name="每周", channel="个人订阅",
+            transport="中通物流", frequency="周", status="正常",
+            name=f"当期客户{index}", phone=f"1380000010{index}",
+            address=f"北京市当期路{index}号", quantity=1,
+        )
+        month_end = ShippingDetail(
+            issue_number=issue.issue_number, sheet_name="月底-整月", channel="个人订阅",
+            transport="中通物流", frequency="月", status="正常",
+            name="同一月底客户", phone="13900000000", address="北京市月底路8号",
+            quantity=quantity,
+        )
+        db.add_all([issue, normal, month_end])
+        db.flush()
+        db.add(IssueAuditSnapshot(
+            issue_id=issue.id, snapshot_type="confirm", report_total=quantity + 1,
+            shipping_total=quantity + 1, delta=0, is_match=True,
+        ))
+        db.commit()
+        batch = preview_import(
+            db, issue.id, f"{issue.issue_number}.xlsx",
+            _single_waybill_bytes(normal.name, normal.phone, normal.address), user,
+        )
+        confirm_import(db, batch.id, user)
+        summary = create_shipping_deferrals(
+            db,
+            issue.id,
+            ShippingDeferralBulkIn(
+                reason="月底合寄 · 本期报纸随月底最后一期统一寄送",
+                items=[ShippingDeferralItemIn(shipping_detail_id=month_end.id, quantity=quantity)],
+            ),
+            user,
+        )
+        deferrals.append(summary.deferrals[0])
+        issues.append(issue)
+
+    result = create_consolidated_package(
+        db,
+        ConsolidatedPackageIn(
+            carrier="中通",
+            tracking_no="73592817688888",
+            deferrals=[ConsolidatedAllocationIn(deferral_id=item.id) for item in deferrals],
+        ),
+        user,
+    )
+    assert result.quantity == 3
+    assert db.query(ShippingPackageAllocation).count() == 2
+    assert db.query(ShippingDeferral).filter(ShippingDeferral.status == "pending").count() == 0
+    for issue in issues:
+        summary = fulfillment_summary(db, issue.id)
+        assert summary.pending_quantity == 0
+        assert summary.deferred_quantity == 0
+        assert summary.unexplained_pending_quantity == 0
+        assert summary.gap_details == []
+
+
+def test_plan_quantity_transfer_keeps_issue_total_unchanged():
+    db = _db()
+    user = User(username="planner", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=5201, publish_date=date(2026, 5, 18), status=IssueStatus.confirmed)
+    reserve = ShippingDetail(
+        issue_number=5201, sheet_name="每周（对公）", channel="库房留存",
+        transport="库房留存", frequency="周", status="正常", name="马飞",
+        address="中通库房", quantity=69,
+    )
+    db.add_all([user, issue, reserve])
+    db.commit()
+
+    result = transfer_shipping_plan_quantity(
+        db,
+        issue.id,
+        ShippingPlanTransferIn(
+            source_detail_id=reserve.id,
+            quantity=1,
+            reason="备用报应为68份，转入缺少的读者明细",
+            target_name="缺少的读者",
+            target_phone="13800000999",
+            target_address="北京市读者路9号",
+        ),
+        user,
+    )
+    assert result.source_quantity == 68
+    assert result.target_quantity == 1
+    assert result.planned_quantity == 69
+    assert db.query(ShippingDetail).filter(ShippingDetail.issue_number == 5201).count() == 2

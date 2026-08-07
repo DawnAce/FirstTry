@@ -45,6 +45,7 @@ describe('getPackageCopy', () => {
       handled_quantity: 1,
       physical_shipped_quantity: 0,
       no_shipment_quantity: 1,
+      deferred_quantity: 0,
       no_shipment_reason: '每月两次合寄 · 暂停寄送',
       fulfillment_status: 'no_shipment_required',
     }))).toEqual({ title: '无需发货', detail: '每月两次合寄 · 暂停寄送' });

@@ -20,8 +20,10 @@ from app.models import (
     IssueAuditSnapshot,
     ShippingDetail,
     ShippingDetailSourceType,
+    ShippingDeferral,
     ShippingFulfillmentAdjustment,
     ShippingPackage,
+    ShippingPackageAllocation,
     ShippingWaybillImportBatch,
     ShippingWaybillImportRow,
     WaybillImportStatus,
@@ -32,6 +34,12 @@ from app.schemas.shipping_waybill import (
     FulfillmentAdjustmentAttributionIn,
     FulfillmentAdjustmentIn,
     FulfillmentSummaryOut,
+    ConsolidatedPackageIn,
+    ConsolidatedPackageOut,
+    ShippingDeferralBulkIn,
+    ShippingGapDetailOut,
+    ShippingPlanTransferIn,
+    ShippingPlanTransferOut,
     WaybillBulkMatchIn,
     WaybillImportRowCreate,
     WaybillImportRowUpdate,
@@ -741,10 +749,14 @@ def _refresh_legacy_shipping_fields(detail: ShippingDetail) -> None:
         detail.shipped_quantity = None
         detail.tracking_no = None
         return
-    packages = list(detail.packages)
+    direct_packages = [package for package in detail.packages if not package.allocations]
+    allocated_packages = [allocation.package for allocation in detail.package_allocations]
+    packages = list(dict.fromkeys([*direct_packages, *allocated_packages]))
     if not packages:
         return
-    detail.shipped_quantity = sum(package.quantity or 0 for package in packages)
+    detail.shipped_quantity = sum(package.quantity or 0 for package in direct_packages) + sum(
+        allocation.quantity or 0 for allocation in detail.package_allocations
+    )
     detail.shipped_at = max(package.shipped_at for package in packages)
     detail.tracking_no = packages[0].tracking_no if len(packages) == 1 else None
 
@@ -916,7 +928,13 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
     adjustments = db.query(ShippingFulfillmentAdjustment).filter(
         ShippingFulfillmentAdjustment.issue_id == issue.id
     ).order_by(ShippingFulfillmentAdjustment.created_at, ShippingFulfillmentAdjustment.id).all()
+    deferrals = db.query(ShippingDeferral).filter(
+        ShippingDeferral.issue_id == issue.id
+    ).order_by(ShippingDeferral.created_at, ShippingDeferral.id).all()
     adjustment_quantity = sum(max(adjustment.quantity or 0, 0) for adjustment in adjustments)
+    deferred_quantity = sum(
+        max(deferral.quantity or 0, 0) for deferral in deferrals if deferral.status == "pending"
+    )
     attributed_adjustment_quantity = sum(
         max(adjustment.quantity or 0, 0) for adjustment in adjustments if adjustment.is_attributed
     )
@@ -924,6 +942,7 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
     actual_shipped = tracked + no_tracking
     handled = tracked + no_tracking + adjustment_quantity
     pending = max(expected - handled, 0)
+    unexplained_pending = max(pending - deferred_quantity, 0)
     extra = max(handled - expected, 0)
     if extra:
         status = "exception"
@@ -944,6 +963,47 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
     latest = db.query(ShippingWaybillImportBatch).filter(
         ShippingWaybillImportBatch.issue_number == issue.issue_number
     ).order_by(ShippingWaybillImportBatch.created_at.desc(), ShippingWaybillImportBatch.id.desc()).first()
+    source_by_detail: dict[int, int] = defaultdict(int)
+    if latest:
+        for row in latest.rows:
+            if row.shipping_detail_id is not None and row.match_status == WaybillMatchStatus.matched.value:
+                source_by_detail[row.shipping_detail_id] += max(row.quantity or 0, 0)
+    pending_deferred_by_detail: dict[int, int] = defaultdict(int)
+    for deferral in deferrals:
+        if deferral.status == "pending" and deferral.shipping_detail_id is not None:
+            pending_deferred_by_detail[deferral.shipping_detail_id] += max(deferral.quantity or 0, 0)
+    adjustment_by_detail: dict[int, int] = defaultdict(int)
+    for adjustment in adjustments:
+        if adjustment.shipping_detail_id is not None:
+            adjustment_by_detail[adjustment.shipping_detail_id] += max(adjustment.quantity or 0, 0)
+    gap_details: list[ShippingGapDetailOut] = []
+    if latest:
+        for detail in details:
+            source_quantity = source_by_detail.get(detail.id, 0)
+            delivered_or_in_source = max(source_quantity, detail.physical_shipped_quantity)
+            raw_gap = max(
+                (detail.quantity or 0) - delivered_or_in_source - adjustment_by_detail.get(detail.id, 0),
+                0,
+            )
+            deferred = min(pending_deferred_by_detail.get(detail.id, 0), raw_gap)
+            remaining = max(raw_gap - deferred, 0)
+            if raw_gap:
+                marker = f"{detail.sheet_name or ''}{detail.frequency or ''}"
+                gap_details.append(ShippingGapDetailOut(
+                    shipping_detail_id=detail.id,
+                    name=detail.name,
+                    phone=detail.phone,
+                    address=detail.address,
+                    channel=detail.channel,
+                    sheet_name=detail.sheet_name,
+                    frequency=detail.frequency,
+                    planned_quantity=detail.quantity or 0,
+                    source_quantity=source_quantity,
+                    deferred_quantity=deferred,
+                    remaining_quantity=remaining,
+                    suggested_month_end="月底" in marker or "整月" in marker,
+                ))
+        gap_details.sort(key=lambda item: (-item.remaining_quantity, item.shipping_detail_id))
     return FulfillmentSummaryOut(
         issue_id=issue.id,
         issue_number=issue.issue_number,
@@ -954,16 +1014,23 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
         no_tracking_quantity=no_tracking,
         actual_shipped_quantity=actual_shipped,
         adjustment_quantity=adjustment_quantity,
+        deferred_quantity=deferred_quantity,
+        unexplained_pending_quantity=unexplained_pending,
         attributed_adjustment_quantity=attributed_adjustment_quantity,
         unattributed_adjustment_quantity=unattributed_adjustment_quantity,
         pending_quantity=pending,
         extra_quantity=extra,
-        package_count=sum(detail.package_count for detail in details),
+        package_count=len({
+            *(package.id for detail in details for package in detail.packages),
+            *(allocation.shipping_package_id for detail in details for allocation in detail.package_allocations),
+        }),
         pending_detail_count=sum(1 for detail in details if detail.fulfillment_status in {"pending", "partial"}),
         status=status,
         shipment_status=shipment_status,
         latest_import=latest,
         adjustments=adjustments,
+        deferrals=deferrals,
+        gap_details=gap_details,
     )
 
 
@@ -1120,3 +1187,251 @@ def delete_fulfillment_adjustment(
 
 def refresh_detail_shipping_fields(detail: ShippingDetail) -> None:
     _refresh_legacy_shipping_fields(detail)
+
+
+def create_shipping_deferrals(
+    db: Session,
+    issue_id: int,
+    body: ShippingDeferralBulkIn,
+    user: User,
+) -> FulfillmentSummaryOut:
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="刊期不存在")
+    summary = fulfillment_summary(db, issue_id)
+    gap_by_detail = {
+        item.shipping_detail_id: item.remaining_quantity for item in summary.gap_details
+    }
+    requested_ids = [item.shipping_detail_id for item in body.items]
+    if len(requested_ids) != len(set(requested_ids)):
+        raise HTTPException(status_code=400, detail="同一发货明细不能重复选择")
+    details = db.query(ShippingDetail).filter(
+        ShippingDetail.id.in_(requested_ids),
+        ShippingDetail.issue_number == issue.issue_number,
+        ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+    ).all()
+    by_id = {detail.id: detail for detail in details}
+    if len(by_id) != len(requested_ids):
+        raise HTTPException(status_code=400, detail="所选发货明细不属于本期确认版计划")
+    total = 0
+    created: list[ShippingDeferral] = []
+    for item in body.items:
+        available = gap_by_detail.get(item.shipping_detail_id, 0)
+        if item.quantity > available:
+            raise HTTPException(status_code=400, detail="待月底合寄份数不能超过该明细的文件缺口")
+        detail = by_id[item.shipping_detail_id]
+        deferral = ShippingDeferral(
+            issue_id=issue.id,
+            issue_number=issue.issue_number,
+            shipping_detail_id=detail.id,
+            deferral_type=body.deferral_type,
+            quantity=item.quantity,
+            reason=body.reason.strip(),
+            detail_name_snapshot=detail.name,
+            detail_phone_snapshot=detail.phone,
+            detail_address_snapshot=detail.address,
+            detail_channel_snapshot=detail.channel,
+            created_by=getattr(user, "id", None),
+        )
+        db.add(deferral)
+        created.append(deferral)
+        total += item.quantity
+    if total > summary.unexplained_pending_quantity:
+        raise HTTPException(status_code=400, detail="待月底合寄总数不能超过当前未解释待处理份数")
+    db.flush()
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_deferrals",
+        record_id=created[0].id,
+        record_name=body.reason.strip(),
+        action="bulk_create",
+        issue_number=issue.issue_number,
+        changes={
+            "deferral_ids": [item.id for item in created],
+            "detail_ids": requested_ids,
+            "quantity": total,
+            "type": body.deferral_type,
+        },
+    )
+    db.commit()
+    return fulfillment_summary(db, issue_id)
+
+
+def list_pending_shipping_deferrals(db: Session) -> list[ShippingDeferral]:
+    return db.query(ShippingDeferral).filter(
+        ShippingDeferral.status == "pending"
+    ).order_by(
+        ShippingDeferral.detail_name_snapshot,
+        ShippingDeferral.issue_number,
+        ShippingDeferral.id,
+    ).all()
+
+
+def delete_shipping_deferral(
+    db: Session,
+    deferral_id: int,
+    user: User,
+) -> FulfillmentSummaryOut:
+    deferral = db.query(ShippingDeferral).filter(ShippingDeferral.id == deferral_id).first()
+    if not deferral:
+        raise HTTPException(status_code=404, detail="待月底合寄记录不存在")
+    if deferral.status != "pending":
+        raise HTTPException(status_code=409, detail="已完成的月底合寄记录不能删除")
+    issue_id = deferral.issue_id
+    db.delete(deferral)
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_deferrals",
+        record_id=deferral.id,
+        record_name=deferral.reason,
+        action="delete",
+        issue_number=deferral.issue_number,
+        changes={"quantity": deferral.quantity, "shipping_detail_id": deferral.shipping_detail_id},
+    )
+    db.commit()
+    return fulfillment_summary(db, issue_id)
+
+
+def create_consolidated_package(
+    db: Session,
+    body: ConsolidatedPackageIn,
+    user: User,
+) -> ConsolidatedPackageOut:
+    ids = [item.deferral_id for item in body.deferrals]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status_code=400, detail="待合寄记录不能重复选择")
+    deferrals = db.query(ShippingDeferral).filter(
+        ShippingDeferral.id.in_(ids)
+    ).with_for_update().all()
+    if len(deferrals) != len(ids) or any(item.status != "pending" for item in deferrals):
+        raise HTTPException(status_code=409, detail="部分待合寄记录不存在或已经完成")
+    if any(item.shipping_detail_id is None for item in deferrals):
+        raise HTTPException(status_code=400, detail="待合寄记录缺少收件明细归属")
+    recipient_keys = {
+        _match_key(
+            item.detail_name_snapshot or "",
+            item.detail_phone_snapshot or "",
+            item.detail_address_snapshot or "",
+        )
+        for item in deferrals
+    }
+    if len(recipient_keys) != 1:
+        raise HTTPException(status_code=400, detail="一张月底合寄运单只能关联同一收件人")
+    carrier = body.carrier.strip()
+    tracking_no = _tracking(body.tracking_no)
+    duplicate = db.query(ShippingPackage.id).filter(
+        ShippingPackage.carrier == carrier,
+        ShippingPackage.tracking_no == tracking_no,
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="该运单号已存在")
+    total = sum(max(item.quantity or 0, 0) for item in deferrals)
+    primary = deferrals[0].shipping_detail
+    package = ShippingPackage(
+        shipping_detail=primary,
+        carrier=carrier,
+        tracking_no=tracking_no,
+        quantity=total,
+        shipped_at=body.shipped_at or datetime.now(),
+    )
+    db.add(package)
+    db.flush()
+    for deferral in deferrals:
+        allocation = ShippingPackageAllocation(
+            package=package,
+            shipping_detail=deferral.shipping_detail,
+            deferral=deferral,
+            quantity=deferral.quantity,
+        )
+        db.add(allocation)
+        deferral.status = "fulfilled"
+        deferral.fulfilled_package_id = package.id
+        deferral.fulfilled_at = package.shipped_at
+    db.flush()
+    for detail in {item.shipping_detail for item in deferrals}:
+        refresh_detail_shipping_fields(detail)
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_packages",
+        record_id=package.id,
+        record_name=tracking_no,
+        action="create_consolidated",
+        issue_number=max(item.issue_number for item in deferrals),
+        changes={"deferral_ids": ids, "quantity": total, "carrier": carrier},
+    )
+    db.commit()
+    return ConsolidatedPackageOut(
+        package_id=package.id,
+        carrier=carrier,
+        tracking_no=tracking_no,
+        quantity=total,
+        fulfilled_deferral_ids=ids,
+    )
+
+
+def transfer_shipping_plan_quantity(
+    db: Session,
+    issue_id: int,
+    body: ShippingPlanTransferIn,
+    user: User,
+) -> ShippingPlanTransferOut:
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="刊期不存在")
+    source = _detail_for_adjustment(db, issue=issue, shipping_detail_id=body.source_detail_id)
+    if source.quantity - body.quantity < source.handled_quantity + source.deferred_quantity:
+        raise HTTPException(status_code=409, detail="转出后份数不能少于已经发出、核销或待合寄的份数")
+    if body.target_detail_id:
+        target = _detail_for_adjustment(db, issue=issue, shipping_detail_id=body.target_detail_id)
+        if target.id == source.id:
+            raise HTTPException(status_code=400, detail="转入与转出明细不能相同")
+        target.quantity = (target.quantity or 0) + body.quantity
+    else:
+        if not (body.target_name or "").strip():
+            raise HTTPException(status_code=400, detail="新增收件明细时必须填写收件人")
+        target = ShippingDetail(
+            issue_number=issue.issue_number,
+            sheet_name=body.target_sheet_name,
+            channel=body.target_channel,
+            sub_channel="",
+            transport="中通物流",
+            frequency=body.target_frequency,
+            status="正常",
+            name=body.target_name.strip(),
+            phone=(body.target_phone or "").strip() or None,
+            address=(body.target_address or "").strip() or None,
+            quantity=body.quantity,
+            notes="计划纠错新增",
+        )
+        db.add(target)
+        db.flush()
+    source.quantity -= body.quantity
+    record_operation(
+        db,
+        user=user,
+        table_name="shipping_details",
+        record_id=source.id,
+        record_name=source.name,
+        action="transfer_quantity",
+        issue_number=issue.issue_number,
+        channel=source.channel,
+        changes={
+            "quantity": body.quantity,
+            "target_detail_id": target.id,
+            "reason": body.reason.strip(),
+            "source_quantity": source.quantity,
+            "target_quantity": target.quantity,
+        },
+    )
+    db.commit()
+    planned = sum(detail.quantity or 0 for detail in _details_for_issue(db, issue.issue_number))
+    return ShippingPlanTransferOut(
+        source_detail_id=source.id,
+        source_quantity=source.quantity,
+        target_detail_id=target.id,
+        target_quantity=target.quantity,
+        planned_quantity=planned,
+    )

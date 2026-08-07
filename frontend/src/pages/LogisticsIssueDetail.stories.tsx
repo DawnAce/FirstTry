@@ -47,6 +47,7 @@ const makeDetail = (id: number, overrides: Partial<ShippingDetail>): ShippingDet
   shipping_requirement: 'tracking_required',
   physical_shipped_quantity: 0,
   no_shipment_quantity: 0,
+  deferred_quantity: 0,
   no_shipment_reason: null,
   handled_quantity: 0,
   package_count: 0,
@@ -121,6 +122,8 @@ const handlers = [
     no_tracking_quantity: 70,
     actual_shipped_quantity: 1472,
     adjustment_quantity: 0,
+    deferred_quantity: 0,
+    unexplained_pending_quantity: 0,
     attributed_adjustment_quantity: 0,
     unattributed_adjustment_quantity: 0,
     pending_quantity: 1,
@@ -131,6 +134,8 @@ const handlers = [
     shipment_status: 'partial',
     latest_import: null,
     adjustments: [],
+    deferrals: [],
+    gap_details: [],
   })),
   http.get('/api/shipping-details', ({ request }) => {
     const params = new URL(request.url).searchParams

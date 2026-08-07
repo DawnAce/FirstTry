@@ -34,6 +34,7 @@ export interface ShippingDetail {
   shipping_requirement: string | null;
   physical_shipped_quantity: number;
   no_shipment_quantity: number;
+  deferred_quantity: number;
   no_shipment_reason: string | null;
   handled_quantity: number;
   package_count: number;

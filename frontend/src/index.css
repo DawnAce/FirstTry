@@ -3670,6 +3670,10 @@ body {
   min-height: 82px;
 }
 
+.waybill-status-row.has-five-metrics {
+  grid-template-columns: minmax(210px, 1.1fr) repeat(5, minmax(92px, .7fr));
+}
+
 .waybill-status-result {
   display: flex;
   align-items: center;
@@ -3827,6 +3831,30 @@ body {
 .waybill-gap-panel > div > .anticon {
   margin-right: 7px;
   color: var(--color-warning-text);
+}
+
+.waybill-gap-workbench {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 18px;
+}
+
+.waybill-gap-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.waybill-gap-actions > span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.waybill-consolidated-fields {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 10px;
+  margin: 14px 0;
 }
 
 .waybill-adjustment-list {

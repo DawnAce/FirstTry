@@ -6,6 +6,7 @@ import {
   filterWaybillRows,
   isRecoverableWaybillDraft,
   isSupportedWaybillFilename,
+  recommendedMonthEndGapIds,
 } from './waybillImportUtils';
 
 const row = (
@@ -105,5 +106,15 @@ describe('isRecoverableWaybillDraft', () => {
       5,
       true,
     )).toBe(false);
+  });
+});
+
+describe('recommendedMonthEndGapIds', () => {
+  it('selects only unresolved month-end detail gaps', () => {
+    expect(recommendedMonthEndGapIds([
+      { shipping_detail_id: 1, suggested_month_end: true, remaining_quantity: 3 },
+      { shipping_detail_id: 2, suggested_month_end: true, remaining_quantity: 0 },
+      { shipping_detail_id: 3, suggested_month_end: false, remaining_quantity: 1 },
+    ])).toEqual([1]);
   });
 });
