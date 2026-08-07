@@ -79,6 +79,29 @@ def _unrecognized_workbook_bytes() -> bytes:
     return out.getvalue()
 
 
+def _high_speed_rail_workbook_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "巴出高铁110"
+    ws.append(["刊物", "打印名称", "单号", "打印名称", "电话", "地址", "展示名称", "姓名", "份数"])
+    ws.append([
+        "中国经营报5-18日",
+        "赵叶5",
+        "73708644153509",
+        "赵叶5",
+        "15810698235",
+        "北京市东城区北京站广场西侧商务专用通道 赵叶 15810698235",
+        "商务座候车区（北京站）",
+        "赵叶",
+        5,
+        "☑",
+        "北京站",
+    ])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
 def _split_chengdu_packages_bytes() -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -121,6 +144,19 @@ def test_parser_retains_unrecognized_candidate_with_raw_cells():
     assert len(rows) == 1
     assert rows[0].parse_reason == "未能按当前工作表格式识别，请人工补充"
     assert rows[0].raw_values == ["王五", "此行未按已知列布局排列", "3"]
+
+
+def test_parser_recognizes_high_speed_rail_sheet_columns():
+    rows = parse_waybill_workbook(_high_speed_rail_workbook_bytes())
+    assert len(rows) == 1
+    assert rows[0].source_sheet == "巴出高铁110"
+    assert rows[0].tracking_no == "73708644153509"
+    assert rows[0].carrier == "中通"
+    assert rows[0].recipient_name == "赵叶"
+    assert rows[0].phone == "15810698235"
+    assert rows[0].address == "北京市东城区北京站广场西侧商务专用通道 赵叶 15810698235"
+    assert rows[0].quantity == 5
+    assert rows[0].parse_reason is None
 
 
 def test_parser_does_not_retain_total_row_as_unrecognized_data():

@@ -197,6 +197,10 @@ def _parse_known_sheet(ws) -> list[ParsedWaybillRow]:
         if "邮政30" in title and tracking_c:
             name, phone, address, qty = _text(row[7]), _text(row[4]), _text(row[6]), _quantity(row[8])
             carrier, tracking = "邮政", tracking_c
+        elif "高铁" in title and tracking_c:
+            # 高铁运单表在地址后多一列展示名称：G=展示名称、H=姓名、I=份数。
+            name, phone, address, qty = _text(row[7]), _text(row[4]), _text(row[5]), _quantity(row[8])
+            carrier, tracking = _carrier_for_tracking(tracking_c), tracking_c
         elif ("挂号" in title or "整月" in title) and tracking_c:
             name, phone, address, qty = _text(row[6] or row[3]), _text(row[4]), _text(row[5]), _quantity(row[9])
             carrier, tracking = _carrier_for_tracking(tracking_c), tracking_c
