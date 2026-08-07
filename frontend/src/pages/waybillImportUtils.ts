@@ -1,4 +1,4 @@
-import type { WaybillImportBatch, WaybillImportRow } from '../api/shippingWaybills';
+import type { ShippingGapDetail, WaybillImportBatch, WaybillImportRow } from '../api/shippingWaybills';
 import type { ShippingDetail } from '../api/shippingDetails';
 
 export type RowFilter = 'unresolved' | 'gap' | 'all' | 'matched' | 'manual' | 'invalid' | 'duplicate' | 'no_tracking' | 'ignored';
@@ -81,4 +81,12 @@ export function buildWaybillGroupSuggestions(
     });
   });
   return suggestions.sort((a, b) => b.rowQuantity - a.rowQuantity);
+}
+
+export function recommendedMonthEndGapIds(
+  gaps: Array<Pick<ShippingGapDetail, 'shipping_detail_id' | 'suggested_month_end' | 'remaining_quantity'>>,
+): number[] {
+  return gaps
+    .filter((gap) => gap.suggested_month_end && gap.remaining_quantity > 0)
+    .map((gap) => gap.shipping_detail_id);
 }

@@ -69,6 +69,8 @@ class FulfillmentSummaryOut(BaseModel):
     no_tracking_quantity: int
     actual_shipped_quantity: int
     adjustment_quantity: int
+    deferred_quantity: int = 0
+    unexplained_pending_quantity: int = 0
     attributed_adjustment_quantity: int
     unattributed_adjustment_quantity: int
     pending_quantity: int
@@ -79,6 +81,95 @@ class FulfillmentSummaryOut(BaseModel):
     shipment_status: str
     latest_import: Optional[WaybillImportBatchOut] = None
     adjustments: list["FulfillmentAdjustmentOut"] = Field(default_factory=list)
+    deferrals: list["ShippingDeferralOut"] = Field(default_factory=list)
+    gap_details: list["ShippingGapDetailOut"] = Field(default_factory=list)
+
+
+class ShippingGapDetailOut(BaseModel):
+    shipping_detail_id: int
+    name: str
+    phone: Optional[str]
+    address: Optional[str]
+    channel: str
+    sheet_name: str
+    frequency: str
+    planned_quantity: int
+    source_quantity: int
+    deferred_quantity: int
+    remaining_quantity: int
+    suggested_month_end: bool
+
+
+class ShippingDeferralOut(BaseModel):
+    id: int
+    issue_id: int
+    issue_number: int
+    shipping_detail_id: Optional[int]
+    deferral_type: str
+    quantity: int
+    reason: str
+    status: str
+    fulfilled_package_id: Optional[int]
+    detail_name_snapshot: Optional[str]
+    detail_phone_snapshot: Optional[str]
+    detail_address_snapshot: Optional[str]
+    detail_channel_snapshot: Optional[str]
+    created_by: Optional[int]
+    created_at: datetime
+    fulfilled_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+class ShippingDeferralItemIn(BaseModel):
+    shipping_detail_id: int
+    quantity: int = Field(gt=0)
+
+
+class ShippingDeferralBulkIn(BaseModel):
+    deferral_type: str = Field(default="month_end_consolidation", pattern="^month_end_consolidation$")
+    reason: str = Field(min_length=1, max_length=255)
+    items: list[ShippingDeferralItemIn] = Field(min_length=1)
+
+
+class ConsolidatedAllocationIn(BaseModel):
+    deferral_id: int
+
+
+class ConsolidatedPackageIn(BaseModel):
+    carrier: str = Field(min_length=1, max_length=50)
+    tracking_no: str = Field(min_length=1, max_length=100)
+    deferrals: list[ConsolidatedAllocationIn] = Field(min_length=1)
+    shipped_at: Optional[datetime] = None
+
+
+class ConsolidatedPackageOut(BaseModel):
+    package_id: int
+    carrier: str
+    tracking_no: str
+    quantity: int
+    fulfilled_deferral_ids: list[int]
+
+
+class ShippingPlanTransferIn(BaseModel):
+    source_detail_id: int
+    quantity: int = Field(gt=0)
+    reason: str = Field(min_length=1, max_length=255)
+    target_detail_id: Optional[int] = None
+    target_name: Optional[str] = Field(default=None, max_length=100)
+    target_phone: Optional[str] = Field(default=None, max_length=50)
+    target_address: Optional[str] = None
+    target_channel: str = Field(default="个人订阅", max_length=255)
+    target_sheet_name: str = Field(default="月底-整月", max_length=50)
+    target_frequency: str = Field(default="月", max_length=50)
+
+
+class ShippingPlanTransferOut(BaseModel):
+    source_detail_id: int
+    source_quantity: int
+    target_detail_id: int
+    target_quantity: int
+    planned_quantity: int
 
 
 class FulfillmentAdjustmentOut(BaseModel):
@@ -151,3 +242,6 @@ class WaybillImportRowCreate(BaseModel):
     quantity: int = 0
     no_tracking_required: bool = False
     shipping_detail_id: Optional[int] = None
+
+
+FulfillmentSummaryOut.model_rebuild()

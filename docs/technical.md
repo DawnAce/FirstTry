@@ -455,18 +455,20 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 订单发货同步行通过唯一索引 `uq_shipping_detail_order_target_issue`
 约束 `(issue_number, order_id, order_item_id, fulfillment_target_id)`，避免同一期同一订单履约目标在并发同步时生成重复发货明细；历史手工行的关联字段为 `NULL`，仍允许多行共存。
 
-### 3.12A 运单导入与逐包裹核销（4 张表）
+### 3.12A 运单导入、延期合寄与逐包裹核销（6 张表）
 
 | 表 | 说明 |
 |----|------|
 | `shipping_waybill_import_batches` | 一次 Excel 预览/确认批次，保存文件哈希、确认印数、解析/匹配/待补/超额份数与告警统计；同一期同一文件哈希唯一 |
 | `shipping_waybill_import_rows` | 文件中的逐行解析结果，保留来源 sheet/行号、原始单元格 JSON、承运商、运单号、收件信息、份数、人工核对标记、匹配状态与对应 `shipping_detail_id` |
 | `shipping_packages` | 已确认或人工补录的实际包裹；一条发货明细可对应多个包裹，`(carrier, tracking_no)` 全局唯一 |
-| `shipping_fulfillment_adjustments` | 期级无需发货核销项，保存暂停寄送/停刊/取消寄送等原因、份数、对应 `shipping_detail_id`、收件人/电话/地址/渠道/公司/计划份数快照、操作人与时间；删除原明细后快照仍可追溯。历史空归属记录保留并标记待补充，不伪造运单号。标准原因是“每月两次合寄 · 暂停寄送” |
+| `shipping_fulfillment_adjustments` | 期级无需发货核销项，只保存停刊、取消寄送等最终不发货原因；不得用于月底延期合寄 |
+| `shipping_deferrals` | 待月底合寄记录，保存来源刊期、具体发货明细、份数、收件信息快照、说明及 pending/fulfilled 状态；标准说明为“月底合寄 · 本期报纸随月底最后一期统一寄送” |
+| `shipping_package_allocations` | 一个物理包裹对多个历史刊期发货明细的份数分摊；同一待合寄记录只能核销一次 |
 
-发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。三套口径独立计算：`actual_shipped = tracked + no_tracking`；`handled = actual_shipped + all_adjustments`；`plan_unexplained_delta = current_plan + min(attributed_adjustments, max(confirmed_plan-current_plan, 0)) - confirmed_plan`。因此“核销完成”不等于“全部物理发货”；历史未归属调整可保持旧核销结果，但不计入计划归因。导入文件存在未匹配行或仍有待补时，只提示差异，不阻断已匹配行确认；未匹配行在确认后仍可继续人工关联，成功后幂等生成实际包裹。解析器会保留有意义但无法按已知版式识别的候选行及原始单元格；工作台允许修正字段、批量把多个运单关联到同一条本期 `shipping_detail`、填写原因后忽略/恢复或手工补行。工作台将 `unresolved_quantity` 与 `file_gap_quantity = max(expected_quantity - parsed_quantity, 0)` 分开显示。上传运单即视为已发货，当前版本不查询物流轨迹。
+发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。`actual_shipped = tracked + no_tracking`，`handled = actual_shipped + all_adjustments`；待月底合寄在真正关联包裹前不计入实际发出或 handled，只从 `pending_quantity` 中单列为 `deferred_quantity`，`unexplained_pending_quantity = max(pending_quantity - deferred_quantity, 0)`。工作台按 `shipping_detail_id` 比较计划份数与最新来源文件匹配份数，展示逐明细差额。计划纠错以净额转移完成，转出和转入同一事务提交，因此确认总计划不漂移。月底包裹通过 allocation 分摊到多个历史明细，物理发货份数按 allocation 计入对应刊期。
 
-迁移链为 `c2e4f6a8b0d3`（结算流程）→ `c8f0a2b4d6e9`（viewer 角色）→ `d9e1f3a5b7c9`（运单核销）→ `e0b2d4f6a8c1`（原始行与人工核对字段）→ `f8c0e2a4b6d9`（期级无需发货核销）→ `f9d1e3a5c7b9`（无需发货归属与快照），保持单一 Alembic head。
+运单核销迁移链尾部为 `f8c0e2a4b6d9`（期级无需发货核销）→ `f9d1e3a5c7b9`（无需发货归属与快照）→ `a0c2e4f6b8d1`（月底合寄与跨刊期包裹分摊），保持单一 Alembic head。
 
 ### 3.13 issue_audit_snapshots（确认/导出快照）
 记录当期报数与ZTO-MF之间的关键校验快照，用于追溯确认时和导出时采用的数量状态。
@@ -1527,6 +1529,11 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 | `POST` | `/imports/{batch_id}/confirm` | 确认批次；仅写入匹配成功的包裹或无需运单标记，未匹配/重复/歧义/无效行保留为告警 |
 | `GET` | `/issues/{issue_id}/summary` | 返回确认印数、计划、实际寄出、归属/未归属无需发货、累计已处理、待补/超额、物理发货状态和核销状态 |
 | `POST` | `/issues/{issue_id}/adjustments` | 登记无需发货份数、原因和必填的本期发货明细归属，并保存收件信息快照 |
+| `POST` | `/issues/{issue_id}/deferrals` | 按具体发货明细批量登记待月底合寄份数 |
+| `GET` | `/deferrals/pending` | 读取全部刊期待月底合寄记录 |
+| `DELETE` | `/deferrals/{deferral_id}` | 撤销尚未完成的待月底合寄记录 |
+| `POST` | `/packages/consolidated` | 为同一收件人的多个历史刊期登记一张月底合寄运单并完成分摊核销 |
+| `POST` | `/issues/{issue_id}/plan-transfer` | 在两条明细间净额转移计划份数，或转入新建收件明细；本期计划总数保持不变 |
 | `PATCH` | `/adjustments/{adjustment_id}/attribution` | 为历史无归属的无需发货记录补充具体发货明细与快照 |
 | `DELETE` | `/adjustments/{adjustment_id}` | 撤销一条期级无需发货核销记录 |
 | `POST` | `/details/{detail_id}/packages` | 为某条发货明细人工补录一个包裹/运单 |
@@ -1539,7 +1546,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 重新解析会用集合删除语句清理旧草稿，并以一次批量写入保存全部解析行，避免远程 MySQL 按行往返。若上传连接在后台提交后中断，前端会读取本期最新草稿并在批次 ID 已更新时自动恢复；超时提示不得再等同于“后端服务不可用”。
 
-前端路由 `/logistics/issues/:id/waybills/import` 对应 `WaybillImportWorkbench.tsx`。页面读取期级草稿或待处理确认批次、确认快照、核销摘要和全部本期发货明细。顶部两条单行状态分别展示“确认时计划 / 当前计划 / 已归因停发 / 未解释差异”和“确认印数 / 实际发出 / 无需发货 / 核销待补”；历史无归属调整显示“待补充归属”并提供补录入口。默认聚焦未解决行，按同名与剩余份数生成多运单分组建议，并提供“文件未覆盖”独立页签。
+前端路由 `/logistics/issues/:id/waybills/import` 对应 `WaybillImportWorkbench.tsx`。页面读取期级草稿或待处理确认批次、确认快照、核销摘要和全部本期发货明细。实际发货状态单列“待月底合寄”和“未解释待补”。“文件未覆盖”页签按具体发货明细展示计划/文件/延期/剩余份数，可批量选择建议的月底明细、执行计划纠错或登记真正无需发货。页头“月底合寄待办”允许选择同一收件人的多个历史刊期并登记一张实际运单。
 
 ### 4.12 操作日志
 

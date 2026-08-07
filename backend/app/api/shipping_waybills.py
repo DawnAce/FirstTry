@@ -12,6 +12,12 @@ from app.schemas.shipping_waybill import (
     FulfillmentAdjustmentAttributionIn,
     FulfillmentAdjustmentIn,
     FulfillmentSummaryOut,
+    ConsolidatedPackageIn,
+    ConsolidatedPackageOut,
+    ShippingDeferralBulkIn,
+    ShippingDeferralOut,
+    ShippingPlanTransferIn,
+    ShippingPlanTransferOut,
     ManualPackageIn,
     NoTrackingRequirementIn,
     WaybillImportBatchOut,
@@ -26,6 +32,11 @@ from app.services.shipping_waybill_service import (
     create_fulfillment_adjustment,
     delete_fulfillment_adjustment,
     fulfillment_summary,
+    create_shipping_deferrals,
+    delete_shipping_deferral,
+    list_pending_shipping_deferrals,
+    create_consolidated_package,
+    transfer_shipping_plan_quantity,
     get_draft_import,
     get_import_batch,
     preview_import,
@@ -114,6 +125,49 @@ def get_fulfillment_summary(issue_id: int, db: Session = Depends(get_db)):
     return fulfillment_summary(db, issue_id)
 
 
+@router.post("/issues/{issue_id}/deferrals", response_model=FulfillmentSummaryOut)
+def add_shipping_deferrals(
+    issue_id: int,
+    body: ShippingDeferralBulkIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return create_shipping_deferrals(db, issue_id, body, user)
+
+
+@router.get("/deferrals/pending", response_model=list[ShippingDeferralOut])
+def get_pending_shipping_deferrals(db: Session = Depends(get_db)):
+    return list_pending_shipping_deferrals(db)
+
+
+@router.delete("/deferrals/{deferral_id}", response_model=FulfillmentSummaryOut)
+def remove_shipping_deferral(
+    deferral_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return delete_shipping_deferral(db, deferral_id, user)
+
+
+@router.post("/packages/consolidated", response_model=ConsolidatedPackageOut)
+def add_consolidated_package(
+    body: ConsolidatedPackageIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return create_consolidated_package(db, body, user)
+
+
+@router.post("/issues/{issue_id}/plan-transfer", response_model=ShippingPlanTransferOut)
+def transfer_shipping_plan(
+    issue_id: int,
+    body: ShippingPlanTransferIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return transfer_shipping_plan_quantity(db, issue_id, body, user)
+
+
 @router.post("/issues/{issue_id}/adjustments", response_model=FulfillmentSummaryOut)
 def add_fulfillment_adjustment(
     issue_id: int,
@@ -197,16 +251,24 @@ def delete_package(
     if not package:
         raise HTTPException(status_code=404, detail="运单不存在")
     detail = package.shipping_detail
+    allocated_details = [allocation.shipping_detail for allocation in package.allocations]
+    allocated_deferrals = [allocation.deferral for allocation in package.allocations if allocation.deferral]
     changes = {"carrier": package.carrier, "tracking_no": package.tracking_no, "quantity": package.quantity}
     detail.packages.remove(package)
+    for deferral in allocated_deferrals:
+        deferral.status = "pending"
+        deferral.fulfilled_package_id = None
+        deferral.fulfilled_at = None
     db.delete(package)
     db.flush()
-    if detail.packages:
-        refresh_detail_shipping_fields(detail)
-    else:
-        detail.shipped_at = None
-        detail.shipped_quantity = None
-        detail.tracking_no = None
+    for affected in {detail, *allocated_details}:
+        db.expire(affected, ["packages", "package_allocations"])
+        if affected.packages or affected.package_allocations:
+            refresh_detail_shipping_fields(affected)
+        else:
+            affected.shipped_at = None
+            affected.shipped_quantity = None
+            affected.tracking_no = None
     record_operation(
         db,
         user=user,

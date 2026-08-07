@@ -114,12 +114,28 @@ class ShippingDetail(Base):
         lazy="selectin",
         order_by="ShippingFulfillmentAdjustment.id",
     )
+    deferrals = relationship(
+        "ShippingDeferral",
+        back_populates="shipping_detail",
+        passive_deletes=True,
+        lazy="selectin",
+        order_by="ShippingDeferral.id",
+    )
+    package_allocations = relationship(
+        "ShippingPackageAllocation",
+        back_populates="shipping_detail",
+        passive_deletes=True,
+        lazy="selectin",
+        order_by="ShippingPackageAllocation.id",
+    )
 
     @property
     def physical_shipped_quantity(self) -> int:
         if self.shipping_requirement == "no_tracking_required":
             return self.quantity or 0
-        package_quantity = sum((package.quantity or 0) for package in self.packages)
+        package_quantity = sum(
+            (package.quantity or 0) for package in self.packages if not package.allocations
+        ) + sum((allocation.quantity or 0) for allocation in self.package_allocations)
         if package_quantity:
             return package_quantity
         if self.shipped_at is not None:
@@ -129,6 +145,14 @@ class ShippingDetail(Base):
     @property
     def no_shipment_quantity(self) -> int:
         return sum(max(adjustment.quantity or 0, 0) for adjustment in self.fulfillment_adjustments)
+
+    @property
+    def deferred_quantity(self) -> int:
+        return sum(
+            max(deferral.quantity or 0, 0)
+            for deferral in self.deferrals
+            if deferral.status == "pending"
+        )
 
     @property
     def no_shipment_reason(self) -> str | None:
@@ -145,7 +169,10 @@ class ShippingDetail(Base):
 
     @property
     def package_count(self) -> int:
-        return len(self.packages)
+        return len({
+            *(package.id for package in self.packages),
+            *(allocation.shipping_package_id for allocation in self.package_allocations),
+        })
 
     @property
     def fulfillment_status(self) -> str:
