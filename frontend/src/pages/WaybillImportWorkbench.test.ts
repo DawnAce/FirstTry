@@ -4,6 +4,7 @@ import type { ShippingDetail } from '../api/shippingDetails';
 import {
   buildWaybillGroupSuggestions,
   filterWaybillRows,
+  isRecoverableWaybillDraft,
   isSupportedWaybillFilename,
 } from './waybillImportUtils';
 
@@ -84,5 +85,25 @@ describe('isSupportedWaybillFilename', () => {
   it('rejects other files and misleading suffixes', () => {
     expect(isSupportedWaybillFilename('运单.xls')).toBe(false);
     expect(isSupportedWaybillFilename('运单.xlsx.pdf')).toBe(false);
+  });
+});
+
+describe('isRecoverableWaybillDraft', () => {
+  it('recovers a newly created forced-reparse batch for the same file', () => {
+    expect(isRecoverableWaybillDraft(
+      { id: 6, filename: '单号-中国经营报5-18日.xlsx' },
+      '单号-中国经营报5-18日.xlsx',
+      5,
+      true,
+    )).toBe(true);
+  });
+
+  it('does not mistake the previous forced-reparse draft for a completed replacement', () => {
+    expect(isRecoverableWaybillDraft(
+      { id: 5, filename: '单号-中国经营报5-18日.xlsx' },
+      '单号-中国经营报5-18日.xlsx',
+      5,
+      true,
+    )).toBe(false);
   });
 });

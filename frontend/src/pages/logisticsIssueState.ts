@@ -131,6 +131,7 @@ export function resolveFulfillmentPanelState(input: {
 }
 
 type ApiErrorLike = {
+  code?: string;
   response?: {
     status?: number;
     data?: { detail?: unknown } | string;
@@ -142,7 +143,12 @@ export function logisticsApiErrorMessage(error: unknown, fallback: string): stri
   const data = apiError?.response?.data;
   const detail = typeof data === 'object' && data !== null ? data.detail : undefined;
   if (typeof detail === 'string' && detail.trim()) return detail;
-  if (!apiError?.response) return `${fallback}：无法连接服务器，请检查后端服务。`;
+  if (!apiError?.response) {
+    if (apiError?.code === 'ECONNABORTED' || apiError?.code === 'ETIMEDOUT') {
+      return `${fallback}：处理超时，后台可能已经完成，请刷新页面确认。`;
+    }
+    return `${fallback}：无法连接服务器，请检查后端服务。`;
+  }
   if ((apiError.response.status ?? 0) >= 500) {
     return `${fallback}：服务器内部错误，请管理员检查数据库迁移状态。`;
   }

@@ -1,4 +1,4 @@
-import type { WaybillImportRow } from '../api/shippingWaybills';
+import type { WaybillImportBatch, WaybillImportRow } from '../api/shippingWaybills';
 import type { ShippingDetail } from '../api/shippingDetails';
 
 export type RowFilter = 'unresolved' | 'gap' | 'all' | 'matched' | 'manual' | 'invalid' | 'duplicate' | 'no_tracking' | 'ignored';
@@ -9,6 +9,19 @@ export const unresolvedStatuses = new Set<WaybillImportRow['match_status']>([
 
 export function isSupportedWaybillFilename(filename: string): boolean {
   return /\.(xlsx|xlsm)$/i.test(filename.trim());
+}
+
+export function isRecoverableWaybillDraft(
+  draft: Pick<WaybillImportBatch, 'id' | 'filename'> | null,
+  filename: string,
+  previousBatchId: number | undefined,
+  forceReparse: boolean,
+): draft is Pick<WaybillImportBatch, 'id' | 'filename'> {
+  return Boolean(
+    draft
+    && draft.filename === filename
+    && (!forceReparse || draft.id !== previousBatchId),
+  );
 }
 
 export function filterWaybillRows(rows: WaybillImportRow[], filter: RowFilter): WaybillImportRow[] {
