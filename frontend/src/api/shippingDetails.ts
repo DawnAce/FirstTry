@@ -132,6 +132,50 @@ export interface ShippingDetailBatchResult {
   affected_count: number;
 }
 
+export interface ShippingPlanImportRow {
+  sheet_name: string;
+  channel: string;
+  sub_channel: string;
+  transport: string;
+  frequency: string;
+  status: string;
+  name: string;
+  address: string;
+  phone: string;
+  quantity: number;
+  company: string;
+}
+
+export interface ShippingPlanImportPreview {
+  issue_id: number;
+  issue_number: number;
+  filename: string;
+  import_session_id: string;
+  can_commit: boolean;
+  errors: string[];
+  warnings: string[];
+  imported_row_count: number;
+  imported_quantity: number;
+  replaced_row_count: number;
+  replaced_quantity: number;
+  preserved_row_count: number;
+  preserved_quantity: number;
+  resulting_row_count: number;
+  resulting_quantity: number;
+  report_zto_total: number;
+  confirmed_shipping_total: number | null;
+  sample_rows: ShippingPlanImportRow[];
+}
+
+export interface ShippingPlanImportCommitResult {
+  issue_id: number;
+  issue_number: number;
+  deleted_count: number;
+  created_count: number;
+  preserved_count: number;
+  resulting_quantity: number;
+}
+
 export const getShippingDetails= (params?: Record<string, any>): Promise<AxiosResponse<ShippingDetail[]>> =>
   api.get<ShippingDetail[]>('/shipping-details', { params });
 
@@ -169,6 +213,28 @@ export const copyShippingDetailsFromPrevious = (
   api.post<CopyShippingDetailsResult>('/shipping-details/copy-from-previous', null, {
     params: { issue_number: issueNumber, previous_issue_number: previousIssueNumber },
   });
+
+export const previewShippingPlanImport = (
+  issueId: number,
+  file: File,
+): Promise<AxiosResponse<ShippingPlanImportPreview>> => {
+  const form = new FormData();
+  form.append('shipping_file', file);
+  return api.post<ShippingPlanImportPreview>(
+    `/shipping-details/issues/${issueId}/import-preview`,
+    form,
+  );
+};
+
+export const commitShippingPlanImport = (
+  issueId: number,
+  importSessionId: string,
+  reason: string,
+): Promise<AxiosResponse<ShippingPlanImportCommitResult>> =>
+  api.post<ShippingPlanImportCommitResult>(
+    `/shipping-details/issues/${issueId}/import-commit`,
+    { import_session_id: importSessionId, reason },
+  );
 
 export interface ShipDetailPayload {
   shipped_at?: string | null;
