@@ -222,6 +222,41 @@ def test_monthly_archive_name_uses_explicit_unambiguous_filename_month():
     assert display_name == "2026年01月_成都杂志铺_月度报数.png"
 
 
+def test_adjustment_archive_name_counts_distinct_issues_not_rows():
+    display_name = report_source_service._build_display_name(
+        channel="postal",
+        document_type="adjustment",
+        source_date=date(2026, 5, 4),
+        filename="北京报刊发行.jpg",
+        suggestions=[
+            {"issue_number": 2650, "source_quantity": 1214},
+            {"issue_number": 2650, "source_quantity": 5692},
+        ],
+    )
+
+    assert display_name == "20260504_北京邮发_确认后凭证_1期共6906份.jpg"
+
+
+@pytest.mark.parametrize(
+    "suggestions",
+    [
+        [{"issue_number": 2650, "source_quantity": None}],
+        [{"issue_number": None, "source_period": None, "source_quantity": 6906}],
+        [],
+    ],
+)
+def test_adjustment_archive_name_omits_unreliable_statistics(suggestions):
+    display_name = report_source_service._build_display_name(
+        channel="postal",
+        document_type="adjustment",
+        source_date=date(2026, 5, 4),
+        filename="北京报刊发行.jpg",
+        suggestions=suggestions,
+    )
+
+    assert display_name == "20260504_北京邮发_确认后凭证.jpg"
+
+
 def test_duplicate_upload_refreshes_legacy_monthly_display_name(db, user):
     content = b"legacy-monthly-source"
     document = ReportSourceDocument(
@@ -447,6 +482,7 @@ def test_adjustments_change_settlement_and_shipping_not_print_count(db, user):
 def test_archive_only_evidence_changes_no_counts(db, user):
     issue = _issue_with_entries(db, status=IssueStatus.confirmed)
     document = _document(db, channel="postal")
+    document.source_date = date(2026, 8, 3)
     db.commit()
 
     confirmed = report_source_service.confirm_document(
@@ -469,6 +505,7 @@ def test_archive_only_evidence_changes_no_counts(db, user):
     assert item.print_delta == 0
     assert item.settlement_delta == 0
     assert item.shipping_delta == 0
+    assert confirmed.display_name == "20260803_北京邮发_确认后凭证_1期共1214份.jpg"
     assert db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value == 1200
 
     summary = report_source_service.get_issue_summary(db, issue)
