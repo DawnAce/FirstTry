@@ -212,7 +212,7 @@
 
 .report-editor-work-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.75fr) minmax(280px, 0.72fr);
+  grid-template-columns: minmax(0, 1.55fr) minmax(390px, 0.95fr);
   gap: 12px;
   align-items: start;
 }
@@ -881,18 +881,16 @@
 }
 
 .report-editor-source-card-head > button strong {
-  overflow: hidden;
   font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .report-editor-source-card-head > button small {
-  overflow: hidden;
   color: #95a0af;
   font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .report-editor-source-card-head .ui-status-pill {
@@ -940,12 +938,11 @@
 }
 
 .report-editor-source-card-details b {
-  overflow: hidden;
   color: #505c6e;
   font-size: 9px;
   font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .report-editor-source-card-details small {
@@ -958,6 +955,20 @@
   height: 24px;
   padding: 0 7px;
   font-size: 9px;
+}
+
+.report-editor-source-card-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.report-editor-source-card-detail-actions > strong {
+  color: #253f5d;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .report-editor-source-card-actions {

@@ -63,6 +63,7 @@ import {
   sourceAdjustmentDescription,
   sourceCardStatus,
   sourceIssueLinkLabel,
+  sourceItemQuantityLabel,
   sourceItemsForIssue,
   sourcePurposeLabel,
   sourceQuantityLabel,
@@ -1259,7 +1260,7 @@ export default function ReportEditor() {
                               {state.documents.map(document => {
                                 const documentItems = sourceItemsForIssue(document, issue.issue_number);
                                 const baseItems = documentItems.filter(item => item.item_kind === 'base');
-                                const adjustmentItems = documentItems.filter(item => item.item_kind === 'adjustment');
+                                const detailItems = document.channel === 'chengdu' ? [] : documentItems;
                                 const isReplaced = documentItems.length > 0 && documentItems.every(item => item.effect_status === 'replaced');
                                 const cardStatus = sourceCardStatus(document, documentItems);
                                 const purpose = sourcePurposeLabel(document, documentItems);
@@ -1296,17 +1297,22 @@ export default function ReportEditor() {
                                   </div>
                                   {warningCount > 0 && <small className="report-editor-source-card-warning">识别警告 {warningCount} 条，请继续核对</small>}
                                   {otherPendingCount > 0 && <small className="report-editor-source-card-warning">文件另有 {otherPendingCount} 条跨期待处理明细</small>}
-                                  {adjustmentItems.length > 0 && (
+                                  {detailItems.length > 0 && (
                                     <div className="report-editor-source-card-details">
-                                      {adjustmentItems.map(item => (
+                                      {detailItems.map(item => (
                                         <div key={item.id}>
                                           <span>
                                             <b>{item.source_label || item.sub_category}</b>
-                                            <small>{item.source_status === 'confirmed' ? sourceAdjustmentDescription(item) : '待完成核对'}</small>
+                                            {item.item_kind === 'adjustment' && (
+                                              <small>{item.source_status === 'confirmed' ? sourceAdjustmentDescription(item) : '待完成核对'}</small>
+                                            )}
                                           </span>
-                                          {canMutate && item.source_status === 'confirmed' && item.shipping_delta > 0 && (
-                                            <Button size="small" onClick={() => openShippingModal(item)}>登记补发</Button>
-                                          )}
+                                          <div className="report-editor-source-card-detail-actions">
+                                            <strong>{sourceItemQuantityLabel(item)}</strong>
+                                            {canMutate && item.source_status === 'confirmed' && item.shipping_delta > 0 && (
+                                              <Button size="small" onClick={() => openShippingModal(item)}>登记补发</Button>
+                                            )}
+                                          </div>
                                         </div>
                                       ))}
                                     </div>
