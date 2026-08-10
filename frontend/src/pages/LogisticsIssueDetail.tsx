@@ -21,6 +21,7 @@ import {
   Alert,
   Segmented,
   Spin,
+  Upload,
 } from 'antd';
 import {
   PlusOutlined,
@@ -34,9 +35,16 @@ import {
   ReloadOutlined,
   MoreOutlined,
   UploadOutlined,
+  InboxOutlined,
+  FileExcelOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ShippingDetail, ShippingDetailCreate, ShippingDetailUpdate } from '../api/shippingDetails';
+import type {
+  ShippingDetail,
+  ShippingDetailCreate,
+  ShippingDetailUpdate,
+  ShippingPlanImportPreview,
+} from '../api/shippingDetails';
 import {
   getShippingDetails,
   createShippingDetail,
@@ -46,6 +54,8 @@ import {
   batchDeleteShippingDetails,
   clearShippingDetailsByIssue,
   getShippingCompanies,
+  previewShippingPlanImport,
+  commitShippingPlanImport,
 } from '../api/shippingDetails';
 import { getIssue } from '../api/issues';
 import { getOperationLogs } from '../api/operationLogs';
@@ -159,6 +169,12 @@ export default function LogisticsIssueDetail() {
   const [changeLogOpen, setChangeLogOpen] = useState(false);
   const [packageRecord, setPackageRecord] = useState<ShippingDetail | null>(null);
   const [packageForm] = Form.useForm();
+  const [planImportOpen, setPlanImportOpen] = useState(false);
+  const [planImportFile, setPlanImportFile] = useState<File | null>(null);
+  const [planImportPreview, setPlanImportPreview] = useState<ShippingPlanImportPreview | null>(null);
+  const [planImportReason, setPlanImportReason] = useState('修正手工测试数据');
+  const [planImportPreviewing, setPlanImportPreviewing] = useState(false);
+  const [planImportCommitting, setPlanImportCommitting] = useState(false);
 
   const { data: currentIssue } = useQuery({
     queryKey: ['issue', issueId],
@@ -202,7 +218,7 @@ export default function LogisticsIssueDetail() {
     queryKey: ['shippingDetails', currentIssueNumber, shippingFilters],
     queryFn: async () => {
       if (currentIssueNumber == null) return [];
-      const params: Record<string, any> = { issue_number: currentIssueNumber };
+      const params: Record<string, any> = { issue_number: currentIssueNumber, limit: 10000 };
       if (shippingFilters.channel) params.channel = shippingFilters.channel;
       if (shippingFilters.sub_channel) params.sub_channel = shippingFilters.sub_channel;
       if (shippingFilters.frequency) params.frequency = shippingFilters.frequency;
@@ -228,7 +244,7 @@ export default function LogisticsIssueDetail() {
     queryKey: ['shippingDetailsAll', currentIssueNumber],
     queryFn: async () => {
       if (currentIssueNumber == null) return [];
-      const res = await getShippingDetails({ issue_number: currentIssueNumber });
+      const res = await getShippingDetails({ issue_number: currentIssueNumber, limit: 10000 });
       return res.data;
     },
     enabled: currentIssueNumber != null,
@@ -293,6 +309,61 @@ export default function LogisticsIssueDetail() {
     queryClient.invalidateQueries({ queryKey: ['shippingDetails'] });
     queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] });
     message.success('已重新校验');
+  };
+
+  const closePlanImport = () => {
+    if (planImportPreviewing || planImportCommitting) return;
+    setPlanImportOpen(false);
+    setPlanImportFile(null);
+    setPlanImportPreview(null);
+    setPlanImportReason('修正手工测试数据');
+  };
+
+  const handlePreviewPlanImport = async () => {
+    if (!planImportFile) {
+      message.warning('请先选择中通发货明细文件');
+      return;
+    }
+    setPlanImportPreviewing(true);
+    setPlanImportPreview(null);
+    try {
+      const response = await previewShippingPlanImport(issueId, planImportFile);
+      setPlanImportPreview(response.data);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      message.error(err.response?.data?.detail || '中通明细预览失败');
+    } finally {
+      setPlanImportPreviewing(false);
+    }
+  };
+
+  const handleCommitPlanImport = async () => {
+    if (!planImportPreview?.can_commit || !planImportPreview.import_session_id) return;
+    if (planImportReason.trim().length < 2) {
+      message.warning('请填写本次重新上传的原因');
+      return;
+    }
+    setPlanImportCommitting(true);
+    try {
+      const response = await commitShippingPlanImport(
+        issueId,
+        planImportPreview.import_session_id,
+        planImportReason.trim(),
+      );
+      message.success(
+        `已导入 ${response.data.created_count} 条中通明细，当前计划 ${response.data.resulting_quantity.toLocaleString()} 份`,
+      );
+      setPlanImportOpen(false);
+      setPlanImportFile(null);
+      setPlanImportPreview(null);
+      setPlanImportReason('修正手工测试数据');
+      refreshShippingDetails();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      message.error(err.response?.data?.detail || '重新上传中通明细失败');
+    } finally {
+      setPlanImportCommitting(false);
+    }
   };
 
   const refreshShippingDetails = () => {
@@ -565,6 +636,7 @@ export default function LogisticsIssueDetail() {
           <Button icon={<FileTextOutlined />} onClick={() => navigate(`/report/${issueId}`)}>去报数</Button>
           <Button icon={<DownloadOutlined />} onClick={handleExportShipping} disabled={currentIssue?.id == null} loading={exporting}>导出本期</Button>
           {canMutate && <Button icon={<UploadOutlined />} onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}>导入运单</Button>}
+          {isAdmin && <Button icon={<ReloadOutlined />} onClick={() => setPlanImportOpen(true)}>重新上传明细</Button>}
           {canMutate && <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增明细</Button>}
           {isAdmin && (
             <Popover
@@ -885,6 +957,100 @@ export default function LogisticsIssueDetail() {
           )}
         </Card>
       )}
+
+      <Modal
+        title={`重新上传中通明细 · 第 ${currentIssueNumber ?? '-'} 期`}
+        open={planImportOpen}
+        onCancel={closePlanImport}
+        width={820}
+        footer={[
+          <Button key="cancel" onClick={closePlanImport} disabled={planImportPreviewing || planImportCommitting}>取消</Button>,
+          <Button key="preview" onClick={handlePreviewPlanImport} loading={planImportPreviewing} disabled={!planImportFile || planImportCommitting}>预览校验</Button>,
+          <Button
+            key="commit"
+            type="primary"
+            danger={!!planImportPreview?.replaced_row_count}
+            onClick={handleCommitPlanImport}
+            loading={planImportCommitting}
+            disabled={!planImportPreview?.can_commit || planImportReason.trim().length < 2}
+          >
+            确认导入
+          </Button>,
+        ]}
+      >
+        <Alert
+          type="info"
+          showIcon
+          title="只替换中通发货计划，不修改印数"
+          description="支持系统中通模板和原始多工作表文件。订单生成、投诉补发以及确认时印数基准会保留。"
+          style={{ marginBottom: 16 }}
+        />
+        <Upload.Dragger
+          accept=".xlsx"
+          maxCount={1}
+          beforeUpload={() => false}
+          showUploadList={false}
+          onChange={({ fileList }) => {
+            setPlanImportFile(fileList[0]?.originFileObj ?? null);
+            setPlanImportPreview(null);
+          }}
+        >
+          {planImportFile ? (
+            <>
+              <p className="ant-upload-drag-icon"><FileExcelOutlined /></p>
+              <p className="ant-upload-text">{planImportFile.name}</p>
+              <p className="ant-upload-hint">点击或拖拽可重新选择文件</p>
+            </>
+          ) : (
+            <>
+              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+              <p className="ant-upload-text">点击或拖拽上传中通发货明细</p>
+              <p className="ant-upload-hint"><FileExcelOutlined /> 仅支持 .xlsx，上传后先预览，不会立即写入</p>
+            </>
+          )}
+        </Upload.Dragger>
+
+        {planImportPreview && (
+          <div style={{ marginTop: 18 }}>
+            {planImportPreview.errors.map((error) => (
+              <Alert key={error} type="error" showIcon title={error} style={{ marginBottom: 8 }} />
+            ))}
+            {planImportPreview.warnings.map((warning) => (
+              <Alert key={warning} type="warning" showIcon title={warning} style={{ marginBottom: 8 }} />
+            ))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, margin: '14px 0' }}>
+              <Card size="small"><div>文件明细</div><strong>{planImportPreview.imported_row_count} 条 · {planImportPreview.imported_quantity.toLocaleString()} 份</strong></Card>
+              <Card size="small"><div>将替换</div><strong>{planImportPreview.replaced_row_count} 条 · {planImportPreview.replaced_quantity.toLocaleString()} 份</strong></Card>
+              <Card size="small"><div>保留</div><strong>{planImportPreview.preserved_row_count} 条 · {planImportPreview.preserved_quantity.toLocaleString()} 份</strong></Card>
+              <Card size="small"><div>导入后计划</div><strong>{planImportPreview.resulting_row_count} 条 · {planImportPreview.resulting_quantity.toLocaleString()} 份</strong></Card>
+            </div>
+            {planImportPreview.sample_rows.length > 0 && (
+              <Table
+                size="small"
+                rowKey={(_, index) => String(index)}
+                dataSource={planImportPreview.sample_rows}
+                pagination={false}
+                title={() => `抽样预览（前 ${planImportPreview.sample_rows.length} 条）`}
+                columns={[
+                  { title: '工作表', dataIndex: 'sheet_name', width: 130 },
+                  { title: '渠道', dataIndex: 'channel', width: 110 },
+                  { title: '姓名', dataIndex: 'name', width: 110 },
+                  { title: '地址', dataIndex: 'address', ellipsis: true },
+                  { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
+                ]}
+              />
+            )}
+            <Input.TextArea
+              value={planImportReason}
+              onChange={(event) => setPlanImportReason(event.target.value)}
+              placeholder="请填写重新上传原因"
+              maxLength={255}
+              rows={2}
+              style={{ marginTop: 14 }}
+            />
+          </div>
+        )}
+      </Modal>
 
       <Modal
         title={`补录运单${packageRecord ? ` · ${packageRecord.name}` : ''}`}

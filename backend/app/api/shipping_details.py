@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -20,11 +20,19 @@ from app.schemas.shipping_detail import (
     ShippingDetailBatchResult,
     ShippingDetailBatchUpdate,
     ShippingDetailCreate,
+    ShippingPlanImportCommitIn,
+    ShippingPlanImportCommitOut,
+    ShippingPlanImportPreviewOut,
     ShippingDetailUpdate,
     ShippingDetailOut,
 )
 from app.services.address_service import normalize_address
 from app.services import postal_complaint_makeup_service as makeup_svc
+from app.services.shipping_plan_import_service import (
+    commit_shipping_plan_import,
+    preview_shipping_plan_import,
+)
+from app.upload import read_upload
 
 router = APIRouter(prefix="/api/shipping-details", tags=["shipping-details"])
 
@@ -269,6 +277,44 @@ def create_shipping_detail(
     db.commit()
     db.refresh(detail)
     return detail
+
+
+@router.post(
+    "/issues/{issue_id}/import-preview",
+    response_model=ShippingPlanImportPreviewOut,
+)
+async def preview_issue_shipping_plan_import(
+    issue_id: int,
+    shipping_file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    content = await read_upload(shipping_file, label="中通发货文件")
+    return preview_shipping_plan_import(
+        db,
+        issue_id=issue_id,
+        filename=shipping_file.filename or "中通发货明细.xlsx",
+        content=content,
+    )
+
+
+@router.post(
+    "/issues/{issue_id}/import-commit",
+    response_model=ShippingPlanImportCommitOut,
+)
+def commit_issue_shipping_plan_import(
+    issue_id: int,
+    body: ShippingPlanImportCommitIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    return commit_shipping_plan_import(
+        db,
+        issue_id=issue_id,
+        import_session_id=body.import_session_id,
+        reason=body.reason,
+        user=user,
+    )
 
 
 @router.post("/batch-update", response_model=ShippingDetailBatchResult)

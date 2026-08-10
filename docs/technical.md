@@ -34,7 +34,7 @@ FirstTry/
 │   │   │   ├── report_sources.py # 报数原始来源、OCR确认、补发执行
 │   │   │   ├── schedule.py     # 刊期查询、年度刊期 PDF 上传预览与提交
 │   │   │   ├── shipping.py     # 发货管理
-│   │   │   ├── shipping_details.py # ZTO-MF CRUD
+│   │   │   ├── shipping_details.py # ZTO-MF CRUD + 单期明细重传接口
 │   │   │   ├── shipping_waybills.py # 运单预览、确认与逐包裹核销
 │   │   │   ├── operation_logs.py  # 操作日志查询
 │   │   │   └── templates.py    # 模板管理
@@ -71,6 +71,7 @@ FirstTry/
 │   │   │   ├── raw_report_import_service.py    # 原始印数多工作表解析
 │   │   │   ├── workbook_loader.py              # 普通 / Office 加密 OOXML 内存解密与加载
 │   │   │   ├── original_zto_shipping_import_service.py # 原始中通多工作表解析
+│   │   │   ├── shipping_plan_import_service.py # 已存在期次的中通计划预览与原子替换
 │   │   │   ├── shipping_waybill_service.py # 运单解析、匹配与发货核销
 │   │   │   ├── report_source_ocr.py        # 渠道模板 OCR 与保守校验
 │   │   │   └── report_source_service.py    # 归档、映射、结算与补发台账
@@ -1505,6 +1506,26 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 管理员清空某一期的全部ZTO-MF。该接口只删除 `shipping_details` 中指定 `issue_number` 的记录，不删除期号、报数数据、发货记录或临时加印；会写入一条 `batch_delete_issue` 操作日志。
 
 **响应**：`{"affected_count": 55}`
+
+#### POST /api/shipping-details/issues/{issue_id}/import-preview
+管理员上传系统中通模板或原始多工作表 `.xlsx`，预览已存在期次的中通计划替换结果，不写库。服务复用往期导入解析器，校验文件期号、空文件和负数份数，并计算导入行、可替换行、保留行、导入后计划与报数中通合计。可替换范围为 `manual` / `historical_import`（兼容历史 `NULL`），`order_generated` 与 `complaint_makeup` 永久保留。若可替换行已关联运单、实发、核销、延期或包裹分摊，则 `can_commit=false`。
+
+**请求**：`multipart/form-data`，字段 `shipping_file`。
+
+**响应摘要**：`import_session_id`、`can_commit`、`errors`、`warnings`、`imported/replaced/preserved/resulting` 的行数与份数、`report_zto_total`、`confirmed_shipping_total`、前 8 条 `sample_rows`。预览会话有效期 10 分钟。
+
+#### POST /api/shipping-details/issues/{issue_id}/import-commit
+管理员提交预览会话和更正原因，在一个数据库事务内原子替换可替换行。提交前锁定刊期并重新比对旧行 `id / updated_at / quantity` 签名；预览后发生并发修改或新增核销数据时返回 409，要求重新预览。新行标记为 `historical_import`，确认时印数快照不变。成功后写入 `replace_shipping` 操作日志，记录文件名、原因、删除 ID、替换前后条数与份数以及保留数据汇总。
+
+**请求体**：
+```json
+{
+  "import_session_id": "uuid",
+  "reason": "修正手工测试数据"
+}
+```
+
+**响应**：`issue_id`、`issue_number`、`deleted_count`、`created_count`、`preserved_count`、`resulting_quantity`。
 
 #### POST /api/shipping-details/normalize-addresses
 批量规范化所有发货明细地址。使用 cpca 解析补全缺失的省/市/区前缀。

@@ -12,6 +12,7 @@ ACTION_LABELS: dict[str, str] = {
     "unship": "撤销已发货",
     "batch_copy": "复制上期发货明细",
     "batch_delete_issue": "清空本期发货明细",
+    "replace_shipping": "重新上传中通明细",
     "ship_batch": "批量标记已发货",
     "confirm": "确认发货明细",
     "revoke": "作废报数确认",

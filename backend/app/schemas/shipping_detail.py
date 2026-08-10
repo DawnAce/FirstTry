@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import date, datetime
 
 from app.models.shipping_detail import ShippingDetailSourceType, ShippingDetailSyncStatus
+from app.schemas.history_import import ShippingImportRow
 
 
 class ShipDetailIn(BaseModel):
@@ -86,6 +87,41 @@ class ShippingDetailBatchDelete(BaseModel):
 
 class ShippingDetailBatchResult(BaseModel):
     affected_count: int
+
+
+class ShippingPlanImportPreviewOut(BaseModel):
+    issue_id: int
+    issue_number: int
+    filename: str
+    import_session_id: str = ""
+    can_commit: bool = False
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    imported_row_count: int = 0
+    imported_quantity: int = 0
+    replaced_row_count: int = 0
+    replaced_quantity: int = 0
+    preserved_row_count: int = 0
+    preserved_quantity: int = 0
+    resulting_row_count: int = 0
+    resulting_quantity: int = 0
+    report_zto_total: int = 0
+    confirmed_shipping_total: Optional[int] = None
+    sample_rows: list[ShippingImportRow] = Field(default_factory=list)
+
+
+class ShippingPlanImportCommitIn(BaseModel):
+    import_session_id: str
+    reason: str = Field(min_length=2, max_length=255)
+
+
+class ShippingPlanImportCommitOut(BaseModel):
+    issue_id: int
+    issue_number: int
+    deleted_count: int
+    created_count: int
+    preserved_count: int
+    resulting_quantity: int
 
 
 class ShippingDetailOut(BaseModel):
