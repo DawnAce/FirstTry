@@ -23,11 +23,21 @@ ACTION_LABELS: dict[str, str] = {
     "normalize_addresses": "批量规整收件地址",
     "import_history": "导入历史数据",
     "upload_source": "上传报数来源文件",
+    "delete_source": "撤销报数来源文件",
     "confirm_source": "确认来源识别与映射",
     "import_waybills": "导入运单",
+    "review_waybill": "核对并修改运单信息",
+    "add_waybill_row": "补录运单信息",
+    "bulk_match_waybills": "批量关联运单与发货明细",
     "add_package": "补录运单",
     "delete_package": "删除运单",
     "set_shipping_requirement": "调整发货要求",
+    "delete_order": "删除订单",
+    "skip": "跳过本次发货同步",
+    "attribute": "关联无需发货记录",
+    "bulk_create": "登记月底合寄明细",
+    "create_consolidated": "完成月底合寄发货",
+    "transfer_quantity": "调整发货计划份数",
 }
 
 
