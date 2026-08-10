@@ -22,7 +22,7 @@
 }
 
 .report-editor-shell {
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 16px;
   background: #f8fafc;
@@ -30,12 +30,17 @@
 }
 
 .report-editor-title {
+  position: sticky;
+  top: 64px;
+  z-index: 90;
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 18px 22px;
   border-bottom: 1px solid var(--report-line);
+  border-radius: 16px 16px 0 0;
   background: #fff;
+  box-shadow: 0 7px 16px rgba(24, 34, 48, 0.08);
 }
 
 .report-editor-back.ant-btn {
@@ -1044,6 +1049,7 @@
   gap: 10px;
   padding: 14px 22px;
   border-top: 1px solid var(--report-line);
+  border-radius: 0 0 16px 16px;
   background: #fff;
 }
 
