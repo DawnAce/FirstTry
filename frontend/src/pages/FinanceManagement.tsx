@@ -24,12 +24,15 @@ import {
   message,
 } from 'antd';
 import {
+  BankOutlined,
+  CalendarOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EyeOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
+  PaperClipOutlined,
   PlusOutlined,
   ReloadOutlined,
   RollbackOutlined,
@@ -1286,39 +1289,65 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       />
 
       <Modal
-        title={editing ? `编辑结算 · ${editing.system_no}` : '新增结算'}
+        title={(
+          <div className="finance-settlement-modal-title">
+            <span className="finance-settlement-modal-title-icon" aria-hidden><FileTextOutlined /></span>
+            <div className="finance-settlement-modal-title-copy">
+              <strong>{editing ? '编辑结算' : '新增结算'}</strong>
+              <div className="finance-settlement-modal-meta">
+                <span>{editing ? editing.system_no : '渠道结算'}</span>
+                <i>·</i>
+                <span>{editing ? '仅修改基础信息' : '系统编号保存后自动生成'}</span>
+                {!editing && <><i>·</i><span>附件与信息一次保存</span></>}
+              </div>
+            </div>
+            <span className="finance-settlement-modal-status">{editing ? '编辑中' : '待保存'}</span>
+          </div>
+        )}
         open={modalOpen}
         onCancel={() => { setModalOpen(false); setEditing(null); setPendingAttachments([]); }}
-        onOk={() => form.submit()}
-        okText="保存"
-        confirmLoading={saveMutation.isPending}
-        width={820}
+        width={900}
+        centered
         destroyOnHidden
+        className="finance-settlement-modal"
+        rootClassName="finance-settlement-modal-root"
+        footer={(
+          <div className="finance-settlement-modal-footer">
+            <span className="finance-settlement-modal-save-tip"><CheckCircleOutlined />{editing ? '修改内容会同步到结算记录' : '保存后附件与结算记录会一并归档'}</span>
+            <Button onClick={() => { setModalOpen(false); setEditing(null); setPendingAttachments([]); }}>取消</Button>
+            <Button type="primary" loading={saveMutation.isPending} onClick={() => form.submit()}>{editing ? '保存修改' : '保存结算'}</Button>
+          </div>
+        )}
       >
-        <Form<SettlementFormValues> form={form} layout="vertical" onFinish={(v) => saveMutation.mutate(v)} onValuesChange={handleSettlementValuesChange}>
-          {!editing && <section className="finance-settlement-upload-first">
-            <Divider titlePlacement="start" plain>先上传结算凭证（推荐）</Divider>
+        <Form<SettlementFormValues> className="finance-settlement-form" form={form} layout="vertical" onFinish={(v) => saveMutation.mutate(v)} onValuesChange={handleSettlementValuesChange}>
+          {!editing && <section className="finance-settlement-section finance-settlement-upload-first">
+            <h3><span aria-hidden><PaperClipOutlined /></span>结算凭证</h3>
             <Alert
+              className="finance-settlement-upload-note"
               type="info"
               showIcon
-              message="有结算单时请先上传，系统会先识别再让你核对"
-              description="主结算单 XLSX 可自动补充外部单号、结算/退报周期和金额；也可以不上传，直接在下方手工填写。后上传时只补空字段，不会静默覆盖已经手工填写的内容。"
+              message="有结算单时先上传，系统会识别外部单号、结算/退报周期和金额；已有人工内容会保留。没有附件也可以直接填写。"
             />
-            <Space orientation="vertical" style={{ width: '100%' }}>
+            <div className="finance-settlement-attachment-list">
               {pendingAttachments.length ? pendingAttachments.map((attachment) => (
                 <div key={attachment.uid} className="finance-settlement-attachment-row">
-                  <Space wrap>
-                    <Select value={attachment.category} options={ATTACHMENT_CATEGORY_OPTIONS} onChange={(value) => updatePendingCategory(attachment.uid, value)} style={{ width: 130 }} />
-                    <Text strong={attachment.isPrimary}>{attachment.file.name}</Text>
-                    <Text type="secondary">{(attachment.file.size / 1024).toFixed(1)} KB</Text>
-                    {attachment.isPrimary ? <Tag color="blue">主结算单</Tag> : attachment.category === 'settlement_sheet' && <Button type="link" size="small" onClick={() => setPrimaryPending(attachment.uid)}>设为主结算单</Button>}
-                    <Button type="link" size="small" danger onClick={() => setPendingAttachments((items) => items.filter((item) => item.uid !== attachment.uid))}>移除</Button>
-                  </Space>
-                  {attachment.previewState === 'loading' && <Alert type="info" showIcon message={`正在识别：${attachment.file.name}`} />}
+                  <div className="finance-settlement-attachment-head">
+                    <Select aria-label={`${attachment.file.name}的附件类型`} value={attachment.category} options={ATTACHMENT_CATEGORY_OPTIONS} onChange={(value) => updatePendingCategory(attachment.uid, value)} />
+                    <div className="finance-settlement-attachment-name">
+                      <Text>{attachment.file.name}</Text>
+                      <Text type="secondary">{(attachment.file.size / 1024).toFixed(1)} KB</Text>
+                    </div>
+                    <div className="finance-settlement-attachment-actions">
+                      {!attachment.isPrimary && attachment.category === 'settlement_sheet' && <Button type="link" size="small" onClick={() => setPrimaryPending(attachment.uid)}>改用此表识别</Button>}
+                      <Button type="link" size="small" danger onClick={() => setPendingAttachments((items) => items.filter((item) => item.uid !== attachment.uid))}>移除</Button>
+                    </div>
+                  </div>
+                  {attachment.previewState === 'loading' && <Alert className="finance-settlement-recognition" type="info" showIcon message="正在识别此结算单…" />}
                   {attachment.previewState === 'success' && attachment.preview && <Alert
+                    className="finance-settlement-recognition"
                     type={attachment.preview.warnings.length ? 'warning' : 'success'}
                     showIcon
-                    message={`${attachment.file.name}：已识别 ${attachment.preview.detail_count} 条明细（退报 ${attachment.preview.return_detail_count} 条）`}
+                    message={`此结算单识别结果 · ${attachment.preview.detail_count} 条明细（退报 ${attachment.preview.return_detail_count} 条）`}
                     description={<Space orientation="vertical" size={2}>
                       {attachment.preview.warnings.length > 0 && <Text>{attachment.preview.warnings.join('；')}</Text>}
                       {!!attachment.appliedFields?.length && <Text>已自动填入：{attachment.appliedFields.join('、')}</Text>}
@@ -1326,35 +1355,39 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
                       {!attachment.appliedFields?.length && !attachment.preservedFields?.length && <Text>已完成识别，请核对下方信息。</Text>}
                     </Space>}
                   />}
-                  {attachment.previewState === 'error' && <Alert type="warning" showIcon message={`${attachment.file.name}：未能自动识别，原文件仍会保存`} description={attachment.previewError} />}
+                  {attachment.previewState === 'error' && <Alert className="finance-settlement-recognition" type="warning" showIcon message="此结算单未能自动识别，原文件仍会保存" description={attachment.previewError} />}
                 </div>
               )) : <Text type="secondary">尚未选择附件。可以先上传，也可以跳过后直接填写。</Text>}
+            </div>
+            <div className="finance-settlement-upload-actions">
               <Upload showUploadList={false} accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" beforeUpload={handleSettlementAttachment}>
-                <Button icon={<UploadOutlined />}>选择并识别附件</Button>
+                <Button icon={<UploadOutlined />}>{pendingAttachments.length ? '继续选择附件' : '选择并识别附件'}</Button>
               </Upload>
-            </Space>
+              <Text type="secondary">支持 PDF、JPG、PNG、XLS、XLSX，单个不超过 20 MB</Text>
+            </div>
           </section>}
 
-          <Divider titlePlacement="start" plain>结算基础信息</Divider>
-          {partnersQuery.isError && <Alert
-            className="finance-settlement-partner-alert"
-            type="error"
-            showIcon
-            message="合作渠道加载失败，当前无法选择结算对象"
-            description={<Space orientation="vertical" size={8}>
-              <Text>请先重试；若系统刚完成升级，请确认数据库迁移已执行后再继续。</Text>
-              <Button size="small" onClick={() => partnersQuery.refetch()} loading={partnersQuery.isFetching}>重试</Button>
-            </Space>}
-          />}
-          {!partnersQuery.isLoading && !partnersQuery.isError && partnerOptions.length === 0 && <Alert
-            className="finance-settlement-partner-alert"
-            type="warning"
-            showIcon
-            message="尚未维护可用的合作渠道"
-            description="请先到“合作渠道”维护结算对象，保存后再回来新增结算。"
-          />}
-          <div className="finance-settlement-form-grid">
-            <Form.Item name="partner_id" label="结算对象" rules={[{ required: true, message: '请选择结算对象' }]}>
+          <section className="finance-settlement-section">
+            <h3><span aria-hidden><BankOutlined /></span>结算基础信息</h3>
+            {partnersQuery.isError && <Alert
+              className="finance-settlement-partner-alert"
+              type="error"
+              showIcon
+              message="合作渠道加载失败，当前无法选择结算对象"
+              description={<Space orientation="vertical" size={8}>
+                <Text>请先重试；若系统刚完成升级，请确认数据库迁移已执行后再继续。</Text>
+                <Button size="small" onClick={() => partnersQuery.refetch()} loading={partnersQuery.isFetching}>重试</Button>
+              </Space>}
+            />}
+            {!partnersQuery.isLoading && !partnersQuery.isError && partnerOptions.length === 0 && <Alert
+              className="finance-settlement-partner-alert"
+              type="warning"
+              showIcon
+              message="尚未维护可用的合作渠道"
+              description="请先到“合作渠道”维护结算对象，保存后再回来新增结算。"
+            />}
+            <div className="finance-settlement-form-grid">
+            <Form.Item className="finance-settlement-span-2" name="partner_id" label="结算对象" rules={[{ required: true, message: '请选择结算对象' }]}>
               <Select
                 options={partnerOptions}
                 placeholder={partnersQuery.isError ? '合作渠道加载失败' : partnerOptions.length ? '选择合作方' : '暂无可用合作渠道'}
@@ -1375,12 +1408,6 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
             <Form.Item name="party_type" label="结算对象类型" rules={[{ required: true }]}>
               <Select options={SETTLEMENT_PARTY_TYPE_OPTIONS} disabled={!!editing} />
             </Form.Item>
-            <Form.Item label="系统结算单号" extra="保存时由系统生成，生成后不可修改">
-              <Input disabled value={editing?.system_no} placeholder="保存后自动生成" />
-            </Form.Item>
-            <Form.Item name="external_no" label="外部平台单号">
-              <Input placeholder="选填，格式不限" />
-            </Form.Item>
             {(selectedPartner?.sales_mode_policy ?? 'not_applicable') !== 'not_applicable' && <Form.Item
               name="settlement_type"
               label="销售模式"
@@ -1388,34 +1415,42 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
             >
               <Select allowClear={selectedPartner?.sales_mode_policy !== 'required'} options={SETTLEMENT_TYPE_OPTIONS} placeholder="代销 / 包销" />
             </Form.Item>}
-            <Form.Item name="settlement_period" label="结算周期" rules={[{ required: true, message: '请选择结算周期' }]}>
+            <Form.Item label="系统结算单号">
+              <Input disabled value={editing?.system_no} placeholder="保存后自动生成" />
+            </Form.Item>
+            <Form.Item className={(selectedPartner?.sales_mode_policy ?? 'not_applicable') === 'not_applicable' ? 'finance-settlement-wide' : 'finance-settlement-span-2'} name="external_no" label="外部平台单号">
+              <Input placeholder="选填，格式不限" />
+            </Form.Item>
+            </div>
+          </section>
+
+          <section className="finance-settlement-section">
+            <h3><span aria-hidden><CalendarOutlined /></span>周期与金额</h3>
+            <div className="finance-settlement-period-grid">
+            <Form.Item className="finance-settlement-period-half" name="settlement_period" label="结算周期" rules={[{ required: true, message: '请选择结算周期' }]}>
               <RangePicker style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="return_period" label="退报周期" dependencies={['return_deduction_amount']} rules={[({ getFieldValue }) => ({
+            <Form.Item className="finance-settlement-period-half" name="return_period" label="退报周期" dependencies={['return_deduction_amount']} rules={[({ getFieldValue }) => ({
               validator: (_rule, value) => getFieldValue('return_deduction_amount') > 0 && !value
                 ? Promise.reject(new Error('有退报扣款时必须选择退报周期'))
                 : Promise.resolve(),
             })]}>
               <RangePicker style={{ width: '100%' }} placeholder={['无退报可不填', '结束日期']} />
             </Form.Item>
-          </div>
-
-          <Divider titlePlacement="start" plain>结算金额</Divider>
-          <div className="finance-settlement-form-grid">
-            <Form.Item name="gross_amount" label={selectedDirection === 'receivable' ? '报款金额' : '结算总额'} rules={[{ required: true, message: '请填写总额' }]}>
+            <Form.Item className="finance-settlement-period-third" name="gross_amount" label={selectedDirection === 'receivable' ? '报款金额' : '结算总额'} rules={[{ required: true, message: '请填写总额' }]}>
               <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="return_deduction_amount" label="退报扣款">
+            <Form.Item className="finance-settlement-period-third" name="return_deduction_amount" label="退报扣款">
               <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="amount_due" label={selectedDirection === 'receivable' ? '应收金额' : '应付金额'}>
+            <Form.Item className="finance-settlement-period-third" name="amount_due" label={selectedDirection === 'receivable' ? '应收金额' : '应付金额'}>
               <InputNumber precision={2} prefix="¥" disabled style={{ width: '100%' }} />
             </Form.Item>
-          </div>
-          <Form.Item name="notes" label="备注">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-
+            <Form.Item className="finance-settlement-period-wide" name="notes" label="备注">
+              <Input placeholder="补充说明（选填）" />
+            </Form.Item>
+            </div>
+          </section>
         </Form>
       </Modal>
 
