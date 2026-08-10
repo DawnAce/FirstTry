@@ -97,6 +97,8 @@ class ReportSourceDocumentOut(BaseModel):
     size: int
     sha256: str
     source_date: Optional[date] = None
+    upload_issue_number: Optional[int] = None
+    file_available: bool = True
     extraction_status: str
     extraction_json: Optional[dict] = None
     uploaded_by: Optional[str] = None

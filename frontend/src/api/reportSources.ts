@@ -67,6 +67,8 @@ export interface ReportSourceDocument {
   size: number;
   sha256: string;
   source_date: string | null;
+  upload_issue_number: number | null;
+  file_available: boolean;
   extraction_status: 'pending_review' | 'reviewed' | 'confirmed';
   extraction_json: {
     warnings?: string[];

@@ -7,6 +7,7 @@ import re
 from typing import Iterable
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
@@ -141,6 +142,10 @@ def _build_display_name(
 
 
 def _document_out(document: ReportSourceDocument, *, upload: bool = False, duplicate: bool = False):
+    try:
+        file_available = attachment_service.resolve_path(document.stored_path).is_file()
+    except ValueError:
+        file_available = False
     data = dict(
         id=document.id,
         channel=document.channel,
@@ -151,6 +156,8 @@ def _document_out(document: ReportSourceDocument, *, upload: bool = False, dupli
         size=document.size,
         sha256=document.sha256,
         source_date=document.source_date,
+        upload_issue_number=document.upload_issue_number,
+        file_available=file_available,
         extraction_status=document.extraction_status,
         extraction_json=document.extraction_json,
         uploaded_by=document.uploader.username if document.uploader else None,
@@ -250,6 +257,7 @@ def create_source_document(
         size=len(content),
         sha256=digest,
         source_date=source_date,
+        upload_issue_number=current_issue_number,
         extraction_status="pending_review",
         extraction_json=extraction,
         uploaded_by=user.id,
@@ -622,10 +630,11 @@ def apply_confirmed_source_bases_to_issue(db: Session, issue: Issue) -> int:
 def get_issue_summary(db: Session, issue: Issue) -> IssueSourceSummaryOut:
     documents = (
         db.query(ReportSourceDocument)
-        .join(ReportSourceItem)
         .options(joinedload(ReportSourceDocument.items), joinedload(ReportSourceDocument.uploader))
-        .filter(ReportSourceItem.issue_number == issue.issue_number)
-        .distinct()
+        .filter(or_(
+            ReportSourceDocument.upload_issue_number == issue.issue_number,
+            ReportSourceDocument.items.any(ReportSourceItem.issue_number == issue.issue_number),
+        ))
         .order_by(ReportSourceDocument.created_at.desc(), ReportSourceDocument.id.desc())
         .all()
     )

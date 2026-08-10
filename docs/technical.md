@@ -260,11 +260,12 @@ FirstTry/
 | stored_path | VARCHAR(500) | 原文件相对存储路径 |
 | mime_type / size / sha256 | VARCHAR / INT | 文件元数据与去重摘要 |
 | source_date | DATE | 从文件名或内容识别的来源日期 |
+| upload_issue_number | INT | 上传操作所在期号；即使 OCR 无明细也用于把文件稳定展示在本期 |
 | extraction_status | VARCHAR(30) | `pending_review` / `reviewed` / `confirmed` |
 | extraction_json | JSON | OCR 原文、置信度、警告和建议映射 |
 | uploaded_by | INT | 上传用户 |
 
-OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `rapidocr_onnxruntime`（ONNX Runtime），不调用本地 LLM 或外部 AI API。单个 PDF 最多 12 页。解析器按稳定渠道模板执行算术校验；异常或低可信结果返回 `pending_review`，上传归档本身仍成功，OCR 不会直接写入报数。月度来源显示名使用明确的 `YYYY年MM月_渠道_月度报数.扩展名`；优先读取原文件名中的中文年月，再使用 OCR 刊期或来源日期。迁移 `f5c7e9a1b3d6` 会回填已有月度歧义名称。
+OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `rapidocr_onnxruntime`（ONNX Runtime），不调用本地 LLM 或外部 AI API。单个 PDF 最多 12 页。解析器按稳定渠道模板执行算术校验；异常或低可信结果返回 `pending_review`，上传归档本身仍成功，OCR 不会直接写入报数。`upload_issue_number` 保证零识别行文件仍可从上传刊期继续核对，并在完成前参与报数确认阻断。月度来源显示名使用明确的 `YYYY年MM月_渠道_月度报数.扩展名`；优先读取原文件名中的中文年月，再使用 OCR 刊期或来源日期。迁移 `f5c7e9a1b3d6` 会回填已有月度歧义名称；迁移 `c3e5f7a9b1d4` 新增上传刊期锚点并按历史明细最早期号回填。
 
 ### 3.5B report_source_items（来源刊期映射与调整）
 
@@ -1166,7 +1167,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 #### GET /api/report-sources/issues/{issue_id}
 
-返回某期关联的全部原始文档和渠道汇总，包括基础数量、结算增量 / 合计、应补发 / 已补发 / 待补发及待确认数量。报数编辑页右侧「数据来源与调整」使用此接口。
+返回某期通过刊期明细或上传刊期锚点关联的全部文档和渠道汇总，包括文件可用状态、基础数量、结算增量 / 合计、应补发 / 已补发 / 待补发及待确认数量。报数编辑页右侧「数据来源与调整」将所有用途统一渲染为文件卡片。
 
 #### GET /api/report-sources/{document_id}/download
 

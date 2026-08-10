@@ -59,6 +59,14 @@ import type {
 } from '../api/reportSources';
 import { sortVisibleSocialUseEntries } from './reportOrder';
 import { formatIssueReportTitle } from './reportTitle';
+import {
+  sourceAdjustmentDescription,
+  sourceCardStatus,
+  sourceIssueLinkLabel,
+  sourceItemsForIssue,
+  sourcePurposeLabel,
+  sourceQuantityLabel,
+} from './reportSourceDisplay';
 import './ReportEditor.css';
 
 const categoryLabels: Record<string, string> = {
@@ -791,17 +799,23 @@ export default function ReportEditor() {
   const currentSourceItems = (sourceSummary?.documents ?? []).flatMap(document =>
     document.items.filter(item => item.issue_number === issue.issue_number),
   );
-  const sourcePendingCount = currentSourceItems.filter(item => item.source_status !== 'confirmed').length;
-  const sourceAdjustmentItems = currentSourceItems.filter(
-    item => item.item_kind === 'adjustment' && item.effect_status === 'active' && item.source_status === 'confirmed',
-  );
-
+  const pendingSourceItems = currentSourceItems.filter(item => item.source_status !== 'confirmed');
+  const pendingSourceDocumentCount = (sourceSummary?.documents ?? []).filter(document => (
+    !document.file_available
+    || (document.extraction_status !== 'confirmed'
+      && !pendingSourceItems.some(item => item.document_id === document.id))
+  )).length;
+  const sourcePendingCount = pendingSourceItems.length + pendingSourceDocumentCount;
   const sourceStateForChannel = (channel: ReportSourceChannel) => {
     const documents = (sourceSummary?.documents ?? []).filter(document => document.channel === channel);
     const items = documents.flatMap(document =>
       document.items.filter(item => item.issue_number === issue.issue_number),
     );
-    if (items.some(item => item.source_status === 'pending_review')) {
+    if (documents.some(document => !document.file_available)) {
+      return { label: '文件异常', tone: 'danger' as const, documents, items };
+    }
+    if (documents.some(document => document.extraction_status === 'pending_review')
+      || items.some(item => item.source_status === 'pending_review')) {
       return { label: 'OCR待核对', tone: 'warning' as const, documents, items };
     }
     if (items.some(item => item.source_status === 'channel_pending')) {
@@ -1240,70 +1254,89 @@ export default function ReportEditor() {
                               </small>
                             </div>
                           )}
-                          {printDocuments.length > 0 ? (
+                          {state.documents.length > 0 ? (
                             <div className="report-editor-source-files">
-                              {printDocuments.map(document => {
-                                const documentItems = document.items.filter(item => (
-                                  item.issue_number === issue.issue_number && item.item_kind === 'base'
-                                ));
+                              {state.documents.map(document => {
+                                const documentItems = sourceItemsForIssue(document, issue.issue_number);
+                                const baseItems = documentItems.filter(item => item.item_kind === 'base');
+                                const adjustmentItems = documentItems.filter(item => item.item_kind === 'adjustment');
                                 const isReplaced = documentItems.length > 0 && documentItems.every(item => item.effect_status === 'replaced');
-                                const contribution = documentItems
-                                  .filter(item => item.effect_status === 'active' && item.source_status === 'confirmed')
-                                  .reduce((sum, item) => sum + item.print_delta, 0);
-                                const role = documentItems.some(item => item.source_action === 'prepress_addition') ? '印前追加' : '基础';
+                                const cardStatus = sourceCardStatus(document, documentItems);
+                                const purpose = sourcePurposeLabel(document, documentItems);
+                                const quantity = sourceQuantityLabel(documentItems);
+                                const issueLinks = sourceIssueLinkLabel(document, issue.issue_number);
+                                const warningCount = document.extraction_status === 'confirmed'
+                                  ? 0
+                                  : (document.extraction_json?.warnings?.length ?? 0);
+                                const otherPendingCount = document.items.filter(item => (
+                                  item.issue_number !== issue.issue_number && item.source_status !== 'confirmed'
+                                )).length;
                                 return (
-                                <div className={`report-editor-source-file-row ${isReplaced ? 'is-replaced' : ''}`} key={document.id}>
-                                  <button
-                                    type="button"
-                                    onClick={() => { void handleSourceDownload(document.id, document.original_filename); }}
-                                    title={`下载 ${document.original_filename}`}
-                                  >
-                                    <FileSearchOutlined />
-                                    <span>{document.display_name}</span>
-                                    <small>
-                                      {isReplaced ? '已替换' : `${role}${contribution ? ` ${role === '印前追加' ? '+' : ''}${formatCount(contribution)} 份` : ''}`}
-                                      {' · '}{Math.max(1, Math.round(document.size / 1024))} KB
-                                    </small>
-                                  </button>
-                                  {canMutate && document.items.some(item => item.source_status !== 'confirmed') && (
-                                    <Button size="small" type="link" onClick={() => openSourceReview(document)}>核对</Button>
+                                <div className={`report-editor-source-card ${isReplaced ? 'is-replaced' : ''} ${document.file_available ? '' : 'has-error'}`} key={document.id}>
+                                  <div className="report-editor-source-card-head">
+                                    <button
+                                      type="button"
+                                      disabled={!document.file_available}
+                                      onClick={() => { void handleSourceDownload(document.id, document.original_filename); }}
+                                      title={document.file_available ? `下载 ${document.original_filename}` : '归档文件不存在，请联系管理员'}
+                                    >
+                                      <FileSearchOutlined />
+                                      <span>
+                                        <strong>{document.display_name}</strong>
+                                        <small>原名：{document.original_filename}</small>
+                                      </span>
+                                    </button>
+                                    <StatusPill tone={cardStatus.tone}>{cardStatus.label}</StatusPill>
+                                  </div>
+                                  <div className="report-editor-source-card-meta">
+                                    <span>{purpose}</span>
+                                    {quantity && <span>{quantity}</span>}
+                                    <span>{issueLinks}</span>
+                                    <span>{Math.max(1, Math.round(document.size / 1024))} KB</span>
+                                  </div>
+                                  {warningCount > 0 && <small className="report-editor-source-card-warning">识别警告 {warningCount} 条，请继续核对</small>}
+                                  {otherPendingCount > 0 && <small className="report-editor-source-card-warning">文件另有 {otherPendingCount} 条跨期待处理明细</small>}
+                                  {adjustmentItems.length > 0 && (
+                                    <div className="report-editor-source-card-details">
+                                      {adjustmentItems.map(item => (
+                                        <div key={item.id}>
+                                          <span>
+                                            <b>{item.source_label || item.sub_category}</b>
+                                            <small>{item.source_status === 'confirmed' ? sourceAdjustmentDescription(item) : '待完成核对'}</small>
+                                          </span>
+                                          {canMutate && item.source_status === 'confirmed' && item.shipping_delta > 0 && (
+                                            <Button size="small" onClick={() => openShippingModal(item)}>登记补发</Button>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
                                   )}
-                                  {canMutate && !isConfirmed && document.extraction_status === 'confirmed' && !isReplaced && documentItems.some(item => (
-                                    item.source_status === 'confirmed' && item.effect_status === 'active'
-                                  )) && (
-                                    <Button size="small" type="link" onClick={() => openSourceReplacement(document)}>重新上传</Button>
+                                  {canMutate && (
+                                    <div className="report-editor-source-card-actions">
+                                      {(document.extraction_status !== 'confirmed' || document.items.some(item => item.source_status !== 'confirmed')) && (
+                                        <Button size="small" type="link" onClick={() => openSourceReview(document)}>继续核对</Button>
+                                      )}
+                                      {!isConfirmed && document.extraction_status === 'confirmed' && !isReplaced && baseItems.some(item => (
+                                        item.source_status === 'confirmed' && item.effect_status === 'active'
+                                      )) && (
+                                        <Button size="small" type="link" onClick={() => openSourceReplacement(document)}>重新上传</Button>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               );})}
                             </div>
                           ) : (
-                            <small className="report-editor-source-empty">尚未关联本期原始文件</small>
+                            <small className="report-editor-source-empty">尚未上传来源文件</small>
+                          )}
+                          {printDocuments.length === 0 && state.documents.length > 0 && (
+                            <small className="report-editor-source-empty">尚未上传印前原始来源；上方文件为确认后凭证或待关联文件</small>
                           )}
                         </div>
                       );
                     })}
                   </div>
                 )}
-                <div className="report-editor-adjustment-list">
-                    <strong>确认后凭证</strong>
-                    {sourceAdjustmentItems.length === 0 && (
-                      <small className="report-editor-source-empty">印数确认后的来源凭证、追加、补损或冲减将在这里留档</small>
-                    )}
-                    {sourceAdjustmentItems.map(item => (
-                      <div key={item.id}>
-                        <span>{item.source_label || `${categoryLabels[item.category] ?? item.category}调整`}</span>
-                        <small>{item.adjustment_kind === 'archive_only'
-                          ? '仅归档 · 不改变印数、结算或补发'
-                          : <>
-                            结算 {item.settlement_delta >= 0 ? '+' : ''}{item.settlement_delta}
-                            {' · '}应发 {item.shipping_delta} · 已发 {item.shipped_quantity}
-                            {item.shipping_delta > 0 && ` · 待发 ${Math.max(0, item.shipping_delta - item.shipped_quantity)}`}
-                          </>}
-                        </small>
-                        {canMutate && item.shipping_delta > 0 && <Button size="small" onClick={() => openShippingModal(item)}>登记</Button>}
-                      </div>
-                    ))}
-                  </div>
                 {canMutate && <Button
                   block
                   className="report-editor-source-primary"
