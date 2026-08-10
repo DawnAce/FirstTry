@@ -217,10 +217,15 @@ export const CreateStructuredSettlement: Story = {
     await expect(await within(dialog).findByText('系统结算单号')).toBeInTheDocument()
     await expect(await within(dialog).findByText('外部平台单号')).toBeInTheDocument()
     await expect(within(dialog).queryByText('销售模式')).not.toBeInTheDocument()
-    const uploadFirst = await within(dialog).findByText('先上传结算凭证（推荐）')
+    await expect(await within(dialog).findByText('待保存')).toBeInTheDocument()
+    const uploadFirst = await within(dialog).findByText('结算凭证')
     const partnerField = await within(dialog).findByText('结算对象')
     await expect(uploadFirst.compareDocumentPosition(partnerField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await expect(await within(dialog).findByText('选择并识别附件')).toBeInTheDocument()
+    await expect(within(dialog).getByLabelText('退报周期').closest('.ant-form-item')).toHaveClass('finance-settlement-period-half')
+    await expect(within(dialog).getByLabelText('备注').closest('.ant-form-item')).toHaveClass('finance-settlement-period-wide')
+    await expect(within(dialog).queryByText('主结算单')).not.toBeInTheDocument()
+    await expect(within(dialog).queryByText('已归类')).not.toBeInTheDocument()
     await expect(within(dialog).queryByText('开票日期')).not.toBeInTheDocument()
     await expect(within(dialog).queryByText('本次金额')).not.toBeInTheDocument()
   },
@@ -243,6 +248,11 @@ export const RecognitionPreservesManualValues: Story = {
     await expect(await within(dialog).findByText(/已保留人工填写：外部平台单号/)).toBeVisible()
     await expect(externalNo).toHaveValue('MANUAL-001')
     await expect(await within(dialog).findByText(/已自动填入：结算周期/)).toBeVisible()
+    const recognition = await within(dialog).findByText(/此结算单识别结果/)
+    const attachmentRow = recognition.closest('.finance-settlement-attachment-row')
+    await expect(attachmentRow).not.toBeNull()
+    await expect(attachmentRow).toContainElement(within(dialog).getByLabelText('北京报零结算.xlsx的附件类型'))
+    await expect(within(dialog).queryByText('主结算单')).not.toBeInTheDocument()
   },
 }
 
