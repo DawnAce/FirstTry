@@ -340,6 +340,16 @@
   background: #fafafa;
 }
 
+.finance-settlement-upload-first {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.finance-settlement-partner-alert {
+  margin-bottom: 16px;
+}
+
 .finance-settlement-history-row {
   display: flex;
   justify-content: space-between;
