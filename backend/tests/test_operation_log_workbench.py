@@ -153,6 +153,13 @@ class OperationLogOutSchemaTests(_SqliteTestCase):
         self.assertEqual(out.action_label, "mystery_action")
         db.close()
 
+    def test_waybill_actions_have_plain_chinese_labels(self):
+        self.assertEqual(ACTION_LABELS["review_waybill"], "核对并修改运单信息")
+        self.assertEqual(
+            ACTION_LABELS["bulk_match_waybills"],
+            "批量关联运单与发货明细",
+        )
+
 
 class RecentOperationLogsEndpointTests(_SqliteTestCase):
     def _seed(self, db):

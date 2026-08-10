@@ -494,7 +494,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | table_name | VARCHAR(100) | 操作的表名（如 shipping_details） |
 | record_id | INT | 被操作记录的 ID |
 | record_name | VARCHAR(200) | 被操作记录名称（冗余，便于展示） |
-| action | VARCHAR(20) | 操作类型：create / update / delete |
+| action | VARCHAR(20) | 供程序识别的操作类型，如 `create`、`review_waybill`、`bulk_match_waybills` |
 | changes | JSON | 变更详情（新增：完整数据，编辑：字段差异，删除：被删数据） |
 | user_id | INT | 操作人 ID |
 | username | VARCHAR(50) | 操作人用户名（冗余） |
@@ -1561,6 +1561,8 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 **响应**：OperationLog 数组，按时间倒序排列
 
 **说明**：ZTO-MF的新增/编辑/删除/批量复制操作会自动写入操作日志。编辑操作仅记录实际变化的字段差异。所有 `changes` 载荷写入数据库前统一经过 `jsonable_encoder`，因此 MySQL `Decimal` 聚合值、日期和枚举可安全写入 JSON 字段。
+
+响应模型通过 `ACTION_LABELS` 将数据库中的 `action` 机器码派生为 `action_label`，供工作台“最近操作记录”展示业务中文；历史日志无需回填。新增操作类型时，应同时补充中文标签和对应测试，避免界面向非技术用户暴露英文机器码。
 
 ### 4.13 往期导入
 
