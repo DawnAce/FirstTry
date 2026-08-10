@@ -118,6 +118,7 @@ class SettlementBase(BaseModel):
     invoice_status: SettlementInvoiceStatus = SettlementInvoiceStatus.unissued
     payment_status: SettlementPaymentStatus = SettlementPaymentStatus.unpaid
     invoice_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_date: Optional[date] = None
     invoice_title: Optional[str] = Field(default=None, max_length=255)
     invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
     invoice_taxpayer_type: Optional[str] = Field(default=None, max_length=32)
@@ -159,6 +160,7 @@ class SettlementUpdate(BaseModel):
     invoice_status: Optional[SettlementInvoiceStatus] = None
     payment_status: Optional[SettlementPaymentStatus] = None
     invoice_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_date: Optional[date] = None
     invoice_title: Optional[str] = Field(default=None, max_length=255)
     invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
     invoice_taxpayer_type: Optional[str] = Field(default=None, max_length=32)
@@ -180,6 +182,41 @@ class SettlementAttachmentOut(BaseModel):
     content_type: Optional[str] = None
     file_size: Optional[int] = None
     sha256: Optional[str] = None
+    is_primary: bool = False
+    recognized: Optional[bool] = None
+    recognition_parser_version: Optional[str] = None
+    recognition_result: Optional[dict] = None
+    created_at: datetime
+
+
+class SettlementInvoiceRegister(BaseModel):
+    invoice_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_date: date
+    invoice_title: Optional[str] = Field(default=None, max_length=255)
+    invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
+    invoice_taxpayer_type: Optional[str] = Field(default=None, max_length=32)
+    invoice_type: Optional[str] = Field(default=None, max_length=32)
+    invoice_item_name: Optional[str] = Field(default=None, max_length=255)
+    invoice_unit: Optional[str] = Field(default=None, max_length=32)
+    invoice_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    invoice_unit_price: Optional[Decimal] = Field(default=None, ge=0)
+    invoice_tax_rate: Optional[Decimal] = Field(default=None, ge=0, le=1)
+    invoice_amount: Optional[Decimal] = Field(default=None, ge=0)
+    notes: Optional[str] = None
+
+
+class SettlementPaymentRegister(BaseModel):
+    amount: Decimal = Field(gt=0)
+    paid_date: date
+    on_time: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+class SettlementHistoryOut(BaseModel):
+    id: int
+    action: str
+    changes: Optional[dict] = None
+    username: Optional[str] = None
     created_at: datetime
 
 

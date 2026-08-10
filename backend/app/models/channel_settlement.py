@@ -124,6 +124,7 @@ class ChannelSettlement(Base):
         nullable=False,
     )
     invoice_no = Column(String(64), nullable=True)            # 销项/进项发票号
+    invoice_date = Column(Date, nullable=True)
     invoice_title = Column(String(255), nullable=True)
     invoice_tax_no = Column(String(64), nullable=True)
     invoice_taxpayer_type = Column(String(32), nullable=True)
@@ -200,6 +201,11 @@ class SettlementAttachment(Base):
     content_type = Column(String(128), nullable=True)
     file_size = Column(Integer, nullable=True)
     sha256 = Column(String(64), nullable=True)
+    # 只有一份结算单可作为主表驱动表单回填；其他结算单仅归档。
+    is_primary = Column(Boolean, default=False, server_default="0", nullable=False)
+    recognized = Column(Boolean, nullable=True)
+    recognition_parser_version = Column(String(32), nullable=True)
+    recognition_result = Column(JSON, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 

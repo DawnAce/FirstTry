@@ -23,7 +23,9 @@ from app.database import get_db
 from app.models import (
     ChannelSettlement,
     Contract,
+    OperationLog,
     Partner,
+    SalesModePolicy,
     SettlementAttachment,
     SettlementAttachmentCategory,
     SettlementDirection,
@@ -38,7 +40,10 @@ from app.schemas.finance import (
     SettlementAttachmentOut,
     SettlementCreate,
     SettlementExcelPreviewOut,
+    SettlementHistoryOut,
+    SettlementInvoiceRegister,
     SettlementOut,
+    SettlementPaymentRegister,
     SettlementUpdate,
 )
 from app.services import attachment_service
@@ -80,6 +85,10 @@ def _attachment_out(attachment: SettlementAttachment) -> SettlementAttachmentOut
         content_type=attachment.content_type,
         file_size=attachment.file_size,
         sha256=attachment.sha256,
+        is_primary=attachment.is_primary,
+        recognized=attachment.recognized,
+        recognition_parser_version=attachment.recognition_parser_version,
+        recognition_result=attachment.recognition_result,
         created_at=attachment.created_at,
     )
 
@@ -112,6 +121,7 @@ def _to_out(s: ChannelSettlement) -> SettlementOut:
         invoice_status=s.invoice_status,
         payment_status=s.payment_status,
         invoice_no=s.invoice_no,
+        invoice_date=s.invoice_date,
         invoice_title=s.invoice_title,
         invoice_tax_no=s.invoice_tax_no,
         invoice_taxpayer_type=s.invoice_taxpayer_type,
@@ -168,14 +178,48 @@ def _payment_status(amount_due: Optional[Decimal], paid_amount: Optional[Decimal
     return SettlementPaymentStatus.partial
 
 
-def _requires_settlement_type(partner: Partner) -> bool:
-    name = (partner.name or "").replace(" ", "")
-    return "北京报刊零售" in name or "北京报零" in name
-
-
 def _validate_partner_business(partner: Partner, payload: dict) -> None:
-    if _requires_settlement_type(partner) and not payload.get("settlement_type"):
-        raise HTTPException(status_code=400, detail="北京报零结算必须选择代销或包销")
+    policy = partner.sales_mode_policy or SalesModePolicy.not_applicable
+    if policy == SalesModePolicy.required and not payload.get("settlement_type"):
+        raise HTTPException(status_code=400, detail="该渠道结算必须选择代销或包销")
+    if policy == SalesModePolicy.not_applicable:
+        payload["settlement_type"] = None
+
+
+def _sync_legacy_status(settlement: ChannelSettlement) -> None:
+    """兼容旧状态列；开票与收付款状态始终各自独立。"""
+    if settlement.status == SettlementStatus.archived:
+        return
+    if settlement.payment_status == SettlementPaymentStatus.paid:
+        settlement.status = SettlementStatus.paid
+    elif settlement.invoice_status == SettlementInvoiceStatus.issued:
+        settlement.status = SettlementStatus.invoiced
+    else:
+        settlement.status = SettlementStatus.pending
+
+
+def _clear_settlement_recognition(settlement: ChannelSettlement) -> None:
+    settlement.recognition_source_filename = None
+    settlement.recognition_parser_version = None
+    settlement.recognition_result = None
+
+
+def _log_operation(
+    db: Session,
+    settlement: ChannelSettlement,
+    user: User,
+    action: str,
+    changes: Optional[dict] = None,
+) -> None:
+    db.add(OperationLog(
+        table_name="channel_settlements",
+        record_id=settlement.id,
+        record_name=settlement.system_no,
+        action=action,
+        changes=json.loads(json.dumps(changes or {}, default=str)),
+        user_id=user.id,
+        username=user.username,
+    ))
 
 
 def _validate_business(payload: dict, *, allow_legacy_period: bool = True) -> dict:
@@ -246,6 +290,7 @@ def _new_settlement(data: SettlementCreate, db: Session, admin: User) -> Channel
     db.add(settlement)
     db.flush()
     settlement.system_no = _system_no(settlement.party_type, settlement.id)
+    _log_operation(db, settlement, admin, "create", {"system_no": settlement.system_no})
     return settlement
 
 
@@ -334,6 +379,7 @@ def create_settlement(
 async def create_settlement_with_attachments(
     payload_json: str = Form(...),
     categories_json: str = Form("[]"),
+    primary_attachment_index: Optional[int] = Form(default=None),
     files: Optional[List[UploadFile]] = File(default=None),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
@@ -347,6 +393,16 @@ async def create_settlement_with_attachments(
     uploads = files or []
     if len(categories) != len(uploads):
         raise HTTPException(status_code=422, detail="附件类型与文件数量不一致")
+    if primary_attachment_index is not None and not 0 <= primary_attachment_index < len(uploads):
+        raise HTTPException(status_code=422, detail="主结算单序号无效")
+    if primary_attachment_index is not None and categories[primary_attachment_index] != SettlementAttachmentCategory.settlement_sheet:
+        raise HTTPException(status_code=422, detail="只有结算单附件可设为主结算单")
+    if primary_attachment_index is None:
+        primary_attachment_index = next(
+            (index for index, category in enumerate(categories)
+             if category == SettlementAttachmentCategory.settlement_sheet),
+            None,
+        )
 
     prepared: list[tuple[SettlementAttachmentCategory, str, str | None, bytes, str]] = []
     seen_hashes: set[str] = set()
@@ -362,12 +418,12 @@ async def create_settlement_with_attachments(
     stored_paths: list[str] = []
     try:
         settlement = _new_settlement(data, db, admin)
-        for category, filename, content_type, content, digest in prepared:
+        for index, (category, filename, content_type, content, digest) in enumerate(prepared):
             stored_path = attachment_service.store_file(
                 ATTACHMENT_CATEGORY, filename, content
             )
             stored_paths.append(stored_path)
-            db.add(SettlementAttachment(
+            attachment = SettlementAttachment(
                 settlement_id=settlement.id,
                 category=category,
                 filename=filename,
@@ -375,17 +431,27 @@ async def create_settlement_with_attachments(
                 content_type=content_type,
                 file_size=len(content),
                 sha256=digest,
+                is_primary=index == primary_attachment_index,
                 created_by=admin.id,
-            ))
+            )
+            db.add(attachment)
             if category == SettlementAttachmentCategory.invoice:
                 settlement.invoice_received = True
                 settlement.invoice_status = SettlementInvoiceStatus.issued
-                settlement.status = SettlementStatus.invoiced
-            if category == SettlementAttachmentCategory.settlement_sheet and filename.lower().endswith(".xlsx"):
+                _sync_legacy_status(settlement)
+            if attachment.is_primary and filename.lower().endswith(".xlsx"):
                 parsed = parse_settlement_excel(content, filename)
+                attachment.recognized = bool(parsed["recognized"])
+                attachment.recognition_parser_version = parsed["parser_version"]
+                attachment.recognition_result = audit_result(parsed)
                 settlement.recognition_source_filename = filename
                 settlement.recognition_parser_version = parsed["parser_version"]
                 settlement.recognition_result = audit_result(parsed)
+            _log_operation(db, settlement, admin, "attachment_upload", {
+                "filename": filename,
+                "category": category.value,
+                "is_primary": attachment.is_primary,
+            })
         return _commit_created(db, settlement)
     except Exception:
         with suppress(Exception):
@@ -400,7 +466,7 @@ def update_settlement(
     settlement_id: int,
     data: SettlementUpdate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ):
     s = _get_or_404(db, settlement_id)
     patch = _normalize_strings(data.model_dump(exclude_unset=True))
@@ -411,10 +477,12 @@ def update_settlement(
     new_partner = patch.get("partner_id", s.partner_id)
     new_contract = patch.get("contract_id", s.contract_id)
     partner = _validate_refs(db, new_partner, new_contract)
-    _validate_partner_business(
-        partner,
-        {"settlement_type": patch.get("settlement_type", s.settlement_type)},
-    )
+    sales_mode_payload = {
+        "settlement_type": patch.get("settlement_type", s.settlement_type)
+    }
+    _validate_partner_business(partner, sales_mode_payload)
+    if partner.sales_mode_policy == SalesModePolicy.not_applicable:
+        patch["settlement_type"] = None
     merged = {
         field: patch.get(field, getattr(s, field))
         for field in (
@@ -454,6 +522,8 @@ def update_settlement(
         patch["invoice_status"] = SettlementInvoiceStatus.unissued
     for field, value in patch.items():
         setattr(s, field, value)
+    _sync_legacy_status(s)
+    _log_operation(db, s, admin, "update", patch)
     try:
         db.commit()
     except IntegrityError:
@@ -497,6 +567,7 @@ async def _store_attachment(
     file: UploadFile,
     admin: User,
     db: Session,
+    is_primary: bool = False,
 ) -> None:
     filename = _validate_filename(file)
     content = await read_upload(file, label="附件")
@@ -508,27 +579,45 @@ async def _store_attachment(
     if duplicate is not None:
         raise HTTPException(status_code=409, detail=f"附件 {filename} 已上传")
     stored_path = attachment_service.store_file(ATTACHMENT_CATEGORY, filename, content)
-    attachment = SettlementAttachment(
-        settlement_id=settlement.id,
-        category=category,
-        filename=filename,
-        path=stored_path,
-        content_type=file.content_type,
-        file_size=len(content),
-        sha256=digest,
-        created_by=admin.id,
-    )
-    db.add(attachment)
-    if category == SettlementAttachmentCategory.invoice:
-        settlement.invoice_received = True
-        settlement.invoice_status = SettlementInvoiceStatus.issued
-        settlement.status = SettlementStatus.invoiced
-    if category == SettlementAttachmentCategory.settlement_sheet and filename.lower().endswith(".xlsx"):
-        parsed = parse_settlement_excel(content, filename)
-        settlement.recognition_source_filename = filename
-        settlement.recognition_parser_version = parsed["parser_version"]
-        settlement.recognition_result = audit_result(parsed)
+    if is_primary and category != SettlementAttachmentCategory.settlement_sheet:
+        attachment_service.delete_file(stored_path)
+        raise HTTPException(status_code=400, detail="只有结算单附件可设为主结算单")
     try:
+        if is_primary:
+            db.query(SettlementAttachment).filter(
+                SettlementAttachment.settlement_id == settlement.id,
+                SettlementAttachment.is_primary.is_(True),
+            ).update({"is_primary": False}, synchronize_session=False)
+            _clear_settlement_recognition(settlement)
+        attachment = SettlementAttachment(
+            settlement_id=settlement.id,
+            category=category,
+            filename=filename,
+            path=stored_path,
+            content_type=file.content_type,
+            file_size=len(content),
+            sha256=digest,
+            is_primary=is_primary,
+            created_by=admin.id,
+        )
+        db.add(attachment)
+        if category == SettlementAttachmentCategory.invoice:
+            settlement.invoice_received = True
+            settlement.invoice_status = SettlementInvoiceStatus.issued
+            _sync_legacy_status(settlement)
+        if is_primary and filename.lower().endswith(".xlsx"):
+            parsed = parse_settlement_excel(content, filename)
+            attachment.recognized = bool(parsed["recognized"])
+            attachment.recognition_parser_version = parsed["parser_version"]
+            attachment.recognition_result = audit_result(parsed)
+            settlement.recognition_source_filename = filename
+            settlement.recognition_parser_version = parsed["parser_version"]
+            settlement.recognition_result = audit_result(parsed)
+        _log_operation(db, settlement, admin, "attachment_upload", {
+            "filename": filename,
+            "category": category.value,
+            "is_primary": is_primary,
+        })
         db.commit()
     except Exception:
         with suppress(Exception):
@@ -561,25 +650,22 @@ def _reset_invoice_status_if_empty(db: Session, settlement: ChannelSettlement) -
         return
     settlement.invoice_received = False
     settlement.invoice_status = SettlementInvoiceStatus.unissued
-    if settlement.status == SettlementStatus.invoiced:
-        settlement.status = (
-            SettlementStatus.paid
-            if settlement.payment_status == SettlementPaymentStatus.paid
-            else SettlementStatus.pending
-        )
+    _sync_legacy_status(settlement)
 
 
 @router.post("/{settlement_id}/attachments", response_model=SettlementOut)
 async def upload_typed_attachment(
     settlement_id: int,
     category: SettlementAttachmentCategory = SettlementAttachmentCategory.other,
+    is_primary: bool = False,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
     s = _get_or_404(db, settlement_id)
     await _store_attachment(
-        settlement=s, category=category, file=file, admin=admin, db=db
+        settlement=s, category=category, file=file, admin=admin, db=db,
+        is_primary=is_primary,
     )
     return _to_out(s)
 
@@ -607,19 +693,166 @@ def delete_typed_attachment(
     settlement_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ):
     s = _get_or_404(db, settlement_id)
     attachment = _get_attachment_or_404(db, settlement_id, attachment_id)
     old_path = attachment.path
+    was_primary = attachment.is_primary
     db.delete(attachment)
     db.flush()
     if attachment.category == SettlementAttachmentCategory.invoice:
         _reset_invoice_status_if_empty(db, s)
+    if was_primary:
+        _clear_settlement_recognition(s)
+    _log_operation(db, s, admin, "attachment_delete", {
+        "filename": attachment.filename,
+        "category": attachment.category.value,
+    })
     db.commit()
     db.refresh(s)
     attachment_service.delete_file(old_path)
     return _to_out(s)
+
+
+@router.put("/{settlement_id}/attachments/{attachment_id}", response_model=SettlementOut)
+def update_typed_attachment(
+    settlement_id: int,
+    attachment_id: int,
+    category: Optional[SettlementAttachmentCategory] = None,
+    is_primary: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    s = _get_or_404(db, settlement_id)
+    attachment = _get_attachment_or_404(db, settlement_id, attachment_id)
+    old_category = attachment.category
+    new_category = category or old_category
+    if is_primary is True and new_category != SettlementAttachmentCategory.settlement_sheet:
+        raise HTTPException(status_code=400, detail="只有结算单附件可设为主结算单")
+    attachment.category = new_category
+    if new_category != SettlementAttachmentCategory.settlement_sheet:
+        attachment.is_primary = False
+    if is_primary is not None and new_category == SettlementAttachmentCategory.settlement_sheet:
+        if is_primary:
+            db.query(SettlementAttachment).filter(
+                SettlementAttachment.settlement_id == s.id,
+                SettlementAttachment.id != attachment.id,
+            ).update({"is_primary": False}, synchronize_session=False)
+        attachment.is_primary = is_primary
+
+    if old_category == SettlementAttachmentCategory.settlement_sheet and new_category != old_category:
+        attachment.recognized = None
+        attachment.recognition_parser_version = None
+        attachment.recognition_result = None
+        if s.recognition_source_filename == attachment.filename:
+            _clear_settlement_recognition(s)
+
+    if new_category == SettlementAttachmentCategory.invoice:
+        s.invoice_received = True
+        s.invoice_status = SettlementInvoiceStatus.issued
+        _sync_legacy_status(s)
+    if old_category == SettlementAttachmentCategory.invoice and new_category != old_category:
+        db.flush()
+        _reset_invoice_status_if_empty(db, s)
+
+    if attachment.is_primary:
+        _clear_settlement_recognition(s)
+    if attachment.is_primary and attachment.filename.lower().endswith(".xlsx"):
+        try:
+            path = attachment_service.resolve_path(attachment.path)
+            parsed = parse_settlement_excel(path.read_bytes(), attachment.filename)
+            attachment.recognized = bool(parsed["recognized"])
+            attachment.recognition_parser_version = parsed["parser_version"]
+            attachment.recognition_result = audit_result(parsed)
+            s.recognition_source_filename = attachment.filename
+            s.recognition_parser_version = parsed["parser_version"]
+            s.recognition_result = audit_result(parsed)
+        except (OSError, ValueError):
+            attachment.recognized = False
+
+    _log_operation(db, s, admin, "attachment_update", {
+        "filename": attachment.filename,
+        "category": new_category.value,
+        "is_primary": attachment.is_primary,
+    })
+    db.commit()
+    db.refresh(s)
+    return _to_out(s)
+
+
+@router.post("/{settlement_id}/invoice", response_model=SettlementOut)
+def register_settlement_invoice(
+    settlement_id: int,
+    data: SettlementInvoiceRegister,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    s = _get_or_404(db, settlement_id)
+    has_invoice_file = db.query(SettlementAttachment.id).filter(
+        SettlementAttachment.settlement_id == settlement_id,
+        SettlementAttachment.category == SettlementAttachmentCategory.invoice,
+    ).first()
+    if has_invoice_file is None:
+        raise HTTPException(status_code=400, detail="登记开票前必须先上传发票文件")
+    payload = data.model_dump()
+    note = payload.pop("notes", None)
+    if payload.get("invoice_amount") is None:
+        quantity = payload.get("invoice_quantity")
+        unit_price = payload.get("invoice_unit_price")
+        if quantity is not None and unit_price is not None:
+            payload["invoice_amount"] = quantity * unit_price
+    for field, value in payload.items():
+        setattr(s, field, value)
+    s.invoice_received = True
+    s.invoice_status = SettlementInvoiceStatus.issued
+    _sync_legacy_status(s)
+    _log_operation(db, s, admin, "invoice_register", {**payload, "notes": note})
+    db.commit()
+    db.refresh(s)
+    return _to_out(s)
+
+
+@router.post("/{settlement_id}/payment", response_model=SettlementOut)
+def register_settlement_payment(
+    settlement_id: int,
+    data: SettlementPaymentRegister,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    s = _get_or_404(db, settlement_id)
+    previous = s.paid_amount or Decimal("0")
+    total = previous + data.amount
+    if s.amount_due is not None and total > s.amount_due:
+        raise HTTPException(status_code=400, detail="本次金额加累计已结金额不能超过应结金额")
+    s.paid_amount = total
+    s.paid_date = data.paid_date
+    s.on_time = data.on_time
+    s.payment_status = _payment_status(s.amount_due, total)
+    _sync_legacy_status(s)
+    _log_operation(db, s, admin, "payment_register", {
+        "amount": data.amount,
+        "paid_amount": total,
+        "paid_date": data.paid_date,
+        "on_time": data.on_time,
+        "notes": data.notes,
+    })
+    db.commit()
+    db.refresh(s)
+    return _to_out(s)
+
+
+@router.get("/{settlement_id}/history", response_model=List[SettlementHistoryOut])
+def settlement_history(
+    settlement_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    _get_or_404(db, settlement_id)
+    return db.query(OperationLog).filter(
+        OperationLog.table_name == "channel_settlements",
+        OperationLog.record_id == settlement_id,
+    ).order_by(OperationLog.created_at.desc(), OperationLog.id.desc()).all()
 
 
 # 旧单附件接口保留一版，便于历史前端平滑升级。
@@ -637,6 +870,7 @@ async def upload_attachment(
         file=file,
         admin=admin,
         db=db,
+        is_primary=False,
     )
     return _to_out(s)
 
@@ -669,7 +903,7 @@ def download_attachment(
 def delete_attachment(
     settlement_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ):
     s = _get_or_404(db, settlement_id)
     paths = {item.path for item in s.attachments}
@@ -681,6 +915,7 @@ def delete_attachment(
     s.attachment_filename = None
     db.flush()
     _reset_invoice_status_if_empty(db, s)
+    _log_operation(db, s, admin, "attachment_delete_all", {"count": len(paths)})
     db.commit()
     db.refresh(s)
     for path in paths:

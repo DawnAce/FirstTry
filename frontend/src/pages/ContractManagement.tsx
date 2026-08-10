@@ -51,6 +51,7 @@ import type {
   Partner,
   PartnerPayload,
   PartnerType,
+  SalesModePolicy,
 } from '../api/contracts';
 import { useAuth } from '../contexts/AuthContext';
 import { PageHeader } from '../components/UiPrimitives';
@@ -77,6 +78,16 @@ const PARTNER_TYPE_COLORS: Record<PartnerType, string> = {
   distribution: 'geekblue',
   retail: 'purple',
   other: 'default',
+};
+const SALES_MODE_POLICY_OPTIONS: Array<{ label: string; value: SalesModePolicy }> = [
+  { label: '不适用（结算时隐藏）', value: 'not_applicable' },
+  { label: '选填', value: 'optional' },
+  { label: '必填', value: 'required' },
+];
+const SALES_MODE_POLICY_LABELS: Record<SalesModePolicy, string> = {
+  not_applicable: '不适用',
+  optional: '选填',
+  required: '必填',
 };
 
 const STATUS_OPTIONS: Array<{ label: string; value: ContractStatus }> = [
@@ -113,6 +124,7 @@ function apiError(err: unknown, fallback: string) {
 interface PartnerFormValues {
   name: string;
   partner_type: PartnerType;
+  sales_mode_policy: SalesModePolicy;
   contact_person?: string;
   contact_phone?: string;
   settlement_account?: string;
@@ -166,7 +178,7 @@ function PartnersPanel({ isAdmin }: { isAdmin: boolean }) {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ partner_type: 'other', active: true });
+    form.setFieldsValue({ partner_type: 'other', sales_mode_policy: 'not_applicable', active: true });
     setModalOpen(true);
   };
   const openEdit = (p: Partner) => {
@@ -175,6 +187,7 @@ function PartnersPanel({ isAdmin }: { isAdmin: boolean }) {
     form.setFieldsValue({
       name: p.name,
       partner_type: p.partner_type,
+      sales_mode_policy: p.sales_mode_policy ?? 'not_applicable',
       contact_person: p.contact_person ?? undefined,
       contact_phone: p.contact_phone ?? undefined,
       settlement_account: p.settlement_account ?? undefined,
@@ -195,6 +208,7 @@ function PartnersPanel({ isAdmin }: { isAdmin: boolean }) {
   const columns: TableColumnsType<Partner> = [
     { title: '渠道名称', dataIndex: 'name', key: 'name', render: (v) => <Text strong>{v}</Text> },
     { title: '类型', dataIndex: 'partner_type', key: 'partner_type', width: 90, render: (v: PartnerType) => partnerTypeTag(v) },
+    { title: '销售模式', dataIndex: 'sales_mode_policy', key: 'sales_mode_policy', width: 100, render: (v?: SalesModePolicy) => SALES_MODE_POLICY_LABELS[v ?? 'not_applicable'] },
     { title: '联系人', dataIndex: 'contact_person', key: 'contact_person', render: (v) => v || <Text type="secondary">—</Text> },
     { title: '电话', dataIndex: 'contact_phone', key: 'contact_phone', render: (v) => v || <Text type="secondary">—</Text> },
     { title: '结算账户', dataIndex: 'settlement_account', key: 'settlement_account', render: (v) => v || <Text type="secondary">—</Text> },
@@ -264,6 +278,9 @@ function PartnersPanel({ isAdmin }: { isAdmin: boolean }) {
           </Form.Item>
           <Form.Item name="partner_type" label="类型">
             <Select options={PARTNER_TYPE_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="sales_mode_policy" label="结算销售模式" extra="控制新增结算时是否显示并要求选择“代销 / 包销”">
+            <Select options={SALES_MODE_POLICY_OPTIONS} />
           </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
             <Form.Item name="contact_person" label="联系人" style={{ width: 200 }}>

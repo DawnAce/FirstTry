@@ -98,6 +98,7 @@ const sourceStatusOptions: { label: string; value: ReportSourceStatus }[] = [
 ];
 
 const adjustmentKindOptions: { label: string; value: ReportSourceAdjustmentKind }[] = [
+  { label: '仅归档凭证（不改变任何数据）', value: 'archive_only' },
   { label: '追加订数（结算+补发）', value: 'billable_addition' },
   { label: '补损重发（只补发）', value: 'replacement' },
   { label: '冲减（减少结算）', value: 'reduction' },
@@ -620,9 +621,9 @@ export default function ReportEditor() {
       source_quantity: null,
       applied_quantity: null,
       source_status: 'pending_review',
-      adjustment_kind: sourceDocumentType === 'adjustment' ? 'billable_addition' : null,
+      adjustment_kind: sourceDocumentType === 'adjustment' ? 'archive_only' : null,
       source_action: sourceDocumentType === 'adjustment'
-        ? 'postpress_addition'
+        ? 'archive_only'
         : sourceOperation === 'addition' ? 'prepress_addition' : 'base',
       supersedes_item_id: null,
       confidence: null,
@@ -816,7 +817,7 @@ export default function ReportEditor() {
     initial: '上传基础来源',
     addition: '印数确认前追加',
     replacement: '定向替换原来源',
-    postpress: '登记结算与补发凭证',
+    postpress: '上传确认后凭证',
   };
   const previewChannelSummary = sourceChannelSummaries[sourceChannel];
   const replacementCurrentItems = sourceReplacementTarget?.items.filter(item => (
@@ -1226,7 +1227,7 @@ export default function ReportEditor() {
                             <strong>{categoryLabels[channel]}</strong>
                             <StatusPill tone={state.tone}>{state.label}</StatusPill>
                             {canMutate && <Button type="link" size="small" onClick={() => openSourceDrawer(channel)}>
-                              {isConfirmed ? '登记调整' : (channelSummary?.active_source_count ?? 0) > 0 ? '追加' : '上传'}
+                              {isConfirmed ? '上传凭证' : (channelSummary?.active_source_count ?? 0) > 0 ? '追加' : '上传'}
                             </Button>}
                           </div>
                           {(channelSummary?.active_source_count ?? 0) > 0 && (
@@ -1284,17 +1285,20 @@ export default function ReportEditor() {
                   </div>
                 )}
                 <div className="report-editor-adjustment-list">
-                    <strong>结算与补发凭证</strong>
+                    <strong>确认后凭证</strong>
                     {sourceAdjustmentItems.length === 0 && (
-                      <small className="report-editor-source-empty">印数确认后的追加、补损或冲减将在这里留档</small>
+                      <small className="report-editor-source-empty">印数确认后的来源凭证、追加、补损或冲减将在这里留档</small>
                     )}
                     {sourceAdjustmentItems.map(item => (
                       <div key={item.id}>
                         <span>{item.source_label || `${categoryLabels[item.category] ?? item.category}调整`}</span>
-                        <small>
-                          结算 {item.settlement_delta >= 0 ? '+' : ''}{item.settlement_delta}
-                          {' · '}应发 {item.shipping_delta} · 已发 {item.shipped_quantity}
-                          {item.shipping_delta > 0 && ` · 待发 ${Math.max(0, item.shipping_delta - item.shipped_quantity)}`}
+                        <small>{item.adjustment_kind === 'archive_only'
+                          ? '仅归档 · 不改变印数、结算或补发'
+                          : <>
+                            结算 {item.settlement_delta >= 0 ? '+' : ''}{item.settlement_delta}
+                            {' · '}应发 {item.shipping_delta} · 已发 {item.shipped_quantity}
+                            {item.shipping_delta > 0 && ` · 待发 ${Math.max(0, item.shipping_delta - item.shipped_quantity)}`}
+                          </>}
                         </small>
                         {canMutate && item.shipping_delta > 0 && <Button size="small" onClick={() => openShippingModal(item)}>登记</Button>}
                       </div>
@@ -1456,7 +1460,7 @@ export default function ReportEditor() {
               : sourceOperation === 'addition'
                 ? '新文件确认后会与现有有效来源相加，不会覆盖之前的数字。'
                 : sourceOperation === 'postpress'
-                  ? '当前印数已经锁定；新凭证只影响结算与快递补发，不修改印数。'
+                  ? '当前印数已经锁定；如本次只补充来源证明，请选择“仅归档凭证”，不会改变印数、结算或补发数据。'
                   : '首份确认来源将作为该渠道的基础贡献。'}
           />
           {(!sourcePreview || sourceFile) && <section className="report-source-panel">
@@ -1479,7 +1483,7 @@ export default function ReportEditor() {
                   options={[
                     { value: 'weekly', label: '每周原始报数' },
                     { value: 'monthly', label: '每月整月报数' },
-                    { value: 'adjustment', label: '后续补发 / 冲减凭证' },
+                    { value: 'adjustment', label: '确认后凭证（仅归档 / 追加 / 补发 / 冲减）' },
                   ]}
                   onChange={value => {
                     setSourceDocumentType(value);

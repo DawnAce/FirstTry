@@ -4,7 +4,7 @@ export type ReportSourceChannel = 'postal' | 'retail' | 'guangzhou' | 'chengdu';
 export type ReportSourceDocumentType = 'weekly' | 'monthly' | 'adjustment';
 export type ReportSourceStatus = 'pending_review' | 'channel_pending' | 'confirmed';
 export type ReportSourceItemKind = 'base' | 'adjustment';
-export type ReportSourceAdjustmentKind = 'billable_addition' | 'replacement' | 'reduction';
+export type ReportSourceAdjustmentKind = 'archive_only' | 'billable_addition' | 'replacement' | 'reduction';
 export type ReportSourceAction =
   | 'base'
   | 'prepress_addition'

@@ -171,6 +171,45 @@ def test_upload_deduplicates_same_channel_and_file(db, user, monkeypatch):
     assert db.query(ReportSourceDocument).count() == 1
 
 
+def test_confirmed_issue_evidence_defaults_to_archive_only(db, user, monkeypatch):
+    issue = _issue_with_entries(db, status=IssueStatus.confirmed)
+    monkeypatch.setattr(
+        report_source_service,
+        "recognize_report_source",
+        lambda **_kwargs: {
+            "document_type": "weekly",
+            "source_date": issue.publish_date,
+            "suggestions": [{
+                "item_kind": "base",
+                "category": "postal",
+                "sub_category": "本市",
+                "source_quantity": 1214,
+                "applied_quantity": 1214,
+                "source_status": "pending_review",
+            }],
+            "warnings": [],
+        },
+    )
+    monkeypatch.setattr(report_source_service.attachment_service, "store_file", lambda *_args: "uploads/report_sources/x.pdf")
+
+    document, _ = report_source_service.create_source_document(
+        db,
+        user=user,
+        channel="postal",
+        filename="已确认印数来源.pdf",
+        content=b"archive-only-evidence",
+        mime_type="application/pdf",
+        current_issue_number=issue.issue_number,
+        requested_document_type="adjustment",
+    )
+
+    suggestion = document.extraction_json["suggestions"][0]
+    assert suggestion["item_kind"] == "adjustment"
+    assert suggestion["adjustment_kind"] == "archive_only"
+    assert document.items[0].source_action == "archive_only"
+    assert document.items[0].adjustment_kind == "archive_only"
+
+
 def test_monthly_archive_name_uses_explicit_unambiguous_filename_month():
     display_name = report_source_service._build_display_name(
         channel="chengdu",
@@ -403,6 +442,40 @@ def test_adjustments_change_settlement_and_shipping_not_print_count(db, user):
     )
     summary = report_source_service.get_issue_summary(db, issue)
     assert next(row for row in summary.channels if row.channel == "chengdu").pending_shipping == 1
+
+
+def test_archive_only_evidence_changes_no_counts(db, user):
+    issue = _issue_with_entries(db, status=IssueStatus.confirmed)
+    document = _document(db, channel="postal")
+    db.commit()
+
+    confirmed = report_source_service.confirm_document(
+        db,
+        document=document,
+        user=user,
+        data=ReportSourceConfirmIn(items=[ReportSourceItemConfirmIn(
+            issue_number=issue.issue_number,
+            item_kind="adjustment",
+            category="postal",
+            sub_category="本市",
+            source_label="已确认印数来源证明",
+            source_quantity=1214,
+            adjustment_kind="archive_only",
+        )]),
+    )
+
+    item = confirmed.items[0]
+    assert item.source_action == "archive_only"
+    assert item.print_delta == 0
+    assert item.settlement_delta == 0
+    assert item.shipping_delta == 0
+    assert db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value == 1200
+
+    summary = report_source_service.get_issue_summary(db, issue)
+    postal = next(row for row in summary.channels if row.channel == "postal")
+    assert postal.base_quantity == 6800
+    assert postal.settlement_total == 6800
+    assert postal.pending_shipping == 0
 
 
 def test_channel_pending_source_blocks_final_report_confirmation(db, user):

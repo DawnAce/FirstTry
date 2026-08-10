@@ -5,6 +5,7 @@ import api from './client';
 // 写操作后端要求管理员；下载经鉴权接口取 blob 再触发浏览器下载。
 
 export type PartnerType = 'logistics' | 'distribution' | 'retail' | 'other';
+export type SalesModePolicy = 'not_applicable' | 'optional' | 'required';
 export type ContractStatus = 'active' | 'expired' | 'archived' | 'void';
 
 export interface Partner {
@@ -14,6 +15,7 @@ export interface Partner {
   contact_person: string | null;
   contact_phone: string | null;
   settlement_account: string | null;
+  sales_mode_policy?: SalesModePolicy;
   invoice_title: string | null;
   tax_no: string | null;
   taxpayer_type: string | null;
@@ -34,6 +36,7 @@ export interface PartnerPayload {
   contact_person?: string | null;
   contact_phone?: string | null;
   settlement_account?: string | null;
+  sales_mode_policy?: SalesModePolicy;
   invoice_title?: string | null;
   tax_no?: string | null;
   taxpayer_type?: string | null;
