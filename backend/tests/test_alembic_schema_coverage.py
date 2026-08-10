@@ -26,3 +26,29 @@ class AlembicSchemaCoverageTests(unittest.TestCase):
         self.assertIn("ForeignKeyConstraint(['issue_id'], ['issues.id']", migration_text)
         self.assertIn("snapshot_type", migration_text)
         self.assertIn('"fk_ft_replaced_by_target_id"', migration_text)
+
+    def test_settlement_schema_repair_covers_workflow_columns_and_indexes(self):
+        migration = (
+            Path(__file__).resolve().parents[1]
+            / "alembic"
+            / "versions"
+            / "d4f6a8c0e2b5_repair_settlement_schema_drift.py"
+        ).read_text(encoding="utf-8")
+
+        for name in (
+            "party_type",
+            "settlement_type",
+            "system_no",
+            "external_no",
+            "invoice_status",
+            "payment_status",
+            "recognition_source_filename",
+            "recognition_parser_version",
+            "recognition_result",
+            "file_size",
+            "sha256",
+            "ux_settlements_system_no",
+            "ix_settlements_external_no",
+            "ix_settlement_attachments_sha256",
+        ):
+            self.assertIn(f'"{name}"', migration)

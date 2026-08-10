@@ -1954,6 +1954,8 @@ draft ──confirm──> active ──void──> void
 
 `channel_settlements` 保留旧 `period` 和 `settlement_no` 作为兼容字段。迁移 `c2e4f6a8b0d3` 新增唯一 `system_no`、可重复 `external_no`、`party_type(channel/individual)`、可选 `settlement_type(consignment/buyout)`、独立 `invoice_status` / `payment_status` 以及识别审计快照。系统编号在插入取得数据库主键后生成 `JS-QD|GR-YYYYMM-{id}`，并发安全；历史 `settlement_no` 复制到 `external_no`，历史记录补生成系统编号。
 
+迁移 `d4f6a8c0e2b5` 用于修复少数长期开发数据库的版本漂移：数据库的 `alembic_version` 虽已越过 `c2e4f6a8b0d3`，实际却缺少上述结算列以及附件 `file_size / sha256`，表现为新增结算提交时 500。该迁移按当前表结构逐列、逐索引检查，只补缺失项并补齐历史编号/状态；结构完整的数据库执行时不改业务数据。修复后仍使用标准 `alembic upgrade head`，不得用 `stamp head` 代替真实迁移。前端统一解析 FastAPI 字符串和数组错误；遇到无正文的 5xx 时明确提示检查数据库迁移，不再只显示“保存失败”。
+
 后端统一计算 `amount_due = gross_amount - return_deduction_amount`、`invoice_amount = invoice_quantity × invoice_unit_price` 和收付状态；日期必须成对且起始不晚于结束，退报扣款大于 0 时必须提供退报周期。`partners.sales_mode_policy` 取 `not_applicable / optional / required`，后端据此清空、允许或强制 `settlement_type`，不再依赖渠道名称判断。迁移 `b1d3f5a7c9e2` 将北京报零名称的历史渠道回填为 `required`，其他渠道为 `not_applicable`。
 
 `partners` 增加渠道开票档案，供结算表单自动带出。`contract_id` 校验所选合同必须属于当前渠道。
