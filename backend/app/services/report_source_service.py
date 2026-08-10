@@ -116,9 +116,27 @@ def _build_display_name(
                 year, month = fallback_date.year, fallback_date.month
         return f"{year}年{month:02d}月_{channel_label}_月度报数{suffix}"
     if document_type == "adjustment":
-        count = len(suggestions)
-        total = sum(abs(item.get("source_quantity") or 0) for item in suggestions)
-        return f"{stamp}_{channel_label}_确认后凭证_{count}期共{total}份{suffix}"
+        base_name = f"{stamp}_{channel_label}_确认后凭证"
+        period_keys = [
+            item.get("issue_number") or item.get("source_period")
+            for item in suggestions
+        ]
+        quantities = [item.get("source_quantity") for item in suggestions]
+        # One issue may contain several rows (for example postal local and
+        # non-local quantities), so rows must not be described as periods.
+        # If OCR did not reliably produce every period and quantity, omit the
+        # statistic entirely instead of archiving a misleading "N期共0份".
+        has_complete_periods = bool(period_keys) and all(period_keys)
+        has_complete_quantities = bool(quantities) and all(
+            isinstance(quantity, int) and not isinstance(quantity, bool)
+            for quantity in quantities
+        )
+        if has_complete_periods and has_complete_quantities:
+            count = len(set(period_keys))
+            total = sum(abs(quantity) for quantity in quantities)
+            if total > 0:
+                return f"{base_name}_{count}期共{total}份{suffix}"
+        return f"{base_name}{suffix}"
     return f"{stamp}_{channel_label}_原始报数{suffix}"
 
 
@@ -549,6 +567,16 @@ def confirm_document(
                 raise HTTPException(status_code=400, detail=f"第{affected_issue.issue_number}期缺少报数项 {category}/{sub_category}")
             _apply_print_totals_to_issue(db, affected_issue, keys)
     document.extraction_status = "confirmed" if all(item.source_status == "confirmed" for item in data.items) else "reviewed"
+    # Refresh the human-readable archive name from the reviewed values. This
+    # fixes a provisional upload name when OCR initially missed a quantity and
+    # the reviewer supplied it manually.
+    document.display_name = _build_display_name(
+        channel=document.channel,
+        document_type=document.document_type,
+        source_date=document.source_date,
+        filename=document.original_filename,
+        suggestions=[item.model_dump() for item in data.items],
+    )
     record_operation(
         db,
         user=user,
