@@ -9,6 +9,10 @@ const partners = [
   { id: 1, name: '中通', partner_type: 'logistics', contact_person: '张经理', contact_phone: '13800000000', settlement_account: '工行 6222...', invoice_title: null, tax_no: null, taxpayer_type: null, default_invoice_type: null, default_tax_rate: null, default_invoice_content: null, default_invoice_unit: null, default_invoice_unit_price: null, notes: null, active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
   { id: 2, name: '北京市报刊发行局', partner_type: 'distribution', contact_person: null, contact_phone: null, settlement_account: null, invoice_title: '北京市报刊零售有限公司', tax_no: '91110102101537026D', taxpayer_type: 'general', default_invoice_type: 'vat_normal', default_tax_rate: '0.0900', default_invoice_content: '*印刷品*中国经营报', default_invoice_unit: '份', default_invoice_unit_price: '2.7500', notes: null, active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
 ]
+const configuredPartners = partners.map((partner, index) => ({
+  ...partner,
+  sales_mode_policy: index === 1 ? 'required' : 'not_applicable',
+}))
 
 const contracts = [
   { id: 10, partner_id: 1, partner_name: '中通', partner_type: 'logistics', contract_no: 'ZT-2026-001', title: '2026 年度中通物流配送合作合同', sign_year: 2026, sign_date: '2026-01-05', start_date: '2026-01-01', end_date: '2026-12-31', amount: '120000.00', status: 'active', attachment_filename: '中通合同.pdf', has_attachment: true, is_expiring: false, notes: null, created_at: '2026-01-05T00:00:00Z', updated_at: '2026-01-05T00:00:00Z' },
@@ -20,7 +24,7 @@ const operatorAuth = { user: { id: 2, username: 'op', role: 'operator' }, isAdmi
 
 const dataHandlers = [
   http.get('/api/contracts', () => HttpResponse.json(contracts)),
-  http.get('/api/partners', () => HttpResponse.json(partners)),
+  http.get('/api/partners', () => HttpResponse.json(configuredPartners)),
 ]
 
 const meta = {
@@ -98,7 +102,7 @@ export const Loading: Story = {
     msw: {
       handlers: [
         http.get('/api/contracts', async () => { await delay('infinite'); return HttpResponse.json(contracts) }),
-        http.get('/api/partners', () => HttpResponse.json(partners)),
+        http.get('/api/partners', () => HttpResponse.json(configuredPartners)),
       ],
     },
   },

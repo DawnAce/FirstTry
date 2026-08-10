@@ -96,6 +96,7 @@ export interface Settlement {
   invoice_status: SettlementInvoiceStatus;
   payment_status: SettlementPaymentStatus;
   invoice_no: string | null;
+  invoice_date: string | null;
   invoice_title: string | null;
   invoice_tax_no: string | null;
   invoice_taxpayer_type: string | null;
@@ -122,6 +123,10 @@ export interface SettlementAttachment {
   content_type: string | null;
   file_size: number | null;
   sha256: string | null;
+  is_primary: boolean;
+  recognized: boolean | null;
+  recognition_parser_version: string | null;
+  recognition_result: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -146,6 +151,7 @@ export interface SettlementPayload {
   on_time?: boolean | null;
   invoice_received?: boolean;
   invoice_no?: string | null;
+  invoice_date?: string | null;
   invoice_title?: string | null;
   invoice_tax_no?: string | null;
   invoice_taxpayer_type?: string | null;
@@ -232,11 +238,13 @@ export function createSettlement(body: SettlementPayload): Promise<AxiosResponse
 }
 export function createSettlementWithAttachments(
   body: SettlementPayload,
-  attachments: Array<{ category: SettlementAttachmentCategory; file: File }>,
+  attachments: Array<{ category: SettlementAttachmentCategory; file: File; isPrimary?: boolean }>,
 ): Promise<AxiosResponse<Settlement>> {
   const fd = new FormData();
   fd.append('payload_json', JSON.stringify(body));
   fd.append('categories_json', JSON.stringify(attachments.map((item) => item.category)));
+  const primaryIndex = attachments.findIndex((item) => item.isPrimary);
+  if (primaryIndex >= 0) fd.append('primary_attachment_index', String(primaryIndex));
   attachments.forEach((item) => fd.append('files', item.file));
   return api.post('/settlements/with-attachments', fd);
 }
@@ -277,10 +285,18 @@ export function uploadSettlementAttachment(
   id: number,
   category: SettlementAttachmentCategory,
   file: File,
+  isPrimary = false,
 ): Promise<AxiosResponse<Settlement>> {
   const fd = new FormData();
   fd.append('file', file);
-  return api.post(`/settlements/${id}/attachments`, fd, { params: { category } });
+  return api.post(`/settlements/${id}/attachments`, fd, { params: { category, is_primary: isPrimary } });
+}
+export function updateSettlementAttachment(
+  id: number,
+  attachmentId: number,
+  params: { category?: SettlementAttachmentCategory; is_primary?: boolean },
+): Promise<AxiosResponse<Settlement>> {
+  return api.put(`/settlements/${id}/attachments/${attachmentId}`, null, { params });
 }
 export function deleteSettlementAttachment(id: number, attachmentId: number): Promise<AxiosResponse<Settlement>> {
   return api.delete(`/settlements/${id}/attachments/${attachmentId}`);
@@ -298,6 +314,44 @@ export async function downloadSettlementAttachment(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+export interface SettlementInvoiceRegisterPayload {
+  invoice_no?: string | null;
+  invoice_date: string;
+  invoice_title?: string | null;
+  invoice_tax_no?: string | null;
+  invoice_taxpayer_type?: string | null;
+  invoice_type?: string | null;
+  invoice_item_name?: string | null;
+  invoice_unit?: string | null;
+  invoice_quantity?: number | null;
+  invoice_unit_price?: number | null;
+  invoice_tax_rate?: number | null;
+  invoice_amount?: number | null;
+  notes?: string | null;
+}
+export interface SettlementPaymentRegisterPayload {
+  amount: number;
+  paid_date: string;
+  on_time?: boolean | null;
+  notes?: string | null;
+}
+export interface SettlementHistory {
+  id: number;
+  action: string;
+  changes: Record<string, unknown> | null;
+  username: string | null;
+  created_at: string;
+}
+export function registerSettlementInvoice(id: number, body: SettlementInvoiceRegisterPayload): Promise<AxiosResponse<Settlement>> {
+  return api.post(`/settlements/${id}/invoice`, body);
+}
+export function registerSettlementPayment(id: number, body: SettlementPaymentRegisterPayload): Promise<AxiosResponse<Settlement>> {
+  return api.post(`/settlements/${id}/payment`, body);
+}
+export function getSettlementHistory(id: number): Promise<AxiosResponse<SettlementHistory[]>> {
+  return api.get(`/settlements/${id}/history`);
 }
 
 // ===========================================================================

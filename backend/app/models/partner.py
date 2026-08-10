@@ -25,6 +25,14 @@ class PartnerType(str, enum.Enum):
     other = "other"                # 其他渠道合作（如广州日报）
 
 
+class SalesModePolicy(str, enum.Enum):
+    """渠道结算是否使用“代销 / 包销”销售模式。"""
+
+    not_applicable = "not_applicable"
+    optional = "optional"
+    required = "required"
+
+
 class Partner(Base):
     """合作渠道 / 合作方主数据（上游物流·发行·零售渠道）。
 
@@ -46,6 +54,11 @@ class Partner(Base):
     contact_phone = Column(String(64), nullable=True)
     # 结算账户 / 开户信息（自由文本，给财务渠道结算用）。
     settlement_account = Column(String(255), nullable=True)
+    sales_mode_policy = Column(
+        SAEnum(SalesModePolicy),
+        default=SalesModePolicy.not_applicable,
+        nullable=False,
+    )
     # 开票档案：结算时自动带出，避免每张单重复录入。
     invoice_title = Column(String(255), nullable=True)
     tax_no = Column(String(64), nullable=True)

@@ -436,8 +436,15 @@ def test_voided_order_with_unreversed_invoice_stays_visible(client):
 # --------------------------------------------------------------------------- #
 # 渠道结算
 # --------------------------------------------------------------------------- #
-def _partner(client, name="中通"):
-    return client.post("/api/partners", json={"name": name, "partner_type": "logistics"}).json()
+def _partner(client, name="中通", sales_mode_policy="not_applicable"):
+    return client.post(
+        "/api/partners",
+        json={
+            "name": name,
+            "partner_type": "logistics",
+            "sales_mode_policy": sales_mode_policy,
+        },
+    ).json()
 
 
 def test_settlement_crud_and_partner_name(client):
@@ -469,7 +476,7 @@ def test_settlement_crud_and_partner_name(client):
 
 
 def test_structured_settlement_periods_returns_direction_and_calculations(client):
-    p = _partner(client, "北京报刊零售")
+    p = _partner(client, "北京报刊零售", "required")
     client.put(
         f"/api/partners/{p['id']}",
         json={
@@ -569,7 +576,7 @@ def test_create_settlement_with_attachments_is_atomic_and_invoice_drives_status(
     client, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
-    partner = _partner(client, "北京报刊零售")
+    partner = _partner(client, "北京报刊零售", "required")
     payload = {
         "partner_id": partner["id"],
         "party_type": "channel",
@@ -609,6 +616,9 @@ def test_create_settlement_with_attachments_is_atomic_and_invoice_drives_status(
     assert body["status"] == "invoiced"
     assert len(body["attachments"]) == 2
     assert all(item["sha256"] for item in body["attachments"])
+    settlement_sheet = next(item for item in body["attachments"] if item["category"] == "settlement_sheet")
+    assert settlement_sheet["is_primary"] is True
+    assert settlement_sheet["recognized"] is True
 
     invoice = next(item for item in body["attachments"] if item["category"] == "invoice")
     deleted = client.delete(
@@ -638,6 +648,143 @@ def test_individual_settlement_gets_distinct_system_number_prefix(client):
     )
     assert changed.status_code == 400
     assert "不可修改" in changed.json()["detail"]
+
+
+def test_sales_mode_policy_controls_validation_and_storage(client):
+    regular = _partner(client, "普通渠道")
+    regular_settlement = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": regular["id"],
+            "settlement_type": "buyout",
+            "settlement_start_date": "2026-08-01",
+            "settlement_end_date": "2026-08-31",
+        },
+    )
+    assert regular_settlement.status_code == 201
+    assert regular_settlement.json()["settlement_type"] is None
+
+    required = _partner(client, "要求销售模式渠道", "required")
+    missing = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": required["id"],
+            "settlement_start_date": "2026-08-01",
+            "settlement_end_date": "2026-08-31",
+        },
+    )
+    assert missing.status_code == 400
+    assert "必须选择代销或包销" in missing.json()["detail"]
+
+    optional = _partner(client, "销售模式选填渠道", "optional")
+    optional_settlement = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": optional["id"],
+            "settlement_start_date": "2026-08-01",
+            "settlement_end_date": "2026-08-31",
+        },
+    )
+    assert optional_settlement.status_code == 201
+    assert optional_settlement.json()["settlement_type"] is None
+
+
+def test_primary_settlement_sheet_is_explicit_and_recognition_is_per_file(
+    client, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
+    partner = _partner(client)
+    response = client.post(
+        "/api/settlements/with-attachments",
+        data={
+            "payload_json": json.dumps({
+                "partner_id": partner["id"],
+                "settlement_start_date": "2026-06-01",
+                "settlement_end_date": "2026-06-29",
+            }),
+            "categories_json": json.dumps(["settlement_sheet", "settlement_sheet"]),
+            "primary_attachment_index": "1",
+        },
+        files=[
+            ("files", ("旧平台结算.pdf", b"%PDF old", "application/pdf")),
+            ("files", ("北京报零.xlsx", _beijing_settlement_xlsx(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+        ],
+    )
+    assert response.status_code == 201, response.text
+    first, second = response.json()["attachments"]
+    assert first["is_primary"] is False
+    assert first["recognized"] is None
+    assert second["is_primary"] is True
+    assert second["recognized"] is True
+
+    reclassified = client.put(
+        f"/api/settlements/{response.json()['id']}/attachments/{second['id']}",
+        params={"category": "other"},
+    )
+    assert reclassified.status_code == 200
+    updated = next(item for item in reclassified.json()["attachments"] if item["id"] == second["id"])
+    assert updated["category"] == "other"
+    assert updated["is_primary"] is False
+    assert updated["recognized"] is None
+
+
+def test_invoice_payment_actions_are_independent_and_audited(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
+    partner = _partner(client)
+    settlement = client.post(
+        "/api/settlements",
+        json={
+            "partner_id": partner["id"],
+            "direction": "receivable",
+            "settlement_start_date": "2026-08-01",
+            "settlement_end_date": "2026-08-31",
+            "gross_amount": 100,
+        },
+    ).json()
+    missing_file = client.post(
+        f"/api/settlements/{settlement['id']}/invoice",
+        json={"invoice_no": "FP-001", "invoice_date": "2026-09-01", "invoice_amount": 100},
+    )
+    assert missing_file.status_code == 400
+    assert "必须先上传发票文件" in missing_file.json()["detail"]
+
+    uploaded = client.post(
+        f"/api/settlements/{settlement['id']}/attachments",
+        params={"category": "invoice"},
+        files={"file": ("发票.pdf", b"%PDF invoice", "application/pdf")},
+    )
+    assert uploaded.status_code == 200
+    invoiced = client.post(
+        f"/api/settlements/{settlement['id']}/invoice",
+        json={"invoice_no": "FP-001", "invoice_date": "2026-09-01", "invoice_amount": 100},
+    )
+    assert invoiced.status_code == 200, invoiced.text
+    assert invoiced.json()["invoice_status"] == "issued"
+    assert invoiced.json()["payment_status"] == "unpaid"
+    assert invoiced.json()["invoice_date"] == "2026-09-01"
+
+    partial = client.post(
+        f"/api/settlements/{settlement['id']}/payment",
+        json={"amount": 40, "paid_date": "2026-09-02", "on_time": True},
+    )
+    assert partial.status_code == 200
+    assert partial.json()["payment_status"] == "partial"
+    assert partial.json()["invoice_status"] == "issued"
+
+    paid = client.post(
+        f"/api/settlements/{settlement['id']}/payment",
+        json={"amount": 60, "paid_date": "2026-09-03"},
+    )
+    assert paid.status_code == 200
+    assert paid.json()["payment_status"] == "paid"
+    assert paid.json()["status"] == "paid"
+
+    history = client.get(f"/api/settlements/{settlement['id']}/history")
+    assert history.status_code == 200
+    actions = [item["action"] for item in history.json()]
+    assert "create" in actions
+    assert "invoice_register" in actions
+    assert actions.count("payment_register") == 2
 
 
 @pytest.mark.parametrize(

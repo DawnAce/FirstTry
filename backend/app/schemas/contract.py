@@ -11,7 +11,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.models.contract import ContractStatus
-from app.models.partner import PartnerType
+from app.models.partner import PartnerType, SalesModePolicy
 
 
 # --------------------------------------------------------------------------- #
@@ -23,6 +23,7 @@ class PartnerBase(BaseModel):
     contact_person: Optional[str] = Field(default=None, max_length=64)
     contact_phone: Optional[str] = Field(default=None, max_length=64)
     settlement_account: Optional[str] = Field(default=None, max_length=255)
+    sales_mode_policy: SalesModePolicy = SalesModePolicy.not_applicable
     invoice_title: Optional[str] = Field(default=None, max_length=255)
     tax_no: Optional[str] = Field(default=None, max_length=64)
     taxpayer_type: Optional[str] = Field(default=None, max_length=32)
@@ -45,6 +46,7 @@ class PartnerUpdate(BaseModel):
     contact_person: Optional[str] = Field(default=None, max_length=64)
     contact_phone: Optional[str] = Field(default=None, max_length=64)
     settlement_account: Optional[str] = Field(default=None, max_length=255)
+    sales_mode_policy: Optional[SalesModePolicy] = None
     invoice_title: Optional[str] = Field(default=None, max_length=255)
     tax_no: Optional[str] = Field(default=None, max_length=64)
     taxpayer_type: Optional[str] = Field(default=None, max_length=32)

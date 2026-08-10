@@ -8,7 +8,7 @@ ChannelCode = Literal["postal", "retail", "guangzhou", "chengdu"]
 DocumentType = Literal["weekly", "monthly", "adjustment"]
 ItemKind = Literal["base", "adjustment"]
 SourceStatus = Literal["pending_review", "channel_pending", "confirmed"]
-AdjustmentKind = Literal["billable_addition", "replacement", "reduction"]
+AdjustmentKind = Literal["archive_only", "billable_addition", "replacement", "reduction"]
 SourceAction = Literal[
     "base",
     "prepress_addition",

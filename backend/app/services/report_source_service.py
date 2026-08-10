@@ -118,7 +118,7 @@ def _build_display_name(
     if document_type == "adjustment":
         count = len(suggestions)
         total = sum(abs(item.get("source_quantity") or 0) for item in suggestions)
-        return f"{stamp}_{channel_label}_补发调整_{count}期共{total}份{suffix}"
+        return f"{stamp}_{channel_label}_确认后凭证_{count}期共{total}份{suffix}"
     return f"{stamp}_{channel_label}_原始报数{suffix}"
 
 
@@ -203,7 +203,10 @@ def create_source_document(
                 "item_kind": "adjustment",
                 "applied_quantity": None,
                 "source_status": "pending_review",
-                "adjustment_kind": suggestion.get("adjustment_kind") or "billable_addition",
+                # A confirmed issue is immutable.  When OCR has not explicitly
+                # identified a supplement/reduction, archive the evidence by
+                # default so a source document cannot silently alter settlement.
+                "adjustment_kind": suggestion.get("adjustment_kind") or "archive_only",
             })
     default_issue_number = current_issue_number or _issue_number_for_source_date(db, source_date)
     for suggestion in suggestions:
@@ -250,7 +253,8 @@ def create_source_document(
             applied_quantity=suggestion.get("applied_quantity"),
             source_status="pending_review",
             source_action=suggestion.get("source_action") or (
-                "postpress_addition" if suggestion.get("item_kind") == "adjustment" else "base"
+                _action_for_adjustment(suggestion.get("adjustment_kind"))
+                if suggestion.get("item_kind") == "adjustment" else "base"
             ),
             applied_phase=(
                 "post_confirmation" if suggestion.get("item_kind") == "adjustment" else "pre_confirmation"
@@ -331,17 +335,20 @@ def delete_source_document(
 
 def _adjustment_deltas(kind: str | None, quantity: int | None) -> tuple[int, int]:
     amount = abs(quantity or 0)
+    if kind == "archive_only":
+        return 0, 0
     if kind == "billable_addition":
         return amount, amount
     if kind == "replacement":
         return 0, amount
     if kind == "reduction":
         return -amount, 0
-    raise HTTPException(status_code=400, detail="调整项必须选择追加订数、补损重发或冲减")
+    raise HTTPException(status_code=400, detail="确认后凭证必须选择仅归档、追加订数、补损重发或冲减")
 
 
 def _action_for_adjustment(kind: str | None) -> str:
     return {
+        "archive_only": "archive_only",
         "billable_addition": "postpress_addition",
         "replacement": "damage_reshipment",
         "reduction": "reduction",

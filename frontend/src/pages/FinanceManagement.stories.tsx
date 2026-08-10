@@ -31,14 +31,18 @@ const invoiceOrders = {
 }
 
 const settlements = [
-  { id: 1, partner_id: 1, partner_name: '中通', contract_id: null, direction: 'payable', party_type: 'channel', settlement_type: null, system_no: 'JS-QD-202608-000001', external_no: 'ZT-2026-Q1', settlement_no: 'ZT-2026-Q1', period: null, settlement_start_date: '2026-01-01', settlement_end_date: '2026-03-31', return_start_date: null, return_end_date: null, gross_amount: '120000.00', return_deduction_amount: '0.00', amount_due: '120000.00', paid_amount: '120000.00', paid_date: '2026-04-10', on_time: true, invoice_received: true, invoice_status: 'issued', payment_status: 'paid', invoice_no: 'ZT-FP-001', invoice_title: '中通快递', invoice_tax_no: null, invoice_taxpayer_type: 'general', invoice_type: 'vat_special', invoice_item_name: '物流服务', invoice_unit: '次', invoice_quantity: null, invoice_unit_price: null, invoice_tax_rate: '0.0600', invoice_amount: '120000.00', status: 'invoiced', attachment_filename: '结算单.pdf', has_attachment: true, attachments: [{ id: 1, category: 'settlement_sheet', filename: '结算单.pdf', content_type: 'application/pdf', file_size: 1024, sha256: 'demo', created_at: TS }], notes: null, created_at: TS, updated_at: TS },
-  { id: 2, partner_id: 2, partner_name: '北京市报刊发行局', contract_id: null, direction: 'receivable', party_type: 'channel', settlement_type: 'consignment', system_no: 'JS-QD-202608-000002', external_no: 'JS-2026-001', settlement_no: 'JS-2026-001', period: null, settlement_start_date: '2026-06-01', settlement_end_date: '2026-06-29', return_start_date: '2026-05-04', return_end_date: '2026-06-29', gross_amount: '14437.50', return_deduction_amount: '13794.00', amount_due: '643.50', paid_amount: null, paid_date: null, on_time: null, invoice_received: false, invoice_status: 'unissued', payment_status: 'unpaid', invoice_no: null, invoice_title: '北京市报刊零售有限公司', invoice_tax_no: '91110102101537026D', invoice_taxpayer_type: 'general', invoice_type: 'vat_normal', invoice_item_name: '*印刷品*中国经营报', invoice_unit: '份', invoice_quantity: '234.00', invoice_unit_price: '2.7500', invoice_tax_rate: '0.0900', invoice_amount: '643.50', status: 'pending', attachment_filename: null, has_attachment: false, attachments: [], notes: null, created_at: TS, updated_at: TS },
+  { id: 1, partner_id: 1, partner_name: '中通', contract_id: null, direction: 'payable', party_type: 'channel', settlement_type: null, system_no: 'JS-QD-202608-000001', external_no: 'ZT-2026-Q1', settlement_no: 'ZT-2026-Q1', period: null, settlement_start_date: '2026-01-01', settlement_end_date: '2026-03-31', return_start_date: null, return_end_date: null, gross_amount: '120000.00', return_deduction_amount: '0.00', amount_due: '120000.00', paid_amount: '120000.00', paid_date: '2026-04-10', on_time: true, invoice_received: true, invoice_status: 'issued', payment_status: 'paid', invoice_no: 'ZT-FP-001', invoice_date: '2026-04-09', invoice_title: '中通快递', invoice_tax_no: null, invoice_taxpayer_type: 'general', invoice_type: 'vat_special', invoice_item_name: '物流服务', invoice_unit: '次', invoice_quantity: null, invoice_unit_price: null, invoice_tax_rate: '0.0600', invoice_amount: '120000.00', status: 'invoiced', attachment_filename: '结算单.pdf', has_attachment: true, attachments: [{ id: 1, category: 'settlement_sheet', filename: '结算单.pdf', content_type: 'application/pdf', file_size: 1024, sha256: 'demo', is_primary: true, recognized: null, recognition_parser_version: null, recognition_result: null, created_at: TS }], notes: null, created_at: TS, updated_at: TS },
+  { id: 2, partner_id: 2, partner_name: '北京市报刊发行局', contract_id: null, direction: 'receivable', party_type: 'channel', settlement_type: 'consignment', system_no: 'JS-QD-202608-000002', external_no: 'JS-2026-001', settlement_no: 'JS-2026-001', period: null, settlement_start_date: '2026-06-01', settlement_end_date: '2026-06-29', return_start_date: '2026-05-04', return_end_date: '2026-06-29', gross_amount: '14437.50', return_deduction_amount: '13794.00', amount_due: '643.50', paid_amount: null, paid_date: null, on_time: null, invoice_received: false, invoice_status: 'unissued', payment_status: 'unpaid', invoice_no: null, invoice_date: null, invoice_title: '北京市报刊零售有限公司', invoice_tax_no: '91110102101537026D', invoice_taxpayer_type: 'general', invoice_type: 'vat_normal', invoice_item_name: '*印刷品*中国经营报', invoice_unit: '份', invoice_quantity: '234.00', invoice_unit_price: '2.7500', invoice_tax_rate: '0.0900', invoice_amount: '643.50', status: 'pending', attachment_filename: null, has_attachment: false, attachments: [], notes: null, created_at: TS, updated_at: TS },
 ]
 
 const partners = [
   { id: 1, name: '中通', partner_type: 'logistics', contact_person: null, contact_phone: null, settlement_account: null, invoice_title: null, tax_no: null, taxpayer_type: null, default_invoice_type: null, default_tax_rate: null, default_invoice_content: null, default_invoice_unit: null, default_invoice_unit_price: null, notes: null, active: true, created_at: TS, updated_at: TS },
   { id: 2, name: '北京市报刊发行局', partner_type: 'distribution', contact_person: null, contact_phone: null, settlement_account: null, invoice_title: '北京市报刊零售有限公司', tax_no: '91110102101537026D', taxpayer_type: 'general', default_invoice_type: 'vat_normal', default_tax_rate: '0.0900', default_invoice_content: '*印刷品*中国经营报', default_invoice_unit: '份', default_invoice_unit_price: '2.7500', notes: null, active: true, created_at: TS, updated_at: TS },
 ]
+const configuredPartners = partners.map((partner, index) => ({
+  ...partner,
+  sales_mode_policy: index === 1 ? 'required' : 'not_applicable',
+}))
 
 const adminAuth = { user: { id: 1, username: 'admin', role: 'admin' }, isAdmin: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} }
 const operatorAuth = { user: { id: 2, username: 'op', role: 'operator' }, isAdmin: false, isLoggedIn: true, setAuth: () => {}, logout: () => {} }
@@ -50,7 +54,10 @@ const dataHandlers = [
     { headers: { 'Content-Type': 'image/svg+xml' } },
   )),
   http.get('/api/settlements', () => HttpResponse.json(settlements)),
-  http.get('/api/partners', () => HttpResponse.json(partners)),
+  http.get('/api/settlements/:settlementId/history', () => HttpResponse.json([
+    { id: 1, action: 'create', changes: {}, username: 'admin', created_at: TS },
+  ])),
+  http.get('/api/partners', () => HttpResponse.json(configuredPartners)),
 ]
 
 const meta = {
@@ -155,6 +162,25 @@ export const SettlementsTab: Story = {
   },
 }
 
+export const SettlementDetails: Story = {
+  name: '结算详情与后续操作',
+  parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.click(await canvas.findByRole('tab', { name: '渠道结算' }))
+    const detailButtons = await canvas.findAllByRole('button', { name: '查看详情' })
+    await userEvent.click(detailButtons[0])
+    const body = within(canvasElement.ownerDocument.body)
+    const drawerTitle = await body.findByText(/结算详情 · JS-QD-/)
+    const drawer = drawerTitle.closest<HTMLElement>('.ant-drawer')
+    await expect(drawer).not.toBeNull()
+    if (!drawer) return
+    await expect(await within(drawer).findByText('结算信息')).toBeVisible()
+    await expect(await within(drawer).findByText('附件')).toBeVisible()
+    await expect(await within(drawer).findByText('开票')).toBeVisible()
+    await expect(await within(drawer).findByText('操作记录')).toBeVisible()
+  },
+}
+
 export const CreateStructuredSettlement: Story = {
   name: '新增结构化渠道结算',
   parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
@@ -167,8 +193,10 @@ export const CreateStructuredSettlement: Story = {
     await expect(await within(dialog).findByText('退报周期')).toBeInTheDocument()
     await expect(await within(dialog).findByText('系统结算单号')).toBeInTheDocument()
     await expect(await within(dialog).findByText('外部平台单号')).toBeInTheDocument()
-    await expect(await within(dialog).findByText('结算类型')).toBeInTheDocument()
+    await expect(within(dialog).queryByText('销售模式')).not.toBeInTheDocument()
     await expect(await within(dialog).findByText('附件归档')).toBeInTheDocument()
+    await expect(within(dialog).queryByText('开票日期')).not.toBeInTheDocument()
+    await expect(within(dialog).queryByText('本次金额')).not.toBeInTheDocument()
   },
 }
 
@@ -196,7 +224,7 @@ export const Loading: Story = {
       handlers: [
         http.get('/api/invoices/orders', async () => { await delay('infinite'); return HttpResponse.json(invoiceOrders) }),
         http.get('/api/settlements', () => HttpResponse.json(settlements)),
-        http.get('/api/partners', () => HttpResponse.json(partners)),
+        http.get('/api/partners', () => HttpResponse.json(configuredPartners)),
       ],
     },
   },
