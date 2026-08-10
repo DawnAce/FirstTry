@@ -171,6 +171,48 @@ def test_upload_deduplicates_same_channel_and_file(db, user, monkeypatch):
     assert db.query(ReportSourceDocument).count() == 1
 
 
+def test_upload_without_ocr_rows_remains_visible_on_origin_issue(db, user, monkeypatch):
+    issue = _issue_with_entries(db)
+    monkeypatch.setattr(
+        report_source_service,
+        "recognize_report_source",
+        lambda **_kwargs: {
+            "document_type": "weekly",
+            "source_date": issue.publish_date,
+            "suggestions": [],
+            "warnings": ["未识别出结构化数字"],
+        },
+    )
+    monkeypatch.setattr(
+        report_source_service.attachment_service,
+        "store_file",
+        lambda *_args: "uploads/report_sources/unresolved.pdf",
+    )
+
+    document, _ = report_source_service.create_source_document(
+        db,
+        user=user,
+        channel="postal",
+        filename="无法识别的来源.pdf",
+        content=b"unresolved-source",
+        mime_type="application/pdf",
+        current_issue_number=issue.issue_number,
+    )
+
+    assert document.upload_issue_number == issue.issue_number
+    assert document.items == []
+    summary = report_source_service.get_issue_summary(db, issue)
+    assert summary.document_count == 1
+    assert summary.documents[0].id == document.id
+    assert summary.documents[0].upload_issue_number == issue.issue_number
+    assert summary.documents[0].file_available is False
+
+    with pytest.raises(HTTPException) as exc_info:
+        confirm_report(issue.id, db=db, user=user)
+    assert exc_info.value.status_code == 422
+    assert any(row["message"] == "来源文件尚未识别或关联刊期" for row in exc_info.value.detail)
+
+
 def test_confirmed_issue_evidence_defaults_to_archive_only(db, user, monkeypatch):
     issue = _issue_with_entries(db, status=IssueStatus.confirmed)
     monkeypatch.setattr(

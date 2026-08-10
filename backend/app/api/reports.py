@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from typing import List, Optional
 from datetime import datetime
 from app.database import get_db
@@ -10,6 +10,7 @@ from app.models import (
     IssueStatus,
     ReportEntry,
     ReportRevision,
+    ReportSourceDocument,
     ReportSourceItem,
     ShippingDetail,
     ShippingDetailSourceType,
@@ -263,10 +264,30 @@ def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = De
         )
         .all()
     )
+    pending_source_documents = (
+        db.query(ReportSourceDocument)
+        .filter(
+            ReportSourceDocument.extraction_status != "confirmed",
+            or_(
+                ReportSourceDocument.upload_issue_number == issue.issue_number,
+                ReportSourceDocument.items.any(ReportSourceItem.issue_number == issue.issue_number),
+            ),
+        )
+        .all()
+    )
     for source in pending_sources:
         label = source.source_label or f"{source.category}/{source.sub_category}"
         message = "渠道数据仍待确认" if source.source_status == "channel_pending" else "来源识别仍待核对"
         errors.append({"field": label, "message": message, "level": "error"})
+    pending_document_ids = {source.document_id for source in pending_sources}
+    for document in pending_source_documents:
+        if document.id in pending_document_ids:
+            continue
+        errors.append({
+            "field": document.display_name,
+            "message": "来源文件尚未识别或关联刊期",
+            "level": "error",
+        })
 
     if errors:
         raise HTTPException(status_code=422, detail=errors)

@@ -36,6 +36,10 @@ class ReportSourceDocument(Base):
     size = Column(Integer, nullable=False)
     sha256 = Column(String(64), nullable=False, index=True)
     source_date = Column(Date, nullable=True, index=True)
+    # The issue page where the upload started.  Item mappings remain the
+    # authoritative cross-issue links, while this anchor keeps a file visible
+    # when OCR produced no rows (or no resolvable issue) yet.
+    upload_issue_number = Column(Integer, nullable=True, index=True)
     extraction_status = Column(
         String(30), nullable=False, default="pending_review", server_default="pending_review", index=True
     )

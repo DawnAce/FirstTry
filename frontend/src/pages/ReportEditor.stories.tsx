@@ -72,6 +72,8 @@ const sourceSummary = {
       size: 185420,
       sha256: 'a'.repeat(64),
       source_date: '2026-05-17',
+      upload_issue_number: 2654,
+      file_available: true,
       extraction_status: 'confirmed',
       extraction_json: null,
       uploaded_by: 'admin',
@@ -80,7 +82,8 @@ const sourceSummary = {
       items: [{
         id: 51, document_id: 31, issue_number: 2654, item_kind: 'base', category: 'chengdu',
         sub_category: '成都杂志铺', source_label: '2026年6月第1期', source_quantity: 366,
-        applied_quantity: 366, source_status: 'confirmed', adjustment_kind: null, settlement_delta: 0,
+        applied_quantity: 366, source_status: 'confirmed', source_action: 'base', applied_phase: 'pre_confirmation',
+        print_delta: 366, effect_status: 'active', supersedes_item_id: null, adjustment_kind: null, settlement_delta: 0,
         shipping_delta: 0, shipped_quantity: 0, tracking_no: null, shipped_at: null, notes: null,
         confirmed_at: '2026-05-17T10:35:00', created_at: '2026-05-17T10:30:00',
       }],
@@ -95,6 +98,8 @@ const sourceSummary = {
       size: 93420,
       sha256: 'b'.repeat(64),
       source_date: '2026-07-17',
+      upload_issue_number: 2654,
+      file_available: true,
       extraction_status: 'confirmed',
       extraction_json: null,
       uploaded_by: 'admin',
@@ -103,7 +108,8 @@ const sourceSummary = {
       items: [{
         id: 52, document_id: 32, issue_number: 2654, item_kind: 'adjustment', category: 'chengdu',
         sub_category: '成都杂志铺', source_label: '2026年6月第1期补发', source_quantity: 4,
-        applied_quantity: null, source_status: 'confirmed', adjustment_kind: 'billable_addition', settlement_delta: 4,
+        applied_quantity: null, source_status: 'confirmed', source_action: 'postpress_addition', applied_phase: 'post_confirmation',
+        print_delta: 0, effect_status: 'active', supersedes_item_id: null, adjustment_kind: 'billable_addition', settlement_delta: 4,
         shipping_delta: 4, shipped_quantity: 1, tracking_no: null, shipped_at: null,
         notes: '追加订数', confirmed_at: '2026-07-17T15:44:00', created_at: '2026-07-17T15:40:00',
       }],
@@ -152,9 +158,11 @@ export const Draft: Story = {
   name: '待确认（完整数据）',
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('2026年《中国经营报》第2654期（第二十期）')).toBeVisible()
-    await expect(canvas.getByRole('spinbutton', { name: '实际版数' })).toHaveValue('24')
     await expect(canvas.getByText('完整 22 项')).toBeVisible()
     await expect(canvas.getByText('数据来源与调整')).toBeVisible()
     await expect(await canvas.findByText('后续 +4')).toBeVisible()
+    await expect(canvas.getByText('202606_成都杂志铺_月度报数.jpg')).toBeVisible()
+    await expect(canvas.getByText('20260717_成都杂志铺_补发调整_3期共6份.jpg')).toBeVisible()
+    await expect(canvas.getByText('追加订数')).toBeVisible()
   },
 }

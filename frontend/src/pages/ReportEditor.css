@@ -821,97 +821,155 @@
   margin-top: 7px;
 }
 
-.report-editor-source-files > div {
+.report-editor-source-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(2, auto);
-  gap: 4px;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid #e1e9f3;
+  border-radius: 8px;
+  background: #f8fbff;
 }
 
-.report-editor-source-file-row.is-replaced {
+.report-editor-source-card.is-replaced {
   opacity: 0.62;
 }
 
-.report-editor-source-file-row.is-replaced > button:first-child {
+.report-editor-source-card.is-replaced .report-editor-source-card-head button strong {
   text-decoration: line-through;
 }
 
-.report-editor-source-files > div > button:first-child {
+.report-editor-source-card.has-error {
+  border-color: #f1b9b9;
+  background: #fff7f7;
+}
+
+.report-editor-source-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.report-editor-source-card-head > button {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 6px;
+  min-width: 0;
   width: 100%;
-  padding: 6px 7px;
+  padding: 0;
   border: 0;
-  border-radius: 7px;
   color: #55708e;
-  background: #f0f5fb;
+  background: transparent;
   cursor: pointer;
   font: inherit;
   text-align: left;
 }
 
-.report-editor-source-files > div > button:first-child:hover {
+.report-editor-source-card-head > button:hover:not(:disabled) {
   color: var(--report-blue);
-  background: #e8f2ff;
 }
 
-.report-editor-source-files > div > button:first-child span {
+.report-editor-source-card-head > button:disabled {
+  color: #9a5b5b;
+  cursor: not-allowed;
+}
+
+.report-editor-source-card-head > button span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.report-editor-source-card-head > button strong {
   overflow: hidden;
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.report-editor-source-files > div > button:first-child small {
+.report-editor-source-card-head > button small {
+  overflow: hidden;
   color: #95a0af;
   font-size: 9px;
-  white-space: nowrap;
-}
-
-.report-editor-source-files > div > .ant-btn-link {
-  height: 29px;
-  padding: 0 3px;
-  font-size: 9px;
-}
-
-.report-editor-adjustment-list {
-  display: grid;
-  gap: 6px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--report-line);
-}
-
-.report-editor-adjustment-list > strong {
-  color: #72501f;
-  font-size: 10px;
-}
-
-.report-editor-adjustment-list > div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 6px;
-  color: #505c6e;
-  font-size: 10px;
-}
-
-.report-editor-adjustment-list > div > span {
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.report-editor-adjustment-list small {
-  color: #8b6a3c;
+.report-editor-source-card-head .ui-status-pill {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  font-size: 9px;
+}
+
+.report-editor-source-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 7px;
+  color: #74849a;
+  font-size: 9px;
+}
+
+.report-editor-source-card-meta span:first-child {
+  color: #315f92;
+  font-weight: 600;
+}
+
+.report-editor-source-card-warning {
+  color: #a06616;
+  font-size: 9px;
+}
+
+.report-editor-source-card-details {
+  display: grid;
+  gap: 4px;
+  padding-top: 5px;
+  border-top: 1px dashed #dce5ef;
+}
+
+.report-editor-source-card-details > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.report-editor-source-card-details span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.report-editor-source-card-details b {
+  overflow: hidden;
+  color: #505c6e;
+  font-size: 9px;
+  font-weight: 500;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.report-editor-adjustment-list .ant-btn {
+.report-editor-source-card-details small {
+  color: #8b6a3c;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.report-editor-source-card-details .ant-btn {
   height: 24px;
   padding: 0 7px;
-  font-size: 10px;
+  font-size: 9px;
+}
+
+.report-editor-source-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.report-editor-source-card-actions .ant-btn-link {
+  height: 22px;
+  padding: 0 2px;
+  font-size: 9px;
 }
 
 .report-editor-source-primary.ant-btn {
