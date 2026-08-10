@@ -3680,6 +3680,8 @@ body {
   gap: 10px;
   padding: 12px 16px;
   border-right: 1px solid var(--color-border);
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .waybill-status-icon {
@@ -3740,6 +3742,7 @@ body {
   min-width: 0;
   padding: 12px 14px;
   border-right: 1px solid var(--color-border);
+  white-space: nowrap;
 }
 
 .waybill-status-metric:last-child {

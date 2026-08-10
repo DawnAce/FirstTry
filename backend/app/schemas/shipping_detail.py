@@ -122,6 +122,11 @@ class ShippingPlanImportCommitOut(BaseModel):
     created_count: int
     preserved_count: int
     resulting_quantity: int
+    restored_waybill_rows: int = 0
+    restored_waybill_quantity: int = 0
+    unresolved_waybill_rows: int = 0
+    restored_adjustment_count: int = 0
+    restored_deferral_count: int = 0
 
 
 class ShippingDetailOut(BaseModel):

@@ -175,6 +175,31 @@ def _ensure_all_ids_found(requested_ids: list[int], details: list[ShippingDetail
         )
 
 
+def _has_fulfillment_history(detail: ShippingDetail) -> bool:
+    return bool(
+        detail.shipped_at
+        or detail.shipped_quantity is not None
+        or detail.tracking_no
+        or detail.packages
+        or detail.fulfillment_adjustments
+        or detail.deferrals
+        or detail.package_allocations
+    )
+
+
+def _ensure_no_fulfillment_history(details: list[ShippingDetail], *, bulk: bool = False) -> None:
+    protected = [detail for detail in details if _has_fulfillment_history(detail)]
+    if protected:
+        action = "清空本期明细" if bulk else "删除明细"
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"有 {len(protected)} 条明细已经关联运单、实发或核销记录，不能{action}；"
+                "请使用“重新上传明细”并核对历史发货关联"
+            ),
+        )
+
+
 @router.get("", response_model=List[ShippingDetailOut])
 def list_shipping_details(
     issue_number: Optional[int] = None,
@@ -500,6 +525,7 @@ def batch_delete_shipping_details(
     _ensure_all_ids_found(data.ids, details)
     if any(d.source_type == ShippingDetailSourceType.complaint_makeup for d in details):
         raise HTTPException(status_code=409, detail="投诉补发记录请从邮局工单取消")
+    _ensure_no_fulfillment_history(details)
 
     for detail in details:
         record_operation(
@@ -538,6 +564,7 @@ def clear_shipping_details_by_issue(
         .all()
     )
     affected_count = len(details)
+    _ensure_no_fulfillment_history(details, bulk=True)
     record_operation(
         db,
         user=_user,
@@ -569,6 +596,7 @@ def delete_shipping_detail(
         raise HTTPException(status_code=404, detail="发货明细不存在")
     if detail.source_type == ShippingDetailSourceType.complaint_makeup:
         raise HTTPException(status_code=409, detail="投诉补发记录请从邮局工单取消")
+    _ensure_no_fulfillment_history([detail])
     record_operation(
         db,
         user=user,

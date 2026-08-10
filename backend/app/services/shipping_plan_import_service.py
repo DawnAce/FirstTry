@@ -281,6 +281,14 @@ def commit_shipping_plan_import(
     db.flush()
     for row in rows:
         db.add(_detail_from_row(issue.issue_number, row))
+    db.flush()
+
+    # A legacy clear could leave confirmed import rows without their deleted
+    # package/detail links. Reconnect those preserved rows to the newly imported
+    # plan before publishing the replacement result.
+    from app.services.shipping_waybill_service import restore_orphaned_confirmed_waybills
+
+    restore_result = restore_orphaned_confirmed_waybills(db, issue=issue)
 
     preserved_count = (
         db.query(ShippingDetail)
@@ -316,6 +324,11 @@ def commit_shipping_plan_import(
             "new_quantity": new_quantity,
             "preserved_count": preserved_count,
             "preserved_quantity": preserved_quantity,
+            "restored_waybill_rows": restore_result.restored_rows,
+            "restored_waybill_quantity": restore_result.restored_quantity,
+            "unresolved_waybill_rows": restore_result.unresolved_rows,
+            "restored_adjustment_count": restore_result.restored_adjustments,
+            "restored_deferral_count": restore_result.restored_deferrals,
         },
     )
     db.commit()
@@ -327,4 +340,9 @@ def commit_shipping_plan_import(
         created_count=len(rows),
         preserved_count=preserved_count,
         resulting_quantity=new_quantity + preserved_quantity,
+        restored_waybill_rows=restore_result.restored_rows,
+        restored_waybill_quantity=restore_result.restored_quantity,
+        unresolved_waybill_rows=restore_result.unresolved_rows,
+        restored_adjustment_count=restore_result.restored_adjustments,
+        restored_deferral_count=restore_result.restored_deferrals,
     )
