@@ -728,6 +728,56 @@ def test_primary_settlement_sheet_is_explicit_and_recognition_is_per_file(
     assert updated["recognized"] is None
 
 
+def test_invoice_can_precede_primary_settlement_sheet_when_creating(
+    client, monkeypatch, tmp_path
+):
+    """Matches the UI flow where an invoice is selected before the XLSX."""
+    monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
+    partner = _partner(client, "北京报刊零售局", "required")
+    response = client.post(
+        "/api/settlements/with-attachments",
+        data={
+            "payload_json": json.dumps({
+                "partner_id": partner["id"],
+                "direction": "receivable",
+                "party_type": "channel",
+                "settlement_type": "buyout",
+                "external_no": "JS100025612600000855",
+                "settlement_start_date": "2026-06-01",
+                "settlement_end_date": "2026-06-29",
+                "return_start_date": "2026-05-04",
+                "return_end_date": "2026-06-29",
+                "gross_amount": 14437.5,
+                "return_deduction_amount": 13794,
+                "amount_due": 643.5,
+            }),
+            "categories_json": json.dumps(["invoice", "settlement_sheet"]),
+            "primary_attachment_index": "1",
+        },
+        files=[
+            ("files", ("发票.pdf", b"%PDF invoice", "application/pdf")),
+            (
+                "files",
+                (
+                    "北京报零.xlsx",
+                    _beijing_settlement_xlsx(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ),
+            ),
+        ],
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["invoice_status"] == "issued"
+    assert body["status"] == "invoiced"
+    invoice, settlement_sheet = body["attachments"]
+    assert invoice["category"] == "invoice"
+    assert invoice["is_primary"] is False
+    assert settlement_sheet["category"] == "settlement_sheet"
+    assert settlement_sheet["is_primary"] is True
+    assert settlement_sheet["recognized"] is True
+
+
 def test_invoice_payment_actions_are_independent_and_audited(client, monkeypatch, tmp_path):
     monkeypatch.setattr(attachment_service, "UPLOAD_ROOT", tmp_path / "uploads")
     partner = _partner(client)

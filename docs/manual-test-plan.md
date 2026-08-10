@@ -587,6 +587,17 @@
 - 自动化覆盖：`CreateStructuredSettlement` 与 `RecognitionPreservesManualValues` Story 检查分区、周期/备注网格类、识别结果和附件同容器，以及移除歧义标签；人工负责真实日期选择器宽度和断点视觉。
 
 ---
+**[P0] 新增结算保存与漂移数据库修复**（财务·结算·数据库迁移）
+- 前置：管理员账号；北京报零渠道的销售模式策略为必填；准备一份发票 PDF 和一份可识别的北京报零 XLSX。升级前可在测试库模拟 `alembic_version` 已到旧 `head`、但缺少 `channel_settlements.system_no` 等 `c2e4f6a8b0d3` 列的漂移状态。
+- 步骤：
+  1. 执行 `cd backend && alembic upgrade head`，确认应用修复迁移 `d4f6a8c0e2b5`。
+  2. 进入「财务管理 → 渠道结算 → 新增结算」，先上传发票 PDF，再上传结算 XLSX；确认 XLSX 为识别来源。
+  3. 选择北京报零、应收、渠道、包销，核对识别出的外部单号、周期和金额后保存。
+  4. 打开新记录详情，核对系统编号、两份附件、识别状态与开票状态；随后删除测试记录。
+- 预期：保存返回 201，系统编号以 `JS-QD-` 开头；附件顺序为发票在前、结算单在后时仍分别正确归类，结算单为唯一主表且已识别，发票使开票状态变为已开票。数据库迁移重复执行不报错、不覆盖已存在的结算状态。若后端返回字符串或 FastAPI 校验数组，页面展示具体原因；无正文 5xx 则提示检查数据库迁移。
+- 自动化覆盖：`test_invoice_can_precede_primary_settlement_sheet_when_creating` 覆盖该附件顺序与状态；`errorMessage.test.ts` 覆盖字符串、校验数组和 5xx 提示；`test_settlement_schema_repair_covers_workflow_columns_and_indexes` 锁定修复迁移必须覆盖的列与索引。
+
+---
 **[P1] 附件路径防目录穿越：被篡改的相对路径应被拦截为 404 而非泄露任意文件**（附件·安全边界）
 - 前置：一份已上传扫描件的合同（取得 id）；能直接改 DB（模拟历史导入/原始 SQL 写坏 `attachment_path`）。
 - 步骤：

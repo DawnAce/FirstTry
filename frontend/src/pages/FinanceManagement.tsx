@@ -65,6 +65,7 @@ import {
   uploadInvoiceAttachment,
   uploadSettlementAttachment,
 } from '../api/finance';
+import { getApiErrorMessage } from '../api/errorMessage';
 import type {
   Invoice,
   InvoiceOrderRow,
@@ -157,8 +158,7 @@ const ATTACHMENT_CATEGORY_LABELS: Record<SettlementAttachmentCategory, string> =
 };
 
 function apiError(err: unknown, fallback: string) {
-  const e = err as { response?: { data?: { detail?: string } } };
-  return e.response?.data?.detail ?? fallback;
+  return getApiErrorMessage(err, fallback);
 }
 const money = (v: string | null) => (v == null ? '—' : `¥${v}`);
 
