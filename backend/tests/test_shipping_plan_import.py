@@ -1,5 +1,5 @@
 import io
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from fastapi import HTTPException
@@ -17,13 +17,19 @@ from app.models import (
     ReportEntry,
     ShippingDetail,
     ShippingDetailSourceType,
+    ShippingPackage,
+    ShippingWaybillImportBatch,
+    ShippingWaybillImportRow,
     User,
     UserRole,
+    WaybillImportStatus,
+    WaybillMatchStatus,
 )
 from app.services.shipping_plan_import_service import (
     commit_shipping_plan_import,
     preview_shipping_plan_import,
 )
+from app.services.shipping_waybill_service import fulfillment_summary
 
 
 HEADERS = [
@@ -240,3 +246,97 @@ def test_commit_rejects_stale_preview(db):
 
     assert exc.value.status_code == 409
     assert "重新预览" in exc.value.detail
+
+
+def test_commit_restores_orphaned_confirmed_waybills(db):
+    issue = add_issue(db)
+    batch = ShippingWaybillImportBatch(
+        issue_id=issue.id,
+        issue_number=issue.issue_number,
+        filename="历史运单.xlsx",
+        file_hash="orphaned-confirmed-waybills",
+        status=WaybillImportStatus.confirmed.value,
+        expected_quantity=11,
+        parsed_quantity=10,
+        matched_quantity=10,
+        pending_quantity=1,
+        matched_rows=3,
+        unmatched_rows=0,
+        warning_count=0,
+        confirmed_at=datetime(2026, 1, 26, 12, 0, 0),
+    )
+    db.add(batch)
+    db.flush()
+    db.add_all([
+        ShippingWaybillImportRow(
+            batch_id=batch.id,
+            source_sheet="中通",
+            source_row=2,
+            carrier="中通",
+            tracking_no="7359281752001",
+            recipient_name="测试1",
+            phone="13800000001",
+            address="北京市测试路1号",
+            quantity=6,
+            no_tracking_required=False,
+            match_status=WaybillMatchStatus.matched.value,
+        ),
+        ShippingWaybillImportRow(
+            batch_id=batch.id,
+            source_sheet="中通",
+            source_row=3,
+            carrier="中通",
+            tracking_no="7359281752002",
+            recipient_name="测试2",
+            phone="13800000002",
+            address="拆分包裹地址A",
+            quantity=2,
+            no_tracking_required=False,
+            match_status=WaybillMatchStatus.matched.value,
+        ),
+        ShippingWaybillImportRow(
+            batch_id=batch.id,
+            source_sheet="中通",
+            source_row=4,
+            carrier="中通",
+            tracking_no="7359281752003",
+            recipient_name="测试2",
+            phone="13800000002",
+            address="拆分包裹地址B",
+            quantity=2,
+            no_tracking_required=False,
+            match_status=WaybillMatchStatus.matched.value,
+        ),
+    ])
+    db.commit()
+
+    preview = preview_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        filename="2638中通明细.xlsx",
+        content=shipping_file(2638, quantities=(6, 4)),
+    )
+    result = commit_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        import_session_id=preview.import_session_id,
+        reason="恢复计划和历史运单关联",
+        user=admin(),
+    )
+
+    assert result.restored_waybill_rows == 3
+    assert result.restored_waybill_quantity == 10
+    assert result.unresolved_waybill_rows == 0
+    assert db.query(ShippingPackage).count() == 3
+    assert sum(package.quantity for package in db.query(ShippingPackage).all()) == 10
+    restored_batch = db.get(ShippingWaybillImportBatch, batch.id)
+    assert all(row.shipping_detail_id is not None for row in restored_batch.rows)
+    assert all(row.package is not None for row in restored_batch.rows)
+    detail_quantities = {
+        detail.name: detail.physical_shipped_quantity
+        for detail in db.query(ShippingDetail).filter(ShippingDetail.issue_number == issue.issue_number)
+    }
+    assert detail_quantities == {"测试1": 6, "测试2": 4}
+    summary = fulfillment_summary(db, issue.id)
+    assert summary.actual_shipped_quantity == 10
+    assert summary.unexplained_pending_quantity == 1

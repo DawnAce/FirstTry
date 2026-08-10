@@ -469,6 +469,8 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 
 发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。`actual_shipped = tracked + no_tracking`，`handled = actual_shipped + all_adjustments`；待月底合寄在真正关联包裹前不计入实际发出或 handled，只从 `pending_quantity` 中单列为 `deferred_quantity`，`unexplained_pending_quantity = max(pending_quantity - deferred_quantity, 0)`。工作台按 `shipping_detail_id` 比较计划份数与最新来源文件匹配份数，展示逐明细差额。计划纠错以净额转移完成，转出和转入同一事务提交，因此确认总计划不漂移。月底包裹通过 allocation 分摊到多个历史明细，物理发货份数按 allocation 计入对应刊期。
 
+重新上传发货计划提交后会检查已确认批次中因历史清空操作而失去 `shipping_detail_id`/包裹的匹配行：先按收件人、电话、地址唯一匹配并重建 `shipping_packages`；剩余拆分包裹仅在标准化姓名唯一且行合计份数等于计划剩余份数时恢复。恢复过程沿用原批次确认时间，并重新计算批次与期级核销统计；无法唯一判断的行不猜测，保留为待人工关联。明细的单删、批量删除和整期清空在检测到运单、实发、核销、延期或分摊历史时返回 `409`，防止级联删除实际包裹。
+
 运单核销迁移链尾部为 `f8c0e2a4b6d9`（期级无需发货核销）→ `f9d1e3a5c7b9`（无需发货归属与快照）→ `a0c2e4f6b8d1`（月底合寄与跨刊期包裹分摊），保持单一 Alembic head。
 
 ### 3.13 issue_audit_snapshots（确认/导出快照）

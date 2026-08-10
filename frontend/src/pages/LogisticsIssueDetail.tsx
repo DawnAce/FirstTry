@@ -351,7 +351,11 @@ export default function LogisticsIssueDetail() {
         planImportReason.trim(),
       );
       message.success(
-        `已导入 ${response.data.created_count} 条中通明细，当前计划 ${response.data.resulting_quantity.toLocaleString()} 份`,
+        `已导入 ${response.data.created_count} 条中通明细，当前计划 ${response.data.resulting_quantity.toLocaleString()} 份${
+          response.data.restored_waybill_rows
+            ? `；已恢复 ${response.data.restored_waybill_rows} 条运单、${response.data.restored_waybill_quantity.toLocaleString()} 份实发`
+            : ''
+        }${response.data.unresolved_waybill_rows ? `；另有 ${response.data.unresolved_waybill_rows} 条运单待人工关联` : ''}`,
       );
       setPlanImportOpen(false);
       setPlanImportFile(null);
@@ -522,8 +526,9 @@ export default function LogisticsIssueDetail() {
       message.success(`已删除 ${res.data.affected_count} 条记录`);
       setSelectedRowKeys([]);
       refreshShippingDetails();
-    } catch {
-      message.error('批量删除失败');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      message.error(err.response?.data?.detail || '批量删除失败');
     }
   };
 
@@ -535,8 +540,9 @@ export default function LogisticsIssueDetail() {
       message.success(`已清空第 ${currentIssueNumber} 期 ${res.data.affected_count} 条 ZTO-MF`);
       setSelectedRowKeys([]);
       refreshShippingDetails();
-    } catch {
-      message.error('清空本期发货明细失败');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      message.error(err.response?.data?.detail || '清空本期发货明细失败');
     } finally {
       setClearingIssue(false);
     }
@@ -645,7 +651,7 @@ export default function LogisticsIssueDetail() {
               content={
                 <Popconfirm
                   title={`确认清空第 ${currentIssueNumber ?? '-'} 期 ZTO-MF？`}
-                  description="只删除该期 ZTO-MF，不会删除期号和报数数据。此操作不可恢复。"
+                  description="仅适用于没有运单、实发或核销记录的草稿；已有发货历史时请使用“重新上传明细”。"
                   okText="清空"
                   cancelText="取消"
                   onConfirm={handleClearCurrentIssueShippingDetails}

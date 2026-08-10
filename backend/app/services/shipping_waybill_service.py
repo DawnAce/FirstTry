@@ -63,6 +63,15 @@ class ParsedWaybillRow:
     parse_reason: str | None = None
 
 
+@dataclass
+class OrphanedWaybillRestoreResult:
+    restored_rows: int = 0
+    restored_quantity: int = 0
+    unresolved_rows: int = 0
+    restored_adjustments: int = 0
+    restored_deferrals: int = 0
+
+
 def _text(value: Any) -> str:
     if value is None:
         return ""
@@ -341,14 +350,21 @@ def preview_import(
     phone_address: dict[tuple[str, str], list[ShippingDetail]] = defaultdict(list)
     name_address: dict[tuple[str, str], list[ShippingDetail]] = defaultdict(list)
     for detail in details:
-        name, phone, address = _match_key(detail.name, detail.phone or "", detail.address or "")
-        full[(name, phone, address)].append(detail)
-        if phone and address:
-            phone_address[(phone, address)].append(detail)
-        if name and address:
-            name_address[(name, address)].append(detail)
+        detail_name, detail_phone, detail_address = _match_key(
+            detail.name,
+            detail.phone or "",
+            detail.address or "",
+        )
+        full[(detail_name, detail_phone, detail_address)].append(detail)
+        if detail_phone and detail_address:
+            phone_address[(detail_phone, detail_address)].append(detail)
+        if detail_name and detail_address:
+            name_address[(detail_name, detail_address)].append(detail)
 
-    existing_tracking = set(db.query(ShippingPackage.carrier, ShippingPackage.tracking_no).all())
+    existing_tracking = {
+        (carrier, tracking_no)
+        for carrier, tracking_no in db.query(ShippingPackage.carrier, ShippingPackage.tracking_no).all()
+    }
     seen_tracking: set[tuple[str, str]] = set()
     row_results: list[tuple[ParsedWaybillRow, str, str | None, int | None]] = []
     quantities_by_detail: dict[int, int] = defaultdict(int)
@@ -488,24 +504,43 @@ def get_draft_import(db: Session, issue_id: int) -> ShippingWaybillImportBatch |
     ).first()
 
 
-def _candidate_details(details: list[ShippingDetail], row: ShippingWaybillImportRow) -> list[ShippingDetail]:
+def _candidate_details_for_contact(
+    details: list[ShippingDetail],
+    *,
+    name: str,
+    phone: str,
+    address: str,
+) -> list[ShippingDetail]:
     full: dict[tuple[str, str, str], list[ShippingDetail]] = defaultdict(list)
     phone_address: dict[tuple[str, str], list[ShippingDetail]] = defaultdict(list)
     name_address: dict[tuple[str, str], list[ShippingDetail]] = defaultdict(list)
     for detail in details:
-        name, phone, address = _match_key(detail.name, detail.phone or "", detail.address or "")
-        full[(name, phone, address)].append(detail)
-        if phone and address:
-            phone_address[(phone, address)].append(detail)
-        if name and address:
-            name_address[(name, address)].append(detail)
-    name, phone, address = _match_key(row.recipient_name, row.phone or "", row.address or "")
-    candidates = full.get((name, phone, address), [])
-    if not candidates and phone and address:
-        candidates = phone_address.get((phone, address), [])
-    if not candidates and name and address:
-        candidates = name_address.get((name, address), [])
+        detail_name, detail_phone, detail_address = _match_key(
+            detail.name,
+            detail.phone or "",
+            detail.address or "",
+        )
+        full[(detail_name, detail_phone, detail_address)].append(detail)
+        if detail_phone and detail_address:
+            phone_address[(detail_phone, detail_address)].append(detail)
+        if detail_name and detail_address:
+            name_address[(detail_name, detail_address)].append(detail)
+    normalized_name, normalized_phone, normalized_address = _match_key(name, phone, address)
+    candidates = full.get((normalized_name, normalized_phone, normalized_address), [])
+    if not candidates and normalized_phone and normalized_address:
+        candidates = phone_address.get((normalized_phone, normalized_address), [])
+    if not candidates and normalized_name and normalized_address:
+        candidates = name_address.get((normalized_name, normalized_address), [])
     return candidates
+
+
+def _candidate_details(details: list[ShippingDetail], row: ShippingWaybillImportRow) -> list[ShippingDetail]:
+    return _candidate_details_for_contact(
+        details,
+        name=row.recipient_name,
+        phone=row.phone or "",
+        address=row.address or "",
+    )
 
 
 def _match_draft_row(
@@ -807,6 +842,207 @@ def _materialize_matched_row(
     db.flush()
     _refresh_legacy_shipping_fields(detail)
     return detail
+
+
+def restore_orphaned_confirmed_waybills(
+    db: Session,
+    *,
+    issue: Issue,
+) -> OrphanedWaybillRestoreResult:
+    """Reconnect confirmed import rows after their plan details were recreated.
+
+    Clearing legacy plan rows used to cascade-delete their packages while leaving
+    the confirmed import rows behind. Re-uploading the plan can safely reconstruct
+    those packages from the preserved carrier, tracking number and quantity. Exact
+    recipient matches are restored first; split packages are restored only when a
+    single same-name detail has exactly the same remaining quantity.
+    """
+    details = _details_for_issue(db, issue.issue_number)
+    detail_ids = {detail.id for detail in details}
+    batches = db.query(ShippingWaybillImportBatch).filter(
+        ShippingWaybillImportBatch.issue_id == issue.id,
+        ShippingWaybillImportBatch.status == WaybillImportStatus.confirmed.value,
+    ).order_by(ShippingWaybillImportBatch.created_at, ShippingWaybillImportBatch.id).all()
+
+    orphaned_by_batch: dict[int, list[ShippingWaybillImportRow]] = {}
+    restored_rows: list[ShippingWaybillImportRow] = []
+    for batch in batches:
+        orphaned = [
+            row for row in batch.rows
+            if row.match_status == WaybillMatchStatus.matched.value
+            and row.package is None
+            and (row.shipping_detail_id is None or row.shipping_detail_id not in detail_ids)
+        ]
+        if orphaned:
+            orphaned_by_batch[batch.id] = orphaned
+
+    existing_tracking = {
+        (carrier, tracking_no)
+        for carrier, tracking_no in db.query(ShippingPackage.carrier, ShippingPackage.tracking_no).all()
+    }
+    seen_tracking: set[tuple[str, str]] = set()
+    initial_handled = {detail.id: detail.handled_quantity for detail in details}
+    initial_physical = {detail.id: detail.physical_shipped_quantity for detail in details}
+    restored_by_detail: dict[int, int] = defaultdict(int)
+    package_values: list[dict[str, Any]] = []
+    package_tracking_by_detail: dict[int, list[str]] = defaultdict(list)
+    package_shipped_at_by_detail: dict[int, list[datetime]] = defaultdict(list)
+
+    def restore_row(
+        row: ShippingWaybillImportRow,
+        detail: ShippingDetail,
+        batch: ShippingWaybillImportBatch,
+    ) -> None:
+        row.shipping_detail_id = detail.id
+        row.match_status = WaybillMatchStatus.matched.value
+        row.match_reason = None
+        if row.no_tracking_required:
+            detail.shipping_requirement = "no_tracking_required"
+        else:
+            shipped_at = batch.confirmed_at or datetime.now()
+            package_values.append({
+                "shipping_detail_id": detail.id,
+                "import_row_id": row.id,
+                "carrier": row.carrier,
+                "tracking_no": row.tracking_no,
+                "quantity": row.quantity,
+                "shipped_at": shipped_at,
+            })
+            package_tracking_by_detail[detail.id].append(row.tracking_no)
+            package_shipped_at_by_detail[detail.id].append(shipped_at)
+        restored_by_detail[detail.id] += max(row.quantity or 0, 0)
+        restored_rows.append(row)
+
+    for batch in batches:
+        for row in orphaned_by_batch.get(batch.id, []):
+            row.shipping_detail_id = None
+            row.match_reason = None
+            if row.quantity <= 0 or not row.recipient_name.strip():
+                row.match_status = WaybillMatchStatus.invalid.value
+                row.match_reason = "姓名或份数无效"
+                continue
+            if not row.no_tracking_required and not row.tracking_no:
+                row.match_status = WaybillMatchStatus.invalid.value
+                row.match_reason = "缺少运单号"
+                continue
+            if row.tracking_no:
+                tracking_key = (row.carrier, row.tracking_no)
+                if tracking_key in existing_tracking or tracking_key in seen_tracking:
+                    row.match_status = WaybillMatchStatus.duplicate.value
+                    row.match_reason = "运单号已存在"
+                    continue
+                seen_tracking.add(tracking_key)
+            candidates = _candidate_details(details, row)
+            if len(candidates) > 1:
+                row.match_status = WaybillMatchStatus.ambiguous.value
+                row.match_reason = "匹配到多条发货明细，请人工选择"
+                continue
+            if not candidates:
+                row.match_status = WaybillMatchStatus.unmatched.value
+                row.match_reason = "未找到对应发货明细"
+                continue
+            restore_row(row, candidates[0], batch)
+
+    # A single plan detail can be represented by several physical packages. Such
+    # rows may have intentionally been bulk-matched because their addresses differ
+    # from the plan. Restore that decision only when name and remaining total make
+    # the target unambiguous.
+    for batch in batches:
+        unresolved = [
+            row for row in orphaned_by_batch.get(batch.id, [])
+            if row.match_status != WaybillMatchStatus.matched.value
+        ]
+        grouped: dict[str, list[ShippingWaybillImportRow]] = defaultdict(list)
+        for row in unresolved:
+            name_key = _normalized(row.recipient_name)
+            if name_key and row.quantity > 0:
+                grouped[name_key].append(row)
+        for name_key, rows in grouped.items():
+            row_quantity = sum(max(row.quantity or 0, 0) for row in rows)
+            candidates = [
+                detail for detail in details
+                if _normalized(detail.name) == name_key
+                and max(
+                    (detail.quantity or 0)
+                    - initial_handled[detail.id]
+                    - restored_by_detail[detail.id],
+                    0,
+                ) == row_quantity
+            ]
+            if len(candidates) != 1:
+                continue
+            detail = candidates[0]
+            for row in rows:
+                restore_row(row, detail, batch)
+
+    if package_values:
+        db.execute(insert(ShippingPackage), package_values)
+    for detail in details:
+        if detail.id not in restored_by_detail:
+            continue
+        if detail.shipping_requirement == "no_tracking_required":
+            detail.shipped_at = None
+            detail.shipped_quantity = None
+            detail.tracking_no = None
+            continue
+        detail.shipped_quantity = initial_physical[detail.id] + restored_by_detail[detail.id]
+        shipped_times = package_shipped_at_by_detail[detail.id]
+        if shipped_times:
+            detail.shipped_at = max([time for time in [detail.shipped_at, *shipped_times] if time is not None])
+        existing_tracking_numbers = [package.tracking_no for package in detail.packages]
+        all_tracking_numbers = [*existing_tracking_numbers, *package_tracking_by_detail[detail.id]]
+        detail.tracking_no = all_tracking_numbers[0] if len(all_tracking_numbers) == 1 else None
+    db.flush()
+
+    restored_adjustments = 0
+    adjustments = db.query(ShippingFulfillmentAdjustment).filter(
+        ShippingFulfillmentAdjustment.issue_id == issue.id,
+        ShippingFulfillmentAdjustment.shipping_detail_id.is_(None),
+        ShippingFulfillmentAdjustment.detail_name_snapshot.isnot(None),
+    ).all()
+    for adjustment in adjustments:
+        candidates = _candidate_details_for_contact(
+            details,
+            name=adjustment.detail_name_snapshot or "",
+            phone=adjustment.detail_phone_snapshot or "",
+            address=adjustment.detail_address_snapshot or "",
+        )
+        if len(candidates) == 1:
+            adjustment.shipping_detail_id = candidates[0].id
+            restored_adjustments += 1
+
+    restored_deferrals = 0
+    deferrals = db.query(ShippingDeferral).filter(
+        ShippingDeferral.issue_id == issue.id,
+        ShippingDeferral.shipping_detail_id.is_(None),
+        ShippingDeferral.detail_name_snapshot.isnot(None),
+    ).all()
+    for deferral in deferrals:
+        candidates = _candidate_details_for_contact(
+            details,
+            name=deferral.detail_name_snapshot or "",
+            phone=deferral.detail_phone_snapshot or "",
+            address=deferral.detail_address_snapshot or "",
+        )
+        if len(candidates) == 1:
+            deferral.shipping_detail_id = candidates[0].id
+            restored_deferrals += 1
+
+    db.flush()
+    for batch in batches:
+        _recalculate_batch(db, batch)
+
+    restored_ids = {row.id for row in restored_rows}
+    unresolved_rows = sum(
+        1 for rows in orphaned_by_batch.values() for row in rows if row.id not in restored_ids
+    )
+    return OrphanedWaybillRestoreResult(
+        restored_rows=len(restored_rows),
+        restored_quantity=sum(max(row.quantity or 0, 0) for row in restored_rows),
+        unresolved_rows=unresolved_rows,
+        restored_adjustments=restored_adjustments,
+        restored_deferrals=restored_deferrals,
+    )
 
 
 def bulk_match_import_rows(

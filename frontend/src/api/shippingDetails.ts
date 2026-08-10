@@ -174,6 +174,11 @@ export interface ShippingPlanImportCommitResult {
   created_count: number;
   preserved_count: number;
   resulting_quantity: number;
+  restored_waybill_rows: number;
+  restored_waybill_quantity: number;
+  unresolved_waybill_rows: number;
+  restored_adjustment_count: number;
+  restored_deferral_count: number;
 }
 
 export const getShippingDetails= (params?: Record<string, any>): Promise<AxiosResponse<ShippingDetail[]>> =>

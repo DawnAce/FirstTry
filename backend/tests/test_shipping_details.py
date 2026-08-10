@@ -102,6 +102,31 @@ class ClearShippingDetailsByIssueTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
         db.close()
 
+    def test_clear_shipping_details_by_issue_preserves_fulfillment_history(self):
+        db = self.SessionLocal()
+        db.add(Issue(issue_number=2652, publish_date=date(2026, 5, 18), status=IssueStatus.confirmed))
+        db.add(ShippingDetail(
+            issue_number=2652,
+            sheet_name="每周（读者）",
+            channel="个人订阅",
+            name="已有实发",
+            quantity=1,
+            shipped_quantity=1,
+        ))
+        db.commit()
+
+        with self.assertRaises(HTTPException) as ctx:
+            clear_shipping_details_by_issue(
+                2652,
+                db=db,
+                _user=User(id=1, username="admin", role=UserRole.admin, password_hash="x"),
+            )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("已经关联运单、实发或核销记录", ctx.exception.detail)
+        self.assertEqual(db.query(ShippingDetail).filter(ShippingDetail.issue_number == 2652).count(), 1)
+        db.close()
+
 
 class ShippingDetailsCityRemovalTests(unittest.TestCase):
     def test_shipping_detail_schemas_do_not_expose_city(self):

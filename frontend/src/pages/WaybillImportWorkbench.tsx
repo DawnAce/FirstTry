@@ -743,7 +743,7 @@ export default function WaybillImportWorkbench() {
       </div>
     </Card> : <>
       <Card className="waybill-status-card" styles={{ body: { padding: 0 } }}>
-        <div className="waybill-status-row has-five-metrics">
+        <div className="waybill-status-row">
           <div className={`waybill-status-result ${planReconciled ? 'is-success' : 'is-warning'}`}>
             <span className="waybill-status-icon"><CheckCircleOutlined /></span>
             <div><small>发货计划对账</small><b>{planReconciled ? '计划已对平' : '计划仍有差异'}</b></div>
@@ -756,7 +756,7 @@ export default function WaybillImportWorkbench() {
       </Card>
 
       <Card className="waybill-status-card" styles={{ body: { padding: 0 } }}>
-        <div className="waybill-status-row">
+        <div className="waybill-status-row has-five-metrics">
           <div className={`waybill-status-result ${fulfillmentQuery.data?.shipment_status === 'partial' ? 'is-partial' : displayedPendingQuantity ? 'is-partial' : 'is-success'}`}>
             <span className="waybill-status-icon"><FileExcelOutlined /></span>
             <div><small>实际发货与核销</small><b>{fulfillmentQuery.data?.status === 'shipped' && fulfillmentQuery.data.shipment_status === 'partial' ? '核销已完成 · 部分发货' : displayedPendingQuantity ? '部分已发货' : '全部已发货'}</b></div>
