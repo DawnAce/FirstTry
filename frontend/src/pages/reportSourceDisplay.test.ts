@@ -4,6 +4,7 @@ import {
   sourceAdjustmentDescription,
   sourceCardStatus,
   sourceIssueLinkLabel,
+  sourceItemQuantityLabel,
   sourcePurposeLabel,
   sourceQuantityLabel,
 } from './reportSourceDisplay';
@@ -65,6 +66,16 @@ describe('report source card display', () => {
     expect(sourceQuantityLabel(rows)).toBe('确认计入 6,612 份（原始识别 6,592 份）');
     expect(sourceQuantityLabel([item()])).toBe('确认计入 1,214 份');
     expect(sourceQuantityLabel([item({ source_status: 'pending_review' })])).toBe('原始识别 1,214 份');
+  });
+
+  it('shows per-category confirmed quantities and keeps pending values explicit', () => {
+    expect(sourceItemQuantityLabel(item({
+      source_label: '本市（含损失分摊10份）', source_quantity: 1202, print_delta: 1212,
+    }))).toBe('1,212 份');
+    expect(sourceItemQuantityLabel(item({
+      item_kind: 'adjustment', source_quantity: 1214, print_delta: 0,
+    }))).toBe('1,214 份');
+    expect(sourceItemQuantityLabel(item({ source_quantity: null }))).toBe('数量待核对');
   });
 
   it.each([

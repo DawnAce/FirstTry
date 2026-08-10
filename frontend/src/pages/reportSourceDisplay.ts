@@ -58,6 +58,14 @@ export function sourceQuantityLabel(items: ReportSourceItem[]) {
   return `${confirmedLabel}（原始识别 ${sourceTotal.toLocaleString('zh-CN')} 份）`;
 }
 
+export function sourceItemQuantityLabel(item: ReportSourceItem) {
+  if (item.source_quantity == null) return '数量待核对';
+  const quantity = item.item_kind === 'base' && item.source_status === 'confirmed'
+    ? item.print_delta
+    : item.source_quantity;
+  return `${Math.abs(quantity).toLocaleString('zh-CN')} 份`;
+}
+
 export function sourceIssueLinkLabel(document: ReportSourceDocument, currentIssueNumber: number) {
   const issueNumbers = [...new Set(document.items.map(item => item.issue_number))].sort((a, b) => a - b);
   if (issueNumbers.length === 0) {
