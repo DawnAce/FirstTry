@@ -44,6 +44,28 @@ const configuredPartners = partners.map((partner, index) => ({
   sales_mode_policy: index === 1 ? 'required' : 'not_applicable',
 }))
 
+const settlementPreview = {
+  recognized: true,
+  parser_version: 'test-v1',
+  filename: '北京报零结算.xlsx',
+  supplier_name: '北京市报刊零售有限公司',
+  external_no: 'AUTO-202608-001',
+  settlement_start_date: '2026-08-03',
+  settlement_end_date: '2026-08-09',
+  return_start_date: '2026-07-27',
+  return_end_date: '2026-08-02',
+  gross_amount: '1000.00',
+  return_deduction_amount: '120.00',
+  amount_due: '880.00',
+  invoice_item_name: '*印刷品*中国经营报',
+  invoice_quantity: '320.00',
+  invoice_unit_price: '2.7500',
+  invoice_amount: '880.00',
+  detail_count: 12,
+  return_detail_count: 2,
+  warnings: [],
+}
+
 const adminAuth = { user: { id: 1, username: 'admin', role: 'admin' }, isAdmin: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} }
 const operatorAuth = { user: { id: 2, username: 'op', role: 'operator' }, isAdmin: false, isLoggedIn: true, setAuth: () => {}, logout: () => {} }
 
@@ -58,6 +80,7 @@ const dataHandlers = [
     { id: 1, action: 'create', changes: {}, username: 'admin', created_at: TS },
   ])),
   http.get('/api/partners', () => HttpResponse.json(configuredPartners)),
+  http.post('/api/settlements/import/preview', () => HttpResponse.json(settlementPreview)),
 ]
 
 const meta = {
@@ -194,9 +217,53 @@ export const CreateStructuredSettlement: Story = {
     await expect(await within(dialog).findByText('系统结算单号')).toBeInTheDocument()
     await expect(await within(dialog).findByText('外部平台单号')).toBeInTheDocument()
     await expect(within(dialog).queryByText('销售模式')).not.toBeInTheDocument()
-    await expect(await within(dialog).findByText('附件归档')).toBeInTheDocument()
+    const uploadFirst = await within(dialog).findByText('先上传结算凭证（推荐）')
+    const partnerField = await within(dialog).findByText('结算对象')
+    await expect(uploadFirst.compareDocumentPosition(partnerField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await expect(await within(dialog).findByText('选择并识别附件')).toBeInTheDocument()
     await expect(within(dialog).queryByText('开票日期')).not.toBeInTheDocument()
     await expect(within(dialog).queryByText('本次金额')).not.toBeInTheDocument()
+  },
+}
+
+export const RecognitionPreservesManualValues: Story = {
+  name: '识别只补空字段',
+  parameters: { auth: adminAuth, msw: { handlers: dataHandlers } },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole('tab', { name: '渠道结算' }))
+    await userEvent.click(await canvas.findByRole('button', { name: /新增结算/ }))
+    const dialog = await within(document.body).findByRole('dialog')
+    const externalNo = await within(dialog).findByLabelText('外部平台单号')
+    await userEvent.type(externalNo, 'MANUAL-001')
+    const fileInput = dialog.querySelector<HTMLInputElement>('input[type="file"]')
+    if (!fileInput) throw new Error('未找到附件上传控件')
+    await userEvent.upload(fileInput, new File(['xlsx'], '北京报零结算.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }))
+    await expect(await within(dialog).findByText(/已保留人工填写：外部平台单号/)).toBeVisible()
+    await expect(externalNo).toHaveValue('MANUAL-001')
+    await expect(await within(dialog).findByText(/已自动填入：结算周期/)).toBeVisible()
+  },
+}
+
+export const PartnerLoadFailure: Story = {
+  name: '合作渠道加载失败',
+  parameters: {
+    auth: adminAuth,
+    msw: {
+      handlers: [
+        http.get('/api/invoices/orders', () => HttpResponse.json(invoiceOrders)),
+        http.get('/api/settlements', () => HttpResponse.json(settlements)),
+        http.get('/api/partners', () => HttpResponse.json({ detail: '数据库版本未更新' }, { status: 500 })),
+      ],
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole('tab', { name: '渠道结算' }))
+    await userEvent.click(await canvas.findByRole('button', { name: /新增结算/ }))
+    const dialog = await within(document.body).findByRole('dialog')
+    await expect(await within(dialog).findByText('合作渠道加载失败，当前无法选择结算对象')).toBeInTheDocument()
+    await expect(within(dialog).queryByText('暂无数据')).not.toBeInTheDocument()
   },
 }
 
@@ -212,6 +279,13 @@ export const Empty: Story = {
         http.get('/api/partners', () => HttpResponse.json([])),
       ],
     },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole('tab', { name: '渠道结算' }))
+    await userEvent.click(await canvas.findByRole('button', { name: /新增结算/ }))
+    const dialog = await within(document.body).findByRole('dialog')
+    await expect(await within(dialog).findByText('尚未维护可用的合作渠道')).toBeInTheDocument()
+    await expect(within(dialog).queryByText('合作渠道加载失败，当前无法选择结算对象')).not.toBeInTheDocument()
   },
 }
 

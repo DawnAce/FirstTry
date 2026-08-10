@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -763,7 +763,24 @@ interface PendingSettlementAttachment {
   previewState: 'idle' | 'loading' | 'success' | 'error';
   preview?: SettlementExcelPreview;
   previewError?: string;
+  appliedFields?: string[];
+  preservedFields?: string[];
 }
+
+type RecognizedSettlementField =
+  | 'external_no'
+  | 'settlement_period'
+  | 'return_period'
+  | 'gross_amount'
+  | 'return_deduction_amount';
+
+const RECOGNIZED_SETTLEMENT_FIELD_LABELS: Record<RecognizedSettlementField, string> = {
+  external_no: '外部平台单号',
+  settlement_period: '结算周期',
+  return_period: '退报周期',
+  gross_amount: '报款/结算总额',
+  return_deduction_amount: '退报扣款',
+};
 
 interface SettlementInvoiceFormValues {
   invoice_no?: string;
@@ -797,12 +814,14 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [pendingInvoiceFile, setPendingInvoiceFile] = useState<File | null>(null);
   const [pendingPaymentFile, setPendingPaymentFile] = useState<File | null>(null);
+  const recognitionFilledFields = useRef(new Set<RecognizedSettlementField>());
   const selectedPartnerId = Form.useWatch('partner_id', form);
   const selectedDirection = Form.useWatch('direction', form) ?? 'payable';
 
   const partnersQuery = useQuery({
     queryKey: partnerQueryKeys.list(),
     queryFn: async () => (await listPartners()).data,
+    retry: false,
   });
   const partnerOptions = (partnersQuery.data ?? []).map((p) => ({ label: p.name, value: p.id }));
   const selectedPartner = (partnersQuery.data ?? []).find((p) => p.id === selectedPartnerId);
@@ -872,8 +891,8 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
   });
 
   const applySettlementPreview = (preview: SettlementExcelPreview) => {
-    if (!preview.recognized) return;
-    form.setFieldsValue({
+    if (!preview.recognized) return { appliedFields: [], preservedFields: [] };
+    const recognizedValues: Partial<Record<RecognizedSettlementField, SettlementFormValues[RecognizedSettlementField]>> = {
       external_no: preview.external_no ?? undefined,
       settlement_period: preview.settlement_start_date && preview.settlement_end_date
         ? [dayjs(preview.settlement_start_date), dayjs(preview.settlement_end_date)]
@@ -883,17 +902,51 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
         : undefined,
       gross_amount: preview.gross_amount == null ? undefined : Number(preview.gross_amount),
       return_deduction_amount: Number(preview.return_deduction_amount ?? 0),
-      amount_due: preview.amount_due == null ? undefined : Number(preview.amount_due),
-    });
+    };
+    const currentValues = form.getFieldsValue();
+    const patch: Partial<SettlementFormValues> = {};
+    const appliedFields: string[] = [];
+    const preservedFields: string[] = [];
+
+    (Object.entries(recognizedValues) as Array<[RecognizedSettlementField, SettlementFormValues[RecognizedSettlementField]]>)
+      .forEach(([field, value]) => {
+        if (value == null) return;
+        const currentValue = currentValues[field];
+        const isEmpty = currentValue == null || currentValue === '';
+        const isUntouchedDefault = field === 'return_deduction_amount'
+          && currentValue === 0
+          && !form.isFieldTouched(field);
+        if (isEmpty || isUntouchedDefault || recognitionFilledFields.current.has(field)) {
+          Object.assign(patch, { [field]: value });
+          recognitionFilledFields.current.add(field);
+          appliedFields.push(RECOGNIZED_SETTLEMENT_FIELD_LABELS[field]);
+        } else {
+          preservedFields.push(RECOGNIZED_SETTLEMENT_FIELD_LABELS[field]);
+        }
+      });
+
+    const resultingGross = patch.gross_amount ?? currentValues.gross_amount;
+    const resultingReturn = patch.return_deduction_amount ?? currentValues.return_deduction_amount ?? 0;
+    if (resultingGross != null) patch.amount_due = Number(resultingGross) - Number(resultingReturn);
+    form.setFieldsValue(patch);
+    return { appliedFields, preservedFields };
   };
   const previewMutation = useMutation({
     mutationFn: ({ file }: { uid: string; file: File; apply: boolean }) => previewSettlementExcel(file),
     onSuccess: (response, variables) => {
       const preview = response.data;
+      const applyResult = variables.apply
+        ? applySettlementPreview(preview)
+        : { appliedFields: [], preservedFields: [] };
       setPendingAttachments((items) => items.map((item) => item.uid === variables.uid
-        ? { ...item, preview, previewState: preview.recognized ? 'success' : 'error', previewError: preview.warnings.join('；') }
+        ? {
+          ...item,
+          preview,
+          previewState: preview.recognized ? 'success' : 'error',
+          previewError: preview.warnings.join('；'),
+          ...applyResult,
+        }
         : item));
-      if (variables.apply) applySettlementPreview(preview);
     },
     onError: (err, variables) => setPendingAttachments((items) => items.map((item) => item.uid === variables.uid
       ? { ...item, previewState: 'error', previewError: apiError(err, '表格识别失败，文件仍可保存') }
@@ -951,6 +1004,7 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       return_deduction_amount: 0,
     });
     setPendingAttachments([]);
+    recognitionFilledFields.current.clear();
     setModalOpen(true);
   };
   const openEdit = (s: Settlement) => {
@@ -975,6 +1029,7 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       notes: s.notes ?? undefined,
     });
     setPendingAttachments([]);
+    recognitionFilledFields.current.clear();
     setModalOpen(true);
   };
 
@@ -996,6 +1051,13 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
       patch.amount_due = all.gross_amount - (all.return_deduction_amount ?? 0);
     }
     if (Object.keys(patch).length) form.setFieldsValue(patch);
+  };
+
+  const handleSettlementValuesChange = (changed: Partial<SettlementFormValues>, all: SettlementFormValues) => {
+    (Object.keys(changed) as RecognizedSettlementField[]).forEach((field) => {
+      recognitionFilledFields.current.delete(field);
+    });
+    syncCalculatedAmounts(changed, all);
   };
 
   const validateSettlementAttachment = (file: File) => {
@@ -1058,11 +1120,17 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
   const setPrimaryPending = (uid: string) => {
     const target = pendingAttachments.find((item) => item.uid === uid);
     if (!target || target.category !== 'settlement_sheet') return;
-    setPendingAttachments((items) => items.map((item) => ({ ...item, isPrimary: item.uid === uid })));
-    if (target.preview) applySettlementPreview(target.preview);
-    else if (target.file.name.toLowerCase().endsWith('.xlsx')) {
+    if (target.preview) {
+      const applyResult = applySettlementPreview(target.preview);
+      setPendingAttachments((items) => items.map((item) => item.uid === uid
+        ? { ...item, isPrimary: true, ...applyResult }
+        : { ...item, isPrimary: false }));
+    } else if (target.file.name.toLowerCase().endsWith('.xlsx')) {
+      setPendingAttachments((items) => items.map((item) => ({ ...item, isPrimary: item.uid === uid })));
       setPendingAttachments((items) => items.map((item) => item.uid === uid ? { ...item, previewState: 'loading' } : item));
       previewMutation.mutate({ uid, file: target.file, apply: true });
+    } else {
+      setPendingAttachments((items) => items.map((item) => ({ ...item, isPrimary: item.uid === uid })));
     }
   };
 
@@ -1227,10 +1295,76 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
         width={820}
         destroyOnHidden
       >
-        <Form<SettlementFormValues> form={form} layout="vertical" onFinish={(v) => saveMutation.mutate(v)} onValuesChange={syncCalculatedAmounts}>
+        <Form<SettlementFormValues> form={form} layout="vertical" onFinish={(v) => saveMutation.mutate(v)} onValuesChange={handleSettlementValuesChange}>
+          {!editing && <section className="finance-settlement-upload-first">
+            <Divider titlePlacement="start" plain>先上传结算凭证（推荐）</Divider>
+            <Alert
+              type="info"
+              showIcon
+              message="有结算单时请先上传，系统会先识别再让你核对"
+              description="主结算单 XLSX 可自动补充外部单号、结算/退报周期和金额；也可以不上传，直接在下方手工填写。后上传时只补空字段，不会静默覆盖已经手工填写的内容。"
+            />
+            <Space orientation="vertical" style={{ width: '100%' }}>
+              {pendingAttachments.length ? pendingAttachments.map((attachment) => (
+                <div key={attachment.uid} className="finance-settlement-attachment-row">
+                  <Space wrap>
+                    <Select value={attachment.category} options={ATTACHMENT_CATEGORY_OPTIONS} onChange={(value) => updatePendingCategory(attachment.uid, value)} style={{ width: 130 }} />
+                    <Text strong={attachment.isPrimary}>{attachment.file.name}</Text>
+                    <Text type="secondary">{(attachment.file.size / 1024).toFixed(1)} KB</Text>
+                    {attachment.isPrimary ? <Tag color="blue">主结算单</Tag> : attachment.category === 'settlement_sheet' && <Button type="link" size="small" onClick={() => setPrimaryPending(attachment.uid)}>设为主结算单</Button>}
+                    <Button type="link" size="small" danger onClick={() => setPendingAttachments((items) => items.filter((item) => item.uid !== attachment.uid))}>移除</Button>
+                  </Space>
+                  {attachment.previewState === 'loading' && <Alert type="info" showIcon message={`正在识别：${attachment.file.name}`} />}
+                  {attachment.previewState === 'success' && attachment.preview && <Alert
+                    type={attachment.preview.warnings.length ? 'warning' : 'success'}
+                    showIcon
+                    message={`${attachment.file.name}：已识别 ${attachment.preview.detail_count} 条明细（退报 ${attachment.preview.return_detail_count} 条）`}
+                    description={<Space orientation="vertical" size={2}>
+                      {attachment.preview.warnings.length > 0 && <Text>{attachment.preview.warnings.join('；')}</Text>}
+                      {!!attachment.appliedFields?.length && <Text>已自动填入：{attachment.appliedFields.join('、')}</Text>}
+                      {!!attachment.preservedFields?.length && <Text type="warning">已保留人工填写：{attachment.preservedFields.join('、')}</Text>}
+                      {!attachment.appliedFields?.length && !attachment.preservedFields?.length && <Text>已完成识别，请核对下方信息。</Text>}
+                    </Space>}
+                  />}
+                  {attachment.previewState === 'error' && <Alert type="warning" showIcon message={`${attachment.file.name}：未能自动识别，原文件仍会保存`} description={attachment.previewError} />}
+                </div>
+              )) : <Text type="secondary">尚未选择附件。可以先上传，也可以跳过后直接填写。</Text>}
+              <Upload showUploadList={false} accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" beforeUpload={handleSettlementAttachment}>
+                <Button icon={<UploadOutlined />}>选择并识别附件</Button>
+              </Upload>
+            </Space>
+          </section>}
+
+          <Divider titlePlacement="start" plain>结算基础信息</Divider>
+          {partnersQuery.isError && <Alert
+            className="finance-settlement-partner-alert"
+            type="error"
+            showIcon
+            message="合作渠道加载失败，当前无法选择结算对象"
+            description={<Space orientation="vertical" size={8}>
+              <Text>请先重试；若系统刚完成升级，请确认数据库迁移已执行后再继续。</Text>
+              <Button size="small" onClick={() => partnersQuery.refetch()} loading={partnersQuery.isFetching}>重试</Button>
+            </Space>}
+          />}
+          {!partnersQuery.isLoading && !partnersQuery.isError && partnerOptions.length === 0 && <Alert
+            className="finance-settlement-partner-alert"
+            type="warning"
+            showIcon
+            message="尚未维护可用的合作渠道"
+            description="请先到“合作渠道”维护结算对象，保存后再回来新增结算。"
+          />}
           <div className="finance-settlement-form-grid">
             <Form.Item name="partner_id" label="结算对象" rules={[{ required: true, message: '请选择结算对象' }]}>
-              <Select options={partnerOptions} placeholder="选择合作方" showSearch optionFilterProp="label" onChange={handlePartnerChange} />
+              <Select
+                options={partnerOptions}
+                placeholder={partnersQuery.isError ? '合作渠道加载失败' : partnerOptions.length ? '选择合作方' : '暂无可用合作渠道'}
+                showSearch
+                optionFilterProp="label"
+                onChange={handlePartnerChange}
+                loading={partnersQuery.isLoading || partnersQuery.isFetching}
+                disabled={partnersQuery.isError || (!partnersQuery.isLoading && partnerOptions.length === 0)}
+                notFoundContent={partnersQuery.isError ? '加载失败，请重试' : partnersQuery.isLoading ? '正在加载合作渠道…' : '暂无可用合作渠道'}
+              />
             </Form.Item>
             <Form.Item name="contract_id" label="关联合同">
               <Select allowClear options={contractOptions} loading={contractsQuery.isFetching} placeholder="选填" />
@@ -1282,28 +1416,6 @@ function SettlementsPanel({ isAdmin }: { isAdmin: boolean }) {
             <Input.TextArea rows={2} />
           </Form.Item>
 
-          {!editing && <>
-            <Divider titlePlacement="start" plain>附件归档</Divider>
-            <Space orientation="vertical" style={{ width: '100%' }}>
-              {pendingAttachments.length ? pendingAttachments.map((attachment) => (
-                <div key={attachment.uid} className="finance-settlement-attachment-row">
-                  <Space wrap>
-                    <Select value={attachment.category} options={ATTACHMENT_CATEGORY_OPTIONS} onChange={(value) => updatePendingCategory(attachment.uid, value)} style={{ width: 130 }} />
-                    <Text strong={attachment.isPrimary}>{attachment.file.name}</Text>
-                    <Text type="secondary">{(attachment.file.size / 1024).toFixed(1)} KB</Text>
-                    {attachment.isPrimary ? <Tag color="blue">主结算单</Tag> : attachment.category === 'settlement_sheet' && <Button type="link" size="small" onClick={() => setPrimaryPending(attachment.uid)}>设为主结算单</Button>}
-                    <Button type="link" size="small" danger onClick={() => setPendingAttachments((items) => items.filter((item) => item.uid !== attachment.uid))}>移除</Button>
-                  </Space>
-                  {attachment.previewState === 'loading' && <Alert type="info" showIcon message={`正在识别：${attachment.file.name}`} />}
-                  {attachment.previewState === 'success' && attachment.preview && <Alert type={attachment.preview.warnings.length ? 'warning' : 'success'} showIcon message={`${attachment.file.name}：已识别 ${attachment.preview.detail_count} 条明细（退报 ${attachment.preview.return_detail_count} 条）`} description={attachment.preview.warnings.join('；') || '该主结算单的识别结果已回填，请核对。'} />}
-                  {attachment.previewState === 'error' && <Alert type="warning" showIcon message={`${attachment.file.name}：未能自动识别，原文件仍会保存`} description={attachment.previewError} />}
-                </div>
-              )) : <Text type="secondary">附件可同时上传；系统会推荐分类，只有主结算单参与识别和回填。</Text>}
-              <Upload showUploadList={false} accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" beforeUpload={handleSettlementAttachment}>
-                <Button icon={<UploadOutlined />}>选择附件</Button>
-              </Upload>
-            </Space>
-          </>}
         </Form>
       </Modal>
 
