@@ -1,15 +1,15 @@
 import unittest
 from datetime import date
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.issues import get_issue
+from app.api.issues import get_issue, list_issues
 from app.cache import invalidate_dashboard_cache
 from app.database import Base
 from app.main import dashboard_data
-from app.models import Issue, IssueStatus, PublicationSchedule
+from app.models import Issue, IssueStatus, PublicationSchedule, ReportEntry
 
 
 class IssueYearLabelTests(unittest.TestCase):
@@ -58,6 +58,73 @@ class IssueYearLabelTests(unittest.TestCase):
 
         self.assertEqual(result["recent_issues"][0]["year_issue_index"], 2)
         self.assertEqual(result["recent_issues"][0]["year_issue_label"], "二")
+        db.close()
+
+    def test_history_issue_list_uses_one_query_and_preserves_totals(self):
+        db = self.SessionLocal()
+        db.add_all(
+            [
+                PublicationSchedule(
+                    year=2026,
+                    issue_number=2635,
+                    publish_date=date(2026, 1, 5),
+                    is_suspended=False,
+                    page_count=24,
+                ),
+                PublicationSchedule(
+                    year=2026,
+                    issue_number=2636,
+                    publish_date=date(2026, 1, 12),
+                    is_suspended=False,
+                    page_count=28,
+                ),
+            ]
+        )
+        issue = Issue(
+            issue_number=2636,
+            publish_date=date(2026, 1, 12),
+            status=IssueStatus.draft,
+        )
+        db.add(issue)
+        db.flush()
+        db.add_all(
+            [
+                ReportEntry(
+                    issue_id=issue.id,
+                    category="postal",
+                    sub_category="本市",
+                    value=120,
+                ),
+                ReportEntry(
+                    issue_id=issue.id,
+                    category="social_use",
+                    sub_category="临时加印_自留",
+                    value=50,
+                ),
+            ]
+        )
+        db.commit()
+
+        statements: list[str] = []
+
+        def capture_sql(_conn, _cursor, statement, _params, _context, _many):
+            statements.append(statement)
+
+        event.listen(self.engine, "before_cursor_execute", capture_sql)
+        try:
+            result = list_issues(skip=0, limit=100, db=db)
+        finally:
+            event.remove(self.engine, "before_cursor_execute", capture_sql)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].year_issue_index, 2)
+        self.assertEqual(result[0].year_issue_label, "二")
+        self.assertEqual(result[0].planned_page_count, 28)
+        self.assertEqual(result[0].print_total, 120)
+        self.assertEqual(
+            sum(statement.lstrip().upper().startswith("SELECT") for statement in statements),
+            1,
+        )
         db.close()
 
 

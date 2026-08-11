@@ -1,8 +1,8 @@
 from bisect import bisect_right
 from collections import defaultdict
 from datetime import date
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy.orm import Session, aliased
+from sqlalchemy import case, desc, extract, func, select
 from app.models import PublicationSchedule, Issue, ReportEntry, ReportItemTemplate
 from app.schemas.issue import IssueOut
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
@@ -34,6 +34,85 @@ def compute_print_totals(db: Session, issue_ids: list[int]) -> dict[int, int]:
         if sub_category not in PRINT_TOTAL_EXCLUDED_SUBS:
             totals[issue_id] = totals.get(issue_id, 0) + (value or 0)
     return totals
+
+
+def list_issue_outs(db: Session, *, skip: int, limit: int) -> list[IssueOut]:
+    """Return the history-page projection in one database round-trip.
+
+    Public-network latency makes even three small sequential queries visible
+    to users.  Correlated schedule projections and a grouped report-total
+    subquery keep the work server-side while preserving ``IssueOut`` semantics.
+    """
+    schedule_count = aliased(PublicationSchedule)
+    schedule_plan = aliased(PublicationSchedule)
+    year_issue_index = (
+        select(func.count(schedule_count.id))
+        .where(
+            schedule_count.year == extract("year", Issue.publish_date),
+            schedule_count.is_suspended.is_(False),
+            schedule_count.publish_date <= Issue.publish_date,
+        )
+        .correlate(Issue)
+        .scalar_subquery()
+    )
+    planned_page_count = (
+        select(schedule_plan.page_count)
+        .where(
+            schedule_plan.issue_number == Issue.issue_number,
+            schedule_plan.is_suspended.is_(False),
+        )
+        .limit(1)
+        .correlate(Issue)
+        .scalar_subquery()
+    )
+    report_totals = (
+        db.query(
+            ReportEntry.issue_id.label("issue_id"),
+            func.sum(
+                case(
+                    (
+                        ReportEntry.sub_category.notin_(PRINT_TOTAL_EXCLUDED_SUBS),
+                        ReportEntry.value,
+                    ),
+                    else_=0,
+                )
+            ).label("print_total"),
+        )
+        .group_by(ReportEntry.issue_id)
+        .subquery()
+    )
+    rows = (
+        db.query(
+            Issue,
+            year_issue_index.label("year_issue_index"),
+            planned_page_count.label("planned_page_count"),
+            func.coalesce(report_totals.c.print_total, 0).label("print_total"),
+        )
+        .outerjoin(report_totals, report_totals.c.issue_id == Issue.id)
+        .order_by(desc(Issue.issue_number))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return [
+        IssueOut(
+            id=issue.id,
+            issue_number=issue.issue_number,
+            year_issue_index=int(year_index) if year_index else None,
+            year_issue_label=format_chinese_issue_number(
+                int(year_index) if year_index else None
+            ),
+            publish_date=issue.publish_date,
+            page_count=issue.page_count,
+            planned_page_count=planned_pages,
+            status=issue.status,
+            notes=issue.notes,
+            created_at=issue.created_at,
+            updated_at=issue.updated_at,
+            print_total=int(print_total or 0),
+        )
+        for issue, year_index, planned_pages, print_total in rows
+    ]
 
 
 def compute_zt_report_totals(db: Session, issue_ids: list[int]) -> dict[int, int]:
