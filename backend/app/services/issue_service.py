@@ -1,3 +1,5 @@
+from bisect import bisect_right
+from collections import defaultdict
 from datetime import date
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
@@ -126,6 +128,69 @@ def build_issue_out(db: Session, issue: Issue) -> IssueOut:
         created_at=issue.created_at,
         updated_at=issue.updated_at,
     )
+
+
+def build_issue_outs(
+    db: Session,
+    issues: list[Issue],
+    *,
+    schedule_rows: list[PublicationSchedule] | None = None,
+) -> list[IssueOut]:
+    """Serialize a collection of issues with one schedule query.
+
+    ``build_issue_out`` historically performs two schedule lookups per issue.
+    That is acceptable for one detail request but turns list/dashboard reads
+    into a classic N+1.  This helper materialises the small publication
+    calendar once and derives the same annual index and planned page count in
+    memory.  Callers that already loaded the calendar can pass it in and avoid
+    even that query.
+    """
+    if not issues:
+        return []
+
+    if schedule_rows is None:
+        years = {issue.publish_date.year for issue in issues}
+        schedule_rows = (
+            db.query(PublicationSchedule)
+            .filter(
+                PublicationSchedule.year.in_(years),
+                PublicationSchedule.is_suspended == False,
+            )
+            .all()
+        )
+
+    dates_by_year: dict[int, list[date]] = defaultdict(list)
+    page_count_by_issue: dict[int, int | None] = {}
+    for row in schedule_rows:
+        if row.is_suspended:
+            continue
+        dates_by_year[row.year].append(row.publish_date)
+        if row.issue_number is not None:
+            page_count_by_issue[row.issue_number] = row.page_count
+    for dates in dates_by_year.values():
+        dates.sort()
+
+    outs: list[IssueOut] = []
+    for issue in issues:
+        year_issue_index = bisect_right(
+            dates_by_year.get(issue.publish_date.year, []), issue.publish_date
+        ) or None
+        outs.append(
+            IssueOut(
+                id=issue.id,
+                issue_number=issue.issue_number,
+                year_issue_index=year_issue_index,
+                year_issue_label=format_chinese_issue_number(year_issue_index),
+                publish_date=issue.publish_date,
+                page_count=issue.page_count,
+                planned_page_count=page_count_by_issue.get(issue.issue_number),
+                status=issue.status,
+                notes=issue.notes,
+                created_at=issue.created_at,
+                updated_at=issue.updated_at,
+            )
+        )
+    return outs
 
 
 def get_next_issue_info(db: Session) -> dict:

@@ -1,13 +1,13 @@
 # 交接说明 · 发行系统（FirstTry）
 
-> 更新：2026-07-24 ｜ 交接自 Claude Code → codex
+> 更新：2026-08-11 ｜ 交接自 Claude Code → codex
 > 本文件是接手入口，给出「现状 / 待办 / 约定」三件事。功能细节以 `requirements.md`（业务）、`technical.md`（技术）、`user-guide.md`（操作）为准，本文件不重复。
 
 ---
 
 ## 1. 一句话现状
 
-系统已上生产（腾讯云 MySQL 库 `zgjyb`），核心闭环全部跑通。邮局管理已完成 7→3 信息架构重构；安全、正式导出、空库迁移、部署依赖、上传限制、统一备份和 CI/Schema 门禁已通过 PR #84–#90 合并 `main`。
+系统已上生产（腾讯云 MySQL 库 `zgjyb`），核心闭环全部跑通。邮局管理已完成 7→3 信息架构重构；发行系统页面性能已完成第一轮全局治理，刊期、Dashboard、订单、邮局投递和报数确认的 N+1 / 重复请求已批量化，并补充连接复用、认证突发缓存、GZip、路由拆包和慢请求计时。公网 MySQL 冷连接仍是剩余主要瓶颈，详见 `performance-optimization-2026-08.md`。
 
 ---
 
@@ -61,6 +61,7 @@
 |---|---|
 | `requirements.md` | 业务需求 / 各模块功能定义（§10 有已实现清单、§5C 邮局管理） |
 | `technical.md` | 技术架构 / 目录 / 各模块实现（§3.17 邮局管理） |
+| `performance-optimization-2026-08.md` | 远程库性能基线、已落地优化、接口约定、验证结果和后续边界 |
 | `user-guide.md` | 面向使用者的操作说明 |
 | `postal-restructure-plan.md` | 邮局 7→3 重构完整方案（PR-E 方案在此） |
 | `postal-restructure-mockup.html` | 邮局重构可交互视觉稿（本地起服务预览） |

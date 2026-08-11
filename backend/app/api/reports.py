@@ -51,6 +51,17 @@ _SHIPPING_DETAIL_COPY_FIELDS = [
 ]
 
 
+def _apply_report_updates(
+    entries: list[ReportEntry], data: ReportDataUpdate
+) -> None:
+    """Apply a report payload to already-loaded rows without per-entry SQL."""
+    by_key = {(entry.category, entry.sub_category): entry for entry in entries}
+    for entry_data in data.entries:
+        entry = by_key.get((entry_data.category, entry_data.sub_category))
+        if entry is not None:
+            entry.value = entry_data.value
+
+
 def _copy_previous_shipping_details_for_confirm(
     db: Session,
     issue: Issue,
@@ -223,18 +234,8 @@ def update_report(issue_id: int, data: ReportDataUpdate, db: Session = Depends(g
     if issue.status == IssueStatus.confirmed:
         raise HTTPException(status_code=403, detail="报数已确认，如需修改请先作废")
 
-    for entry_data in data.entries:
-        entry = (
-            db.query(ReportEntry)
-            .filter(
-                ReportEntry.issue_id == issue_id,
-                ReportEntry.category == entry_data.category,
-                ReportEntry.sub_category == entry_data.sub_category,
-            )
-            .first()
-        )
-        if entry:
-            entry.value = entry_data.value
+    entries = db.query(ReportEntry).filter(ReportEntry.issue_id == issue_id).all()
+    _apply_report_updates(entries, data)
 
     db.commit()
     invalidate_overview_cache()
@@ -242,13 +243,20 @@ def update_report(issue_id: int, data: ReportDataUpdate, db: Session = Depends(g
 
 
 @router.post("/confirm")
-def confirm_report(issue_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def confirm_report(
+    issue_id: int,
+    data: Optional[ReportDataUpdate] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     issue = db.query(Issue).filter(Issue.id == issue_id).with_for_update().first()
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
 
     # Validation
     entries = db.query(ReportEntry).filter(ReportEntry.issue_id == issue_id).all()
+    if data is not None:
+        _apply_report_updates(entries, data)
     errors = []
     for e in entries:
         if e.is_variable and e.value is None:

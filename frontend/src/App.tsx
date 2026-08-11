@@ -1,32 +1,35 @@
 import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/AppLayout';
-import Dashboard from './pages/DashboardPage';
-import ReportEditor from './pages/ReportEditor';
-import LogisticsOverview from './pages/LogisticsOverview';
-import PostDelivery from './pages/PostDelivery';
-import SubscriptionGeneration from './pages/SubscriptionGeneration';
-import History from './pages/History';
-import LogisticsIssues from './pages/LogisticsIssues';
-import LogisticsIssueDetail from './pages/LogisticsIssueDetail';
-import WaybillImportWorkbench from './pages/WaybillImportWorkbench';
-import Templates from './pages/Templates';
-import HistoryImport from './pages/HistoryImport';
-import ScheduleView from './pages/ScheduleView';
-import ScheduleImport from './pages/ScheduleImport';
-import OrderList from './pages/OrderList';
-import OrderEditor from './pages/OrderEditor';
-import OrderDetail from './pages/OrderDetail';
-import ProductCatalog from './pages/ProductCatalog';
-import OrderImport from './pages/OrderImport';
-import IssueDispatch from './pages/IssueDispatch';
-import Analytics from './pages/Analytics';
-import CustomerList from './pages/CustomerList';
-import ContractManagement from './pages/ContractManagement';
-import FinanceManagement from './pages/FinanceManagement';
-import Login from './pages/Login';
-import { BusinessHome, BusinessCenterPortal, PostalPortal } from './pages/BusinessPortal';
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
+
+const Dashboard = lazy(() => import('./pages/DashboardPage'));
+const ReportEditor = lazy(() => import('./pages/ReportEditor'));
+const LogisticsOverview = lazy(() => import('./pages/LogisticsOverview'));
+const PostDelivery = lazy(() => import('./pages/PostDelivery'));
+const SubscriptionGeneration = lazy(() => import('./pages/SubscriptionGeneration'));
+const History = lazy(() => import('./pages/History'));
+const LogisticsIssues = lazy(() => import('./pages/LogisticsIssues'));
+const LogisticsIssueDetail = lazy(() => import('./pages/LogisticsIssueDetail'));
+const WaybillImportWorkbench = lazy(() => import('./pages/WaybillImportWorkbench'));
+const Templates = lazy(() => import('./pages/Templates'));
+const HistoryImport = lazy(() => import('./pages/HistoryImport'));
+const ScheduleView = lazy(() => import('./pages/ScheduleView'));
+const ScheduleImport = lazy(() => import('./pages/ScheduleImport'));
+const OrderList = lazy(() => import('./pages/OrderList'));
+const OrderEditor = lazy(() => import('./pages/OrderEditor'));
+const OrderDetail = lazy(() => import('./pages/OrderDetail'));
+const ProductCatalog = lazy(() => import('./pages/ProductCatalog'));
+const OrderImport = lazy(() => import('./pages/OrderImport'));
+const IssueDispatch = lazy(() => import('./pages/IssueDispatch'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const CustomerList = lazy(() => import('./pages/CustomerList'));
+const ContractManagement = lazy(() => import('./pages/ContractManagement'));
+const FinanceManagement = lazy(() => import('./pages/FinanceManagement'));
+const Login = lazy(() => import('./pages/Login'));
+const BusinessHome = lazy(() => import('./pages/BusinessPortal').then((module) => ({ default: module.BusinessHome })));
+const BusinessCenterPortal = lazy(() => import('./pages/BusinessPortal').then((module) => ({ default: module.BusinessCenterPortal })));
+const PostalPortal = lazy(() => import('./pages/BusinessPortal').then((module) => ({ default: module.PostalPortal })));
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isLoggedIn } = useAuth();
@@ -58,7 +61,8 @@ function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
+        <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}>页面加载中…</div>}>
+          <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
             <Route path="/" element={<BusinessHome />} />
@@ -92,7 +96,8 @@ function App() {
             <Route path="/finance" element={<FinanceManagement />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );

@@ -1,6 +1,9 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException
+import logging
+import time
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -41,9 +44,34 @@ from app.api.report_sources import router as report_sources_router
 from app.api.shipping_waybills import router as shipping_waybills_router
 from app.auth import get_current_user, require_admin, require_mutation_permission
 from app.models import Issue, PublicationSchedule, ReportEntry
-from app.services.issue_service import build_issue_out, PRINT_TOTAL_EXCLUDED_SUBS
+from app.services.issue_service import build_issue_outs, PRINT_TOTAL_EXCLUDED_SUBS
 
 app = FastAPI(title="中国经营报 · 印数管理系统", version="1.0.0")
+
+# Compress API payloads and the production SPA bundle.  The main JS bundle is
+# several megabytes uncompressed, so this materially improves first load.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
+
+performance_logger = logging.getLogger("app.performance")
+
+
+@app.middleware("http")
+async def expose_request_timing(request: Request, call_next):
+    """Expose API processing time and log requests that remain slow."""
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    if request.url.path.startswith("/api/"):
+        response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+        if elapsed_ms >= 2000:
+            performance_logger.warning(
+                "slow_api method=%s path=%s duration_ms=%.1f status=%s",
+                request.method,
+                request.url.path,
+                elapsed_ms,
+                response.status_code,
+            )
+    return response
 
 
 @app.on_event("startup")
@@ -159,24 +187,22 @@ def dashboard_data(db: Session = Depends(get_db), _user = Depends(get_current_us
     latest_issue = all_issues[0] if all_issues else None
     latest_report_time = latest_issue.created_at.isoformat() if latest_issue and latest_issue.created_at else None
 
-    # Next issue info from schedule
-    next_issue_number = None
-    next_issue_publish_date = None
-    for e in db.query(PublicationSchedule).filter(
-        PublicationSchedule.is_suspended == False
-    ).order_by(PublicationSchedule.publish_date.asc()).all():
-        if e.issue_number not in existing_numbers and e.publish_date >= today:
-            next_issue_number = e.issue_number
-            next_issue_publish_date = e.publish_date
-            break
-
-    # Query 2: all non-suspended schedule entries
+    # Query 2: load the small publication calendar once.  It powers the next
+    # issue, available issues and recent issue labels/page counts below.
     schedule_entries = (
         db.query(PublicationSchedule)
         .filter(PublicationSchedule.is_suspended == False)
         .order_by(PublicationSchedule.publish_date.asc())
         .all()
     )
+
+    next_issue_number = None
+    next_issue_publish_date = None
+    for e in schedule_entries:
+        if e.issue_number not in existing_numbers and e.publish_date >= today:
+            next_issue_number = e.issue_number
+            next_issue_publish_date = e.publish_date
+            break
 
     # Compute available issues (not yet created) in Python
     available = [
@@ -196,6 +222,9 @@ def dashboard_data(db: Session = Depends(get_db), _user = Depends(get_current_us
             }
             break
 
+    recent_issue_outs = build_issue_outs(
+        db, recent_issues, schedule_rows=schedule_entries
+    )
     result = {
         "recent_issues": [
             {
@@ -211,7 +240,7 @@ def dashboard_data(db: Session = Depends(get_db), _user = Depends(get_current_us
                 "updated_at": issue_out.updated_at.isoformat() if issue_out.updated_at else None,
                 "print_total": issue_print_totals.get(issue_out.id, 0),
             }
-            for issue_out in (build_issue_out(db, i) for i in recent_issues)
+            for issue_out in recent_issue_outs
         ],
         "stats": {"total": total, "draft": draft},
         "weekly_stats": {

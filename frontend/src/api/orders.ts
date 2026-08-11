@@ -353,6 +353,16 @@ export interface OrderListRow {
 export interface ListOrdersResponse {
   rows: OrderListRow[];
   total: number;
+  view_counts?: OrderViewCounts;
+}
+
+export interface OrderViewCounts {
+  all: number;
+  active: number;
+  pending_confirmation: number;
+  draft: number;
+  attention: number;
+  void: number;
 }
 
 export interface PricingPreviewPayload {
@@ -506,6 +516,7 @@ export interface ListOrdersParams {
   order?: 'asc' | 'desc';
   skip?: number;
   limit?: number;
+  include_view_counts?: boolean;
 }
 
 export interface BulkOpResult {
@@ -521,6 +532,11 @@ export const listOrders = (
   params?: ListOrdersParams,
 ): Promise<AxiosResponse<ListOrdersResponse>> =>
   api.get<ListOrdersResponse>('/orders', { params });
+
+export const getOrderViewCounts = (
+  params?: Omit<ListOrdersParams, 'status' | 'needs_attention' | 'sort' | 'order' | 'skip' | 'limit'>,
+): Promise<AxiosResponse<OrderViewCounts>> =>
+  api.get<OrderViewCounts>('/orders/view-counts', { params });
 
 export const getOrder = (id: number): Promise<AxiosResponse<OrderOut>> =>
   api.get<OrderOut>(`/orders/${id}`);

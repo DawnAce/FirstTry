@@ -450,12 +450,13 @@ def list_deliveries(
         {oid: code for oid, code in db.query(Order.id, Order.order_code).filter(Order.id.in_(linked_order_ids)).all()}
         if linked_order_ids else {}
     )
+    link_diagnostics = renewal_svc.diagnose_exact_delivery_links(db, rows)
     out = []
     for r in rows:
         o = DeliveryOut.model_validate(r)
         o.distribution_unit_name = names.get(r.distribution_unit_id)
         o.order_code = order_codes.get(r.order_id)
-        o.link_status, o.link_message, _, _, _ = renewal_svc.diagnose_exact_delivery_link(db, r)
+        o.link_status, o.link_message = link_diagnostics[r.id]
         out.append(o)
     summary = delivery_svc.summarize_deliveries(
         db, order_id=order_id, year=year, channel=channel, distribution_unit_id=distribution_unit_id,

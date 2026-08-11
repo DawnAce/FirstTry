@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
   DatePicker,
@@ -191,6 +191,7 @@ export default function OrderList() {
 
   const queryParams = useMemo(() => {
     const p = buildQueryParams(filters, page, view);
+    p.include_view_counts = true;
     if (sorter.field) {
       p.sort = sorter.field;
       p.order = sorter.order ?? 'desc';
@@ -207,19 +208,6 @@ export default function OrderList() {
   });
 
   const rows = ordersQuery.data?.rows ?? [];
-
-  const viewCountQueries = useQueries({
-    queries: ORDER_VIEWS.map((item) => {
-      const params = buildQueryParams(filters, 1, item.value);
-      params.skip = 0;
-      params.limit = 1;
-      return {
-        queryKey: [...orderQueryKeys.list(params), 'count'],
-        queryFn: async () => (await listOrders(params)).data.total,
-        staleTime: 30_000,
-      };
-    }),
-  });
 
   const previewOrderId = previewRow?.id ?? NaN;
   const previewOrderQuery = useQuery({
@@ -587,7 +575,7 @@ export default function OrderList() {
 
       <section className="order-list-workspace">
         <div className="order-list-views" role="tablist" aria-label="订单状态视图">
-          {ORDER_VIEWS.map((item, index) => (
+          {ORDER_VIEWS.map((item) => (
             <button
               key={item.value}
               type="button"
@@ -597,7 +585,7 @@ export default function OrderList() {
               onClick={() => handleViewChange(item.value)}
             >
               {item.label}
-              <span className={item.value === 'attention' ? 'is-warning' : ''}>{viewCountQueries[index].data ?? '—'}</span>
+              <span className={item.value === 'attention' ? 'is-warning' : ''}>{ordersQuery.data?.view_counts?.[item.value] ?? '—'}</span>
             </button>
           ))}
         </div>

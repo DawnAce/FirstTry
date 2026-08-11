@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+import threading
+import time
 from typing import Optional
 
 import bcrypt
@@ -9,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.config import get_settings
-from app.models.user import User
+from app.models.user import User, UserRole
 
 settings = get_settings()
 SECRET_KEY = settings.JWT_SECRET
@@ -17,6 +19,27 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = settings.ACCESS_TOKEN_EXPIRE_HOURS
 
 security = HTTPBearer()
+
+# A page commonly opens several API requests at once.  JWT verification is
+# local, but the historical implementation still fetched the same user over
+# the high-latency DB link for every request.  Keep a deliberately short cache
+# so deletion/role changes propagate quickly while bursts share one lookup.
+_USER_CACHE_TTL_SECONDS = 30
+_user_cache: dict[int, tuple[float, str, UserRole]] = {}
+_user_cache_lock = threading.Lock()
+
+
+def _user_from_cache_value(user_id: int, username: str, role: UserRole) -> User:
+    return User(id=user_id, username=username, role=role, password_hash="")
+
+
+def cache_authenticated_user(user: User) -> None:
+    with _user_cache_lock:
+        _user_cache[user.id] = (
+            time.monotonic() + _USER_CACHE_TTL_SECONDS,
+            user.username,
+            user.role,
+        )
 
 
 def hash_password(password: str) -> str:
@@ -49,10 +72,24 @@ def get_current_user(
     except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的登录凭证")
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
-    return user
+    now = time.monotonic()
+    # Keep the lock through the miss query: concurrent page requests for the
+    # same user wait for one lookup instead of causing a cache stampede.
+    with _user_cache_lock:
+        cached = _user_cache.get(user_id)
+        if cached is not None and cached[0] > now:
+            return _user_from_cache_value(user_id, cached[1], cached[2])
+
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            _user_cache.pop(user_id, None)
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
+        _user_cache[user_id] = (
+            now + _USER_CACHE_TTL_SECONDS,
+            user.username,
+            user.role,
+        )
+        return user
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:

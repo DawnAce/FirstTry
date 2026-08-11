@@ -904,6 +904,44 @@ def test_list_orders_pagination(client):
     assert len(body["rows"]) == 2
 
 
+def test_order_view_counts_returns_all_tabs_in_one_response(client):
+    active = client.post("/api/orders", json=_make_create_payload(payer_name="Active")).json()
+    client.post("/api/orders", json=_make_create_payload(payer_name="Draft"))
+    voided = client.post("/api/orders", json=_make_create_payload(payer_name="Void")).json()
+    client.post(f"/api/orders/{active['id']}/confirm")
+    client.post(f"/api/orders/{voided['id']}/void", json={"reason": "test"})
+
+    r = client.get("/api/orders/view-counts")
+
+    assert r.status_code == 200, r.text
+    assert r.headers["server-timing"].startswith("app;dur=")
+    assert r.json() == {
+        "all": 3,
+        "active": 1,
+        "pending_confirmation": 0,
+        "draft": 1,
+        "attention": 3,
+        "void": 1,
+    }
+
+    combined = client.get("/api/orders", params={"include_view_counts": "true"})
+    assert combined.status_code == 200, combined.text
+    assert combined.json()["view_counts"] == r.json()
+    assert combined.json()["total"] == 3
+
+
+def test_order_view_counts_applies_shared_search_filter(client):
+    client.post("/api/orders", json=_make_create_payload(payer_name="目标客户"))
+    client.post("/api/orders", json=_make_create_payload(payer_name="其他客户"))
+
+    r = client.get("/api/orders/view-counts", params={"search": "目标"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["all"] == 1
+    assert r.json()["draft"] == 1
+    assert r.json()["attention"] == 1
+
+
 # ---------------------------------------------------------------------------
 # GET /api/orders/{id} (detail)
 # ---------------------------------------------------------------------------
