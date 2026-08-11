@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from app import auth
 from app.config import Settings
+from app.models.user import User, UserRole
 
 
 def test_jwt_uses_configured_secret_and_short_expiry():
@@ -56,3 +57,31 @@ def test_mutation_permission_accepts_string_roles_from_integrations():
         auth.require_mutation_permission(SimpleNamespace(method="DELETE"), viewer)
 
     assert exc_info.value.status_code == 403
+
+
+def test_current_user_cache_reuses_lookup_during_request_burst():
+    user = User(id=77, username="cached", password_hash="x", role=UserRole.operator)
+    lookups = 0
+
+    class FakeQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            nonlocal lookups
+            lookups += 1
+            return user
+
+    db = SimpleNamespace(query=lambda *_args: FakeQuery())
+    credentials = SimpleNamespace(
+        credentials=auth.create_access_token(user.id, user.username, user.role.value)
+    )
+    auth._user_cache.clear()
+    try:
+        first = auth.get_current_user(credentials=credentials, db=db)
+        second = auth.get_current_user(credentials=credentials, db=db)
+    finally:
+        auth._user_cache.clear()
+
+    assert first.id == second.id == user.id
+    assert lookups == 1

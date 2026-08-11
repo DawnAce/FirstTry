@@ -100,6 +100,7 @@ def list_orders(
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    include_view_counts: bool = False,
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
@@ -110,8 +111,7 @@ def list_orders(
     the filtered set first, so ``total`` reflects the post-filter count and
     every page stays full (see ``order_service.list_orders``).
     """
-    rows, total = order_service.list_orders(
-        db,
+    kwargs = dict(
         status=status,
         entry_method=entry_method,
         payer_name_like=payer_name_like,
@@ -130,7 +130,44 @@ def list_orders(
         skip=skip,
         limit=limit,
     )
+    if include_view_counts:
+        rows, total, view_counts = order_service.list_orders_with_view_counts(db, **kwargs)
+        return {"rows": rows, "total": total, "view_counts": view_counts}
+    rows, total = order_service.list_orders(db, **kwargs)
     return {"rows": rows, "total": total}
+
+
+@router.get("/view-counts", response_model=dict[str, int])
+def order_view_counts(
+    entry_method: Optional[OrderEntryMethod] = None,
+    payer_name_like: Optional[str] = None,
+    campaign: Optional[str] = None,
+    source_platform: Optional[str] = None,
+    coverage_start: Optional[date] = None,
+    coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
+    has_drift: Optional[bool] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """All status-tab counts in one request and one bulk aggregation pass."""
+    return order_service.count_order_views(
+        db,
+        entry_method=entry_method,
+        payer_name_like=payer_name_like,
+        campaign=campaign,
+        source_platform=source_platform,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        order_date_start=order_date_start,
+        order_date_end=order_date_end,
+        unpaid=unpaid,
+        has_drift=has_drift,
+        search=search,
+    )
 
 
 @router.get("/export")

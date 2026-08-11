@@ -7,7 +7,7 @@ from typing import Iterable, Optional
 
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     FulfillmentAllocation,
@@ -128,6 +128,113 @@ def diagnose_exact_delivery_link(
     if target is None:
         return "target_not_unique", "无法唯一确定订单收件人，需人工核对", order, item, None
     return "ready", "可自动关联来源订单", order, item, target
+
+
+def diagnose_exact_delivery_links(
+    db: Session,
+    deliveries: list[PostalDelivery],
+) -> dict[int, tuple[str, str]]:
+    """Bulk form of :func:`diagnose_exact_delivery_link` for list pages.
+
+    Orders, items and latest targets are loaded in bounded queries instead of
+    re-running the full diagnosis for every visible delivery row.
+    """
+    results: dict[int, tuple[str, str]] = {}
+    unresolved = []
+    external_nos: set[str] = set()
+    for delivery in deliveries:
+        if delivery.order_id:
+            results[delivery.id] = ("linked", "已关联来源订单")
+            continue
+        external_no = (delivery.external_order_no or "").strip()
+        if not external_no:
+            results[delivery.id] = ("missing_source_no", "未填写来源单号")
+            continue
+        unresolved.append(delivery)
+        external_nos.add(external_no)
+
+    if not unresolved:
+        return results
+
+    orders = (
+        db.query(Order)
+        .options(selectinload(Order.items))
+        .filter(Order.external_order_no.in_(external_nos))
+        .all()
+    )
+    orders_by_external: dict[str, list[Order]] = {}
+    for order in orders:
+        orders_by_external.setdefault((order.external_order_no or "").strip(), []).append(order)
+
+    eligible_items: dict[int, list[OrderItem]] = {}
+    item_ids: list[int] = []
+    for delivery in unresolved:
+        matches = orders_by_external.get((delivery.external_order_no or "").strip(), [])
+        if not matches:
+            results[delivery.id] = ("order_not_found", "来源单号尚未匹配到订单")
+            continue
+        if len(matches) != 1:
+            results[delivery.id] = ("order_not_unique", "来源单号匹配到多张订单，需人工核对")
+            continue
+        items = [
+            item
+            for item in matches[0].items
+            if item.status == OrderItemStatus.active
+            and item.fulfillment_type == FulfillmentType.subscription
+            and item.delivery_method == DeliveryMethod.post_office
+        ]
+        eligible_items[delivery.id] = items
+        if len(items) == 1:
+            item_ids.append(items[0].id)
+
+    targets_by_item: dict[int, list[FulfillmentTarget]] = {}
+    if item_ids:
+        latest = (
+            db.query(
+                FulfillmentAllocation.order_item_id.label("item_id"),
+                func.max(FulfillmentAllocation.version_no).label("version_no"),
+            )
+            .filter(FulfillmentAllocation.order_item_id.in_(item_ids))
+            .group_by(FulfillmentAllocation.order_item_id)
+            .subquery()
+        )
+        targets = (
+            db.query(FulfillmentTarget)
+            .join(
+                FulfillmentAllocation,
+                FulfillmentAllocation.id == FulfillmentTarget.allocation_id,
+            )
+            .join(
+                latest,
+                and_(
+                    latest.c.item_id == FulfillmentAllocation.order_item_id,
+                    latest.c.version_no == FulfillmentAllocation.version_no,
+                ),
+            )
+            .filter(FulfillmentTarget.status == TargetStatus.active)
+            .order_by(FulfillmentTarget.id)
+            .all()
+        )
+        for target in targets:
+            targets_by_item.setdefault(target.order_item_id, []).append(target)
+
+    for delivery in unresolved:
+        if delivery.id in results:
+            continue
+        items = eligible_items.get(delivery.id, [])
+        if not items:
+            results[delivery.id] = ("item_not_found", "订单没有有效的邮局订阅明细")
+            continue
+        if len(items) != 1:
+            results[delivery.id] = ("item_not_unique", "订单存在多条邮局订阅明细，需人工核对")
+            continue
+        target = _unique_target(delivery, targets_by_item.get(items[0].id, []))
+        results[delivery.id] = (
+            ("ready", "可自动关联来源订单")
+            if target is not None
+            else ("target_not_unique", "无法唯一确定订单收件人，需人工核对")
+        )
+    return results
 
 
 def try_link_delivery_exact(db: Session, delivery: PostalDelivery) -> tuple[str, str]:

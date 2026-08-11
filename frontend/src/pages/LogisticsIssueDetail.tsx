@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Key } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -53,7 +53,6 @@ import {
   batchUpdateShippingDetails,
   batchDeleteShippingDetails,
   clearShippingDetailsByIssue,
-  getShippingCompanies,
   previewShippingPlanImport,
   commitShippingPlanImport,
 } from '../api/shippingDetails';
@@ -208,31 +207,8 @@ export default function LogisticsIssueDetail() {
     }
   };
 
-  const {
-    data: details = [],
-    isLoading,
-    isError: detailsIsError,
-    error: detailsError,
-    refetch: refetchDetails,
-  } = useQuery({
-    queryKey: ['shippingDetails', currentIssueNumber, shippingFilters],
-    queryFn: async () => {
-      if (currentIssueNumber == null) return [];
-      const params: Record<string, any> = { issue_number: currentIssueNumber, limit: 10000 };
-      if (shippingFilters.channel) params.channel = shippingFilters.channel;
-      if (shippingFilters.sub_channel) params.sub_channel = shippingFilters.sub_channel;
-      if (shippingFilters.frequency) params.frequency = shippingFilters.frequency;
-      if (shippingFilters.transport) params.transport = shippingFilters.transport;
-      if (shippingFilters.status) params.status = shippingFilters.status;
-      if (shippingFilters.search) params.search = shippingFilters.search;
-      if (shippingFilters.company?.length) params.company = shippingFilters.company.join(',');
-      const res = await getShippingDetails(params);
-      return res.data;
-    },
-    enabled: currentIssueNumber != null,
-  });
-
-  // Unfiltered per-issue list — powers 摘要条 / 处理状态 / 空态判定（不受筛选影响）。
+  // Load the per-issue list once. Filters are cheap to apply locally and this
+  // avoids requesting the same up-to-10k rows twice on every page entry.
   const {
     data: allDetails = [],
     isLoading: allDetailsLoading,
@@ -250,15 +226,25 @@ export default function LogisticsIssueDetail() {
     enabled: currentIssueNumber != null,
   });
 
-  const { data: companyOptions = [] } = useQuery({
-    queryKey: ['shippingCompanies', currentIssueNumber],
-    queryFn: async () => {
-      if (currentIssueNumber == null) return [];
-      const res = await getShippingCompanies({ issue_number: currentIssueNumber });
-      return res.data;
-    },
-    enabled: currentIssueNumber != null,
-  });
+  const details = useMemo(() => allDetails.filter((detail) => {
+    if (shippingFilters.channel && detail.channel !== shippingFilters.channel) return false;
+    if (shippingFilters.sub_channel && detail.sub_channel !== shippingFilters.sub_channel) return false;
+    if (shippingFilters.frequency && detail.frequency !== shippingFilters.frequency) return false;
+    if (shippingFilters.transport && detail.transport !== shippingFilters.transport) return false;
+    if (shippingFilters.status && detail.status !== shippingFilters.status) return false;
+    if (shippingFilters.search && !detail.name.includes(shippingFilters.search)) return false;
+    if (shippingFilters.company?.length && !shippingFilters.company.includes(detail.company ?? '')) return false;
+    return true;
+  }), [allDetails, shippingFilters]);
+  const isLoading = allDetailsLoading;
+  const detailsIsError = allDetailsIsError;
+  const detailsError = allDetailsError;
+  const refetchDetails = refetchAllDetails;
+
+  const companyOptions = useMemo(
+    () => [...new Set(allDetails.map((detail) => detail.company).filter((value): value is string => !!value))].sort(),
+    [allDetails],
+  );
 
   const {
     data: report,
@@ -604,7 +590,7 @@ export default function LogisticsIssueDetail() {
   };
 
   const retryPlanData = () => {
-    void Promise.all([refetchAllDetails(), refetchDetails(), refetchReport()]);
+    void Promise.all([refetchAllDetails(), refetchReport()]);
   };
 
   const retryFulfillmentData = () => {

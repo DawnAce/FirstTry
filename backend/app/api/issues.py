@@ -8,7 +8,7 @@ from app.auth import require_admin, get_current_user
 from app.models import Issue, ShippingDetail, ShippingDetailSourceType, User
 from app.models.report_revision import ReportRevision
 from app.schemas.issue import IssueCreate, IssueOut, IssueUpdate, NextIssueInfo
-from app.services.issue_service import build_issue_out, get_next_issue_info, get_available_issues, create_issue_with_data, compute_print_totals
+from app.services.issue_service import build_issue_out, build_issue_outs, get_next_issue_info, get_available_issues, create_issue_with_data, compute_print_totals
 from app.services.operation_log_service import record_operation
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/issues", tags=["issues"])
 @router.get("", response_model=List[IssueOut])
 def list_issues(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
     issues = db.query(Issue).order_by(desc(Issue.issue_number)).offset(skip).limit(limit).all()
-    outs = [build_issue_out(db, issue) for issue in issues]
+    outs = build_issue_outs(db, issues)
     totals = compute_print_totals(db, [issue.id for issue in issues])
     for out in outs:
         out.print_total = totals.get(out.id, 0)

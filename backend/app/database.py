@@ -8,7 +8,11 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
-    pool_recycle=300,
+    # Remote MySQL handshakes are expensive.  Recycling every five minutes
+    # repeatedly put that cost on normal page views; one hour is still safely
+    # below common MySQL idle timeouts.
+    pool_recycle=3600,
+    pool_use_lifo=True,
     pool_timeout=10,
     connect_args={"connect_timeout": 5, "read_timeout": 10, "write_timeout": 10},
 )

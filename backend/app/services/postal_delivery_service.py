@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -139,17 +139,24 @@ def summarize_deliveries(
         db, order_id=order_id, year=year, channel=channel,
         distribution_unit_id=distribution_unit_id, month=month, status=status, search=search,
     )
-    total_copies = q.with_entities(func.coalesce(func.sum(PostalDelivery.copies), 0)).scalar() or 0
-    unit_count = q.with_entities(func.count(func.distinct(PostalDelivery.distribution_unit_id))).scalar() or 0
-    missing_unit_count = q.filter(PostalDelivery.distribution_unit_id.is_(None)).count()
+    total_copies, unit_count, missing_unit_count, nearest_expiry_date = (
+        q.with_entities(
+            func.coalesce(func.sum(PostalDelivery.copies), 0),
+            func.count(func.distinct(PostalDelivery.distribution_unit_id)),
+            func.coalesce(
+                func.sum(
+                    case((PostalDelivery.distribution_unit_id.is_(None), 1), else_=0)
+                ),
+                0,
+            ),
+            func.min(PostalDelivery.coverage_end_date),
+        ).one()
+    )
     return {
         "total_copies": int(total_copies),
         "unit_count": int(unit_count),
         "missing_unit_count": int(missing_unit_count),
-        "nearest_expiry_date": (
-            q.with_entities(func.min(PostalDelivery.coverage_end_date)).scalar()
-            if status == "expiring" else None
-        ),
+        "nearest_expiry_date": nearest_expiry_date if status == "expiring" else None,
     }
 
 

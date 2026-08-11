@@ -2190,15 +2190,21 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 由于数据库部署在腾讯云（远程），每次 DB 往返约 500ms+，因此采用以下策略：
 - **启动预热**：`warmup_pool()` 在 FastAPI startup 事件中预建连接，避免首次请求冷启动
 - **连接超时**：`connect_timeout=5s`、`read_timeout=10s`、`write_timeout=10s`
-- **关闭 pre-ping**：`pool_pre_ping=False`，配合 `pool_recycle=300` 管理连接有效性
+- **优先复用热连接**：`pool_pre_ping=True`、`pool_recycle=3600`、`pool_use_lifo=True`，避免正常页面浏览反复承担公网 MySQL 握手成本
+- **认证突发缓存**：已认证用户缓存 30 秒；同一页面的并发 API 请求共享一次用户查询，登录成功后立即预热缓存
 - **Dashboard 缓存**：30 秒内存缓存（`backend/app/cache.py`），写操作时自动清除
-- **查询合并**：Dashboard 接口从 7 次 DB 查询优化到 2 次
+- **批量聚合**：刊期列表、Dashboard、订单列表、邮局投递均使用固定次数的批量查询，禁止随可见行数增长的 N+1 查询
+- **订单页面合并**：订单行、总数和六个状态视图数量由一个请求、同一个数据库会话和同一份聚合上下文返回
+- **响应压缩与计时**：大于 1 KB 的响应使用 GZip；API 返回 `Server-Timing`，超过 2 秒的请求写入 `app.performance` 慢请求日志
+
+2026-08-11 的远程库复测中，刊期列表由 20 次 SQL 降为 3 次，订单列表由 9 次 SQL 和 7 个页面请求降为约 3 次 SQL 和 1 个页面请求，Dashboard 为 3 次 SQL。完整基线、接口约定和回归检查见 [性能优化记录](performance-optimization-2026-08.md)。公网 MySQL 冷连接仍可能超过 10 秒；如需稳定进入 1 秒级，应把应用和数据库部署到同一地域的内网，而不是继续增加应用层缓存掩盖网络延迟。
 
 ### 8.4 React + TypeScript
 - 函数式组件 + Hooks
 - 客户端路由（react-router-dom）
 - 类型安全（TypeScript）
 - 组件库（Ant Design）
+- 页面组件通过 `React.lazy` 按路由拆包；TanStack Query 默认数据新鲜期为 60 秒、缓存回收期为 10 分钟，减少短时间往返页面时的重复读取
 - ZTO-MF 单期页通过 `logisticsIssueState.ts` 显式区分 Query 的 loading / error / success-empty 状态：请求失败不得回退为 `[]` 后渲染业务空态。计划区使用「发货计划对账」，实际区独立展示物理发货与核销；取得核销摘要后可区分「待录入运单 / 部分已发货 / 已完成发货核销 / 核销已完成 · 部分发货」。运单操作优先展示后端 `detail`，500 错误提示检查数据库迁移状态。
 - 表格固定列使用 `fixed: 'end'` + `scroll={{ x: 'max-content' }}`，操作列固定在右侧
 - 表格行 hover 使用不透明语义背景色（`var(--color-bg-subtle)`），避免固定列穿透问题

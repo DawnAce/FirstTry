@@ -13,6 +13,7 @@ from app.api.exports import export_all, export_report, export_shipping
 from app.api.reports import confirm_report, get_report
 from app.database import Base
 from app.models import Issue, IssueAuditSnapshot, IssueStatus, OperationLog, PublicationSchedule, ReportEntry, ShippingDetail, User, UserRole
+from app.schemas.report import ReportDataUpdate
 
 
 def _admin_user() -> User:
@@ -117,6 +118,44 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(snapshot.shipping_total, 10)
         self.assertEqual(snapshot.delta, 12)
         self.assertEqual(snapshot.is_match, False)
+
+    def test_confirm_report_applies_submitted_entries_in_same_transaction(self):
+        db = self.SessionLocal()
+        issue = Issue(issue_number=3011, publish_date=date(2026, 7, 27), status=IssueStatus.draft)
+        db.add(issue)
+        db.flush()
+        db.add_all(
+            [
+                ReportEntry(issue_id=issue.id, category="postal", sub_category="本市", value=10),
+                ReportEntry(issue_id=issue.id, category="social_use", sub_category="营报传媒_读者", value=20),
+                ShippingDetail(issue_number=3011, sheet_name="测试", channel="渠道订阅", name="甲", quantity=35),
+            ]
+        )
+        db.commit()
+
+        result = confirm_report(
+            issue.id,
+            data=ReportDataUpdate(
+                entries=[
+                    {"category": "postal", "sub_category": "本市", "value": 99},
+                    {"category": "social_use", "sub_category": "营报传媒_读者", "value": 35},
+                ]
+            ),
+            db=db,
+            user=_admin_user(),
+        )
+
+        self.assertEqual(result["zt_report_total"], 35)
+        self.assertEqual(result["zt_shipping_total"], 35)
+        self.assertNotIn("warning", result)
+        persisted = {
+            (entry.category, entry.sub_category): entry.value
+            for entry in db.query(ReportEntry).filter_by(issue_id=issue.id).all()
+        }
+        self.assertEqual(persisted[("postal", "本市")], 99)
+        self.assertEqual(persisted[("social_use", "营报传媒_读者")], 35)
+        snapshot = db.query(IssueAuditSnapshot).filter_by(issue_id=issue.id, snapshot_type="confirm").one()
+        self.assertEqual(snapshot.report_total, 35)
 
     def test_shipping_export_writes_single_full_detail_sheet(self):
         db = self.SessionLocal()

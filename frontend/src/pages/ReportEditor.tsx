@@ -408,8 +408,9 @@ export default function ReportEditor() {
             sub_category: entry.sub_category,
             value: entry.value,
           }));
-      await updateReport(Number(issueId), payload);
-      const confirmRes = await confirmReport(Number(issueId));
+      // Confirm accepts the latest values and persists them in the same DB
+      // transaction, avoiding a separate full save round-trip.
+      const confirmRes = await confirmReport(Number(issueId), payload);
       const confirmData = confirmRes.data;
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });

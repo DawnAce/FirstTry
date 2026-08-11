@@ -80,8 +80,13 @@ export const getReport = (issueId: number) =>
 export const updateReport = (issueId: number, entries: { category: string; sub_category: string; value: number }[]) =>
   api.put(`/issues/${issueId}/report`, { entries });
 
-export const confirmReport = (issueId: number) =>
-  api.post<ConfirmReportResponse>(`/issues/${issueId}/report/confirm`);
+export const confirmReport = (
+  issueId: number,
+  entries?: { category: string; sub_category: string; value: number }[],
+) => api.post<ConfirmReportResponse>(
+  `/issues/${issueId}/report/confirm`,
+  entries ? { entries } : undefined,
+);
 
 export const revokeReport = (issueId: number, reason?: string) =>
   api.post(`/issues/${issueId}/report/revoke`, null, { params: { reason } });

@@ -161,6 +161,7 @@ cd ../backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --p
 
 ## 文档
 - [技术文档](docs/technical.md)
+- [性能优化与基线记录](docs/performance-optimization-2026-08.md)
 - [需求文档](docs/requirements.md)
 - [操作手册](docs/user-guide.md)
 - [电商订单导入·进度备忘](docs/order-import-progress.md)

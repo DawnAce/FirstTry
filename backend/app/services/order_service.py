@@ -29,17 +29,20 @@ All mutating helpers log an ``order_events`` row through
 """
 
 import enum
+from bisect import bisect_left, bisect_right
+from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     FulfillmentAllocation,
     FulfillmentTarget,
+    BsIssue,
     Order,
     OrderCommercialStatus,
     OrderEntryMethod,
@@ -55,6 +58,7 @@ from app.models import (
 from app.models.fulfillment_target import ShippingChannel
 from app.models.order_item import (
     DeliveryMethod,
+    FulfillmentType,
     OrderItemStatus,
     Publication,
     SubscriptionTerm,
@@ -1309,7 +1313,158 @@ def _count_published_postal_issues(
     )
 
 
-def _build_list_row(db: Session, order: Order) -> OrderListRow:
+class _OrderListContext:
+    """Bulk data shared while serialising one order-list result set."""
+
+    def __init__(
+        self,
+        *,
+        schedule_issue_dates: list[date],
+        schedule_all_dates: list[date],
+        bs_issues: list[BsIssue],
+        shipping_counts: dict[int, tuple[int, int]],
+    ):
+        self.schedule_issue_dates = schedule_issue_dates
+        self.schedule_all_dates = schedule_all_dates
+        self.bs_issues = bs_issues
+        self.shipping_counts = shipping_counts
+
+
+def _build_order_list_context(db: Session, orders: list[Order]) -> _OrderListContext:
+    """Load schedule and shipping aggregates once for the whole list.
+
+    The former implementation queried publication schedule and shipping rows
+    for every order item.  On a remote database the network round-trips dwarf
+    the actual aggregation cost, so a few bounded bulk queries are much faster
+    and stay constant as the page grows.
+    """
+    items = [item for order in orders for item in order.items]
+    needs_schedule = any(
+        item.fulfillment_type == FulfillmentType.subscription
+        or item.delivery_method == DeliveryMethod.post_office
+        for item in items
+    )
+    schedule_issue_dates: list[date] = []
+    schedule_all_dates: list[date] = []
+    if needs_schedule:
+        schedule_rows = db.query(
+            PublicationSchedule.publish_date,
+            PublicationSchedule.issue_number,
+        ).all()
+        schedule_all_dates = sorted(row.publish_date for row in schedule_rows)
+        schedule_issue_dates = sorted(
+            row.publish_date for row in schedule_rows if row.issue_number is not None
+        )
+
+    bs_issues: list[BsIssue] = []
+    if any(
+        item.fulfillment_type == FulfillmentType.subscription
+        and item.publication == Publication.business_school
+        for item in items
+    ):
+        bs_issues = db.query(BsIssue).all()
+
+    zto_item_ids = [
+        item.id
+        for item in items
+        if item.id is not None and item.delivery_method != DeliveryMethod.post_office
+    ]
+    shipping_counts: dict[int, tuple[int, int]] = {}
+    if zto_item_ids:
+        rows = (
+            db.query(
+                ShippingDetail.order_item_id,
+                func.count(ShippingDetail.id),
+                func.coalesce(
+                    func.sum(
+                        case((ShippingDetail.shipped_at.isnot(None), 1), else_=0)
+                    ),
+                    0,
+                ),
+            )
+            .filter(
+                ShippingDetail.order_item_id.in_(zto_item_ids),
+                ShippingDetail.complaint_makeup_item_id.is_(None),
+            )
+            .group_by(ShippingDetail.order_item_id)
+            .all()
+        )
+        shipping_counts = {
+            int(item_id): (int(synced or 0), int(shipped or 0))
+            for item_id, synced, shipped in rows
+        }
+
+    return _OrderListContext(
+        schedule_issue_dates=schedule_issue_dates,
+        schedule_all_dates=schedule_all_dates,
+        bs_issues=bs_issues,
+        shipping_counts=shipping_counts,
+    )
+
+
+def _expected_issues_from_context(
+    item: OrderItem, context: _OrderListContext
+) -> Optional[int]:
+    if item.fulfillment_type == FulfillmentType.single_issue:
+        return 1
+    if item.fulfillment_type != FulfillmentType.subscription:
+        return None
+    start = item.coverage_start_date
+    end = item.coverage_end_date
+    if start is None or end is None:
+        return None
+    if end < start:
+        return 0
+
+    if item.publication == Publication.business_school:
+        years = set(range(start.year, end.year + 1))
+        relevant = [issue for issue in context.bs_issues if issue.year in years]
+        count = 0
+        for issue in relevant:
+            issue_start = date(issue.year, issue.month_start, 1)
+            issue_end = date(
+                issue.year,
+                issue.month_end,
+                monthrange(issue.year, issue.month_end)[1],
+            )
+            if issue_start <= end and issue_end >= start:
+                count += 1
+        if count == 0 and not relevant:
+            return max(0, (end.year - start.year) * 12 + end.month - start.month + 1)
+        return count
+
+    known = bisect_right(context.schedule_issue_dates, end) - bisect_left(
+        context.schedule_issue_dates, start
+    )
+    latest_index = bisect_right(context.schedule_all_dates, end) - 1
+    if latest_index < 0:
+        return known + max(0, (end - start).days // 7)
+    latest = context.schedule_all_dates[latest_index]
+    if latest < end:
+        return known + max(0, (end - latest).days // 7)
+    return known
+
+
+def _published_postal_count_from_context(
+    item: OrderItem, context: _OrderListContext, *, as_of: date
+) -> int:
+    start = item.coverage_start_date
+    end = item.coverage_end_date
+    if start is None or end is None or item.publication == Publication.business_school:
+        return 0
+    cutoff = min(as_of, end)
+    if cutoff < start:
+        return 0
+    return bisect_right(context.schedule_issue_dates, cutoff) - bisect_left(
+        context.schedule_issue_dates, start
+    )
+
+
+def _build_list_row(
+    db: Session,
+    order: Order,
+    context: _OrderListContext | None = None,
+) -> OrderListRow:
     """Build one ``OrderListRow`` for ``order``, computing the derived
     coverage span, per-order drift, and ``expected_total`` against the live
     schedule. Drift compares each item's ``expected_issues_at_creation`` with
@@ -1333,9 +1488,18 @@ def _build_list_row(db: Session, order: Order) -> OrderListRow:
     fulfilled_total = 0
     any_expected = False
     for item in items:
-        progress = compute_fulfillment_progress(db, item)
-        current = progress.current_expected
-        fulfilled_total += progress.shipped_count
+        if context is None:
+            progress = compute_fulfillment_progress(db, item)
+            current = progress.current_expected
+            fulfilled_total += progress.shipped_count
+        else:
+            current = _expected_issues_from_context(item, context)
+            if item.delivery_method == DeliveryMethod.post_office:
+                fulfilled_total += _published_postal_count_from_context(
+                    item, context, as_of=date.today()
+                )
+            else:
+                fulfilled_total += context.shipping_counts.get(item.id, (0, 0))[1]
         if current is not None:
             expected_total += current
             any_expected = True
@@ -1370,6 +1534,200 @@ def _build_list_row(db: Session, order: Order) -> OrderListRow:
         fulfilled_count=fulfilled_total,
         expected_total=expected_total if any_expected else None,
     )
+
+
+def _filtered_order_query(
+    db: Session,
+    *,
+    status: Optional[OrderStatus] = None,
+    entry_method: Optional[OrderEntryMethod] = None,
+    payer_name_like: Optional[str] = None,
+    campaign: Optional[str] = None,
+    source_platform: Optional[str] = None,
+    coverage_start: Optional[date] = None,
+    coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
+    search: Optional[str] = None,
+):
+    """Build the SQL-filterable portion shared by list and view counts."""
+    q = db.query(Order)
+    if status is not None:
+        q = q.filter(Order.status == status)
+    if entry_method is not None:
+        q = q.filter(Order.entry_method == entry_method)
+    if payer_name_like:
+        q = q.filter(Order.payer_name.ilike(f"%{payer_name_like}%"))
+    if campaign:
+        q = q.filter(Order.campaign == campaign)
+    if source_platform:
+        q = q.filter(Order.source_platform == source_platform)
+    if order_date_start is not None:
+        q = q.filter(Order.order_date >= order_date_start)
+    if order_date_end is not None:
+        q = q.filter(Order.order_date <= order_date_end)
+    if unpaid is True:
+        q = q.filter(Order.paid_amount < Order.total_amount)
+    elif unpaid is False:
+        q = q.filter(Order.paid_amount >= Order.total_amount)
+    if search:
+        like = f"%{search.strip()}%"
+        q = q.filter(
+            or_(
+                Order.order_code.ilike(like),
+                Order.external_order_no.ilike(like),
+                Order.payer_name.ilike(like),
+            )
+        )
+    if coverage_start is not None or coverage_end is not None:
+        item_q = db.query(OrderItem.order_id).distinct()
+        if coverage_start is not None:
+            item_q = item_q.filter(
+                or_(
+                    OrderItem.coverage_end_date.is_(None),
+                    OrderItem.coverage_end_date >= coverage_start,
+                )
+            )
+        if coverage_end is not None:
+            item_q = item_q.filter(
+                or_(
+                    OrderItem.coverage_start_date.is_(None),
+                    OrderItem.coverage_start_date <= coverage_end,
+                )
+            )
+        q = q.filter(Order.id.in_(item_q))
+    return q
+
+
+def count_order_views(
+    db: Session,
+    *,
+    entry_method: Optional[OrderEntryMethod] = None,
+    payer_name_like: Optional[str] = None,
+    campaign: Optional[str] = None,
+    source_platform: Optional[str] = None,
+    coverage_start: Optional[date] = None,
+    coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
+    has_drift: Optional[bool] = None,
+    search: Optional[str] = None,
+) -> dict[str, int]:
+    """Return all six order-list tab counts from one materialised result."""
+    q = _filtered_order_query(
+        db,
+        entry_method=entry_method,
+        payer_name_like=payer_name_like,
+        campaign=campaign,
+        source_platform=source_platform,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        order_date_start=order_date_start,
+        order_date_end=order_date_end,
+        unpaid=unpaid,
+        search=search,
+    )
+    loaded = q.options(selectinload(Order.items)).all()
+    context = _build_order_list_context(db, loaded)
+    all_rows = [_build_list_row(db, item, context) for item in loaded]
+    return _count_order_view_rows(all_rows, has_drift=has_drift)
+
+
+def _count_order_view_rows(
+    all_rows: list[OrderListRow],
+    *,
+    has_drift: Optional[bool],
+) -> dict[str, int]:
+    """Derive tab counts from rows already aggregated for an order page."""
+    visible = (
+        all_rows
+        if has_drift is None
+        else [row for row in all_rows if row.has_drift == has_drift]
+    )
+    return {
+        "all": len(visible),
+        "active": sum(row.status == OrderStatus.active for row in visible),
+        "pending_confirmation": sum(
+            row.status == OrderStatus.pending_confirmation for row in visible
+        ),
+        "draft": sum(row.status == OrderStatus.draft for row in visible),
+        # The attention tab deliberately ignores the drift filter, matching
+        # buildQueryParams in the frontend.
+        "attention": sum(
+            row.has_drift or row.outstanding_amount > 0 for row in all_rows
+        ),
+        "void": sum(row.status == OrderStatus.void for row in visible),
+    }
+
+
+def list_orders_with_view_counts(
+    db: Session,
+    status: Optional[OrderStatus] = None,
+    entry_method: Optional[OrderEntryMethod] = None,
+    payer_name_like: Optional[str] = None,
+    campaign: Optional[str] = None,
+    source_platform: Optional[str] = None,
+    coverage_start: Optional[date] = None,
+    coverage_end: Optional[date] = None,
+    order_date_start: Optional[date] = None,
+    order_date_end: Optional[date] = None,
+    unpaid: Optional[bool] = None,
+    has_drift: Optional[bool] = None,
+    needs_attention: Optional[bool] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: str = "desc",
+    skip: int = 0,
+    limit: int = 50,
+) -> tuple[list[OrderListRow], int, dict[str, int]]:
+    """Build list rows and every tab count from one materialised query.
+
+    The order page always needs both results.  Sharing the eager load and bulk
+    aggregation avoids a second concurrent request opening another expensive
+    remote MySQL connection.
+    """
+    q = _filtered_order_query(
+        db,
+        entry_method=entry_method,
+        payer_name_like=payer_name_like,
+        campaign=campaign,
+        source_platform=source_platform,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        order_date_start=order_date_start,
+        order_date_end=order_date_end,
+        unpaid=unpaid,
+        search=search,
+    )
+    sort_col = {
+        "order_date": Order.order_date,
+        "total_amount": Order.total_amount,
+        "outstanding": Order.total_amount - Order.paid_amount,
+    }.get(sort)
+    if sort_col is not None:
+        primary = sort_col.asc() if order == "asc" else sort_col.desc()
+        base = q.options(selectinload(Order.items)).order_by(primary, Order.id.desc())
+    else:
+        base = q.options(selectinload(Order.items)).order_by(Order.id.desc())
+
+    loaded = base.all()
+    context = _build_order_list_context(db, loaded)
+    all_rows = [_build_list_row(db, loaded_order, context) for loaded_order in loaded]
+    counts = _count_order_view_rows(all_rows, has_drift=has_drift)
+
+    matched = all_rows
+    if status is not None:
+        matched = [row for row in matched if row.status == status]
+    if needs_attention:
+        matched = [
+            row for row in matched
+            if row.has_drift or row.outstanding_amount > 0
+        ]
+    elif has_drift is not None:
+        matched = [row for row in matched if row.has_drift == has_drift]
+    return matched[skip : skip + limit], len(matched), counts
 
 
 def list_orders(
@@ -1418,51 +1776,20 @@ def list_orders(
       filtered set is materialised and paginated in memory. ``total`` reflects
       the post-filter count so every page is full and counts stay accurate.
     """
-    q = db.query(Order)
-    if status is not None:
-        q = q.filter(Order.status == status)
-    if entry_method is not None:
-        q = q.filter(Order.entry_method == entry_method)
-    if payer_name_like:
-        q = q.filter(Order.payer_name.ilike(f"%{payer_name_like}%"))
-    if campaign:
-        q = q.filter(Order.campaign == campaign)
-    if source_platform:
-        q = q.filter(Order.source_platform == source_platform)
-    if order_date_start is not None:
-        q = q.filter(Order.order_date >= order_date_start)
-    if order_date_end is not None:
-        q = q.filter(Order.order_date <= order_date_end)
-    if unpaid is True:
-        q = q.filter(Order.paid_amount < Order.total_amount)
-    elif unpaid is False:
-        q = q.filter(Order.paid_amount >= Order.total_amount)
-    if search:
-        like = f"%{search.strip()}%"
-        q = q.filter(
-            or_(
-                Order.order_code.ilike(like),
-                Order.external_order_no.ilike(like),
-                Order.payer_name.ilike(like),
-            )
-        )
-    if coverage_start is not None or coverage_end is not None:
-        item_q = db.query(OrderItem.order_id).distinct()
-        if coverage_start is not None:
-            item_q = item_q.filter(
-                or_(
-                    OrderItem.coverage_end_date.is_(None),
-                    OrderItem.coverage_end_date >= coverage_start,
-                )
-            )
-        if coverage_end is not None:
-            item_q = item_q.filter(
-                or_(
-                    OrderItem.coverage_start_date.is_(None),
-                    OrderItem.coverage_start_date <= coverage_end,
-                )
-            )
-        q = q.filter(Order.id.in_(item_q))
+    q = _filtered_order_query(
+        db,
+        status=status,
+        entry_method=entry_method,
+        payer_name_like=payer_name_like,
+        campaign=campaign,
+        source_platform=source_platform,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        order_date_start=order_date_start,
+        order_date_end=order_date_end,
+        unpaid=unpaid,
+        search=search,
+    )
 
     # 排序：仅限 DB 列（偏差/份数是 Python 端聚合算的，不进 SQL 排序）。默认 id 倒序。
     sort_col = {
@@ -1479,12 +1806,16 @@ def list_orders(
     if has_drift is None and not needs_attention:
         # 不按偏差筛 → 直接在 SQL 层分页（每行的偏差仅用于展示，按本页逐单算）。
         total = q.count()
-        rows = [_build_list_row(db, order) for order in base.offset(skip).limit(limit).all()]
+        loaded = base.offset(skip).limit(limit).all()
+        context = _build_order_list_context(db, loaded) if isinstance(db, Session) else None
+        rows = [_build_list_row(db, item, context) for item in loaded]
         return rows, total
 
     # 偏差 / 需关注由聚合行计算，无法完整下推 SQL。取整批过滤后的订单、逐单计算，
     # 再在内存里筛选和分页，保证每页填满且 total 与当前视图一致。
-    all_rows = [_build_list_row(db, order) for order in base.all()]
+    loaded = base.all()
+    context = _build_order_list_context(db, loaded) if isinstance(db, Session) else None
+    all_rows = [_build_list_row(db, item, context) for item in loaded]
     if needs_attention:
         matched = [
             row for row in all_rows
