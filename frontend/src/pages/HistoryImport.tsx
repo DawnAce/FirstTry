@@ -339,6 +339,11 @@ export default function HistoryImport() {
               <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                 第 {preview.issue_number} 期
               </div>
+              {preview.shipping_issue_source && (
+                <Text type="secondary" style={{ display: 'block', marginTop: 4, fontSize: 12 }}>
+                  发货期号来源：{preview.shipping_issue_source}
+                </Text>
+              )}
             </div>
             <div>
               <Text type="secondary" style={{ fontSize: 12 }}>出版日期</Text>

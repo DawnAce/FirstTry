@@ -1005,6 +1005,7 @@ class HistoryImportPreviewTests(unittest.TestCase):
         )
 
         self.assertEqual(result.issue_number, 2648)
+        self.assertEqual(result.shipping_issue_source, "每周合计!B1")
         self.assertEqual(result.publish_date, "2026-04-20")
         self.assertEqual(result.shipping_detail_count, 6)
         self.assertTrue(result.can_commit)
@@ -1029,6 +1030,85 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["channel"], "赠阅")
         self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["sub_channel"], "监管")
         self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["quantity"], 3)
+        db.close()
+
+    def test_preview_uses_weekly_summary_when_monthly_sheet_contains_future_issues(self):
+        db = self.SessionLocal()
+        self._seed_upload_templates(db)
+        workbook = load_workbook(io.BytesIO(build_original_zto_shipping_upload(2635)))
+        workbook["月底-整月"]["C1"] = "总\n第2635期、第2636期\n第2637期、第2638期"
+        workbook["停发-双周（读者）"]["C1"] = "总\n第2551期、第2552期"
+
+        result = preview_history_import(
+            db,
+            build_report_upload(2635),
+            _wb_to_bytes(workbook),
+            shipping_filename="2026年1月5日《中国经营报》中通快递发货明细（2635）.xlsx",
+        )
+
+        self.assertTrue(result.can_commit)
+        self.assertEqual(result.issue_number, 2635)
+        self.assertEqual(result.shipping_issue_source, "每周合计!B1")
+        self.assertFalse(any("2638" in error for error in result.errors))
+        db.close()
+
+    def test_preview_falls_back_to_consistent_weekly_sheet_issue(self):
+        db = self.SessionLocal()
+        self._seed_upload_templates(db)
+        workbook = load_workbook(io.BytesIO(build_original_zto_shipping_upload()))
+        del workbook["每周合计"]
+
+        result = preview_history_import(
+            db,
+            build_report_upload(),
+            _wb_to_bytes(workbook),
+        )
+
+        self.assertTrue(result.can_commit)
+        self.assertEqual(result.issue_number, 2648)
+        self.assertEqual(result.shipping_issue_source, "每周（对公）!C1")
+        db.close()
+
+    def test_preview_blocks_conflicting_weekly_issue_headers(self):
+        db = self.SessionLocal()
+        self._seed_upload_templates(db)
+        workbook = load_workbook(io.BytesIO(build_original_zto_shipping_upload()))
+        workbook["每周（读者）"]["C1"] = "总第2649期"
+
+        result = preview_history_import(
+            db,
+            build_report_upload(),
+            _wb_to_bytes(workbook),
+        )
+
+        self.assertFalse(result.can_commit)
+        self.assertEqual(result.shipping_issue_source, "每周合计!B1")
+        self.assertTrue(any(
+            "主期号冲突" in error
+            and "每周合计!B1 为 2648 期" in error
+            and "每周（读者）!C1 为 2649 期" in error
+            for error in result.errors
+        ))
+        db.close()
+
+    def test_preview_warns_when_shipping_filename_disagrees_with_workbook(self):
+        db = self.SessionLocal()
+        self._seed_upload_templates(db)
+
+        result = preview_history_import(
+            db,
+            build_report_upload(),
+            build_original_zto_shipping_upload(),
+            shipping_filename="中通快递发货明细（2649）.xlsx",
+        )
+
+        self.assertTrue(result.can_commit)
+        self.assertTrue(any(
+            "文件名显示第 2649 期" in warning
+            and "工作簿主期号为第 2648 期" in warning
+            and "每周合计!B1" in warning
+            for warning in result.warnings
+        ))
         db.close()
 
     def test_preview_skips_weekly_corporate_zero_quantity_reprint_placeholder(self):

@@ -18,6 +18,16 @@ _KNOWN_SHEETS = {
 
 _STANDARD_SUB_CHANNELS = {"监管", "政府"}
 
+_ISSUE_NUMBER_PATTERN = re.compile(r"第\s*(\d+)\s*期")
+_PRIMARY_ISSUE_SHEET = "每周合计"
+_WEEKLY_ISSUE_SHEETS = (
+    "每周（对公）",
+    "每周（读者）",
+    "高铁展示",
+    "北京悦途出行（高铁）",
+    "上犹",
+)
+
 
 def _str(value: Any) -> str:
     if value is None:
@@ -50,30 +60,92 @@ def _is_blank_row(row: tuple[Any, ...]) -> bool:
     return not any(_str(value) for value in row)
 
 
-def _workbook_text_values(wb) -> list[str]:
-    values: list[str] = []
-    for ws in wb.worksheets:
-        for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 3), values_only=True):
-            for value in row:
-                text = _str(value)
-                if text:
-                    values.append(text)
+def _header_text_cells(ws) -> list[tuple[str, str]]:
+    values: list[tuple[str, str]] = []
+    for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 3)):
+        for cell in row:
+            text = _str(cell.value)
+            if text:
+                values.append((cell.coordinate, text))
     return values
 
 
-def _extract_issue_number(wb) -> int | None:
-    issue_numbers: list[int] = []
-    for text in _workbook_text_values(wb):
-        issue_numbers.extend(int(value) for value in re.findall(r"第\s*(\d+)\s*期", text))
-    return max(issue_numbers) if issue_numbers else None
+def _sheet_issue_references(ws) -> list[tuple[int, str]]:
+    references: list[tuple[int, str]] = []
+    for coordinate, text in _header_text_cells(ws):
+        references.extend(
+            (int(value), f"{ws.title}!{coordinate}")
+            for value in _ISSUE_NUMBER_PATTERN.findall(text)
+        )
+    return references
 
 
-def _extract_publish_date(wb) -> str:
-    for text in _workbook_text_values(wb):
-        match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", text)
-        if match:
-            year, month, day = (int(part) for part in match.groups())
-            return datetime.date(year, month, day).isoformat()
+def _describe_issue_references(references: list[tuple[int, str]]) -> str:
+    return "、".join(f"{source} 为 {issue_number} 期" for issue_number, source in references)
+
+
+def _extract_issue_number(wb) -> tuple[int | None, str, list[str]]:
+    """Return the workbook's main weekly issue, its source cell, and conflicts.
+
+    Cross-issue sheets such as 月底-整月 and 停发-双周 intentionally contain
+    several issue numbers. They describe delivery coverage and must never decide
+    the workbook's main issue.
+    """
+    summary_refs: list[tuple[int, str]] = []
+    if _PRIMARY_ISSUE_SHEET in wb.sheetnames:
+        summary_refs = _sheet_issue_references(wb[_PRIMARY_ISSUE_SHEET])
+
+    if summary_refs:
+        summary_issues = sorted({issue_number for issue_number, _source in summary_refs})
+        if len(summary_issues) != 1:
+            return None, summary_refs[0][1], [
+                "中通发货文件主期号不明确："
+                + _describe_issue_references(summary_refs)
+            ]
+
+        issue_number = summary_issues[0]
+        source = next(source for candidate, source in summary_refs if candidate == issue_number)
+        conflicts: list[tuple[int, str]] = []
+        for sheet_name in _WEEKLY_ISSUE_SHEETS:
+            if sheet_name not in wb.sheetnames:
+                continue
+            conflicts.extend(
+                reference
+                for reference in _sheet_issue_references(wb[sheet_name])
+                if reference[0] != issue_number
+            )
+        if conflicts:
+            return issue_number, source, [
+                f"中通发货文件主期号冲突：{source} 为 {issue_number} 期，但 "
+                + _describe_issue_references(conflicts)
+            ]
+        return issue_number, source, []
+
+    weekly_refs: list[tuple[int, str]] = []
+    for sheet_name in _WEEKLY_ISSUE_SHEETS:
+        if sheet_name in wb.sheetnames:
+            weekly_refs.extend(_sheet_issue_references(wb[sheet_name]))
+    weekly_issues = sorted({issue_number for issue_number, _source in weekly_refs})
+    if len(weekly_issues) == 1:
+        return weekly_issues[0], weekly_refs[0][1], []
+    if len(weekly_issues) > 1:
+        return None, weekly_refs[0][1], [
+            "中通发货文件主期号冲突：" + _describe_issue_references(weekly_refs)
+        ]
+    return None, "", []
+
+
+def _extract_publish_date(wb, preferred_sheet_name: str = "") -> str:
+    ordered_sheets = []
+    if preferred_sheet_name and preferred_sheet_name in wb.sheetnames:
+        ordered_sheets.append(wb[preferred_sheet_name])
+    ordered_sheets.extend(ws for ws in wb.worksheets if ws not in ordered_sheets)
+    for ws in ordered_sheets:
+        for _coordinate, text in _header_text_cells(ws):
+            match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", text)
+            if match:
+                year, month, day = (int(part) for part in match.groups())
+                return datetime.date(year, month, day).isoformat()
     return ""
 
 
@@ -83,9 +155,13 @@ def is_original_zto_shipping_workbook(wb) -> bool:
 
 
 def read_original_zto_shipping_basic_info(wb) -> dict:
+    issue_number, issue_source, issue_errors = _extract_issue_number(wb)
+    preferred_sheet_name = issue_source.split("!", 1)[0] if issue_source else ""
     return {
-        "期号": _extract_issue_number(wb),
-        "出版日期": _extract_publish_date(wb),
+        "期号": issue_number,
+        "期号来源": issue_source,
+        "期号错误": issue_errors,
+        "出版日期": _extract_publish_date(wb, preferred_sheet_name),
     }
 
 

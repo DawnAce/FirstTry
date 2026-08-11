@@ -10,6 +10,7 @@ export interface CommitReadiness {
 
 export interface HistoryImportPreview {
   issue_number: number;
+  shipping_issue_source: string;
   publish_date: string;
   page_count: number;
   report_entry_count: number;

@@ -69,6 +69,7 @@ class ManualReportMapping(BaseModel):
 
 class HistoryImportPreviewOut(BaseModel):
     issue_number: int
+    shipping_issue_source: str = ""
     publish_date: str           # normalized ISO date YYYY-MM-DD
     page_count: int = 24
     report_entry_count: int
