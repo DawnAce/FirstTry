@@ -316,7 +316,7 @@ export default function Dashboard() {
                 >
                   {availableIssues.map((item) => (
                     <Select.Option key={item.issue_number} value={String(item.issue_number)}>
-                      第 {item.issue_number} 期 ({dayjs(item.publish_date).format('MM-DD')})
+                      第 {item.issue_number} 期（出刊日期：{dayjs(item.publish_date).format('YYYY-MM-DD')}）
                     </Select.Option>
                   ))}
                 </Select>

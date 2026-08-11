@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { withRouter, reactRouterParameters } from 'storybook-addon-remix-react-router'
 import { http, HttpResponse, delay } from 'msw'
+import { expect, waitFor, within } from 'storybook/test'
 import Dashboard from './DashboardPage'
 
 // 单个 GET /api/dashboard 即可驱动整页：统计卡片、近期印数表、待处理事项、趋势图。
@@ -42,6 +43,14 @@ const meta = {
   decorators: [withRouter],
   parameters: {
     layout: 'fullscreen',
+    auth: {
+      user: { username: 'admin', role: 'admin' },
+      isAdmin: true,
+      canMutate: true,
+      isLoggedIn: true,
+      setAuth: () => {},
+      logout: () => {},
+    },
     reactRouter: reactRouterParameters({ routing: { path: '/print' } }),
     docs: {
       description: {
@@ -59,6 +68,21 @@ export const Loaded: Story = {
   name: '已加载',
   parameters: {
     msw: { handlers: [http.get('/api/dashboard', () => HttpResponse.json(dashboardData))] },
+  },
+  play: async ({ canvas, userEvent }) => {
+    const issueSelect = await canvas.findByRole('combobox')
+    await userEvent.click(issueSelect)
+
+    const dropdown = within(document.body)
+    const nextIssue = await dropdown.findByText('第 2653 期（出刊日期：2026-05-19）', { selector: '.ant-select-item-option-content' })
+    const historicalIssue = dropdown.getByText('第 2648 期（出刊日期：2026-04-14）', { selector: '.ant-select-item-option-content' })
+    await waitFor(() => {
+      expect(nextIssue).toBeVisible()
+      expect(historicalIssue).toBeVisible()
+    })
+
+    await userEvent.click(historicalIssue)
+    await expect(canvas.getByText('第 2648 期（出刊日期：2026-04-14）')).toBeVisible()
   },
 }
 
