@@ -1,6 +1,7 @@
 """Parse uploaded history report/shipping workbooks and produce a preview + commit."""
 
 import datetime
+import re
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -53,6 +54,22 @@ def _parse_issue_number(value: object) -> int | None:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return None
+
+
+def _parse_issue_number_from_filename(filename: str | None) -> int | None:
+    if not filename:
+        return None
+    matches = re.findall(
+        r"第\s*(\d+)\s*期|[（(]\s*(\d+)\s*[）)]",
+        filename,
+    )
+    issue_numbers = {
+        int(value)
+        for groups in matches
+        for value in groups
+        if value
+    }
+    return next(iter(issue_numbers)) if len(issue_numbers) == 1 else None
 
 
 def _is_iso_date(value: str) -> bool:
@@ -189,9 +206,12 @@ def _error_response(
     issue_number: int,
     publish_date: str,
     readiness: CommitReadiness,
+    shipping_issue_source: str = "",
+    warnings: list[str] | None = None,
 ) -> HistoryImportPreviewOut:
     return HistoryImportPreviewOut(
         issue_number=issue_number,
+        shipping_issue_source=shipping_issue_source,
         publish_date=publish_date,
         report_entry_count=0,
         temp_detail_count=0,
@@ -199,6 +219,7 @@ def _error_response(
         can_commit=False,
         import_session_id="",
         errors=readiness.errors,
+        warnings=warnings or [],
         readiness=readiness,
     )
 
@@ -261,6 +282,7 @@ def preview_history_import(
     report_bytes: bytes,
     shipping_bytes: bytes,
     report_password: str | None = None,
+    shipping_filename: str | None = None,
 ) -> HistoryImportPreviewOut:
     report_wb = load_uploaded_workbook(
         report_bytes,
@@ -284,6 +306,8 @@ def preview_history_import(
     }
     if uses_template_shipping:
         shipping_basic = _read_basic_info(shipping_wb)
+        shipping_basic["期号来源"] = "基本信息（期号字段）"
+        shipping_basic["期号错误"] = []
     elif uses_original_zto_shipping:
         shipping_basic = read_original_zto_shipping_basic_info(shipping_wb)
     else:
@@ -305,7 +329,20 @@ def preview_history_import(
     shipping_issue_raw = shipping_basic.get("期号")
     report_issue_number = _parse_issue_number(report_issue_raw)
     shipping_issue_number = _parse_issue_number(shipping_issue_raw)
+    shipping_issue_source = str(shipping_basic.get("期号来源") or "")
+    shipping_issue_errors = [str(error) for error in shipping_basic.get("期号错误", [])]
     publish_date = _normalize_date(report_basic.get("出版日期"))
+    shipping_identity_warnings: list[str] = []
+    filename_issue_number = _parse_issue_number_from_filename(shipping_filename)
+    if (
+        filename_issue_number is not None
+        and shipping_issue_number is not None
+        and filename_issue_number != shipping_issue_number
+    ):
+        shipping_identity_warnings.append(
+            f"中通发货文件名显示第 {filename_issue_number} 期，但工作簿主期号为第 {shipping_issue_number} 期"
+            f"（来源：{shipping_issue_source or '工作簿内容'}）。系统以工作簿为准，请确认文件名。"
+        )
 
     if report_issue_number is None:
         readiness = CommitReadiness(
@@ -314,7 +351,28 @@ def preview_history_import(
             can_commit=False,
             errors=["报数模板中的期号格式无效，请填写纯数字期号"],
         )
-        return _error_response(0, publish_date, readiness)
+        return _error_response(
+            0,
+            publish_date,
+            readiness,
+            shipping_issue_source,
+            shipping_identity_warnings,
+        )
+
+    if shipping_issue_errors:
+        readiness = CommitReadiness(
+            same_issue=False,
+            issue_exists=False,
+            can_commit=False,
+            errors=shipping_issue_errors,
+        )
+        return _error_response(
+            report_issue_number,
+            publish_date,
+            readiness,
+            shipping_issue_source,
+            shipping_identity_warnings,
+        )
 
     if shipping_issue_number is None:
         readiness = CommitReadiness(
@@ -323,7 +381,13 @@ def preview_history_import(
             can_commit=False,
             errors=["中通模板中的期号格式无效，请填写纯数字期号"],
         )
-        return _error_response(report_issue_number, publish_date, readiness)
+        return _error_response(
+            report_issue_number,
+            publish_date,
+            readiness,
+            shipping_issue_source,
+            shipping_identity_warnings,
+        )
 
     if not _is_iso_date(publish_date):
         readiness = CommitReadiness(
@@ -332,7 +396,13 @@ def preview_history_import(
             can_commit=False,
             errors=["出版日期不能为空，且必须为 YYYY-MM-DD 格式"],
         )
-        return _error_response(report_issue_number, publish_date, readiness)
+        return _error_response(
+            report_issue_number,
+            publish_date,
+            readiness,
+            shipping_issue_source,
+            shipping_identity_warnings,
+        )
 
     # Validate cross-issue upload
     if report_issue_number != shipping_issue_number:
@@ -346,6 +416,8 @@ def preview_history_import(
             report_issue_number,
             publish_date,
             readiness,
+            shipping_issue_source,
+            shipping_identity_warnings,
         )
 
     issue_number = report_issue_number
@@ -361,7 +433,13 @@ def preview_history_import(
             can_commit=False,
             errors=[f"该期已存在：第 {issue_number} 期已录入系统，无法重复导入"],
         )
-        return _error_response(issue_number, publish_date, readiness)
+        return _error_response(
+            issue_number,
+            publish_date,
+            readiness,
+            shipping_issue_source,
+            shipping_identity_warnings,
+        )
 
     if raw_report is None:
         report_rows = _read_report_rows(report_wb)
@@ -420,7 +498,7 @@ def preview_history_import(
     session_id = save_history_import_session(payload) if not validation_errors else ""
 
     # Compare against publication_schedule.page_count, warn on mismatch
-    warnings: list[str] = list(shipping_import_warnings)
+    warnings: list[str] = [*shipping_identity_warnings, *shipping_import_warnings]
     schedule_row = _find_schedule_row(db, issue_number, publish_date)
     if schedule_row is not None and schedule_row.page_count is not None and schedule_row.page_count != page_count:
         warnings.append(
@@ -441,6 +519,7 @@ def preview_history_import(
     )
     return HistoryImportPreviewOut(
         issue_number=issue_number,
+        shipping_issue_source=shipping_issue_source,
         publish_date=publish_date,
         page_count=page_count,
         report_entry_count=len(enriched_report_rows),

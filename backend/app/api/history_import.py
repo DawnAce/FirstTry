@@ -62,6 +62,7 @@ async def preview_import(
         report_bytes,
         shipping_bytes,
         report_password=report_password,
+        shipping_filename=shipping_file.filename,
     )
 
 
