@@ -3,7 +3,7 @@
 import time
 
 _dashboard_cache: dict = {"data": None, "expires_at": 0}
-DASHBOARD_CACHE_TTL = 30  # seconds
+DASHBOARD_CACHE_TTL = 120  # writes explicitly invalidate this projection
 
 
 def get_dashboard_cache() -> dict | None:
@@ -25,7 +25,7 @@ def invalidate_dashboard_cache() -> None:
 # --- ZTO-MF overview aggregate cache (工作台 + 期数总览) -----------------------
 # Keyed by (scope, year). scope='workbench' 恒为本年 → 归一化用 year=None 作键。
 _overview_cache: dict = {}
-OVERVIEW_CACHE_TTL = 30  # seconds
+OVERVIEW_CACHE_TTL = 120  # writes explicitly invalidate this projection
 
 
 def get_overview_cache(scope: str, year: int | None):

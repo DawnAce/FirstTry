@@ -1,8 +1,11 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { getMe } from '../api/auth';
 import type { UserInfo } from '../api/auth';
 import { capabilitiesForRole } from '../permissions';
+
+const AUTH_VALIDATED_AT_KEY = 'auth_validated_at';
+const AUTH_VALIDATION_TTL_MS = 5 * 60 * 1000;
 
 interface AuthContextType {
   user: UserInfo | null;
@@ -26,39 +29,48 @@ export const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const validationStartedRef = useRef(false);
   const [user, setUser] = useState<UserInfo | null>(() => {
+    if (!localStorage.getItem('token')) {
+      localStorage.removeItem('user');
+      localStorage.removeItem(AUTH_VALIDATED_AT_KEY);
+      return null;
+    }
     const stored = localStorage.getItem('user');
     return stored ? JSON.parse(stored) : null;
   });
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      // Always validate token with backend on startup
+    const storedUser = localStorage.getItem('user');
+    const lastValidated = Number(localStorage.getItem(AUTH_VALIDATED_AT_KEY) || 0);
+    const shouldValidate = !storedUser || Date.now() - lastValidated >= AUTH_VALIDATION_TTL_MS;
+    if (token && shouldValidate && !validationStartedRef.current) {
+      validationStartedRef.current = true;
       getMe().then(res => {
         setUser(res.data);
         localStorage.setItem('user', JSON.stringify(res.data));
+        localStorage.setItem(AUTH_VALIDATED_AT_KEY, String(Date.now()));
       }).catch(() => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        localStorage.removeItem(AUTH_VALIDATED_AT_KEY);
         setUser(null);
       });
-    } else {
-      // No token — clear any stale user data
-      localStorage.removeItem('user');
-      setUser(null);
     }
   }, []);
 
   const setAuth = (token: string, userInfo: UserInfo) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userInfo));
+    localStorage.setItem(AUTH_VALIDATED_AT_KEY, String(Date.now()));
     setUser(userInfo);
   };
 
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem(AUTH_VALIDATED_AT_KEY);
     setUser(null);
     window.location.href = '/login';
   };

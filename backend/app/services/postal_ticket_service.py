@@ -224,7 +224,6 @@ def list_tickets(
             PostalTicket.unresolved_copies > 0,
         )
 
-    total = q.count()
     rows = (
         q.order_by(_ticket_date_expr().desc(), PostalTicket.id.desc())
         .offset(max(0, (page - 1) * page_size))
@@ -232,27 +231,42 @@ def list_tickets(
         .all()
     )
 
-    summary_rows = (
-        _base_query(
-            db, year=year, search=search, postal_delivery_id=postal_delivery_id, order_id=order_id,
-        )
-        .with_entities(PostalTicket.type, func.count(PostalTicket.id))
-        .group_by(PostalTicket.type)
-        .all()
+    filtered_total = q.with_entities(func.count(PostalTicket.id)).scalar_subquery()
+    summary_query = _base_query(
+        db,
+        year=year,
+        search=search,
+        postal_delivery_id=postal_delivery_id,
+        order_id=order_id,
     )
-    summary = {ticket_type: 0 for ticket_type in TICKET_TYPES}
-    for ticket_type, count in summary_rows:
-        key = ticket_type.value if hasattr(ticket_type, "value") else str(ticket_type)
-        summary[key] = int(count)
-    summary["address_recipient_pending"] = (
-        _base_query(
-            db, year=year, search=search, postal_delivery_id=postal_delivery_id, order_id=order_id,
-        )
-        .filter(
-            PostalTicket.type == PostalTicketType.address,
-            PostalTicket.applied_to_order.is_(True),
-            PostalTicket.unresolved_copies > 0,
-        )
-        .count()
+    total, complaint_count, address_count, follow_count, pending_count = (
+        summary_query.with_entities(
+            filtered_total,
+            func.coalesce(func.sum(case((PostalTicket.type == PostalTicketType.complaint, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((PostalTicket.type == PostalTicketType.address, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((PostalTicket.type == PostalTicketType.follow, 1), else_=0)), 0),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            and_(
+                                PostalTicket.type == PostalTicketType.address,
+                                PostalTicket.applied_to_order.is_(True),
+                                PostalTicket.unresolved_copies > 0,
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ),
+        ).one()
     )
-    return [_row(rec) for rec in rows], total, summary
+    summary = {
+        PostalTicketType.complaint.value: int(complaint_count or 0),
+        PostalTicketType.address.value: int(address_count or 0),
+        PostalTicketType.follow.value: int(follow_count or 0),
+        "address_recipient_pending": int(pending_count or 0),
+    }
+    return [_row(rec) for rec in rows], int(total or 0), summary

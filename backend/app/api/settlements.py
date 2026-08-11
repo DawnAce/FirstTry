@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
@@ -145,7 +145,15 @@ def _to_out(s: ChannelSettlement) -> SettlementOut:
 
 
 def _get_or_404(db: Session, settlement_id: int) -> ChannelSettlement:
-    s = db.query(ChannelSettlement).filter(ChannelSettlement.id == settlement_id).first()
+    s = (
+        db.query(ChannelSettlement)
+        .options(
+            joinedload(ChannelSettlement.partner),
+            selectinload(ChannelSettlement.attachments),
+        )
+        .filter(ChannelSettlement.id == settlement_id)
+        .first()
+    )
     if s is None:
         raise HTTPException(status_code=404, detail=f"结算记录 {settlement_id} 不存在")
     return s
@@ -329,7 +337,10 @@ def list_settlements(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    query = db.query(ChannelSettlement)
+    query = db.query(ChannelSettlement).options(
+        joinedload(ChannelSettlement.partner),
+        selectinload(ChannelSettlement.attachments),
+    )
     if partner_id is not None:
         query = query.filter(ChannelSettlement.partner_id == partner_id)
     if direction is not None:

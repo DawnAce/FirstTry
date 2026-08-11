@@ -11,6 +11,8 @@ from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
+    Order,
+    Partner,
     PostalDelivery,
 )
 from app.models.postal_delivery import PostalDeliverySourceType
@@ -121,6 +123,66 @@ def list_deliveries(
         .all()
     )
     return rows, total
+
+
+def list_deliveries_with_summary(
+    db: Session,
+    *,
+    order_id: Optional[int] = None,
+    year: Optional[int] = None,
+    channel: Optional[str] = None,
+    distribution_unit_id: Optional[int] = None,
+    month: Optional[int] = None,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[tuple[PostalDelivery, str | None, str | None]], int, dict]:
+    """Return the paged rows, labels and overview in two SQL statements."""
+    q = _deliveries_query(
+        db,
+        order_id=order_id,
+        year=year,
+        channel=channel,
+        distribution_unit_id=distribution_unit_id,
+        month=month,
+        status=status,
+        search=search,
+    )
+    total, total_copies, unit_count, missing_unit_count, nearest_expiry_date = (
+        q.with_entities(
+            func.count(PostalDelivery.id),
+            func.coalesce(func.sum(PostalDelivery.copies), 0),
+            func.count(func.distinct(PostalDelivery.distribution_unit_id)),
+            func.coalesce(
+                func.sum(
+                    case((PostalDelivery.distribution_unit_id.is_(None), 1), else_=0)
+                ),
+                0,
+            ),
+            func.min(PostalDelivery.coverage_end_date),
+        ).one()
+    )
+    order = (
+        (PostalDelivery.coverage_end_date.asc(), PostalDelivery.id.desc())
+        if status == "expiring"
+        else (PostalDelivery.year.desc(), PostalDelivery.id.desc())
+    )
+    rows = (
+        q.outerjoin(Partner, Partner.id == PostalDelivery.distribution_unit_id)
+        .outerjoin(Order, Order.id == PostalDelivery.order_id)
+        .with_entities(PostalDelivery, Partner.name, Order.order_code)
+        .order_by(*order)
+        .offset(max(0, (page - 1) * page_size))
+        .limit(page_size)
+        .all()
+    )
+    return rows, int(total or 0), {
+        "total_copies": int(total_copies or 0),
+        "unit_count": int(unit_count or 0),
+        "missing_unit_count": int(missing_unit_count or 0),
+        "nearest_expiry_date": nearest_expiry_date if status == "expiring" else None,
+    }
 
 
 def summarize_deliveries(

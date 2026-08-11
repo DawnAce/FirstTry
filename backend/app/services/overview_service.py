@@ -1,6 +1,6 @@
 """ZTO-MF 跨期总览聚合（工作台 + 期数总览）。
 
-一次性用 ~6 个批量查询把「刊历全集 → 是否开期 → 发货汇总 → 中通报数 → 确认漂移 →
+一次性用 2 个批量查询把「刊历全集 → 是否开期 → 发货汇总 → 中通报数 → 确认漂移 →
 最近操作时间」拼齐，服务端按 D2 优先级算好每期 status，前端只读不重算。
 
 - delta = 报数 − 发货（D1，正数=发货缺口/少发）。
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -70,89 +70,106 @@ def build_overview(db: Session, scope: str = "workbench", year: int | None = Non
     if scope == "workbench":
         year = today.year  # 工作台恒为本年（D5）
 
-    # Q1: 刊历全集（驱动，剔休刊）。
-    q1 = db.query(PublicationSchedule).filter(
-        PublicationSchedule.is_suspended.is_(False),
-        PublicationSchedule.issue_number.isnot(None),
+    shipping_totals = (
+        db.query(
+            ShippingDetail.issue_number.label("issue_number"),
+            func.coalesce(func.sum(ShippingDetail.quantity), 0).label("shipping_total"),
+            func.count(ShippingDetail.id).label("detail_count"),
+            func.max(ShippingDetail.updated_at).label("shipping_updated_at"),
+        )
+        .filter(ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup)
+        .group_by(ShippingDetail.issue_number)
+        .subquery()
+    )
+    operation_updates = (
+        db.query(
+            OperationLog.issue_number.label("issue_number"),
+            func.max(OperationLog.created_at).label("operation_updated_at"),
+        )
+        .filter(OperationLog.issue_number.isnot(None))
+        .group_by(OperationLog.issue_number)
+        .subquery()
+    )
+    latest_confirm_shipping = (
+        select(IssueAuditSnapshot.shipping_total)
+        .where(
+            IssueAuditSnapshot.issue_id == Issue.id,
+            IssueAuditSnapshot.snapshot_type == "confirm",
+        )
+        .order_by(IssueAuditSnapshot.created_at.desc(), IssueAuditSnapshot.id.desc())
+        .limit(1)
+        .correlate(Issue)
+        .scalar_subquery()
+    )
+    overview_query = (
+        db.query(
+            PublicationSchedule,
+            Issue.id.label("issue_id"),
+            Issue.status.label("issue_status"),
+            Issue.updated_at.label("issue_updated_at"),
+            func.coalesce(shipping_totals.c.shipping_total, 0).label("shipping_total"),
+            func.coalesce(shipping_totals.c.detail_count, 0).label("detail_count"),
+            shipping_totals.c.shipping_updated_at,
+            latest_confirm_shipping.label("confirmed_shipping_total"),
+            operation_updates.c.operation_updated_at,
+        )
+        .outerjoin(Issue, Issue.issue_number == PublicationSchedule.issue_number)
+        .outerjoin(
+            shipping_totals,
+            shipping_totals.c.issue_number == PublicationSchedule.issue_number,
+        )
+        .outerjoin(
+            operation_updates,
+            operation_updates.c.issue_number == PublicationSchedule.issue_number,
+        )
+        .filter(
+            PublicationSchedule.is_suspended.is_(False),
+            PublicationSchedule.issue_number.isnot(None),
+        )
     )
     if year is not None:
-        q1 = q1.filter(PublicationSchedule.year == year)
-    schedule_rows = q1.order_by(
+        overview_query = overview_query.filter(PublicationSchedule.year == year)
+    joined_rows = overview_query.order_by(
         PublicationSchedule.year, PublicationSchedule.publish_date
     ).all()
 
-    issue_numbers = [s.issue_number for s in schedule_rows]
-
-    # Q2: 已开期（issues）→ issue_number -> (id, status, updated_at)。
+    schedule_rows = [row[0] for row in joined_rows]
     issue_map: dict[int, tuple] = {}
-    if issue_numbers:
-        for iid, num, status, updated_at in (
-            db.query(Issue.id, Issue.issue_number, Issue.status, Issue.updated_at)
-            .filter(Issue.issue_number.in_(issue_numbers))
-            .all()
-        ):
-            issue_map[num] = (iid, status.value if status is not None else None, updated_at)
-
-    issue_ids = [v[0] for v in issue_map.values()]
-
-    # Q3: 发货明细按期汇总（Σ份数 / 条数 / 最近更新）。
     ship_map: dict[int, tuple] = {}
-    if issue_numbers:
-        for num, ship_total, cnt, ship_updated in (
-            db.query(
-                ShippingDetail.issue_number,
-                func.coalesce(func.sum(ShippingDetail.quantity), 0),
-                func.count(ShippingDetail.id),
-                func.max(ShippingDetail.updated_at),
-            )
-            .filter(
-                ShippingDetail.issue_number.in_(issue_numbers),
-                ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
-            )
-            .group_by(ShippingDetail.issue_number)
-            .all()
-        ):
-            ship_map[num] = (int(ship_total or 0), int(cnt or 0), ship_updated)
-
-    # Q4: 中通报数合计（批量，逐字对齐 get_report）。
-    zt_totals = compute_zt_report_totals(db, issue_ids)
-
-    # Q5: 每期最新 confirm 快照的发货合计 → 算漂移（confirms 相隔数秒，取 max(created_at) 即可）。
     confirm_ship: dict[int, int] = {}
-    if issue_ids:
-        latest_sub = (
-            db.query(
-                IssueAuditSnapshot.issue_id,
-                func.max(IssueAuditSnapshot.created_at).label("mx"),
-            )
-            .filter(
-                IssueAuditSnapshot.snapshot_type == "confirm",
-                IssueAuditSnapshot.issue_id.in_(issue_ids),
-            )
-            .group_by(IssueAuditSnapshot.issue_id)
-            .subquery()
-        )
-        for iid, snap_ship in (
-            db.query(IssueAuditSnapshot.issue_id, IssueAuditSnapshot.shipping_total)
-            .join(
-                latest_sub,
-                (IssueAuditSnapshot.issue_id == latest_sub.c.issue_id)
-                & (IssueAuditSnapshot.created_at == latest_sub.c.mx),
-            )
-            .all()
-        ):
-            confirm_ship[iid] = snap_ship
-
-    # Q6: 每期最近一次「任何操作」时间（决策③；历史行 issue_number 为空不计）。
     op_updated: dict[int, object] = {}
-    if issue_numbers:
-        for num, mx in (
-            db.query(OperationLog.issue_number, func.max(OperationLog.created_at))
-            .filter(OperationLog.issue_number.in_(issue_numbers))
-            .group_by(OperationLog.issue_number)
-            .all()
-        ):
-            op_updated[num] = mx
+    for (
+        schedule,
+        issue_id,
+        issue_status,
+        issue_updated_at,
+        shipping_total,
+        detail_count,
+        shipping_updated_at,
+        confirmed_shipping_total,
+        operation_updated_at,
+    ) in joined_rows:
+        number = schedule.issue_number
+        if issue_id is not None:
+            issue_map[number] = (
+                issue_id,
+                issue_status.value if issue_status is not None else None,
+                issue_updated_at,
+            )
+            if confirmed_shipping_total is not None:
+                confirm_ship[issue_id] = int(confirmed_shipping_total)
+        ship_map[number] = (
+            int(shipping_total or 0),
+            int(detail_count or 0),
+            shipping_updated_at,
+        )
+        if operation_updated_at is not None:
+            op_updated[number] = operation_updated_at
+
+    # Query 2: destination semantics include legacy category fallbacks and are
+    # deliberately preserved in the shared Python resolver.
+    issue_ids = [value[0] for value in issue_map.values()]
+    zt_totals = compute_zt_report_totals(db, issue_ids)
 
     rows: list[PeriodRowOut] = []
     for s in schedule_rows:

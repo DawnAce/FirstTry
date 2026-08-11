@@ -28,7 +28,7 @@ os.environ.setdefault("MYSQL_DATABASE", "test")
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -96,6 +96,7 @@ def client():
     # @app.on_event("startup") warmup_pool, which would try to connect to
     # the real MySQL engine and hang the test suite.
     c = TestClient(app)
+    c.db_engine = engine
     try:
         yield c
     finally:
@@ -914,7 +915,10 @@ def test_order_view_counts_returns_all_tabs_in_one_response(client):
     r = client.get("/api/orders/view-counts")
 
     assert r.status_code == 200, r.text
-    assert r.headers["server-timing"].startswith("app;dur=")
+    server_timing = r.headers["server-timing"]
+    assert server_timing.startswith("db;dur=")
+    assert 'desc="' in server_timing
+    assert "queries\", app;dur=" in server_timing
     assert r.json() == {
         "all": 3,
         "active": 1,
@@ -928,6 +932,34 @@ def test_order_view_counts_returns_all_tabs_in_one_response(client):
     assert combined.status_code == 200, combined.text
     assert combined.json()["view_counts"] == r.json()
     assert combined.json()["total"] == 3
+
+
+def test_order_portal_summary_uses_one_select(client):
+    client.post(
+        "/api/orders",
+        json={**_make_create_payload(payer_name="平台单"), "source_platform": "小程序"},
+    )
+    pending = client.post(
+        "/api/orders",
+        json={**_make_create_payload(payer_name="待确认"), "source_platform": "抖音"},
+    ).json()
+    client.post(f"/api/orders/{pending['id']}/confirm")
+
+    statements: list[str] = []
+
+    def capture_sql(_conn, _cursor, statement, _params, _context, _many):
+        statements.append(statement)
+
+    event.listen(client.db_engine, "before_cursor_execute", capture_sql)
+    try:
+        response = client.get("/api/orders/portal-summary")
+    finally:
+        event.remove(client.db_engine, "before_cursor_execute", capture_sql)
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    assert {row["label"] for row in response.json()["channels"]} == {"小程序", "抖音"}
+    assert sum(sql.lstrip().upper().startswith("SELECT") for sql in statements) == 1
 
 
 def test_order_view_counts_applies_shared_search_filter(client):

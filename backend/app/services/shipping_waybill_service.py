@@ -12,8 +12,8 @@ from typing import Any
 
 from fastapi import HTTPException
 from openpyxl import load_workbook
-from sqlalchemy import func, insert, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import func, insert, or_, select
+from sqlalchemy.orm import Session, joinedload, noload
 
 from app.models import (
     Issue,
@@ -1147,12 +1147,42 @@ def confirm_import(db: Session, batch_id: int, user: User) -> ShippingWaybillImp
 
 
 def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
+    latest_confirm_report = (
+        select(IssueAuditSnapshot.report_total)
+        .where(
+            IssueAuditSnapshot.issue_id == Issue.id,
+            IssueAuditSnapshot.snapshot_type == "confirm",
+        )
+        .order_by(IssueAuditSnapshot.created_at.desc(), IssueAuditSnapshot.id.desc())
+        .limit(1)
+        .correlate(Issue)
+        .scalar_subquery()
+    )
+    issue_row = (
+        db.query(Issue, latest_confirm_report.label("confirmed_report_total"))
+        .filter(Issue.id == issue_id)
+        .first()
+    )
+    if not issue_row:
         raise HTTPException(status_code=404, detail="刊期不存在")
-    details = _details_for_issue(db, issue.issue_number)
-    expected = _expected_quantity(db, issue)
+    issue, confirmed_report_total = issue_row
+    details = (
+        db.query(ShippingDetail)
+        .options(
+            joinedload(ShippingDetail.packages),
+            joinedload(ShippingDetail.package_allocations),
+            noload(ShippingDetail.fulfillment_adjustments),
+            noload(ShippingDetail.deferrals),
+        )
+        .filter(
+            ShippingDetail.issue_number == issue.issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
+        .order_by(ShippingDetail.id)
+        .all()
+    )
     planned = sum(detail.quantity or 0 for detail in details)
+    expected = int(confirmed_report_total) if confirmed_report_total is not None else planned
     tracked = sum(
         detail.physical_shipped_quantity
         for detail in details
@@ -1196,9 +1226,16 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
         shipment_status = "partial"
     else:
         shipment_status = "pending"
-    latest = db.query(ShippingWaybillImportBatch).filter(
-        ShippingWaybillImportBatch.issue_number == issue.issue_number
-    ).order_by(ShippingWaybillImportBatch.created_at.desc(), ShippingWaybillImportBatch.id.desc()).first()
+    latest = (
+        db.query(ShippingWaybillImportBatch)
+        .options(joinedload(ShippingWaybillImportBatch.rows))
+        .filter(ShippingWaybillImportBatch.issue_number == issue.issue_number)
+        .order_by(
+            ShippingWaybillImportBatch.created_at.desc(),
+            ShippingWaybillImportBatch.id.desc(),
+        )
+        .first()
+    )
     source_by_detail: dict[int, int] = defaultdict(int)
     if latest:
         for row in latest.rows:

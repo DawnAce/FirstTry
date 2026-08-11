@@ -26,7 +26,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import case, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.bs_issue import BsIssue
@@ -255,58 +255,53 @@ def summarize_bs_circulation(db: Session, year: Optional[int] = None) -> BsCircu
         for b in calendar_rows
     }
 
-    # 单期销量（商学院 single_issue + issue_label）
-    si_q = (
-        db.query(OrderItem.issue_label, func.sum(OrderItem.total_quantity))
+    # Single issues and subscriptions share one scan. This avoids three
+    # sequential public-database round-trips for a page-level projection.
+    item_q = (
+        db.query(
+            OrderItem.fulfillment_type,
+            OrderItem.issue_label,
+            OrderItem.total_quantity,
+            OrderItem.coverage_start_date,
+            OrderItem.coverage_end_date,
+        )
         .join(Order, OrderItem.order_id == Order.id)
         .filter(OrderItem.publication == Publication.business_school)
-        .filter(OrderItem.fulfillment_type == FulfillmentType.single_issue)
-        .filter(OrderItem.issue_label.isnot(None))
-        .filter(Order.status == OrderStatus.active)
-        .filter(_revenue_eligible())
-        .group_by(OrderItem.issue_label)
-    )
-    if year is not None:
-        si_q = si_q.filter(OrderItem.issue_label.like(f"{year}-%"))
-    for label, qty in si_q.all():
-        if label not in acc:
-            # 卖出过但不在刊历的期：仍列出（订阅无法展开到它）。排序键放该年最后。
-            yr = int(label[:4]) if label[:4].isdigit() else 0
-            acc[label] = {"year": yr or None, "title": None, "sort": (yr, 99),
-                          "single": 0, "subscription": 0, "in_calendar": False}
-        acc[label]["single"] += int(qty or 0)
-
-    # 订阅：覆盖期展开到刊历各期（合刊去重，靠 issue_label 唯一）
-    subs = (
-        db.query(OrderItem)
-        .join(Order, OrderItem.order_id == Order.id)
-        .filter(OrderItem.publication == Publication.business_school)
-        .filter(OrderItem.fulfillment_type == FulfillmentType.subscription)
-        .filter(Order.status == OrderStatus.active)
-        .filter(_revenue_eligible())
-        .filter(OrderItem.coverage_start_date.isnot(None))
-        .filter(OrderItem.coverage_end_date.isnot(None))
-        .all()
-    )
-    for item in subs:
-        for b in calendar_rows:
-            if _issue_covers(b, item.coverage_start_date, item.coverage_end_date):
-                acc[b.issue_label]["subscription"] += int(item.total_quantity or 0)
-
-    # 缺覆盖期、无法展开的商学院订阅张数
-    unexpanded = (
-        db.query(func.count(OrderItem.id))
-        .join(Order, OrderItem.order_id == Order.id)
-        .filter(OrderItem.publication == Publication.business_school)
-        .filter(OrderItem.fulfillment_type == FulfillmentType.subscription)
         .filter(Order.status == OrderStatus.active)
         .filter(_revenue_eligible())
         .filter(
-            (OrderItem.coverage_start_date.is_(None))
-            | (OrderItem.coverage_end_date.is_(None))
+            or_(
+                and_(
+                    OrderItem.fulfillment_type == FulfillmentType.single_issue,
+                    OrderItem.issue_label.isnot(None),
+                ),
+                OrderItem.fulfillment_type == FulfillmentType.subscription,
+            )
         )
-        .scalar()
-    ) or 0
+    )
+    if year is not None:
+        item_q = item_q.filter(
+            or_(
+                OrderItem.issue_label.like(f"{year}-%"),
+                OrderItem.fulfillment_type == FulfillmentType.subscription,
+            )
+        )
+    unexpanded = 0
+    for fulfillment_type, label, quantity, coverage_start, coverage_end in item_q.all():
+        if fulfillment_type == FulfillmentType.single_issue:
+            if label not in acc:
+                # 卖出过但不在刊历的期：仍列出（订阅无法展开到它）。排序键放该年最后。
+                yr = int(label[:4]) if label[:4].isdigit() else 0
+                acc[label] = {"year": yr or None, "title": None, "sort": (yr, 99),
+                              "single": 0, "subscription": 0, "in_calendar": False}
+            acc[label]["single"] += int(quantity or 0)
+            continue
+        if coverage_start is None or coverage_end is None:
+            unexpanded += 1
+            continue
+        for b in calendar_rows:
+            if _issue_covers(b, coverage_start, coverage_end):
+                acc[b.issue_label]["subscription"] += int(quantity or 0)
 
     rows = []
     for label, a in sorted(acc.items(), key=lambda kv: kv[1]["sort"]):

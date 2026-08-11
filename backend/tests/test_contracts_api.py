@@ -18,7 +18,7 @@ os.environ.setdefault("MYSQL_DATABASE", "test")
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -153,6 +153,28 @@ def test_contract_crud_partner_name_and_expiring(client):
     assert len(client.get("/api/contracts", params={"sign_year": 2026}).json()) == 1
     assert len(client.get("/api/contracts", params={"status": "archived"}).json()) == 1
     assert len(client.get("/api/contracts", params={"q": "ZT-2026"}).json()) == 1
+
+
+def test_contract_list_uses_one_select_regardless_of_row_count(client):
+    for index in range(3):
+        partner = _make_partner(client, f"渠道 {index}")
+        _make_contract(client, partner["id"], contract_no=f"C-{index}")
+
+    statements: list[str] = []
+    engine = client.session_factory.kw["bind"]
+
+    def capture_sql(_conn, _cursor, statement, _params, _context, _many):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture_sql)
+    try:
+        response = client.get("/api/contracts")
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_sql)
+
+    assert response.status_code == 200
+    assert len(response.json()) == 3
+    assert sum(sql.lstrip().upper().startswith("SELECT") for sql in statements) == 1
 
 
 def test_create_contract_requires_existing_partner(client):

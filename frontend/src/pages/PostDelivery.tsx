@@ -46,7 +46,7 @@ import type { TableColumnsType, UploadFile } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { getIssues } from '../api/issues';
 import { useAuth } from '../contexts/AuthContext';
-import { listPartners } from '../api/contracts';
+import { listPartners, partnerQueryKeys } from '../api/contracts';
 import {
   addComplaintHandling,
   cancelComplaintMakeup,
@@ -500,7 +500,7 @@ function DeliveriesTab() {
     setTicketReader(null);
   };
 
-  const unitsQ = useQuery({ queryKey: ['partners'], queryFn: () => listPartners().then((r) => r.data) });
+  const unitsQ = useQuery({ queryKey: partnerQueryKeys.list(), queryFn: () => listPartners().then((r) => r.data) });
   const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
 
   const q = useQuery({
@@ -2344,7 +2344,7 @@ function TicketsTab() {
   const [addressPrefill, setAddressPrefill] = useState<TicketFormPrefill | null>(null);
   const [queuedAddressPrefill, setQueuedAddressPrefill] = useState<TicketFormPrefill | null>(null);
 
-  const unitsQ = useQuery({ queryKey: ['partners'], queryFn: () => listPartners().then((r) => r.data) });
+  const unitsQ = useQuery({ queryKey: partnerQueryKeys.list(), queryFn: () => listPartners().then((r) => r.data) });
   const unitOpts = (unitsQ.data ?? []).filter((p) => p.partner_type === 'distribution').map((p) => ({ label: p.name, value: p.id }));
 
   const q = useQuery({

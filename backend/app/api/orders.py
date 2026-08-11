@@ -30,11 +30,12 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import Invoice, OrderEntryMethod, OrderStatus, User
+from app.models import Invoice, Order, OrderEntryMethod, OrderStatus, User
 from app.schemas.order import (
     BatchSyncSummary,
     BulkConfirmIn,
@@ -53,6 +54,7 @@ from app.schemas.order import (
     OrderShippingSyncPreview,
     OrderItemsUpdate,
     OrderListRow,
+    OrderPortalSummary,
     OrderOut,
     OrderUpdate,
     OrderVoidIn,
@@ -135,6 +137,41 @@ def list_orders(
         return {"rows": rows, "total": total, "view_counts": view_counts}
     rows, total = order_service.list_orders(db, **kwargs)
     return {"rows": rows, "total": total}
+
+
+@router.get("/portal-summary", response_model=OrderPortalSummary)
+def order_portal_summary(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """One-query metrics for the commerce portal.
+
+    The portal previously loaded two full order lists (including fulfillment
+    drift context) just to show a total, a pending count and channel bars.
+    Grouping the fields it actually renders keeps this navigation lightweight.
+    """
+    grouped = (
+        db.query(Order.source_platform, Order.status, func.count(Order.id))
+        .group_by(Order.source_platform, Order.status)
+        .all()
+    )
+    total = sum(int(count) for _platform, _status, count in grouped)
+    pending = sum(
+        int(count)
+        for _platform, status, count in grouped
+        if status == OrderStatus.pending_confirmation
+    )
+    channel_counts: dict[str, int] = {}
+    for platform, _status, count in grouped:
+        label = platform or "手工录入"
+        channel_counts[label] = channel_counts.get(label, 0) + int(count)
+    channels = [
+        {"label": label, "count": count}
+        for label, count in sorted(
+            channel_counts.items(), key=lambda item: (-item[1], item[0])
+        )[:4]
+    ]
+    return {"total": total, "pending_confirmation": pending, "channels": channels}
 
 
 @router.get("/view-counts", response_model=dict[str, int])
@@ -536,8 +573,8 @@ def list_events(
     _user: User = Depends(get_current_user),
 ):
     """Return the order's audit trail, newest first."""
-    # Force a 404 by going through the detail loader.
-    order_service.get_order_detail(db, order_id)
+    if db.query(Order.id).filter(Order.id == order_id).first() is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
     return list_order_timeline(db, order_id)
 
 
@@ -552,10 +589,8 @@ def get_progress(
 ):
     """Return one ``FulfillmentProgress`` per order item, in item order."""
     order = order_service.get_order_detail(db, order_id)
-    return [
-        order_service.compute_fulfillment_progress(db, item)
-        for item in order.items
-    ]
+    progress = order_service.compute_fulfillment_progresses(db, order)
+    return [progress[item.id] for item in order.items]
 
 
 # ---------------------------------------------------------------------------
@@ -586,9 +621,10 @@ def _build_order_out(db: Session, order) -> OrderOut:
     )
     invoice_summary = finance_service.summarize_order_invoices(order, invoices)
 
+    progress_by_item = order_service.compute_fulfillment_progresses(db, order)
     item_outs = []
     for item in order.items:
-        progress = order_service.compute_fulfillment_progress(db, item)
+        progress = progress_by_item[item.id]
         allocations = [
             FulfillmentAllocationOut.model_validate(a) for a in item.allocations
         ]

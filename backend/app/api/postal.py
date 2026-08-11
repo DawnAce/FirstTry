@@ -436,32 +436,19 @@ def list_deliveries(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    rows, total = delivery_svc.list_deliveries(
+    row_data, total, summary = delivery_svc.list_deliveries_with_summary(
         db, order_id=order_id, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
         month=month, status=status, search=search, page=page, page_size=page_size,
     )
-    ids = {r.distribution_unit_id for r in rows if r.distribution_unit_id}
-    names = (
-        {pid: n for pid, n in db.query(Partner.id, Partner.name).filter(Partner.id.in_(ids)).all()}
-        if ids else {}
-    )
-    linked_order_ids = {r.order_id for r in rows if r.order_id}
-    order_codes = (
-        {oid: code for oid, code in db.query(Order.id, Order.order_code).filter(Order.id.in_(linked_order_ids)).all()}
-        if linked_order_ids else {}
-    )
+    rows = [row for row, _unit_name, _order_code in row_data]
     link_diagnostics = renewal_svc.diagnose_exact_delivery_links(db, rows)
     out = []
-    for r in rows:
+    for r, unit_name, order_code in row_data:
         o = DeliveryOut.model_validate(r)
-        o.distribution_unit_name = names.get(r.distribution_unit_id)
-        o.order_code = order_codes.get(r.order_id)
+        o.distribution_unit_name = unit_name
+        o.order_code = order_code
         o.link_status, o.link_message = link_diagnostics[r.id]
         out.append(o)
-    summary = delivery_svc.summarize_deliveries(
-        db, order_id=order_id, year=year, channel=channel, distribution_unit_id=distribution_unit_id,
-        month=month, status=status, search=search,
-    )
     return DeliveryListOut(rows=out, total=total, summary=summary)
 
 

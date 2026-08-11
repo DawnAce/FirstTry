@@ -415,7 +415,7 @@ export interface FinancePayload {
   notes?: string | null;
 }
 
-export function listFinance(f: { platform?: string; tax_category?: string; linked?: boolean; search?: string; page?: number; page_size?: number }): Promise<AxiosResponse<FinanceListOut>> {
+export function listFinance(f: { platform?: string; tax_category?: string; linked?: boolean; search?: string; page?: number; page_size?: number; summary_only?: boolean }): Promise<AxiosResponse<FinanceListOut>> {
   return api.get('/finance/postal-receipts', { params: f });
 }
 export function previewFinanceImport(file: File): Promise<AxiosResponse<SimpleImportPreview<FinanceImportRow>>> {

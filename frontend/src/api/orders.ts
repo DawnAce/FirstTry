@@ -365,6 +365,12 @@ export interface OrderViewCounts {
   void: number;
 }
 
+export interface OrderPortalSummary {
+  total: number;
+  pending_confirmation: number;
+  channels: Array<{ label: string; count: number }>;
+}
+
 export interface PricingPreviewPayload {
   subscription_term: Exclude<SubscriptionTerm, 'custom'>;
   delivery_method: DeliveryMethod;
@@ -537,6 +543,9 @@ export const getOrderViewCounts = (
   params?: Omit<ListOrdersParams, 'status' | 'needs_attention' | 'sort' | 'order' | 'skip' | 'limit'>,
 ): Promise<AxiosResponse<OrderViewCounts>> =>
   api.get<OrderViewCounts>('/orders/view-counts', { params });
+
+export const getOrderPortalSummary = (): Promise<AxiosResponse<OrderPortalSummary>> =>
+  api.get<OrderPortalSummary>('/orders/portal-summary');
 
 export const getOrder = (id: number): Promise<AxiosResponse<OrderOut>> =>
   api.get<OrderOut>(`/orders/${id}`);

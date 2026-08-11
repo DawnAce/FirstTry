@@ -3,7 +3,7 @@
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Order, PostalFinance
@@ -52,6 +52,64 @@ def list_finance(
         .offset(max(0, (page - 1) * page_size)).limit(page_size).all()
     )
     return rows, total
+
+
+def list_finance_with_summary(
+    db: Session,
+    *,
+    platform: Optional[str] = None,
+    tax_category: Optional[str] = None,
+    linked: Optional[bool] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    summary_only: bool = False,
+) -> tuple[List[PostalFinance], int, dict]:
+    """Load list totals and the overview in one aggregate round-trip.
+
+    The old list path issued count + rows + three summary statements.  Public
+    database latency made those five sequential round-trips dominate both the
+    finance page and its portal card.
+    """
+    base = _finance_query(
+        db,
+        platform=platform,
+        tax_category=tax_category,
+        linked=None,
+        search=search,
+    )
+    if linked is True:
+        filtered_count = func.sum(case((PostalFinance.order_id.isnot(None), 1), else_=0))
+    elif linked is False:
+        filtered_count = func.sum(case((PostalFinance.order_id.is_(None), 1), else_=0))
+    else:
+        filtered_count = func.count(PostalFinance.id)
+    total, total_amount, total_net, unlinked_count = base.with_entities(
+        filtered_count,
+        func.coalesce(func.sum(PostalFinance.amount), 0),
+        func.coalesce(func.sum(PostalFinance.net_amount), 0),
+        func.sum(case((PostalFinance.order_id.is_(None), 1), else_=0)),
+    ).one()
+    rows: List[PostalFinance] = []
+    if not summary_only:
+        rows = (
+            _finance_query(
+                db,
+                platform=platform,
+                tax_category=tax_category,
+                linked=linked,
+                search=search,
+            )
+            .order_by(PostalFinance.collected_at.desc(), PostalFinance.id.desc())
+            .offset(max(0, (page - 1) * page_size))
+            .limit(page_size)
+            .all()
+        )
+    return rows, int(total or 0), {
+        "total_amount": float(total_amount or 0),
+        "total_net": float(total_net or 0),
+        "unlinked_count": int(unlinked_count or 0),
+    }
 
 
 def summarize_finance(

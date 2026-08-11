@@ -34,37 +34,25 @@ async def read_limited_upload(file: UploadFile) -> bytes:
 
 @router.get("", response_model=List[ScheduleEntry])
 def list_schedule(year: int = 2026, db: Session = Depends(get_db)):
-    schedules = (
-        db.query(PublicationSchedule)
+    rows = (
+        db.query(PublicationSchedule, Issue.page_count.label("actual_page_count"))
+        .outerjoin(Issue, Issue.issue_number == PublicationSchedule.issue_number)
         .filter(PublicationSchedule.year == year)
         .order_by(PublicationSchedule.publish_date)
         .all()
     )
-
-    # Batch-fetch actual page_count from issues for all issue_numbers in this year
-    issue_numbers = [s.issue_number for s in schedules if s.issue_number is not None]
-    actual_map: dict[int, int] = {}
-    if issue_numbers:
-        rows = (
-            db.query(Issue.issue_number, Issue.page_count)
-            .filter(Issue.issue_number.in_(issue_numbers))
-            .all()
-        )
-        actual_map = {r[0]: r[1] for r in rows}
-
-    result = []
-    for s in schedules:
-        entry = ScheduleEntry(
+    return [
+        ScheduleEntry(
             id=s.id,
             year=s.year,
             issue_number=s.issue_number,
             publish_date=s.publish_date,
             is_suspended=s.is_suspended,
             page_count=s.page_count,
-            actual_page_count=actual_map.get(s.issue_number) if s.issue_number is not None else None,
+            actual_page_count=actual_page_count,
         )
-        result.append(entry)
-    return result
+        for s, actual_page_count in rows
+    ]
 
 
 @router.get("/years", response_model=List[int])

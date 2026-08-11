@@ -3,10 +3,10 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getDashboard } from '../api/issues';
 import { getWorkbenchOverview } from '../api/logisticsOverview';
-import { listOrders } from '../api/orders';
-import { listCustomers } from '../api/customers';
-import { listProducts } from '../api/products';
-import { listContracts } from '../api/contracts';
+import { getOrderPortalSummary } from '../api/orders';
+import { customerQueryKeys, listCustomers } from '../api/customers';
+import { listProducts, productQueryKeys } from '../api/products';
+import { contractQueryKeys, listContracts } from '../api/contracts';
 import { listFinance } from '../api/finance';
 import { getCampaignSummary, getOutstandingSummary } from '../api/analytics';
 import { businessCenters, postalFunctions, type BusinessCenterKey } from '../businessPortalConfig';
@@ -36,16 +36,15 @@ function distribution<T>(rows: T[], getLabel: (row: T) => string): AnalysisRow[]
 }
 
 function useCenterPortalData(key?: BusinessCenterKey): PortalData {
-  const planning = useQuery({ queryKey: ['business-portal', 'planning'], queryFn: async () => (await getDashboard()).data, enabled: key === 'planning' });
-  const fulfilment = useQuery({ queryKey: ['business-portal', 'fulfilment'], queryFn: async () => (await getWorkbenchOverview()).data, enabled: key === 'fulfilment' });
-  const orders = useQuery({ queryKey: ['business-portal', 'orders'], queryFn: async () => (await listOrders({ limit: 100 })).data, enabled: key === 'commerce' });
-  const pendingOrders = useQuery({ queryKey: ['business-portal', 'orders', 'pending'], queryFn: async () => (await listOrders({ status: 'pending_confirmation', limit: 1 })).data, enabled: key === 'commerce' });
-  const customers = useQuery({ queryKey: ['business-portal', 'customers'], queryFn: async () => (await listCustomers({ page: 1, page_size: 1 })).data, enabled: key === 'commerce' });
-  const products = useQuery({ queryKey: ['business-portal', 'products'], queryFn: async () => (await listProducts({ active: true })).data, enabled: key === 'commerce' });
-  const contracts = useQuery({ queryKey: ['business-portal', 'contracts'], queryFn: async () => (await listContracts()).data, enabled: key === 'finance' });
-  const finance = useQuery({ queryKey: ['business-portal', 'finance'], queryFn: async () => (await listFinance({ page: 1, page_size: 1 })).data, enabled: key === 'finance' });
-  const campaigns = useQuery({ queryKey: ['business-portal', 'campaigns'], queryFn: async () => (await getCampaignSummary()).data, enabled: key === 'analytics' });
-  const outstanding = useQuery({ queryKey: ['business-portal', 'outstanding'], queryFn: async () => (await getOutstandingSummary()).data, enabled: key === 'analytics' });
+  const planning = useQuery({ queryKey: ['dashboard'], queryFn: async () => (await getDashboard()).data, enabled: key === 'planning' });
+  const fulfilment = useQuery({ queryKey: ['logistics-overview', 'workbench'], queryFn: async () => (await getWorkbenchOverview()).data, enabled: key === 'fulfilment' });
+  const orders = useQuery({ queryKey: ['orders', 'portal-summary'], queryFn: async () => (await getOrderPortalSummary()).data, enabled: key === 'commerce' });
+  const customers = useQuery({ queryKey: customerQueryKeys.list({ page: 1, page_size: 1 }), queryFn: async () => (await listCustomers({ page: 1, page_size: 1 })).data, enabled: key === 'commerce' });
+  const products = useQuery({ queryKey: productQueryKeys.list({ active: true }), queryFn: async () => (await listProducts({ active: true })).data, enabled: key === 'commerce' });
+  const contracts = useQuery({ queryKey: contractQueryKeys.list(), queryFn: async () => (await listContracts()).data, enabled: key === 'finance' });
+  const finance = useQuery({ queryKey: ['business-portal', 'finance'], queryFn: async () => (await listFinance({ page: 1, page_size: 1, summary_only: true })).data, enabled: key === 'finance' });
+  const campaigns = useQuery({ queryKey: ['analytics', 'campaigns', {}], queryFn: async () => (await getCampaignSummary()).data, enabled: key === 'analytics' });
+  const outstanding = useQuery({ queryKey: ['analytics', 'outstanding'], queryFn: async () => (await getOutstandingSummary()).data, enabled: key === 'analytics' });
 
   return useMemo(() => {
     if (key === 'planning') {
@@ -92,18 +91,18 @@ function useCenterPortalData(key?: BusinessCenterKey): PortalData {
     }
 
     if (key === 'commerce') {
-      const loading = orders.isLoading || pendingOrders.isLoading || customers.isLoading || products.isLoading;
-      const rows = orders.data?.rows ?? [];
+      const loading = orders.isLoading || customers.isLoading || products.isLoading;
+      const channels = orders.data?.channels ?? [];
       return {
         metrics: orders.data ? [
           { label: '订单总数', value: `${orders.data.total} 单`, caption: '当前筛选口径' },
           { label: '客户总数', value: customers.data ? `${customers.data.total} 位` : '—', caption: '当前在订客户' },
           { label: '在售商品', value: products.data ? `${products.data.length} 个` : '—', caption: '有效商品' },
-          { label: '待确认订单', value: pendingOrders.data ? `${pendingOrders.data.total} 单` : '—', caption: pendingOrders.data?.total ? '需要处理' : '当前已清零' },
+          { label: '待确认订单', value: `${orders.data.pending_confirmation} 单`, caption: orders.data.pending_confirmation ? '需要处理' : '当前已清零' },
         ] : loadingMetrics(['订单总数', '客户总数', '在售商品', '待确认订单']),
         analysisTitle: '近期订单渠道分布',
-        analysis: distribution(rows, (row) => row.source_platform || '手工录入'),
-        guides: [pendingOrders.data?.total ? `审核 ${pendingOrders.data.total} 笔待确认订单` : '当前没有待确认订单', '定期检查商品价格和有效状态', '维护客户收件信息，避免履约退回'],
+        analysis: channels.map((row) => ({ label: row.label, value: `${row.count} 条`, percent: ratio(row.count, orders.data?.total ?? 0) })),
+        guides: [orders.data?.pending_confirmation ? `审核 ${orders.data.pending_confirmation} 笔待确认订单` : '当前没有待确认订单', '定期检查商品价格和有效状态', '维护客户收件信息，避免履约退回'],
         loading,
       };
     }
@@ -140,7 +139,7 @@ function useCenterPortalData(key?: BusinessCenterKey): PortalData {
       guides: [outstanding.data?.unpaid_orders ? `关注 ${outstanding.data.unpaid_orders} 笔未结清订单` : '当前没有未结清订单', '对比活动实付与标价差异', '结合期数发行量评估活动效果'],
       loading: campaigns.isLoading || outstanding.isLoading,
     };
-  }, [campaigns.data, campaigns.isLoading, contracts.data, contracts.isLoading, customers.data, customers.isLoading, finance.data, finance.isLoading, fulfilment.data, fulfilment.isLoading, key, orders.data, orders.isLoading, outstanding.data, outstanding.isLoading, pendingOrders.data, pendingOrders.isLoading, planning.data, planning.isLoading, products.data, products.isLoading]);
+  }, [campaigns.data, campaigns.isLoading, contracts.data, contracts.isLoading, customers.data, customers.isLoading, finance.data, finance.isLoading, fulfilment.data, fulfilment.isLoading, key, orders.data, orders.isLoading, outstanding.data, outstanding.isLoading, planning.data, planning.isLoading, products.data, products.isLoading]);
 }
 
 export function BusinessHome() {

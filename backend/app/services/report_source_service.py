@@ -627,20 +627,40 @@ def apply_confirmed_source_bases_to_issue(db: Session, issue: Issue) -> int:
     return _apply_print_totals_to_issue(db, issue)
 
 
-def get_issue_summary(db: Session, issue: Issue) -> IssueSourceSummaryOut:
+def get_issue_summary(
+    db: Session,
+    issue: Issue | None = None,
+    *,
+    issue_number: int | None = None,
+    bases: dict[str, int] | None = None,
+) -> IssueSourceSummaryOut:
+    number = issue.issue_number if issue is not None else issue_number
+    if number is None:
+        raise ValueError("issue or issue_number is required")
     documents = (
         db.query(ReportSourceDocument)
         .options(joinedload(ReportSourceDocument.items), joinedload(ReportSourceDocument.uploader))
         .filter(or_(
-            ReportSourceDocument.upload_issue_number == issue.issue_number,
-            ReportSourceDocument.items.any(ReportSourceItem.issue_number == issue.issue_number),
+            ReportSourceDocument.upload_issue_number == number,
+            ReportSourceDocument.items.any(ReportSourceItem.issue_number == number),
         ))
         .order_by(ReportSourceDocument.created_at.desc(), ReportSourceDocument.id.desc())
         .all()
     )
-    issue_items = [item for document in documents for item in document.items if item.issue_number == issue.issue_number]
-    bases = _base_quantities(db, issue)
-    source_totals_by_key = _active_print_totals(db, issue.issue_number)
+    issue_items = [item for document in documents for item in document.items if item.issue_number == number]
+    if bases is None:
+        if issue is None:
+            raise ValueError("bases are required when issue is not supplied")
+        bases = _base_quantities(db, issue)
+    source_totals_by_key: dict[tuple[str, str], int] = {}
+    for item in issue_items:
+        if (
+            item.source_status == "confirmed"
+            and item.effect_status == "active"
+            and item.source_action in PREPRESS_ACTIONS
+        ):
+            key = (item.category, item.sub_category)
+            source_totals_by_key[key] = source_totals_by_key.get(key, 0) + item.print_delta
     channel_codes = sorted({item.category for item in issue_items} | set(bases))
     channels: list[ChannelSourceSummary] = []
     for channel in channel_codes:
@@ -674,7 +694,7 @@ def get_issue_summary(db: Session, issue: Issue) -> IssueSourceSummaryOut:
             )
         )
     return IssueSourceSummaryOut(
-        issue_number=issue.issue_number,
+        issue_number=number,
         document_count=len(documents),
         documents=[_document_out(document) for document in documents],
         channels=channels,
