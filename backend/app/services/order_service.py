@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy import case, func, or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import (
     FulfillmentAllocation,
@@ -1210,10 +1210,9 @@ def get_order_detail(db: Session, order_id: int) -> Order:
     order = (
         db.query(Order)
         .options(
-            selectinload(Order.items)
-            .selectinload(OrderItem.allocations)
-            .selectinload(FulfillmentAllocation.targets),
-            selectinload(Order.items).selectinload(OrderItem.targets),
+            joinedload(Order.items)
+            .joinedload(OrderItem.allocations)
+            .joinedload(FulfillmentAllocation.targets),
             selectinload(Order.refunds),
             selectinload(Order.payments),
         )
@@ -1458,6 +1457,35 @@ def _published_postal_count_from_context(
     return bisect_right(context.schedule_issue_dates, cutoff) - bisect_left(
         context.schedule_issue_dates, start
     )
+
+
+def compute_fulfillment_progresses(
+    db: Session, order: Order
+) -> dict[int, FulfillmentProgress]:
+    """Compute every item progress projection with shared bulk data."""
+    context = _build_order_list_context(db, [order])
+    result: dict[int, FulfillmentProgress] = {}
+    for item in order.items:
+        current_expected = _expected_issues_from_context(item, context)
+        drift = None
+        if item.expected_issues_at_creation is not None and current_expected is not None:
+            drift = current_expected - item.expected_issues_at_creation
+        if item.delivery_method == DeliveryMethod.post_office:
+            synced_count = 0
+            shipped_count = _published_postal_count_from_context(
+                item, context, as_of=date.today()
+            )
+        else:
+            synced_count, shipped_count = context.shipping_counts.get(item.id, (0, 0))
+        result[item.id] = FulfillmentProgress(
+            expected_at_creation=item.expected_issues_at_creation,
+            current_expected=current_expected,
+            drift=drift,
+            synced_count=synced_count,
+            shipped_count=shipped_count,
+            skipped_count=0,
+        )
+    return result
 
 
 def _build_list_row(

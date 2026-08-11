@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from datetime import date, timedelta
 
-from app.database import SessionLocal, get_db, engine
+from app.database import (
+    SessionLocal,
+    begin_query_metrics,
+    end_query_metrics,
+    get_db,
+    warm_connection_pool,
+)
 from app.cache import get_dashboard_cache, set_dashboard_cache
 from app.seeds.publication_schedule_2026 import seed_publication_schedule_2026
 from app.seeds.report_templates import seed_report_templates
@@ -59,27 +65,38 @@ performance_logger = logging.getLogger("app.performance")
 async def expose_request_timing(request: Request, call_next):
     """Expose API processing time and log requests that remain slow."""
     started = time.perf_counter()
-    response = await call_next(request)
-    elapsed_ms = (time.perf_counter() - started) * 1000
-    if request.url.path.startswith("/api/"):
-        response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
-        if elapsed_ms >= 2000:
-            performance_logger.warning(
-                "slow_api method=%s path=%s duration_ms=%.1f status=%s",
-                request.method,
-                request.url.path,
-                elapsed_ms,
-                response.status_code,
+    query_metrics, query_token = begin_query_metrics()
+    try:
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if request.url.path.startswith("/api/"):
+            query_count = int(query_metrics["count"])
+            query_ms = float(query_metrics["duration_ms"])
+            response.headers["Server-Timing"] = (
+                f'db;dur={query_ms:.1f};desc="{query_count} queries", '
+                f"app;dur={elapsed_ms:.1f}"
             )
-    return response
+            if elapsed_ms >= 2000:
+                performance_logger.warning(
+                    "slow_api method=%s path=%s duration_ms=%.1f queries=%s "
+                    "db_duration_ms=%.1f status=%s",
+                    request.method,
+                    request.url.path,
+                    elapsed_ms,
+                    query_count,
+                    query_ms,
+                    response.status_code,
+                )
+        return response
+    finally:
+        end_query_metrics(query_token)
 
 
 @app.on_event("startup")
 def warmup_pool():
-    """Pre-create DB connections and warm dashboard cache."""
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
+    """Pre-create the concurrent request connections before serving pages."""
+    warmed = warm_connection_pool()
+    performance_logger.info("db_pool_warmed connections=%s", warmed)
 
 app.add_middleware(
     CORSMiddleware,

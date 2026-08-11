@@ -35,14 +35,14 @@ def list_finance(
     search: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
+    summary_only: bool = False,
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    rows, total = finance_svc.list_finance(
+    rows, total, summary = finance_svc.list_finance_with_summary(
         db, platform=platform, tax_category=tax_category, linked=linked,
-        search=search, page=page, page_size=page_size,
+        search=search, page=page, page_size=page_size, summary_only=summary_only,
     )
-    summary = finance_svc.summarize_finance(db, platform=platform, tax_category=tax_category, search=search)
     return FinanceListOut(rows=[FinanceOut.model_validate(r) for r in rows], total=total, summary=summary)
 
 

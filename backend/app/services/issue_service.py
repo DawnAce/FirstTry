@@ -36,7 +36,9 @@ def compute_print_totals(db: Session, issue_ids: list[int]) -> dict[int, int]:
     return totals
 
 
-def list_issue_outs(db: Session, *, skip: int, limit: int) -> list[IssueOut]:
+def list_issue_outs(
+    db: Session, *, skip: int, limit: int, issue_id: int | None = None
+) -> list[IssueOut]:
     """Return the history-page projection in one database round-trip.
 
     Public-network latency makes even three small sequential queries visible
@@ -81,7 +83,7 @@ def list_issue_outs(db: Session, *, skip: int, limit: int) -> list[IssueOut]:
         .group_by(ReportEntry.issue_id)
         .subquery()
     )
-    rows = (
+    query = (
         db.query(
             Issue,
             year_issue_index.label("year_issue_index"),
@@ -89,7 +91,11 @@ def list_issue_outs(db: Session, *, skip: int, limit: int) -> list[IssueOut]:
             func.coalesce(report_totals.c.print_total, 0).label("print_total"),
         )
         .outerjoin(report_totals, report_totals.c.issue_id == Issue.id)
-        .order_by(desc(Issue.issue_number))
+    )
+    if issue_id is not None:
+        query = query.filter(Issue.id == issue_id)
+    rows = (
+        query.order_by(desc(Issue.issue_number))
         .offset(skip)
         .limit(limit)
         .all()
@@ -113,6 +119,11 @@ def list_issue_outs(db: Session, *, skip: int, limit: int) -> list[IssueOut]:
         )
         for issue, year_index, planned_pages, print_total in rows
     ]
+
+
+def get_issue_out(db: Session, issue_id: int) -> IssueOut | None:
+    rows = list_issue_outs(db, skip=0, limit=1, issue_id=issue_id)
+    return rows[0] if rows else None
 
 
 def compute_zt_report_totals(db: Session, issue_ids: list[int]) -> dict[int, int]:

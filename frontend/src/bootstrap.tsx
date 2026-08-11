@@ -12,7 +12,9 @@ dayjs.locale('zh-cn')
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 60 * 1000,
+      // Page navigation should reuse data that was just loaded by a portal or
+      // sibling page. Mutations explicitly invalidate their domain keys.
+      staleTime: 2 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
       refetchOnWindowFocus: false,
       retry: 1,

@@ -21,7 +21,7 @@ os.environ.setdefault("MYSQL_DATABASE", "test")
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -473,6 +473,32 @@ def test_settlement_crud_and_partner_name(client):
     # partner 不存在
     assert client.post("/api/settlements", json={"partner_id": 999}).status_code == 400
     assert client.delete(f"/api/settlements/{body['id']}").status_code == 204
+
+
+def test_settlement_list_uses_two_selects_regardless_of_row_count(client):
+    for index in range(3):
+        partner = _partner(client, f"结算渠道 {index}")
+        response = client.post(
+            "/api/settlements",
+            json={"partner_id": partner["id"], "period": f"2026-{index + 1:02d}"},
+        )
+        assert response.status_code == 201, response.text
+
+    statements: list[str] = []
+    engine = client.session_factory.kw["bind"]
+
+    def capture_sql(_conn, _cursor, statement, _params, _context, _many):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture_sql)
+    try:
+        response = client.get("/api/settlements")
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_sql)
+
+    assert response.status_code == 200
+    assert len(response.json()) == 3
+    assert sum(sql.lstrip().upper().startswith("SELECT") for sql in statements) == 2
 
 
 def test_structured_settlement_periods_returns_direction_and_calculations(client):

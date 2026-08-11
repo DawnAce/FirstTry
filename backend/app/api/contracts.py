@@ -11,7 +11,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
@@ -59,7 +59,12 @@ def _to_out(contract: Contract) -> ContractOut:
 
 
 def _get_or_404(db: Session, contract_id: int) -> Contract:
-    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    contract = (
+        db.query(Contract)
+        .options(joinedload(Contract.partner))
+        .filter(Contract.id == contract_id)
+        .first()
+    )
     if contract is None:
         raise HTTPException(status_code=404, detail=f"合同 {contract_id} 不存在")
     return contract
@@ -81,7 +86,7 @@ def list_contracts(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    query = db.query(Contract)
+    query = db.query(Contract).options(joinedload(Contract.partner))
     if partner_id is not None:
         query = query.filter(Contract.partner_id == partner_id)
     if status is not None:

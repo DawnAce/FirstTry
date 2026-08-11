@@ -17,14 +17,14 @@ os.environ.setdefault("MYSQL_DATABASE", "test")
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
-from app.models import PublicationSchedule, PublicationScheduleUpload, PublicationScheduleUploadStatus
+from app.models import Issue, PublicationSchedule, PublicationScheduleUpload, PublicationScheduleUploadStatus
 from app.models.user import User, UserRole
 
 
@@ -93,6 +93,39 @@ def test_years_returns_distinct_sorted_years(client_with_db):
     assert r.status_code == 200, r.text
     # distinct (no dupes despite multiple rows) and ascending — 2024 must be present
     assert r.json() == [2024, 2025, 2026]
+
+
+def test_schedule_list_joins_actual_page_counts_in_one_select(client_with_db):
+    client, SessionLocal = client_with_db
+    db = SessionLocal()
+    try:
+        _seed_year(db, 2026, count=3)
+        db.add(
+            Issue(
+                issue_number=1000,
+                publish_date=datetime.date(2026, 1, 1),
+                page_count=32,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    statements: list[str] = []
+    engine = SessionLocal.kw["bind"]
+
+    def capture_sql(_conn, _cursor, statement, _params, _context, _many):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture_sql)
+    try:
+        response = client.get("/api/schedule?year=2026")
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_sql)
+
+    assert response.status_code == 200
+    assert response.json()[0]["actual_page_count"] == 32
+    assert sum(sql.lstrip().upper().startswith("SELECT") for sql in statements) == 1
 
 
 def test_listing_uploads_never_deletes_stale_previews(client_with_db):

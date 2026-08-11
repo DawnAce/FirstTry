@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, func, or_
+from sqlalchemy.orm import Session, aliased
+from sqlalchemy import case, desc, func, or_, select
 from typing import List, Optional
 from datetime import datetime
 from app.database import get_db
@@ -129,9 +129,50 @@ def _copy_previous_shipping_details_for_confirm(
 
 @router.get("", response_model=ReportDataOut)
 def get_report(issue_id: int, db: Session = Depends(get_db)):
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
+    latest_snapshot = aliased(IssueAuditSnapshot)
+    latest_snapshot_id = (
+        select(IssueAuditSnapshot.id)
+        .where(
+            IssueAuditSnapshot.issue_id == Issue.id,
+            IssueAuditSnapshot.snapshot_type == "confirm",
+        )
+        .order_by(IssueAuditSnapshot.created_at.desc(), IssueAuditSnapshot.id.desc())
+        .limit(1)
+        .correlate(Issue)
+        .scalar_subquery()
+    )
+    current_shipping_total_expr = (
+        select(func.coalesce(func.sum(ShippingDetail.quantity), 0))
+        .where(
+            ShippingDetail.issue_number == Issue.issue_number,
+            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+        )
+        .correlate(Issue)
+        .scalar_subquery()
+    )
+    issue_row = (
+        db.query(
+            Issue,
+            latest_snapshot.report_total,
+            latest_snapshot.shipping_total,
+            latest_snapshot.delta,
+            latest_snapshot.is_match,
+            current_shipping_total_expr.label("current_shipping_total"),
+        )
+        .outerjoin(latest_snapshot, latest_snapshot.id == latest_snapshot_id)
+        .filter(Issue.id == issue_id)
+        .first()
+    )
+    if not issue_row:
         raise HTTPException(status_code=404, detail="刊期不存在")
+    (
+        issue,
+        confirmed_report_total,
+        confirmed_shipping_total,
+        confirmed_delta,
+        confirmed_is_match,
+        current_shipping_total,
+    ) = issue_row
 
     entries = (
         db.query(ReportEntry)
@@ -149,23 +190,7 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         destination = resolve_report_destination(e.category, e.sub_category, e.destination)
         destination_totals[destination] = destination_totals.get(destination, 0) + e.value
 
-    latest_confirmation = (
-        db.query(IssueAuditSnapshot)
-        .filter(
-            IssueAuditSnapshot.issue_id == issue.id,
-            IssueAuditSnapshot.snapshot_type == "confirm",
-        )
-        .order_by(IssueAuditSnapshot.created_at.desc(), IssueAuditSnapshot.id.desc())
-        .first()
-    )
-    current_shipping_total = int((
-        db.query(func.coalesce(func.sum(ShippingDetail.quantity), 0))
-        .filter(
-            ShippingDetail.issue_number == issue.issue_number,
-            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
-        )
-        .scalar()
-    ) or 0)
+    current_shipping_total = int(current_shipping_total or 0)
     report_zt_total = destination_totals.get(DESTINATION_ZTO, 0)
     shipping_check = ShippingCheck(
         report_zt_total=report_zt_total,
@@ -174,37 +199,61 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         is_match=report_zt_total == current_shipping_total,
     )
     confirmation_summary = None
-    if latest_confirmation:
-        adjustments = db.query(ShippingFulfillmentAdjustment).filter(
-            ShippingFulfillmentAdjustment.issue_id == issue.id
-        ).all()
-        attributed_adjustment_quantity = sum(
-            max(adjustment.quantity or 0, 0)
-            for adjustment in adjustments
-            if adjustment.is_attributed
+    if confirmed_report_total is not None:
+        attributed_condition = or_(
+            ShippingFulfillmentAdjustment.shipping_detail_id.isnot(None),
+            ShippingFulfillmentAdjustment.detail_name_snapshot.isnot(None),
         )
-        unattributed_adjustment_quantity = sum(
-            max(adjustment.quantity or 0, 0)
-            for adjustment in adjustments
-            if not adjustment.is_attributed
+        positive_quantity = case(
+            (
+                ShippingFulfillmentAdjustment.quantity > 0,
+                ShippingFulfillmentAdjustment.quantity,
+            ),
+            else_=0,
         )
-        raw_plan_shortage = max(latest_confirmation.shipping_total - current_shipping_total, 0)
+        attributed_adjustment_quantity, unattributed_adjustment_quantity = (
+            db.query(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (attributed_condition, positive_quantity),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (attributed_condition, 0),
+                            else_=positive_quantity,
+                        )
+                    ),
+                    0,
+                ),
+            )
+            .filter(ShippingFulfillmentAdjustment.issue_id == issue.id)
+            .one()
+        )
+        attributed_adjustment_quantity = max(int(attributed_adjustment_quantity or 0), 0)
+        unattributed_adjustment_quantity = max(int(unattributed_adjustment_quantity or 0), 0)
+        raw_plan_shortage = max(confirmed_shipping_total - current_shipping_total, 0)
         plan_attributed_quantity = min(attributed_adjustment_quantity, raw_plan_shortage)
         plan_unexplained_delta = (
-            current_shipping_total + plan_attributed_quantity - latest_confirmation.shipping_total
+            current_shipping_total + plan_attributed_quantity - confirmed_shipping_total
         )
-        current_delta = latest_confirmation.report_total - current_shipping_total
+        current_delta = confirmed_report_total - current_shipping_total
         confirmation_summary = ConfirmationSummary(
-            confirmed_report_total=latest_confirmation.report_total,
-            confirmed_shipping_total=latest_confirmation.shipping_total,
-            confirmed_delta=latest_confirmation.delta,
-            confirmed_is_match=latest_confirmation.is_match,
+            confirmed_report_total=confirmed_report_total,
+            confirmed_shipping_total=confirmed_shipping_total,
+            confirmed_delta=confirmed_delta,
+            confirmed_is_match=confirmed_is_match,
             current_shipping_total=current_shipping_total,
             current_delta=current_delta,
             current_is_match=current_delta == 0,
-            has_shipping_drift=current_shipping_total != latest_confirmation.shipping_total,
-            plan_delta=current_shipping_total - latest_confirmation.shipping_total,
-            plan_is_match=current_shipping_total == latest_confirmation.shipping_total,
+            has_shipping_drift=current_shipping_total != confirmed_shipping_total,
+            plan_delta=current_shipping_total - confirmed_shipping_total,
+            plan_is_match=current_shipping_total == confirmed_shipping_total,
             plan_attributed_quantity=plan_attributed_quantity,
             plan_unexplained_delta=plan_unexplained_delta,
             plan_is_reconciled=plan_unexplained_delta == 0,

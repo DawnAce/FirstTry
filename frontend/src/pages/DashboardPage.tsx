@@ -12,19 +12,7 @@ import {
   Select,
   Table,
   Steps,
-  theme,
 } from 'antd';
-import ReactECharts from 'echarts-for-react';
-import * as echarts from 'echarts/core';
-import { LineChart as ELineChart } from 'echarts/charts';
-import {
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-} from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
-
-echarts.use([ELineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 import {
   PlusOutlined,
   CheckCircleOutlined,
@@ -41,11 +29,56 @@ import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton
 import { MetricCard, PageHeader, StatusPill } from '../components/UiPrimitives';
 import { useAuth } from '../contexts/AuthContext';
 
+function PrintTrendChart({ data }: { data: Array<{ name: string; value: number }> }) {
+  const width = 720;
+  const height = 260;
+  const plot = { left: 54, right: 22, top: 30, bottom: 52 };
+  const values = data.map((item) => item.value);
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const padding = Math.max((high - low) * 0.2, high * 0.03, 1);
+  const min = Math.max(0, low - padding);
+  const max = high + padding;
+  const innerWidth = width - plot.left - plot.right;
+  const innerHeight = height - plot.top - plot.bottom;
+  const points = data.map((item, index) => ({
+    ...item,
+    x: plot.left + (data.length === 1 ? innerWidth / 2 : index * innerWidth / (data.length - 1)),
+    y: plot.top + (max - item.value) / (max - min) * innerHeight,
+  }));
+  const gridValues = Array.from({ length: 4 }, (_unused, index) => min + (max - min) * index / 3);
+
+  return (
+    <svg className="dashboard-light-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="最近五期印数趋势">
+      {gridValues.map((value) => {
+        const y = plot.top + (max - value) / (max - min) * innerHeight;
+        return <g key={value}>
+          <line x1={plot.left} x2={width - plot.right} y1={y} y2={y} className="dashboard-light-chart-grid" />
+          <text x={plot.left - 8} y={y + 4} textAnchor="end" className="dashboard-light-chart-axis">{Math.round(value).toLocaleString()}</text>
+        </g>;
+      })}
+      <polyline points={points.map((point) => `${point.x},${point.y}`).join(' ')} className="dashboard-light-chart-line" />
+      {points.map((point) => {
+        const [issueLabel, dateLabel] = point.name.split('\n');
+        return <g key={point.name}>
+          <circle cx={point.x} cy={point.y} r="5" className="dashboard-light-chart-dot">
+            <title>{`${issueLabel} ${dateLabel}：${point.value.toLocaleString()} 份`}</title>
+          </circle>
+          <text x={point.x} y={point.y - 12} textAnchor="middle" className="dashboard-light-chart-value">{point.value.toLocaleString()}</text>
+          <text x={point.x} y={height - 25} textAnchor="middle" className="dashboard-light-chart-axis">
+            <tspan x={point.x}>{issueLabel}</tspan>
+            <tspan x={point.x} dy="14">{dateLabel}</tspan>
+          </text>
+        </g>;
+      })}
+    </svg>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { canMutate } = useAuth();
-  const { token } = theme.useToken();
   const [creating, setCreating] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<string | undefined>(undefined);
 
@@ -407,56 +440,7 @@ export default function Dashboard() {
             }
           >
             {trendData.length > 0 ? (
-              <ReactECharts
-                style={{ height: 260 }}
-                option={{
-                  grid: { top: 30, right: 30, bottom: 30, left: 50 },
-                  xAxis: {
-                    type: 'category',
-                    data: trendData.map(d => d.name),
-                    axisLabel: { fontSize: 11, color: token.colorTextSecondary },
-                    axisLine: { lineStyle: { color: token.colorBorderSecondary } },
-                    axisTick: { show: false },
-                  },
-                  yAxis: {
-                    type: 'value',
-                    min: 4000,
-                    axisLabel: { fontSize: 11, color: token.colorTextSecondary },
-                    axisLine: { show: false },
-                    axisTick: { show: false },
-                    splitLine: { lineStyle: { type: 'dashed', color: token.colorBorderSecondary } },
-                  },
-                  tooltip: {
-                    trigger: 'axis',
-                    formatter: (params: any) => {
-                      const p = params[0];
-                      return `${p.name}<br/>印数：<b>${p.value.toLocaleString()}</b> 份`;
-                    },
-                    backgroundColor: token.colorBgElevated,
-                    borderColor: 'transparent',
-                    borderRadius: token.borderRadius,
-                    shadowBlur: 12,
-                    shadowColor: token.colorBorderSecondary,
-                    textStyle: { fontSize: 13, color: token.colorText },
-                  },
-                  series: [{
-                    type: 'line',
-                    data: trendData.map(d => d.value),
-                    smooth: true,
-                    symbolSize: 8,
-                    itemStyle: { color: token.colorPrimary },
-                    lineStyle: { width: 2, color: token.colorPrimary },
-                    label: {
-                      show: true,
-                      position: 'top',
-                      fontSize: 11,
-                      color: token.colorText,
-                      fontWeight: 500,
-                      formatter: (p: any) => p.value.toLocaleString(),
-                    },
-                  }],
-                }}
-              />
+              <PrintTrendChart data={trendData} />
             ) : (
               <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>
                 暂无趋势数据

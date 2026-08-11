@@ -3,11 +3,12 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Issue, ReportSourceItem, User
+from app.models import Issue, ReportEntry, ReportSourceItem, User
 from app.schemas.report_source import (
     IssueSourceSummaryOut,
     ReportSourceConfirmIn,
@@ -77,10 +78,30 @@ def confirm_report_source(
 
 @router.get("/issues/{issue_id}", response_model=IssueSourceSummaryOut)
 def get_issue_report_sources(issue_id: int, db: Session = Depends(get_db)):
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if issue is None:
+    rows = (
+        db.query(
+            Issue.issue_number,
+            ReportEntry.category,
+            func.coalesce(func.sum(ReportEntry.value), 0),
+        )
+        .outerjoin(ReportEntry, ReportEntry.issue_id == Issue.id)
+        .filter(Issue.id == issue_id)
+        .group_by(Issue.issue_number, ReportEntry.category)
+        .all()
+    )
+    if not rows:
         raise HTTPException(status_code=404, detail="刊期不存在")
-    return get_issue_summary(db, issue)
+    issue_number = rows[0][0]
+    bases = {
+        category: int(value or 0)
+        for _number, category, value in rows
+        if category is not None
+    }
+    return get_issue_summary(
+        db,
+        issue_number=issue_number,
+        bases=bases,
+    )
 
 
 @router.get("/{document_id}/download")

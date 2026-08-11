@@ -7,7 +7,7 @@ from app.auth import require_admin, get_current_user
 from app.models import Issue, ShippingDetail, ShippingDetailSourceType, User
 from app.models.report_revision import ReportRevision
 from app.schemas.issue import IssueCreate, IssueOut, IssueUpdate, NextIssueInfo
-from app.services.issue_service import build_issue_out, get_next_issue_info, get_available_issues, create_issue_with_data, list_issue_outs
+from app.services.issue_service import build_issue_out, get_issue_out, get_next_issue_info, get_available_issues, create_issue_with_data, list_issue_outs
 from app.services.operation_log_service import record_operation
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
@@ -58,10 +58,10 @@ def create_issue(
 
 @router.get("/{issue_id}", response_model=IssueOut)
 def get_issue(issue_id: int, db: Session = Depends(get_db)):
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
+    issue = get_issue_out(db, issue_id)
+    if issue is None:
         raise HTTPException(status_code=404, detail="刊期不存在")
-    return build_issue_out(db, issue)
+    return issue
 
 
 @router.patch("/{issue_id}", response_model=IssueOut)

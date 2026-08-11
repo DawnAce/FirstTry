@@ -1,35 +1,89 @@
 import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/AppLayout';
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 
-const Dashboard = lazy(() => import('./pages/DashboardPage'));
-const ReportEditor = lazy(() => import('./pages/ReportEditor'));
-const LogisticsOverview = lazy(() => import('./pages/LogisticsOverview'));
-const PostDelivery = lazy(() => import('./pages/PostDelivery'));
-const SubscriptionGeneration = lazy(() => import('./pages/SubscriptionGeneration'));
-const History = lazy(() => import('./pages/History'));
-const LogisticsIssues = lazy(() => import('./pages/LogisticsIssues'));
-const LogisticsIssueDetail = lazy(() => import('./pages/LogisticsIssueDetail'));
-const WaybillImportWorkbench = lazy(() => import('./pages/WaybillImportWorkbench'));
-const Templates = lazy(() => import('./pages/Templates'));
-const HistoryImport = lazy(() => import('./pages/HistoryImport'));
-const ScheduleView = lazy(() => import('./pages/ScheduleView'));
-const ScheduleImport = lazy(() => import('./pages/ScheduleImport'));
-const OrderList = lazy(() => import('./pages/OrderList'));
-const OrderEditor = lazy(() => import('./pages/OrderEditor'));
-const OrderDetail = lazy(() => import('./pages/OrderDetail'));
-const ProductCatalog = lazy(() => import('./pages/ProductCatalog'));
-const OrderImport = lazy(() => import('./pages/OrderImport'));
-const IssueDispatch = lazy(() => import('./pages/IssueDispatch'));
-const Analytics = lazy(() => import('./pages/Analytics'));
-const CustomerList = lazy(() => import('./pages/CustomerList'));
-const ContractManagement = lazy(() => import('./pages/ContractManagement'));
-const FinanceManagement = lazy(() => import('./pages/FinanceManagement'));
-const Login = lazy(() => import('./pages/Login'));
-const BusinessHome = lazy(() => import('./pages/BusinessPortal').then((module) => ({ default: module.BusinessHome })));
-const BusinessCenterPortal = lazy(() => import('./pages/BusinessPortal').then((module) => ({ default: module.BusinessCenterPortal })));
-const PostalPortal = lazy(() => import('./pages/BusinessPortal').then((module) => ({ default: module.PostalPortal })));
+const loadDashboard = () => import('./pages/DashboardPage');
+const loadReportEditor = () => import('./pages/ReportEditor');
+const loadLogisticsOverview = () => import('./pages/LogisticsOverview');
+const loadPostDelivery = () => import('./pages/PostDelivery');
+const loadSubscriptionGeneration = () => import('./pages/SubscriptionGeneration');
+const loadHistory = () => import('./pages/History');
+const loadLogisticsIssues = () => import('./pages/LogisticsIssues');
+const loadLogisticsIssueDetail = () => import('./pages/LogisticsIssueDetail');
+const loadWaybillImportWorkbench = () => import('./pages/WaybillImportWorkbench');
+const loadTemplates = () => import('./pages/Templates');
+const loadHistoryImport = () => import('./pages/HistoryImport');
+const loadScheduleView = () => import('./pages/ScheduleView');
+const loadScheduleImport = () => import('./pages/ScheduleImport');
+const loadOrderList = () => import('./pages/OrderList');
+const loadOrderEditor = () => import('./pages/OrderEditor');
+const loadOrderDetail = () => import('./pages/OrderDetail');
+const loadProductCatalog = () => import('./pages/ProductCatalog');
+const loadOrderImport = () => import('./pages/OrderImport');
+const loadIssueDispatch = () => import('./pages/IssueDispatch');
+const loadAnalytics = () => import('./pages/Analytics');
+const loadCustomerList = () => import('./pages/CustomerList');
+const loadContractManagement = () => import('./pages/ContractManagement');
+const loadFinanceManagement = () => import('./pages/FinanceManagement');
+const loadLogin = () => import('./pages/Login');
+const loadBusinessPortal = () => import('./pages/BusinessPortal');
+
+const Dashboard = lazy(loadDashboard);
+const ReportEditor = lazy(loadReportEditor);
+const LogisticsOverview = lazy(loadLogisticsOverview);
+const PostDelivery = lazy(loadPostDelivery);
+const SubscriptionGeneration = lazy(loadSubscriptionGeneration);
+const History = lazy(loadHistory);
+const LogisticsIssues = lazy(loadLogisticsIssues);
+const LogisticsIssueDetail = lazy(loadLogisticsIssueDetail);
+const WaybillImportWorkbench = lazy(loadWaybillImportWorkbench);
+const Templates = lazy(loadTemplates);
+const HistoryImport = lazy(loadHistoryImport);
+const ScheduleView = lazy(loadScheduleView);
+const ScheduleImport = lazy(loadScheduleImport);
+const OrderList = lazy(loadOrderList);
+const OrderEditor = lazy(loadOrderEditor);
+const OrderDetail = lazy(loadOrderDetail);
+const ProductCatalog = lazy(loadProductCatalog);
+const OrderImport = lazy(loadOrderImport);
+const IssueDispatch = lazy(loadIssueDispatch);
+const Analytics = lazy(loadAnalytics);
+const CustomerList = lazy(loadCustomerList);
+const ContractManagement = lazy(loadContractManagement);
+const FinanceManagement = lazy(loadFinanceManagement);
+const Login = lazy(loadLogin);
+const BusinessHome = lazy(() => loadBusinessPortal().then((module) => ({ default: module.BusinessHome })));
+const BusinessCenterPortal = lazy(() => loadBusinessPortal().then((module) => ({ default: module.BusinessCenterPortal })));
+const PostalPortal = lazy(() => loadBusinessPortal().then((module) => ({ default: module.PostalPortal })));
+
+const routeModuleLoaders = [
+  loadDashboard, loadReportEditor, loadLogisticsOverview, loadPostDelivery,
+  loadSubscriptionGeneration, loadHistory, loadLogisticsIssues,
+  loadLogisticsIssueDetail, loadWaybillImportWorkbench, loadTemplates,
+  loadHistoryImport, loadScheduleView, loadScheduleImport, loadOrderList,
+  loadOrderEditor, loadOrderDetail, loadProductCatalog, loadOrderImport,
+  loadIssueDispatch, loadAnalytics, loadCustomerList, loadContractManagement,
+  loadFinanceManagement, loadBusinessPortal,
+];
+
+function RouteModulePreloader() {
+  const { isLoggedIn } = useAuth();
+  useEffect(() => {
+    if (!isLoggedIn) return undefined;
+    const timer = window.setTimeout(async () => {
+      for (let index = 0; index < routeModuleLoaders.length; index += 4) {
+        await Promise.allSettled(
+          routeModuleLoaders.slice(index, index + 4).map((load) => load()),
+        );
+      }
+    // Never compete with the current page's data requests. Once the first
+    // screen has settled, warm route chunks in small batches for later clicks.
+    }, 10_000);
+    return () => window.clearTimeout(timer);
+  }, [isLoggedIn]);
+  return null;
+}
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isLoggedIn } = useAuth();
@@ -60,6 +114,7 @@ function WorkbenchOrRedirect() {
 function App() {
   return (
     <AuthProvider>
+      <RouteModulePreloader />
       <BrowserRouter>
         <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}>页面加载中…</div>}>
           <Routes>

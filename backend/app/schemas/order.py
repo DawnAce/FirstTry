@@ -507,6 +507,17 @@ class OrderListRow(BaseModel):
     expected_total: Optional[int]
 
 
+class OrderPortalChannel(BaseModel):
+    label: str
+    count: int
+
+
+class OrderPortalSummary(BaseModel):
+    total: int
+    pending_confirmation: int
+    channels: List[OrderPortalChannel]
+
+
 class OrderShippingSyncApplyIn(BaseModel):
     issue_number: int
 
