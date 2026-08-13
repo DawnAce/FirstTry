@@ -6,7 +6,7 @@ last_updated_at 取 operation_logs（决策③）。sqlite 直接调服务，风
 """
 
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -90,13 +90,23 @@ class StatusPrecedenceTests(_OverviewBase):
 
         self.assertEqual(len(out.rows), 5)  # 休刊 excluded
         self.assertEqual(self._row(out, 5001).status, "未创建")
+        self.assertEqual(self._row(out, 5001).plan_status, "未创建")
+        self.assertEqual(self._row(out, 5001).waybill_status, "未开始")
         self.assertEqual(self._row(out, 5002).status, "草稿")
+        self.assertEqual(self._row(out, 5002).plan_status, "草稿")
         r3 = self._row(out, 5003)
         self.assertEqual(r3.status, "异常")
+        self.assertEqual(r3.plan_status, "有差异")
+        self.assertEqual(r3.waybill_status, "待上传")
         self.assertEqual(r3.delta, 10)  # 报数 100 − 发货 90
         self.assertEqual(r3.exception_note, "发货份数少于报数份数")
         self.assertEqual(self._row(out, 5004).status, "待上传")
+        self.assertEqual(self._row(out, 5004).plan_status, "待导入")
         self.assertEqual(self._row(out, 5005).status, "已上传")
+        self.assertEqual(self._row(out, 5005).plan_status, "已就绪")
+        self.assertEqual(self._row(out, 5005).waybill_status, "待上传")
+        self.assertEqual(self._row(out, 5005).actual_shipped_total, 0)
+        self.assertEqual(self._row(out, 5005).pending_quantity, 30)
 
         self.assertEqual(out.kpi.total, 5)
         self.assertEqual(out.kpi.uploaded, 1)
@@ -163,7 +173,15 @@ class DriftTests(_OverviewBase):
         db.add(issue)
         db.flush()
         entry = ReportEntry(issue_id=issue.id, category="social_use", sub_category="营报传媒_读者", value=50)
-        detail = ShippingDetail(issue_number=5020, sheet_name="t", channel="c", name="a", quantity=50)
+        detail = ShippingDetail(
+            issue_number=5020,
+            sheet_name="t",
+            channel="c",
+            name="a",
+            quantity=50,
+            shipped_at=datetime(TEST_YEAR, 1, 5, 9, 0),
+            shipped_quantity=50,
+        )
         db.add_all([entry, detail])
         db.commit()
 
@@ -178,6 +196,10 @@ class DriftTests(_OverviewBase):
         self.assertEqual(row.delta, 0)
         self.assertTrue(row.has_shipping_drift)
         self.assertEqual(row.status, "异常")
+        self.assertEqual(row.plan_status, "有变更")
+        self.assertEqual(row.waybill_status, "需核对")
+        self.assertEqual(row.actual_shipped_total, 50)
+        self.assertEqual(row.pending_quantity, 10)
         self.assertEqual(row.exception_note, "确认后明细已变更")
         db.close()
 

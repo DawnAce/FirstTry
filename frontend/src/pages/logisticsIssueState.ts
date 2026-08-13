@@ -1,4 +1,4 @@
-export type PanelTone = 'is-match' | 'is-mismatch' | 'is-pending';
+export type PanelTone = 'is-match' | 'is-mismatch' | 'is-pending' | 'is-warning';
 
 export type PlanReconciliationKind = 'loading' | 'error' | 'empty' | 'match' | 'mismatch' | 'waiting';
 
@@ -103,7 +103,7 @@ export function resolveFulfillmentPanelState(input: {
       kind: 'shipped',
       tone: 'is-match',
       label: '已完成发货核销',
-      description: '确认印数已全部取得运单或明确无需运单。',
+      description: '当前计划已全部取得运单或明确无需运单。',
     };
   }
   if (input.status === 'exception') {
@@ -111,22 +111,22 @@ export function resolveFulfillmentPanelState(input: {
       kind: 'exception',
       tone: 'is-mismatch',
       label: '发货核销存在超额',
-      description: '累计处理份数超过确认印数，请检查运单份数。',
+      description: '累计处理份数超过计划应发，请检查运单份数。',
     };
   }
   if (input.status === 'partial') {
     return {
       kind: 'partial',
-      tone: 'is-pending',
+      tone: 'is-warning',
       label: '部分已发货',
       description: '已有部分运单，仍有份数需要补录。',
     };
   }
   return {
     kind: 'pending',
-    tone: 'is-pending',
+    tone: 'is-warning',
     label: '待录入运单',
-    description: '确认版发货计划已存在，尚未登记实际运单。',
+    description: '发货计划已存在，尚未登记实际运单。',
   };
 }
 

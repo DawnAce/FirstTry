@@ -23,19 +23,29 @@ const fulfillmentMeta: Record<ShippingDetail['fulfillment_status'], { label: str
 
 interface ShippingDetailCardListProps {
   records: ShippingDetail[];
+  mode: 'plan' | 'actual';
   selectedRowKeys: Key[];
   canSelect: boolean;
   onSelectedRowKeysChange: (keys: Key[]) => void;
   onOpenDetail: (record: ShippingDetail) => void;
 }
 
-function getRowTone(record: ShippingDetail) {
+function getRowTone(record: ShippingDetail, mode: 'plan' | 'actual') {
+  if (mode === 'plan') {
+    if (record.sync_status === 'orphaned') return 'danger';
+    if (record.status === '停发' || record.sync_status === 'manually_modified') return 'warning';
+    return 'primary';
+  }
   if (record.fulfillment_status === 'partial' || record.fulfillment_status === 'pending') return 'warning';
   if (record.shipping_requirement === 'no_tracking_required' || ['no_tracking_required', 'no_shipment_required'].includes(record.fulfillment_status)) return 'success';
   return 'primary';
 }
 
-function StatusIcon({ record }: { record: ShippingDetail }) {
+function StatusIcon({ record, mode }: { record: ShippingDetail; mode: 'plan' | 'actual' }) {
+  if (mode === 'plan') {
+    if (record.sync_status === 'orphaned' || record.status === '停发') return <WarningOutlined />;
+    return <InboxOutlined />;
+  }
   if (record.shipping_requirement === 'no_tracking_required' || ['no_tracking_required', 'no_shipment_required'].includes(record.fulfillment_status)) {
     return <CheckCircleOutlined />;
   }
@@ -46,6 +56,7 @@ function StatusIcon({ record }: { record: ShippingDetail }) {
 
 export default function ShippingDetailCardList({
   records,
+  mode,
   selectedRowKeys,
   canSelect,
   onSelectedRowKeysChange,
@@ -95,8 +106,8 @@ export default function ShippingDetailCardList({
                 {ordinal}
               </span>
 
-              <span className={`zto-card-status-icon is-${getRowTone(record)}`} aria-hidden>
-                <StatusIcon record={record} />
+              <span className={`zto-card-status-icon is-${getRowTone(record, mode)}`} aria-hidden>
+                <StatusIcon record={record} mode={mode} />
               </span>
 
               <div className="zto-card-field zto-card-recipient">
@@ -112,21 +123,33 @@ export default function ShippingDetailCardList({
               </div>
 
               <div className="zto-card-field zto-card-plan">
-                <span>应发 / 已核销</span>
-                <strong>{record.quantity.toLocaleString()} / {record.handled_quantity.toLocaleString()} 份</strong>
+                <span>{mode === 'plan' ? '计划份数' : '应发 / 已核销'}</span>
+                <strong>{mode === 'plan' ? `${record.quantity.toLocaleString()} 份` : `${record.quantity.toLocaleString()} / ${record.handled_quantity.toLocaleString()} 份`}</strong>
               </div>
 
               <div className="zto-card-field zto-card-package">
-                <span>包裹 / 运单</span>
-                <Tooltip title={record.packages.map((item) => item.tracking_no).filter(Boolean).join('、')}>
-                  <strong>{packageCopy.title}</strong>
-                </Tooltip>
-                {packageCopy.detail ? <small>{packageCopy.detail}</small> : null}
+                {mode === 'plan' ? (
+                  <>
+                    <span>签约公司 / 地址</span>
+                    <strong>{record.company || '—'}</strong>
+                    <small>{record.address || '—'}</small>
+                  </>
+                ) : (
+                  <>
+                    <span>包裹 / 运单</span>
+                    <Tooltip title={record.packages.map((item) => item.tracking_no).filter(Boolean).join('、')}>
+                      <strong>{packageCopy.title}</strong>
+                    </Tooltip>
+                    {packageCopy.detail ? <small>{packageCopy.detail}</small> : null}
+                  </>
+                )}
               </div>
 
               <div className="zto-card-field zto-card-fulfillment">
                 <span>状态</span>
-                <Tag color={fulfillment.color}>{fulfillment.label}</Tag>
+                {mode === 'plan'
+                  ? <Tag color={record.status === '停发' ? 'orange' : record.sync_status === 'orphaned' ? 'red' : 'green'}>{record.sync_status === 'orphaned' ? '来源失效' : record.status || '正常'}</Tag>
+                  : <Tag color={fulfillment.color}>{fulfillment.label}</Tag>}
               </div>
 
               <button

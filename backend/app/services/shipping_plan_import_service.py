@@ -21,7 +21,7 @@ from app.models import (
     ShippingDetailSourceType,
 )
 from app.models.user import User
-from app.schemas.history_import import ShippingImportRow
+from app.schemas.history_import import ShippingImportAdjustment, ShippingImportRow
 from app.schemas.shipping_detail import (
     ShippingPlanImportCommitOut,
     ShippingPlanImportPreviewOut,
@@ -35,9 +35,9 @@ from app.services.history_import_service import (
 from app.services.operation_log_service import record_operation
 from app.services.original_zto_shipping_import_service import (
     is_original_zto_shipping_workbook,
-    normalize_shipping_sub_channels,
+    normalize_shipping_sub_channels_with_adjustments,
     read_original_zto_shipping_basic_info,
-    read_original_zto_shipping_rows_with_warnings,
+    read_original_zto_shipping_rows_with_adjustments,
 )
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.services.workbook_loader import load_uploaded_workbook
@@ -78,16 +78,20 @@ def _detail_signature(details: list[ShippingDetail]) -> list[dict[str, Any]]:
     ]
 
 
-def _parse_shipping_file(content: bytes) -> tuple[int | None, list[ShippingImportRow], list[str]]:
+def _parse_shipping_file(
+    content: bytes,
+) -> tuple[int | None, list[ShippingImportRow], list[str], list[ShippingImportAdjustment]]:
     workbook = load_uploaded_workbook(content, file_label="中通发货文件")
     if _is_template_shipping_workbook(workbook):
         issue_number = _parse_issue_number(_read_basic_info(workbook).get("期号"))
-        rows, warnings = normalize_shipping_sub_channels(_read_shipping_rows(workbook))
-        return issue_number, rows, warnings
+        rows, warnings, adjustments = normalize_shipping_sub_channels_with_adjustments(
+            _read_shipping_rows(workbook)
+        )
+        return issue_number, rows, warnings, adjustments
     if is_original_zto_shipping_workbook(workbook):
         issue_number = _parse_issue_number(read_original_zto_shipping_basic_info(workbook).get("期号"))
-        rows, warnings = read_original_zto_shipping_rows_with_warnings(workbook)
-        return issue_number, rows, warnings
+        rows, warnings, adjustments = read_original_zto_shipping_rows_with_adjustments(workbook)
+        return issue_number, rows, warnings, adjustments
     raise HTTPException(
         status_code=400,
         detail="中通发货文件格式不支持，请上传系统发货明细模板或原始中通多工作表文件",
@@ -140,7 +144,7 @@ def preview_shipping_plan_import(
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
 
-    file_issue_number, rows, warnings = _parse_shipping_file(content)
+    file_issue_number, rows, warnings, adjustments = _parse_shipping_file(content)
     errors: list[str] = []
     if file_issue_number is None:
         errors.append("无法从中通文件识别期号，请检查基本信息或原表标题")
@@ -193,6 +197,7 @@ def preview_shipping_plan_import(
             "issue_number": issue.issue_number,
             "filename": filename,
             "rows": [row.model_dump() for row in rows],
+            "adjustment_count": len(adjustments),
             "replaceable_signature": _detail_signature(replaceable),
         })
 
@@ -215,6 +220,7 @@ def preview_shipping_plan_import(
         report_zto_total=report_total,
         confirmed_shipping_total=confirmed_total,
         sample_rows=rows[:8],
+        adjustments=adjustments,
     )
 
 
@@ -252,12 +258,15 @@ def commit_shipping_plan_import(
     import_session_id: str,
     reason: str,
     user: User,
+    adjustments_confirmed: bool = False,
 ) -> ShippingPlanImportCommitOut:
     payload = get_history_import_session(import_session_id)
     if payload is None or payload.get("kind") != "shipping_plan_replace":
         raise HTTPException(status_code=400, detail="导入预览已过期，请重新上传并预览")
     if payload.get("issue_id") != issue_id:
         raise HTTPException(status_code=400, detail="导入预览不属于当前刊期")
+    if payload.get("adjustment_count", 0) > 0 and not adjustments_confirmed:
+        raise HTTPException(status_code=400, detail="请先逐条核对并确认自动调整明细")
 
     issue = db.query(Issue).filter(Issue.id == issue_id).with_for_update().first()
     if not issue or issue.issue_number != payload.get("issue_number"):
@@ -317,6 +326,7 @@ def commit_shipping_plan_import(
         changes={
             "filename": payload.get("filename"),
             "reason": reason.strip(),
+            "automatic_adjustment_count": payload.get("adjustment_count", 0),
             "deleted_count": len(replaceable),
             "deleted_ids": old_ids,
             "old_quantity": old_quantity,

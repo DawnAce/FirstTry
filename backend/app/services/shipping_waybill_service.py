@@ -45,6 +45,7 @@ from app.schemas.shipping_waybill import (
     WaybillImportRowUpdate,
 )
 from app.services.operation_log_service import record_operation
+from app.services.original_zto_shipping_import_service import is_original_zto_shipping_workbook
 
 
 @dataclass
@@ -251,11 +252,83 @@ def _parse_known_sheet(ws) -> list[ParsedWaybillRow]:
     return rows
 
 
+_ORIGINAL_ZTO_DETAIL_LAYOUTS = {
+    "每周（对公）": {"min_row": 3, "max_col": 13, "quantity": 3, "transport": 9},
+    "每周（读者）": {"min_row": 3, "max_col": 14, "quantity": 3, "transport": 10},
+    "高铁展示": {
+        "min_row": 4, "max_col": 15, "name": 4, "phone": 5,
+        "address": 6, "quantity": 7, "transport": 14,
+    },
+    "北京悦途出行（高铁）": {
+        "min_row": 4, "max_col": 15, "name": 4, "phone": 5,
+        "address": 6, "quantity": 7, "transport": 14,
+    },
+    "上犹": {"min_row": 3, "max_col": 13, "quantity": 3, "transport": 10},
+    "停发-双周（读者）": {"min_row": 3, "max_col": 8, "quantity": 4},
+    "月底-整月": {"min_row": 3, "max_col": 15, "quantity": 4, "transport": 11},
+}
+
+
+def _carrier_for_transport(value: Any) -> str:
+    transport = _text(value)
+    if "邮政" in transport:
+        return "邮政"
+    if "顺丰" in transport:
+        return "顺丰"
+    return "中通"
+
+
+def _parse_original_zto_detail_workbook(workbook) -> list[ParsedWaybillRow]:
+    """Read recipient rows from the original shipping-plan workbook.
+
+    This workbook intentionally has no tracking-number column.  Keeping the
+    recipient fields lets the preview explain that only the tracking number is
+    missing instead of replacing the row with an unrecognized placeholder.
+    """
+    parsed: list[ParsedWaybillRow] = []
+    for ws in workbook.worksheets:
+        layout = _ORIGINAL_ZTO_DETAIL_LAYOUTS.get(ws.title)
+        if layout is None:
+            continue
+        for row_number, row in enumerate(
+            ws.iter_rows(
+                min_row=layout["min_row"],
+                max_col=layout["max_col"],
+                values_only=True,
+            ),
+            start=layout["min_row"],
+        ):
+            name = _text(row[layout.get("name", 0)])
+            address = _text(row[layout.get("address", 1)])
+            phone = _text(row[layout.get("phone", 2)])
+            quantity = _quantity(row[layout["quantity"]])
+            if phone == "合计" or (not name and not address and not phone and quantity <= 0):
+                continue
+            transport_index = layout.get("transport")
+            transport = row[transport_index] if transport_index is not None else "中通"
+            parsed.append(ParsedWaybillRow(
+                source_sheet=ws.title,
+                source_row=row_number,
+                carrier=_carrier_for_transport(transport),
+                tracking_no=None,
+                recipient_name=name,
+                phone=phone,
+                address=address,
+                quantity=quantity,
+                raw_values=_raw_values(row),
+            ))
+    return parsed
+
+
 def parse_waybill_workbook(content: bytes) -> list[ParsedWaybillRow]:
     try:
         workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="无法读取运单Excel文件") from exc
+    if is_original_zto_shipping_workbook(workbook):
+        parsed = _parse_original_zto_detail_workbook(workbook)
+        if parsed:
+            return parsed
     parsed: list[ParsedWaybillRow] = []
     for ws in workbook.worksheets:
         standard = _parse_standard_sheet(ws)

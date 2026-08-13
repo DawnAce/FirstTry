@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import date
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     Issue,
@@ -25,6 +25,7 @@ from app.models import (
     PublicationSchedule,
     ShippingDetail,
     ShippingDetailSourceType,
+    ShippingPackage,
 )
 from app.schemas.analytics import (
     LatestUpdateOut,
@@ -63,6 +64,46 @@ def _compute_status(
     if detail_count == 0:
         return "待上传", "等待上传发货明细"
     return "已上传", "—"
+
+
+def _compute_plan_status(
+    issue_id: int | None,
+    issue_status: str | None,
+    detail_count: int,
+    delta: int,
+    has_drift: bool,
+) -> str:
+    """计划维度只描述计划本身，不掺入运单上传进度。"""
+    if issue_id is None:
+        return "未创建"
+    if issue_status == "draft":
+        return "草稿"
+    if detail_count == 0:
+        return "待导入"
+    if delta != 0:
+        return "有差异"
+    if has_drift:
+        return "有变更"
+    return "已就绪"
+
+
+def _compute_waybill_status(
+    issue_id: int | None,
+    detail_count: int,
+    handled_total: int,
+    pending_quantity: int,
+    has_drift: bool,
+) -> str:
+    """实际发货维度描述履约进度；计划变化只在已有履约时要求复核。"""
+    if issue_id is None or detail_count == 0:
+        return "未开始"
+    if has_drift and handled_total > 0:
+        return "需核对"
+    if pending_quantity <= 0:
+        return "已完成"
+    if handled_total > 0:
+        return "部分完成"
+    return "待上传"
 
 
 def build_overview(db: Session, scope: str = "workbench", year: int | None = None) -> OverviewOut:
@@ -171,6 +212,31 @@ def build_overview(db: Session, scope: str = "workbench", year: int | None = Non
     issue_ids = [value[0] for value in issue_map.values()]
     zt_totals = compute_zt_report_totals(db, issue_ids)
 
+    # 实际发货不能用 shipping_details.quantity 代替。运单、无需运单和无需发货
+    # 都可能改变核销进度，因此统一复用 ShippingDetail 的领域属性计算。
+    schedule_numbers = [row.issue_number for row in schedule_rows]
+    fulfillment_map: dict[int, tuple[int, int]] = {}
+    if schedule_numbers:
+        fulfillment_details = (
+            db.query(ShippingDetail)
+            .options(
+                selectinload(ShippingDetail.packages).selectinload(ShippingPackage.allocations),
+                selectinload(ShippingDetail.package_allocations),
+                selectinload(ShippingDetail.fulfillment_adjustments),
+            )
+            .filter(
+                ShippingDetail.issue_number.in_(schedule_numbers),
+                ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+            )
+            .all()
+        )
+        for detail in fulfillment_details:
+            actual, handled = fulfillment_map.get(detail.issue_number, (0, 0))
+            fulfillment_map[detail.issue_number] = (
+                actual + detail.physical_shipped_quantity,
+                handled + detail.handled_quantity,
+            )
+
     rows: list[PeriodRowOut] = []
     for s in schedule_rows:
         num = s.issue_number
@@ -188,6 +254,16 @@ def build_overview(db: Session, scope: str = "workbench", year: int | None = Non
         has_drift = issue_id in confirm_ship and shipping_total != confirm_ship[issue_id]
         delta = report_zt_total - shipping_total
         status, note = _compute_status(issue_id, issue_status, detail_count, delta, has_drift)
+        plan_status = _compute_plan_status(issue_id, issue_status, detail_count, delta, has_drift)
+        actual_shipped_total, handled_total = fulfillment_map.get(num, (0, 0))
+        pending_quantity = max(shipping_total - handled_total, 0)
+        waybill_status = _compute_waybill_status(
+            issue_id,
+            detail_count,
+            handled_total,
+            pending_quantity,
+            has_drift,
+        )
 
         last_updated_at = op_updated.get(num) or ship_updated or issue_updated
 
@@ -198,8 +274,13 @@ def build_overview(db: Session, scope: str = "workbench", year: int | None = Non
                 year=s.year,
                 publish_date=s.publish_date,
                 status=status,
+                plan_status=plan_status,
+                waybill_status=waybill_status,
                 report_zt_total=report_zt_total,
                 shipping_total=shipping_total,
+                actual_shipped_total=actual_shipped_total,
+                handled_total=handled_total,
+                pending_quantity=pending_quantity,
                 delta=delta,
                 is_match=delta == 0,
                 detail_count=detail_count,

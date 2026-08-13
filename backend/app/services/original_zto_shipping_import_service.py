@@ -4,7 +4,7 @@ import datetime
 import re
 from typing import Any, Callable
 
-from app.schemas.history_import import ShippingImportRow
+from app.schemas.history_import import ShippingImportAdjustment, ShippingImportRow
 
 _KNOWN_SHEETS = {
     "每周（对公）",
@@ -350,12 +350,13 @@ _SHEET_PARSERS: dict[str, Callable[[Any], list[ShippingImportRow]]] = {
 }
 
 
-def normalize_shipping_sub_channels(
+def normalize_shipping_sub_channels_with_adjustments(
     rows: list[ShippingImportRow],
-) -> tuple[list[ShippingImportRow], list[str]]:
+) -> tuple[list[ShippingImportRow], list[str], list[ShippingImportAdjustment]]:
     """Keep legacy annotations without treating them as business sub-channels."""
     normalized: list[ShippingImportRow] = []
     moved_values: list[str] = []
+    adjustments: list[ShippingImportAdjustment] = []
     for row in rows:
         value = row.sub_channel.strip()
         if not value or value in _STANDARD_SUB_CHANNELS:
@@ -366,26 +367,50 @@ def normalize_shipping_sub_channels(
         legacy_note = f"历史说明：{value}"
         notes = "；".join(part for part in (row.notes.strip(), legacy_note) if part)
         normalized.append(row.model_copy(update={"sub_channel": "", "notes": notes}))
+        adjustments.append(ShippingImportAdjustment(
+            sheet_name=row.sheet_name,
+            name=row.name,
+            quantity=row.quantity,
+            original_value=value,
+            resulting_value="",
+            original_notes=row.notes.strip(),
+            resulting_notes=notes,
+            operation="将非标准子渠道移入备注，并清空子渠道",
+        ))
 
     if not moved_values:
-        return normalized, []
+        return normalized, [], []
 
     examples = "、".join(dict.fromkeys(moved_values[:3]))
     warning = (
         f"发现 {len(moved_values)} 条非标准子渠道，已自动移入备注并清空子渠道"
         f"（示例：{examples}）。"
     )
-    return normalized, [warning]
+    return normalized, [warning], adjustments
+
+
+def normalize_shipping_sub_channels(
+    rows: list[ShippingImportRow],
+) -> tuple[list[ShippingImportRow], list[str]]:
+    normalized, warnings, _adjustments = normalize_shipping_sub_channels_with_adjustments(rows)
+    return normalized, warnings
+
+
+def read_original_zto_shipping_rows_with_adjustments(
+    wb,
+) -> tuple[list[ShippingImportRow], list[str], list[ShippingImportAdjustment]]:
+    rows: list[ShippingImportRow] = []
+    for sheet_name, parser in _SHEET_PARSERS.items():
+        if sheet_name in wb.sheetnames:
+            rows.extend(parser(wb[sheet_name]))
+    return normalize_shipping_sub_channels_with_adjustments(rows)
 
 
 def read_original_zto_shipping_rows_with_warnings(
     wb,
 ) -> tuple[list[ShippingImportRow], list[str]]:
-    rows: list[ShippingImportRow] = []
-    for sheet_name, parser in _SHEET_PARSERS.items():
-        if sheet_name in wb.sheetnames:
-            rows.extend(parser(wb[sheet_name]))
-    return normalize_shipping_sub_channels(rows)
+    rows, warnings, _adjustments = read_original_zto_shipping_rows_with_adjustments(wb)
+    return rows, warnings
 
 
 def read_original_zto_shipping_rows(wb) -> list[ShippingImportRow]:

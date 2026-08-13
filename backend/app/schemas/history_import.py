@@ -40,6 +40,18 @@ class ShippingImportRow(BaseModel):
     company: str = ""
 
 
+class ShippingImportAdjustment(BaseModel):
+    sheet_name: str = ""
+    name: str = ""
+    quantity: int = 0
+    field: str = "sub_channel"
+    original_value: str = ""
+    resulting_value: str = ""
+    original_notes: str = ""
+    resulting_notes: str = ""
+    operation: str = ""
+
+
 class CommitReadiness(BaseModel):
     same_issue: bool
     issue_exists: bool

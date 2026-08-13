@@ -165,6 +165,45 @@ def _single_waybill_bytes(name: str, phone: str, address: str, quantity: int = 1
     return out.getvalue()
 
 
+def _original_zto_shipping_detail_bytes() -> bytes:
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "每周合计"
+    summary.append(["2026年1月5日《中国经营报》中通发货表", "总第2635期"])
+    summary.append(["各渠道统计合计"])
+    summary.append(["传统零售渠道", 500])
+
+    corporate = wb.create_sheet("每周（对公）")
+    corporate.append(["2026年1月5日《中国经营报》中通发货表", None, "总第2635期"])
+    corporate.append(["姓名", "地址", "电话", "份数", "刊物", "渠道", "子渠道", "签约公司", "频率", "运输方式", "备注"])
+    corporate.append(["张三", "北京市测试路1号", "13800000000", 2, "中国经营报", "渠道订阅", "", "", "周", "中通物流", ""])
+    corporate.append([None, None, "合计", 2])
+
+    reader = wb.create_sheet("每周（读者）")
+    reader.append(["2026年1月5日《中国经营报》中通发货表", None, "总第2635期"])
+    reader.append(["姓名", "地址", "电话", "份数", "刊物", "截止日期", "渠道", "子渠道", "签约公司", "频率", "运输方式", "备注"])
+    reader.append(["李四", "上海市测试路2号", "13900000000", 1, "中国经营报", "长期", "个人订阅", "", "", "周", "中通物流", ""])
+
+    rail = wb.create_sheet("高铁展示")
+    rail.append(["2026年1月5日《中国经营报》中通发货表", None, "总第2635期"])
+    rail.append([])
+    rail.append(["城市", "序号", "车站", "候车厅", "联系人", "电话", "地址", "份数", "确认", "备注", "渠道", "子渠道", "公司", "频率", "运输方式"])
+    rail.append(["北京", 1, "北京站", "商务厅", "王五", "13700000000", "北京站测试地址", 3, "", "", "赠阅", "", "", "周", "中通物流"])
+
+    monthly = wb.create_sheet("月底-整月")
+    monthly.append(["2026年1月《中国经营报》中通发货表", None, "总第2635期、第2636期"])
+    monthly.append(["姓名", "地址", "电话", "期数", "份数", "刊物", "截止日期", "渠道", "子渠道", "签约公司", "频率", "运输方式", "备注"])
+    monthly.append(["赵六", "广州市测试路3号", None, 4, 1, "中国经营报", None, "赠阅", "监管", "", "月", "中通物流", ""])
+
+    ancillary = wb.create_sheet("样报缴送清单（当月）-关联赵六")
+    ancillary.append(["样报缴送清单"])
+    ancillary.append(["接收单位", "某单位"])
+
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
 def _db():
     engine = create_engine(
         "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
@@ -213,6 +252,66 @@ def test_parser_does_not_retain_total_row_as_unrecognized_data():
     rows = parse_waybill_workbook(out.getvalue())
     assert len(rows) == 1
     assert rows[0].quantity == 299
+
+
+def test_parser_preserves_original_zto_shipping_detail_without_tracking_numbers():
+    rows = parse_waybill_workbook(_original_zto_shipping_detail_bytes())
+
+    assert len(rows) == 4
+    assert [(row.source_sheet, row.source_row) for row in rows] == [
+        ("每周（对公）", 3),
+        ("每周（读者）", 3),
+        ("高铁展示", 4),
+        ("月底-整月", 3),
+    ]
+    assert all(row.tracking_no is None for row in rows)
+    assert all(row.parse_reason is None for row in rows)
+    assert [(row.recipient_name, row.phone, row.address, row.quantity) for row in rows] == [
+        ("张三", "13800000000", "北京市测试路1号", 2),
+        ("李四", "13900000000", "上海市测试路2号", 1),
+        ("王五", "13700000000", "北京站测试地址", 3),
+        ("赵六", "", "广州市测试路3号", 1),
+    ]
+    assert not any(row.source_sheet in {"每周合计", "样报缴送清单（当月）-关联赵六"} for row in rows)
+
+
+def test_preview_marks_shipping_detail_rows_as_missing_tracking_without_counting_shipment():
+    db = _db()
+    user = User(username="tester", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=2635, publish_date=date(2026, 1, 5), status=IssueStatus.confirmed)
+    db.add_all([user, issue])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=issue.id,
+        snapshot_type="confirm",
+        report_total=7,
+        shipping_total=7,
+        delta=0,
+        is_match=True,
+    ))
+    db.add_all([
+        ShippingDetail(issue_number=2635, sheet_name="每周（对公）", channel="渠道订阅", transport="中通物流", frequency="周", status="正常", name="张三", phone="13800000000", address="北京市测试路1号", quantity=2),
+        ShippingDetail(issue_number=2635, sheet_name="每周（读者）", channel="个人订阅", transport="中通物流", frequency="周", status="正常", name="李四", phone="13900000000", address="上海市测试路2号", quantity=1),
+        ShippingDetail(issue_number=2635, sheet_name="月底-整月", channel="赠阅", transport="中通物流", frequency="月", status="正常", name="赵六", phone=None, address="广州市测试路3号", quantity=1),
+        ShippingDetail(issue_number=2635, sheet_name="高铁展示", channel="赠阅", transport="中通物流", frequency="周", status="正常", name="王五", phone="13700000000", address="北京站测试地址", quantity=3),
+    ])
+    db.commit()
+
+    batch = preview_import(
+        db,
+        issue.id,
+        "2026年1月5日《中国经营报》中通快递发货明细（2635）.xlsx",
+        _original_zto_shipping_detail_bytes(),
+        user,
+    )
+
+    assert batch.parsed_quantity == 7
+    assert batch.matched_quantity == 0
+    assert batch.matched_rows == 0
+    assert batch.unmatched_rows == 4
+    assert all(row.match_status == "invalid" for row in batch.rows)
+    assert all(row.match_reason == "缺少运单号" for row in batch.rows)
+    assert {row.recipient_name for row in batch.rows} == {"张三", "李四", "王五", "赵六"}
 
 
 def test_preview_confirm_keeps_one_copy_pending_and_supports_multiple_packages():

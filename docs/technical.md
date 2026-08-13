@@ -1515,7 +1515,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 **请求**：`multipart/form-data`，字段 `shipping_file`。
 
-**响应摘要**：`import_session_id`、`can_commit`、`errors`、`warnings`、`imported/replaced/preserved/resulting` 的行数与份数、`report_zto_total`、`confirmed_shipping_total`、前 8 条 `sample_rows`。预览会话有效期 10 分钟。
+**响应摘要**：`import_session_id`、`can_commit`、`errors`、`warnings`、`imported/replaced/preserved/resulting` 的行数与份数、`report_zto_total`、`confirmed_shipping_total`、前 8 条 `sample_rows`，以及逐条 `adjustments`（字段规范化的工作表、收件人、份数、修正前后内容和具体操作）。预览会话有效期 10 分钟。
 
 #### POST /api/shipping-details/issues/{issue_id}/import-commit
 管理员提交预览会话和更正原因，在一个数据库事务内原子替换可替换行。提交前锁定刊期并重新比对旧行 `id / updated_at / quantity` 签名；预览后发生并发修改或新增核销数据时返回 409，要求重新预览。新行标记为 `historical_import`，确认时印数快照不变。成功后写入 `replace_shipping` 操作日志，记录文件名、原因、删除 ID、替换前后条数与份数以及保留数据汇总。
@@ -1524,9 +1524,12 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 ```json
 {
   "import_session_id": "uuid",
-  "reason": "修正手工测试数据"
+  "reason": "修正手工测试数据",
+  "adjustments_confirmed": true
 }
 ```
+
+预览存在 `adjustments` 时，`adjustments_confirmed` 必须为 `true`，否则提交返回 400；操作日志同时记录格式修正条数。
 
 **响应**：`issue_id`、`issue_number`、`deleted_count`、`created_count`、`preserved_count`、`resulting_quantity`。
 
@@ -1567,6 +1570,8 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 匹配状态为 `matched / unmatched / ambiguous / duplicate / invalid / ignored`。`ignored` 必须携带人工原因，不计入未解决行，但原始行和原因永久保留。预览按当前累计已处理量计算导入后的 `pending_quantity`；同一承运商+运单号在当前批次或数据库中重复时不会再次建包裹。确认后的已匹配行不可改写，未匹配行仍可编辑或批量关联，避免已入库包裹被反向篡改。
 
 旧版非标准运单表按工作表标题和固定列布局兼容解析。标题含“高铁”且运单号位于 C 列时，解析器读取 C/E/F/H/I 列作为运单号、电话、地址、实际收件人和份数；G 列“展示名称”仅作原始数据保留，不得误作收件人。解析成功后继续使用统一的姓名、电话、地址匹配逻辑。
+
+若上传的是含“每周（对公）/每周（读者）/高铁展示/上犹/停发-双周（读者）/月底-整月”的原始中通发货计划，而非带运单号的回执，解析器保留各明细页的来源行、姓名、电话、地址和份数，并排除“每周合计”和样报缴送清单等辅助页。有效收件行统一标记为 `invalid / 缺少运单号`，补录运单或人工确认无需运单前不进入 `matched_quantity`，不得计为实际发货。
 
 重新解析会用集合删除语句清理旧草稿，并以一次批量写入保存全部解析行，避免远程 MySQL 按行往返。若上传连接在后台提交后中断，前端会读取本期最新草稿并在批次 ID 已更新时自动恢复；超时提示不得再等同于“后端服务不可用”。
 

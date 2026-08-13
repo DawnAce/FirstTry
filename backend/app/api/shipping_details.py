@@ -339,6 +339,7 @@ def commit_issue_shipping_plan_import(
         import_session_id=body.import_session_id,
         reason=body.reason,
         user=user,
+        adjustments_confirmed=body.adjustments_confirmed,
     )
 
 
