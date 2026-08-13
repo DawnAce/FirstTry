@@ -179,6 +179,15 @@ export default function WaybillImportWorkbench() {
   const details = useMemo(() => detailsQuery.data ?? [], [detailsQuery.data]);
   const detailsById = useMemo(() => new Map(details.map((detail) => [detail.id, detail])), [details]);
   const visibleRows = useMemo(() => filterWaybillRows(batch?.rows ?? [], filter), [batch, filter]);
+  const missingTrackingRows = useMemo(
+    () => (batch?.rows ?? []).filter((row) => (
+      !row.no_tracking_required
+      && !row.tracking_no
+      && Boolean(row.recipient_name.trim())
+      && row.quantity > 0
+    )),
+    [batch],
+  );
   const groupSuggestions = useMemo(
     () => buildWaybillGroupSuggestions(batch?.rows ?? [], details),
     [batch, details],
@@ -619,10 +628,14 @@ export default function WaybillImportWorkbench() {
     { title: '份数', dataIndex: 'quantity', width: 64, align: 'right' },
     {
       title: '核对结果', key: 'status', width: 170,
-      render: (_, row) => <div className="waybill-status-cell">
-        <Tag color={statusMeta[row.match_status].color}>{statusMeta[row.match_status].label}</Tag>
-        <span>{row.match_reason || (row.manual_reviewed ? '已人工确认' : '自动匹配')}</span>
-      </div>,
+      render: (_, row) => {
+        const missingTracking = row.match_reason === '缺少运单号';
+        const meta = missingTracking ? { label: '缺少运单号', color: 'gold' } : statusMeta[row.match_status];
+        return <div className="waybill-status-cell">
+          <Tag color={meta.color}>{meta.label}</Tag>
+          <span>{missingTracking ? '收件信息已识别，尚未计入发货' : row.match_reason || (row.manual_reviewed ? '已人工确认' : '自动匹配')}</span>
+        </div>;
+      },
     },
     {
       title: '操作', key: 'actions', width: 120, fixed: 'right',
@@ -675,7 +688,7 @@ export default function WaybillImportWorkbench() {
     { label: `全部 ${batch.rows.length}`, value: 'all' },
     { label: `已匹配 ${batch.matched_rows}`, value: 'matched' },
     { label: '待人工匹配', value: 'manual' },
-    { label: '未识别 / 无效', value: 'invalid' },
+    { label: '缺单 / 未识别 / 无效', value: 'invalid' },
     { label: '重复运单', value: 'duplicate' },
     { label: '无需运单', value: 'no_tracking' },
     { label: '已忽略', value: 'ignored' },
@@ -768,6 +781,13 @@ export default function WaybillImportWorkbench() {
           <div className={`waybill-status-metric${unexplainedPendingQuantity ? ' is-danger' : ''}`}><span>未解释待补</span><b>{unexplainedPendingQuantity.toLocaleString()}</b><small>份</small></div>
         </div>
       </Card>
+
+      {!!missingTrackingRows.length && <Alert
+        showIcon
+        type="warning"
+        title={`已识别 ${missingTrackingRows.length} 条收件信息，但缺少运单号`}
+        description="这是一份发货计划明细，姓名、电话、地址和份数已完整保留并显示在下方；在补充真实运单号或人工确认为“无需运单”前，这些记录不会计入实际发货。"
+      />}
 
       <Card className="waybill-table-card" styles={{ body: { padding: 0 } }}>
         <div className="waybill-table-toolbar">

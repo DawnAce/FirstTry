@@ -5,14 +5,14 @@ from datetime import datetime
 
 # 机器 action key -> 中文「操作内容」标签。读取时派生，不落库（避免回填历史行）。
 ACTION_LABELS: dict[str, str] = {
-    "create": "新增发货明细",
-    "update": "修改发货明细",
-    "delete": "删除发货明细",
+    "create": "新增计划明细",
+    "update": "修改计划明细",
+    "delete": "删除计划明细",
     "ship": "标记已发货",
     "unship": "撤销已发货",
-    "batch_copy": "复制上期发货明细",
-    "batch_delete_issue": "清空本期发货明细",
-    "replace_shipping": "重新上传中通明细",
+    "batch_copy": "复制上期发货计划",
+    "batch_delete_issue": "清空本期发货计划",
+    "replace_shipping": "上传 / 替换发货计划",
     "restore_waybills": "恢复历史运单关联",
     "ship_batch": "批量标记已发货",
     "confirm": "确认发货明细",

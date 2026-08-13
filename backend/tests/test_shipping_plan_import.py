@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 import pytest
 from fastapi import HTTPException
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -54,6 +54,16 @@ def shipping_file(issue_number: int, quantities: tuple[int, ...] = (6, 4)) -> by
             f"测试{index}", f"北京市测试路{index}号", f"1380000000{index}", quantity,
             "长期", "", "", "", "", "", index, issue_number, "",
         ])
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def shipping_file_with_adjustment(issue_number: int) -> bytes:
+    workbook = load_workbook(io.BytesIO(shipping_file(issue_number)))
+    sheet = workbook["发货明细"]
+    sheet["C2"] = "20260122新增"
+    sheet["L2"] = "送前联系"
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -121,6 +131,50 @@ def test_preview_allows_refill_after_issue_was_cleared(db):
     assert preview.resulting_quantity == 10
     assert preview.confirmed_shipping_total == 11
     assert any("不会修改已确认印数" in warning for warning in preview.warnings)
+
+
+def test_preview_returns_each_automatic_adjustment_for_confirmation(db):
+    issue = add_issue(db)
+
+    preview = preview_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        filename="2638中通明细.xlsx",
+        content=shipping_file_with_adjustment(2638),
+    )
+
+    assert preview.can_commit is True
+    assert len(preview.adjustments) == 1
+    adjustment = preview.adjustments[0]
+    assert adjustment.sheet_name == "每周（读者）"
+    assert adjustment.name == "测试1"
+    assert adjustment.quantity == 6
+    assert adjustment.original_value == "20260122新增"
+    assert adjustment.resulting_value == ""
+    assert adjustment.original_notes == "送前联系"
+    assert adjustment.resulting_notes == "送前联系；历史说明：20260122新增"
+    assert adjustment.operation == "将非标准子渠道移入备注，并清空子渠道"
+
+    with pytest.raises(HTTPException) as exc:
+        commit_shipping_plan_import(
+            db,
+            issue_id=issue.id,
+            import_session_id=preview.import_session_id,
+            reason="核对自动调整",
+            user=admin(),
+        )
+    assert exc.value.status_code == 400
+    assert "确认自动调整明细" in exc.value.detail
+
+    result = commit_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        import_session_id=preview.import_session_id,
+        reason="核对自动调整",
+        user=admin(),
+        adjustments_confirmed=True,
+    )
+    assert result.created_count == 2
 
 
 def test_commit_replaces_manual_rows_and_preserves_generated_rows(db):

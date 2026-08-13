@@ -22,6 +22,7 @@ import {
   Segmented,
   Spin,
   Upload,
+  Checkbox,
 } from 'antd';
 import {
   PlusOutlined,
@@ -31,7 +32,6 @@ import {
   DownloadOutlined,
   FilterOutlined,
   LeftOutlined,
-  FileTextOutlined,
   ReloadOutlined,
   MoreOutlined,
   UploadOutlined,
@@ -43,6 +43,7 @@ import type {
   ShippingDetail,
   ShippingDetailCreate,
   ShippingDetailUpdate,
+  ShippingPlanImportAdjustment,
   ShippingPlanImportPreview,
 } from '../api/shippingDetails';
 import {
@@ -57,7 +58,7 @@ import {
   commitShippingPlanImport,
 } from '../api/shippingDetails';
 import { getIssue } from '../api/issues';
-import { getOperationLogs } from '../api/operationLogs';
+import { getOperationLogs, getRecentOperationLogs } from '../api/operationLogs';
 import type { OperationLog } from '../api/operationLogs';
 import { getReport } from '../api/reports';
 import {
@@ -152,6 +153,7 @@ export default function LogisticsIssueDetail() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { isAdmin, canMutate } = useAuth();
+  const [activeSection, setActiveSection] = useState<'plan' | 'actual'>('plan');
   const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ShippingDetail | null>(null);
@@ -159,6 +161,7 @@ export default function LogisticsIssueDetail() {
   const [logDrawerOpen, setLogDrawerOpen] = useState(false);
   const [logRecordId, setLogRecordId] = useState<number | null>(null);
   const [logRecordName, setLogRecordName] = useState<string>('');
+  const [issueLogDrawerOpen, setIssueLogDrawerOpen] = useState(false);
   const [actionMenuRecordId, setActionMenuRecordId] = useState<number | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [detailDrawerRecord, setDetailDrawerRecord] = useState<ShippingDetail | null>(null);
@@ -171,9 +174,10 @@ export default function LogisticsIssueDetail() {
   const [planImportOpen, setPlanImportOpen] = useState(false);
   const [planImportFile, setPlanImportFile] = useState<File | null>(null);
   const [planImportPreview, setPlanImportPreview] = useState<ShippingPlanImportPreview | null>(null);
-  const [planImportReason, setPlanImportReason] = useState('修正手工测试数据');
+  const [planImportReason, setPlanImportReason] = useState('');
   const [planImportPreviewing, setPlanImportPreviewing] = useState(false);
   const [planImportCommitting, setPlanImportCommitting] = useState(false);
+  const [planImportAdjustmentsConfirmed, setPlanImportAdjustmentsConfirmed] = useState(false);
 
   const { data: currentIssue } = useQuery({
     queryKey: ['issue', issueId],
@@ -231,11 +235,11 @@ export default function LogisticsIssueDetail() {
     if (shippingFilters.sub_channel && detail.sub_channel !== shippingFilters.sub_channel) return false;
     if (shippingFilters.frequency && detail.frequency !== shippingFilters.frequency) return false;
     if (shippingFilters.transport && detail.transport !== shippingFilters.transport) return false;
-    if (shippingFilters.status && detail.status !== shippingFilters.status) return false;
+    if (activeSection === 'plan' && shippingFilters.status && detail.status !== shippingFilters.status) return false;
     if (shippingFilters.search && !detail.name.includes(shippingFilters.search)) return false;
     if (shippingFilters.company?.length && !shippingFilters.company.includes(detail.company ?? '')) return false;
     return true;
-  }), [allDetails, shippingFilters]);
+  }), [activeSection, allDetails, shippingFilters]);
   const isLoading = allDetailsLoading;
   const detailsIsError = allDetailsIsError;
   const detailsError = allDetailsError;
@@ -282,6 +286,15 @@ export default function LogisticsIssueDetail() {
     enabled: logRecordId != null,
   });
 
+  const { data: issueOperationLogs = [], isLoading: issueLogsLoading } = useQuery({
+    queryKey: ['operationLogs', 'issue', currentIssueNumber],
+    queryFn: async () => {
+      if (currentIssueNumber == null) return [];
+      return (await getRecentOperationLogs({ issue_number: currentIssueNumber, limit: 100 })).data;
+    },
+    enabled: issueLogDrawerOpen && currentIssueNumber != null,
+  });
+
   const handleShowLogs = (record: ShippingDetail) => {
     setActionMenuRecordId(null);
     setDetailDrawerRecord(null);
@@ -302,7 +315,8 @@ export default function LogisticsIssueDetail() {
     setPlanImportOpen(false);
     setPlanImportFile(null);
     setPlanImportPreview(null);
-    setPlanImportReason('修正手工测试数据');
+    setPlanImportReason('');
+    setPlanImportAdjustmentsConfirmed(false);
   };
 
   const handlePreviewPlanImport = async () => {
@@ -312,6 +326,7 @@ export default function LogisticsIssueDetail() {
     }
     setPlanImportPreviewing(true);
     setPlanImportPreview(null);
+    setPlanImportAdjustmentsConfirmed(false);
     try {
       const response = await previewShippingPlanImport(issueId, planImportFile);
       setPlanImportPreview(response.data);
@@ -325,8 +340,12 @@ export default function LogisticsIssueDetail() {
 
   const handleCommitPlanImport = async () => {
     if (!planImportPreview?.can_commit || !planImportPreview.import_session_id) return;
+    if (planImportPreview.adjustments.length > 0 && !planImportAdjustmentsConfirmed) {
+      message.warning('请先逐条核对并确认导入格式修正');
+      return;
+    }
     if (planImportReason.trim().length < 2) {
-      message.warning('请填写本次重新上传的原因');
+      message.warning('请填写本次上传或替换计划的原因');
       return;
     }
     setPlanImportCommitting(true);
@@ -335,6 +354,7 @@ export default function LogisticsIssueDetail() {
         issueId,
         planImportPreview.import_session_id,
         planImportReason.trim(),
+        planImportAdjustmentsConfirmed,
       );
       message.success(
         `已导入 ${response.data.created_count} 条中通明细，当前计划 ${response.data.resulting_quantity.toLocaleString()} 份${
@@ -346,11 +366,12 @@ export default function LogisticsIssueDetail() {
       setPlanImportOpen(false);
       setPlanImportFile(null);
       setPlanImportPreview(null);
-      setPlanImportReason('修正手工测试数据');
+      setPlanImportReason('');
+      setPlanImportAdjustmentsConfirmed(false);
       refreshShippingDetails();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };
-      message.error(err.response?.data?.detail || '重新上传中通明细失败');
+      message.error(err.response?.data?.detail || '上传发货计划失败');
     } finally {
       setPlanImportCommitting(false);
     }
@@ -402,7 +423,7 @@ export default function LogisticsIssueDetail() {
     setDetailDrawerRecord(null);
     try {
       await setNoTrackingRequired(record.id, value);
-      message.success(value ? '已标记为无需发货' : '已恢复为需要运单');
+      message.success(value ? '已标记为无需运单' : '已恢复为需要运单');
       refreshShippingDetails();
     } catch (error) {
       message.error(logisticsApiErrorMessage(
@@ -415,10 +436,7 @@ export default function LogisticsIssueDetail() {
   const handleEdit = (record: ShippingDetail) => {
     setDetailDrawerRecord(null);
     setEditingRecord(record);
-    form.setFieldsValue({
-      ...record,
-      shipped_at: record.shipped_at ? dayjs(record.shipped_at) : null,
-    });
+    form.setFieldsValue(record);
     setModalVisible(true);
   };
 
@@ -450,9 +468,8 @@ export default function LogisticsIssueDetail() {
     try {
       const values = await form.validateFields();
       const sub_channel = form.getFieldValue('sub_channel') || null;
-      const shipped_at = values.shipped_at ? dayjs(values.shipped_at).format('YYYY-MM-DD') : null;
       if (editingRecord) {
-        const updateData: ShippingDetailUpdate = { ...values, sub_channel, shipped_at };
+        const updateData: ShippingDetailUpdate = { ...values, sub_channel };
         await updateShippingDetail(editingRecord.id, updateData);
         message.success('更新成功');
       } else {
@@ -460,7 +477,6 @@ export default function LogisticsIssueDetail() {
         const createData: ShippingDetailCreate = {
           ...values,
           sub_channel: sub_channel || undefined,
-          shipped_at,
           issue_number: currentIssueNumber,
           sheet_name: '手动添加',
         };
@@ -523,12 +539,12 @@ export default function LogisticsIssueDetail() {
     setClearingIssue(true);
     try {
       const res = await clearShippingDetailsByIssue(currentIssueNumber);
-      message.success(`已清空第 ${currentIssueNumber} 期 ${res.data.affected_count} 条 ZTO-MF`);
+      message.success(`已清空第 ${currentIssueNumber} 期 ${res.data.affected_count} 条发货计划`);
       setSelectedRowKeys([]);
       refreshShippingDetails();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };
-      message.error(err.response?.data?.detail || '清空本期发货明细失败');
+      message.error(err.response?.data?.detail || '清空本期发货计划失败');
     } finally {
       setClearingIssue(false);
     }
@@ -573,15 +589,20 @@ export default function LogisticsIssueDetail() {
     || shippingFilters.sub_channel
     || shippingFilters.frequency
     || shippingFilters.transport
-    || shippingFilters.status
+    || (activeSection === 'plan' && shippingFilters.status)
     || shippingFilters.search
     || shippingFilters.company?.length
-    || shippingFilters.fulfillment_status
+    || (activeSection === 'actual' && shippingFilters.fulfillment_status)
   );
-  const visibleDetails = details.filter((detail) => matchesFulfillmentView(detail, shippingFilters.fulfillment_status));
+  const visibleDetails = activeSection === 'actual'
+    ? details.filter((detail) => matchesFulfillmentView(detail, shippingFilters.fulfillment_status))
+    : details;
   const visibleShippingTotal = visibleDetails
     .filter((detail) => detail.source_type !== 'complaint_makeup')
     .reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const visibleActualTotal = visibleDetails
+    .filter((detail) => detail.source_type !== 'complaint_makeup')
+    .reduce((sum, detail) => sum + detail.physical_shipped_quantity, 0);
   const fulfillmentTabCounts = {
     all: details.length,
     completed: details.filter((detail) => matchesFulfillmentView(detail, 'completed')).length,
@@ -625,35 +646,73 @@ export default function LogisticsIssueDetail() {
           )}
         </div>
         <div className="zto-head-actions">
-          <Button icon={<FileTextOutlined />} onClick={() => navigate(`/report/${issueId}`)}>去报数</Button>
           <Button icon={<DownloadOutlined />} onClick={handleExportShipping} disabled={currentIssue?.id == null} loading={exporting}>导出本期</Button>
-          {canMutate && <Button icon={<UploadOutlined />} onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}>导入运单</Button>}
-          {isAdmin && <Button icon={<ReloadOutlined />} onClick={() => setPlanImportOpen(true)}>重新上传明细</Button>}
-          {canMutate && <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增明细</Button>}
-          {isAdmin && (
-            <Popover
-              trigger="click"
-              placement="bottomRight"
-              content={
-                <Popconfirm
-                  title={`确认清空第 ${currentIssueNumber ?? '-'} 期 ZTO-MF？`}
-                  description="仅适用于没有运单、实发或核销记录的草稿；已有发货历史时请使用“重新上传明细”。"
-                  okText="清空"
-                  cancelText="取消"
-                  onConfirm={handleClearCurrentIssueShippingDetails}
-                  disabled={currentIssueNumber == null}
+          <Button icon={<HistoryOutlined />} onClick={() => setIssueLogDrawerOpen(true)}>操作记录</Button>
+        </div>
+      </div>
+
+      <div className="zto-section-bar">
+        <div className="zto-section-tabs" role="tablist" aria-label="快递管理内容">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === 'plan'}
+            className={activeSection === 'plan' ? 'is-active' : ''}
+            onClick={() => { setActiveSection('plan'); setSelectedRowKeys([]); }}
+          >
+            <strong>发货计划</strong>
+            <span>收件人、地址与应发份数，不含运单</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSection === 'actual'}
+            className={activeSection === 'actual' ? 'is-active' : ''}
+            onClick={() => { setActiveSection('actual'); setSelectedRowKeys([]); }}
+          >
+            <strong>实际发货</strong>
+            <span>运单、实发份数与核销结果</span>
+          </button>
+        </div>
+        <div className="zto-section-actions">
+          {activeSection === 'plan' ? (
+            <>
+              {canMutate && <Button icon={<PlusOutlined />} onClick={handleOpenCreate}>新增明细</Button>}
+              {isAdmin && <Button type="primary" icon={<UploadOutlined />} onClick={() => setPlanImportOpen(true)}>上传 / 替换计划</Button>}
+              {(canMutate || isAdmin) && (
+                <Popover
+                  trigger="click"
+                  placement="bottomRight"
+                  content={(
+                    <div className="zto-action-menu">
+                      <Button type="text" onClick={() => setChangeLogOpen(true)}>查看变更与归因</Button>
+                      {canMutate && <Button type="text" icon={<ReloadOutlined />} onClick={handleReverify}>重新校验计划</Button>}
+                      {isAdmin && (
+                        <Popconfirm
+                          title={`确认清空第 ${currentIssueNumber ?? '-'} 期发货计划？`}
+                          description="只允许清空没有运单、实发或核销记录的计划。"
+                          okText="清空"
+                          cancelText="取消"
+                          onConfirm={handleClearCurrentIssueShippingDetails}
+                          disabled={currentIssueNumber == null}
+                        >
+                          <Button type="text" danger loading={clearingIssue} disabled={currentIssueNumber == null}>清空本期计划</Button>
+                        </Popconfirm>
+                      )}
+                    </div>
+                  )}
                 >
-                  <Button type="text" danger loading={clearingIssue} disabled={currentIssueNumber == null}>清空本期明细</Button>
-                </Popconfirm>
-              }
-            >
-              <Button icon={<MoreOutlined />} aria-label="更多本期操作" />
-            </Popover>
+                  <Button icon={<MoreOutlined />}>维护计划</Button>
+                </Popover>
+              )}
+            </>
+          ) : (
+            canMutate && <Button type="primary" icon={<UploadOutlined />} onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}>上传运单明细</Button>
           )}
         </div>
       </div>
 
-      <Card className="zto-reconcile-card" styles={{ body: { padding: 0 } }}>
+      {activeSection === 'plan' && <Card className="zto-reconcile-card" styles={{ body: { padding: 0 } }}>
         <div className="zto-reconcile-main">
           <div className={`zto-reconcile-result ${planState.tone}`}>
             <div className="zto-reconcile-icon">
@@ -716,13 +775,12 @@ export default function LogisticsIssueDetail() {
             </span>
             <div className="zto-change-actions">
               <Button size="small" onClick={() => setChangeLogOpen(true)}>查看变更与归因</Button>
-              {canMutate && <Button size="small" className="zto-reverify-btn" icon={<ReloadOutlined />} onClick={handleReverify}>重新校验</Button>}
             </div>
           </div>
         )}
-      </Card>
+      </Card>}
 
-      <Card className="zto-fulfillment-card" styles={{ body: { padding: 0 } }}>
+      {activeSection === 'actual' && <Card className="zto-fulfillment-card" styles={{ body: { padding: 0 } }}>
         <div className="zto-reconcile-main">
           <div className={`zto-reconcile-result ${fulfillmentPanelState.tone}`}>
             <div className="zto-reconcile-icon">
@@ -737,16 +795,16 @@ export default function LogisticsIssueDetail() {
             <div>
               <span>实际发货与核销</span>
               <strong>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '核销已完成 · 部分发货' : fulfillmentPanelState.label}</strong>
-              <small>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '无需发货份数已明确归因，实际寄出的份数少于确认印数。' : fulfillmentPanelState.description}</small>
+              <small>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '无需发货份数已明确归因，实际寄出的份数少于计划应发。' : fulfillmentPanelState.description}</small>
               {fulfillmentPanelState.kind === 'error' && (
                 <Button className="zto-inline-retry" size="small" icon={<ReloadOutlined />} onClick={retryFulfillmentData}>重新加载</Button>
               )}
             </div>
           </div>
           <div className="zto-reconcile-metric">
-            <span>确认印数</span>
-            <strong>{fulfillment?.expected_quantity?.toLocaleString() ?? '—'}</strong>
-            <small>份 · 固定基准</small>
+            <span>计划应发</span>
+            <strong>{fulfillment?.planned_quantity?.toLocaleString() ?? '—'}</strong>
+            <small>份 · 当前计划</small>
           </div>
           <div className="zto-reconcile-metric">
             <span>实际发出</span>
@@ -780,15 +838,15 @@ export default function LogisticsIssueDetail() {
             <Button size="small" onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}>继续处理</Button>
           </div>
         )}
-      </Card>
+      </Card>}
 
       {allDetailsIsError ? (
         <Card className="zto-empty-card">
           <Alert
             showIcon
             type="error"
-            title="发货明细加载失败"
-            description={logisticsApiErrorMessage(allDetailsError, '无法读取本期发货明细')}
+            title={activeSection === 'plan' ? '发货计划加载失败' : '实际发货数据加载失败'}
+            description={logisticsApiErrorMessage(allDetailsError, activeSection === 'plan' ? '无法读取本期发货计划' : '无法读取本期实际发货数据')}
             action={<Button size="small" icon={<ReloadOutlined />} onClick={retryPlanData}>重新加载</Button>}
           />
         </Card>
@@ -800,24 +858,27 @@ export default function LogisticsIssueDetail() {
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={
               <div>
-                <div className="zto-empty-title">本期确实没有发货计划明细</div>
-                <div className="zto-empty-copy">接口已成功返回 0 条记录；请新建明细后再进行计划对账。</div>
+                <div className="zto-empty-title">本期尚无发货计划</div>
+                <div className="zto-empty-copy">请先在“发货计划”中上传计划或新增明细，再录入实际运单。</div>
               </div>
             }
           >
-            {canMutate && <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增第一条</Button>}
+            {canMutate && activeSection === 'plan' && <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>新增第一条</Button>}
           </Empty>
         </Card>
       ) : (
         <Card className="zto-list-card" styles={{ body: { padding: 0 } }}>
           <div className="zto-list-head">
             <div className="zto-list-title">
-              <h2>应发清单</h2>
-              <span>上传运单前后始终保留同一份计划，点击整行查看完整信息</span>
+              <h2>{activeSection === 'plan' ? '发货计划明细' : '实际发货明细'}</h2>
+              <span>{activeSection === 'plan' ? '只维护收件信息与应发份数，不在这里录入运单' : '以发货计划为底单，查看运单、实发与核销情况'}</span>
             </div>
             <div className="zto-list-head-actions">
-              <span><b>{allDetails.length.toLocaleString()}</b> 条 · <b>{allShippingTotal.toLocaleString()}</b> 份</span>
-              {!!fulfillment?.latest_import?.unmatched_rows && (
+              <span>
+                <b>{allDetails.length.toLocaleString()}</b> 条 ·{' '}
+                {activeSection === 'plan' ? '计划' : '实际寄出'} <b>{activeSection === 'plan' ? allShippingTotal.toLocaleString() : (fulfillment?.actual_shipped_quantity ?? 0).toLocaleString()}</b> 份
+              </span>
+              {activeSection === 'actual' && !!fulfillment?.latest_import?.unmatched_rows && (
                 <Button
                   className="zto-import-exception-button"
                   onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}
@@ -827,7 +888,7 @@ export default function LogisticsIssueDetail() {
               )}
             </div>
           </div>
-          <div className="zto-fulfillment-tabs">
+          {activeSection === 'actual' && <div className="zto-fulfillment-tabs">
             <Segmented<string>
               value={shippingFilters.fulfillment_status ?? 'all'}
               options={[
@@ -841,7 +902,7 @@ export default function LogisticsIssueDetail() {
                 fulfillment_status: value === 'all' ? undefined : value,
               }))}
             />
-          </div>
+          </div>}
           <div className="zto-toolbar">
             <Input
               placeholder="搜索姓名、地址或电话"
@@ -871,7 +932,7 @@ export default function LogisticsIssueDetail() {
             >
               {companyOptions.map((c) => <Select.Option key={c} value={c}>{c}</Select.Option>)}
             </Select>
-            <Select
+            {activeSection === 'plan' && <Select
               placeholder="全部状态"
               className="zto-filter-status"
               allowClear
@@ -879,7 +940,7 @@ export default function LogisticsIssueDetail() {
               onChange={(value) => setShippingFilters((f) => ({ ...f, status: value }))}
             >
               {SHIPPING_STATUS_OPTIONS.map((st) => <Select.Option key={st} value={st}>{st}</Select.Option>)}
-            </Select>
+            </Select>}
             <Popover
               trigger="click"
               placement="bottomLeft"
@@ -903,12 +964,12 @@ export default function LogisticsIssueDetail() {
             <div className="zto-toolbar-tail">
               <Button type="link" disabled={!hasShippingFilters} onClick={() => setShippingFilters({})}>清除筛选</Button>
               <span className="zto-toolbar-count">
-                共 <b>{detailsIsError ? '—' : visibleDetails.length}</b> 条 · 合计 <b>{detailsIsError ? '—' : visibleShippingTotal.toLocaleString()}</b> 份
+                共 <b>{detailsIsError ? '—' : visibleDetails.length}</b> 条 · {activeSection === 'plan' ? '计划' : '实际寄出'} <b>{detailsIsError ? '—' : (activeSection === 'plan' ? visibleShippingTotal : visibleActualTotal).toLocaleString()}</b> 份
               </span>
             </div>
           </div>
 
-          {canMutate && selectedRowKeys.length > 0 && (
+          {activeSection === 'plan' && canMutate && selectedRowKeys.length > 0 && (
             <div className="zto-batchbar">
               <span className="zto-batch-lbl">已选 {selectedRowKeys.length} 条</span>
               <Button size="small" onClick={() => handleBatchStatus('正常')}>设为正常</Button>
@@ -938,12 +999,13 @@ export default function LogisticsIssueDetail() {
                   key={JSON.stringify(shippingFilters)}
                   records={visibleDetails}
                   selectedRowKeys={selectedRowKeys}
-                  canSelect={canMutate}
+                  mode={activeSection}
+                  canSelect={canMutate && activeSection === 'plan'}
                   onSelectedRowKeysChange={setSelectedRowKeys}
                   onOpenDetail={setDetailDrawerRecord}
                 />
               ) : (
-                <Empty className="zto-filter-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合当前条件的应发清单" />
+                <Empty className="zto-filter-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description={activeSection === 'plan' ? '没有符合当前条件的计划明细' : '没有符合当前条件的实际发货明细'} />
               )}
             </Spin>
           )}
@@ -951,7 +1013,7 @@ export default function LogisticsIssueDetail() {
       )}
 
       <Modal
-        title={`重新上传中通明细 · 第 ${currentIssueNumber ?? '-'} 期`}
+        title={`上传 / 替换发货计划 · 第 ${currentIssueNumber ?? '-'} 期`}
         open={planImportOpen}
         onCancel={closePlanImport}
         width={820}
@@ -964,7 +1026,11 @@ export default function LogisticsIssueDetail() {
             danger={!!planImportPreview?.replaced_row_count}
             onClick={handleCommitPlanImport}
             loading={planImportCommitting}
-            disabled={!planImportPreview?.can_commit || planImportReason.trim().length < 2}
+            disabled={
+              !planImportPreview?.can_commit
+              || planImportReason.trim().length < 2
+              || (!!planImportPreview.adjustments.length && !planImportAdjustmentsConfirmed)
+            }
           >
             确认导入
           </Button>,
@@ -985,6 +1051,7 @@ export default function LogisticsIssueDetail() {
           onChange={({ fileList }) => {
             setPlanImportFile(fileList[0]?.originFileObj ?? null);
             setPlanImportPreview(null);
+            setPlanImportAdjustmentsConfirmed(false);
           }}
         >
           {planImportFile ? (
@@ -996,7 +1063,7 @@ export default function LogisticsIssueDetail() {
           ) : (
             <>
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖拽上传中通发货明细</p>
+              <p className="ant-upload-text">点击或拖拽上传发货计划明细</p>
               <p className="ant-upload-hint"><FileExcelOutlined /> 仅支持 .xlsx，上传后先预览，不会立即写入</p>
             </>
           )}
@@ -1010,6 +1077,62 @@ export default function LogisticsIssueDetail() {
             {planImportPreview.warnings.map((warning) => (
               <Alert key={warning} type="warning" showIcon title={warning} style={{ marginBottom: 8 }} />
             ))}
+            {planImportPreview.adjustments.length > 0 && (
+              <Card
+                size="small"
+                title={`导入格式修正（${planImportPreview.adjustments.length} 条）`}
+                extra={<Tag color="orange">确认导入后生效</Tag>}
+                style={{ marginTop: 12 }}
+              >
+                <Alert
+                  type="info"
+                  showIcon
+                  title="请逐条核对格式修正前后内容"
+                  description="以下内容已用于本次预览；只有勾选确认后，才可执行导入。"
+                  style={{ marginBottom: 12 }}
+                />
+                <Table<ShippingPlanImportAdjustment>
+                  size="small"
+                  rowKey={(_, index) => String(index)}
+                  dataSource={planImportPreview.adjustments}
+                  pagination={false}
+                  scroll={{ x: 860 }}
+                  columns={[
+                    { title: '工作表', dataIndex: 'sheet_name', width: 120 },
+                    { title: '收件人', dataIndex: 'name', width: 120 },
+                    { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
+                    {
+                      title: '修正前',
+                      width: 210,
+                      render: (_, adjustment) => (
+                        <div>
+                          <div>子渠道：{adjustment.original_value || '—'}</div>
+                          <small>备注：{adjustment.original_notes || '—'}</small>
+                        </div>
+                      ),
+                    },
+                    { title: '具体操作', dataIndex: 'operation', width: 210 },
+                    {
+                      title: '修正后',
+                      width: 240,
+                      render: (_, adjustment) => (
+                        <div>
+                          <div>子渠道：{adjustment.resulting_value || '（清空）'}</div>
+                          <small>备注：{adjustment.resulting_notes || '—'}</small>
+                        </div>
+                      ),
+                    },
+                  ]}
+                />
+                <Checkbox
+                  checked={planImportAdjustmentsConfirmed}
+                  onChange={(event) => setPlanImportAdjustmentsConfirmed(event.target.checked)}
+                  style={{ marginTop: 12 }}
+                >
+                  我已逐条核对以上 {planImportPreview.adjustments.length} 条导入格式修正
+                </Checkbox>
+              </Card>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, margin: '14px 0' }}>
               <Card size="small"><div>文件明细</div><strong>{planImportPreview.imported_row_count} 条 · {planImportPreview.imported_quantity.toLocaleString()} 份</strong></Card>
               <Card size="small"><div>将替换</div><strong>{planImportPreview.replaced_row_count} 条 · {planImportPreview.replaced_quantity.toLocaleString()} 份</strong></Card>
@@ -1035,7 +1158,7 @@ export default function LogisticsIssueDetail() {
             <Input.TextArea
               value={planImportReason}
               onChange={(event) => setPlanImportReason(event.target.value)}
-              placeholder="请填写重新上传原因"
+              placeholder="请填写本次上传或替换计划的原因"
               maxLength={255}
               rows={2}
               style={{ marginTop: 14 }}
@@ -1064,7 +1187,7 @@ export default function LogisticsIssueDetail() {
       </Modal>
 
       <Modal
-        title={editingRecord ? '编辑记录' : '新增记录'}
+        title={editingRecord ? '编辑计划明细' : '新增计划明细'}
         open={modalVisible}
         onOk={handleSubmit}
         onCancel={handleCloseModal}
@@ -1139,9 +1262,6 @@ export default function LogisticsIssueDetail() {
           <Form.Item label="截止日期" name="deadline">
             <Input placeholder="请输入截止日期（如：长期、2025-12-31）" />
           </Form.Item>
-          <Form.Item label="发货时间" name="shipped_at">
-            <DatePicker placeholder="请选择发货时间" style={{ width: '100%' }} />
-          </Form.Item>
           <Form.Item label="状态" name="status">
             <Select placeholder="请选择状态" allowClear>
               {SHIPPING_STATUS_OPTIONS.map((st) => <Select.Option key={st} value={st}>{st}</Select.Option>)}
@@ -1206,12 +1326,12 @@ export default function LogisticsIssueDetail() {
         title={detailDrawerRecord ? (
           <DrawerTitle
             icon="🚚"
-            title={detailDrawerRecord.name || '发货明细'}
-            description={`${detailDrawerRecord.channel || '未分类'} · 应发清单 #${detailDrawerRecord.id}`}
-            tone={detailDrawerRecord.fulfillment_status === 'partial' ? 'warning' : detailDrawerRecord.fulfillment_status === 'pending' ? 'neutral' : 'success'}
+            title={detailDrawerRecord.name || (activeSection === 'plan' ? '计划明细' : '实际发货明细')}
+            description={`${detailDrawerRecord.channel || '未分类'} · ${activeSection === 'plan' ? '发货计划' : '实际发货'} #${detailDrawerRecord.id}`}
+            tone={activeSection === 'plan' ? 'neutral' : detailDrawerRecord.fulfillment_status === 'partial' ? 'warning' : detailDrawerRecord.fulfillment_status === 'pending' ? 'neutral' : 'success'}
             status={(
-              <StatusPill tone={detailDrawerRecord.fulfillment_status === 'partial' ? 'warning' : detailDrawerRecord.fulfillment_status === 'pending' ? 'neutral' : 'success'}>
-                {(fulfillmentMeta[detailDrawerRecord.fulfillment_status] || fulfillmentMeta.pending).label}
+              <StatusPill tone={activeSection === 'plan' ? (detailDrawerRecord.status === '停发' ? 'warning' : 'success') : detailDrawerRecord.fulfillment_status === 'partial' ? 'warning' : detailDrawerRecord.fulfillment_status === 'pending' ? 'neutral' : 'success'}>
+                {activeSection === 'plan' ? detailDrawerRecord.status : (fulfillmentMeta[detailDrawerRecord.fulfillment_status] || fulfillmentMeta.pending).label}
               </StatusPill>
             )}
           />
@@ -1223,10 +1343,10 @@ export default function LogisticsIssueDetail() {
         footer={detailDrawerRecord ? (
           <div className="app-drawer-footer zto-detail-drawer-footer">
             <Button icon={<HistoryOutlined />} onClick={() => handleShowLogs(detailDrawerRecord)}>操作日志</Button>
-            {canMutate && detailDrawerRecord.shipping_requirement !== 'no_tracking_required' && (
+            {activeSection === 'actual' && canMutate && detailDrawerRecord.shipping_requirement !== 'no_tracking_required' && detailDrawerRecord.handled_quantity < detailDrawerRecord.quantity && (
               <Button onClick={() => handleOpenPackage(detailDrawerRecord)}>补录运单</Button>
             )}
-            {canMutate && (
+            {canMutate && (activeSection === 'plan' || detailDrawerRecord.shipping_requirement === 'no_tracking_required' || !detailDrawerRecord.package_count) && (
               <Popover
                 trigger="click"
                 placement="topRight"
@@ -1234,33 +1354,33 @@ export default function LogisticsIssueDetail() {
                 onOpenChange={(open) => setActionMenuRecordId(open ? detailDrawerRecord.id : null)}
                 content={(
                   <div className="zto-action-menu">
-                    {detailDrawerRecord.shipping_requirement === 'no_tracking_required' ? (
+                    {activeSection === 'actual' && (detailDrawerRecord.shipping_requirement === 'no_tracking_required' ? (
                       <Button type="text" onClick={() => handleNoTracking(detailDrawerRecord, false)}>恢复需要运单</Button>
                     ) : !detailDrawerRecord.package_count ? (
                       <Button type="text" onClick={() => handleNoTracking(detailDrawerRecord, true)}>标记无需运单</Button>
-                    ) : null}
-                    {detailDrawerRecord.source_type !== 'complaint_makeup' ? (
+                    ) : null)}
+                    {activeSection === 'plan' && (detailDrawerRecord.source_type !== 'complaint_makeup' ? (
                       <Popconfirm title="确认删除？" onConfirm={() => handleDelete(detailDrawerRecord.id)}>
-                        <Button type="text" danger icon={<DeleteOutlined />}>删除明细</Button>
+                        <Button type="text" danger icon={<DeleteOutlined />}>删除计划明细</Button>
                       </Popconfirm>
-                    ) : <Button type="text" disabled>请在邮局工单取消</Button>}
+                    ) : <Button type="text" disabled>请在邮局工单取消</Button>)}
                   </div>
                 )}
               >
                 <Button icon={<MoreOutlined />}>更多</Button>
               </Popover>
             )}
-            {canMutate && <Button type="primary" onClick={() => handleEdit(detailDrawerRecord)}>编辑明细</Button>}
+            {activeSection === 'plan' && canMutate && <Button type="primary" onClick={() => handleEdit(detailDrawerRecord)}>编辑计划</Button>}
           </div>
         ) : null}
       >
         {detailDrawerRecord && (
           <div className="zto-detail-drawer">
-            <div className="zto-detail-metrics">
+            {activeSection === 'actual' && <div className="zto-detail-metrics">
               <div><span>应发</span><strong>{detailDrawerRecord.quantity.toLocaleString()}</strong></div>
               <div><span>实际发出</span><strong>{detailDrawerRecord.physical_shipped_quantity.toLocaleString()}</strong></div>
               <div><span>待发</span><strong>{Math.max(detailDrawerRecord.quantity - detailDrawerRecord.handled_quantity, 0).toLocaleString()}</strong></div>
-            </div>
+            </div>}
 
             <section className="zto-detail-section">
               <h3>收件与计划信息</h3>
@@ -1276,7 +1396,7 @@ export default function LogisticsIssueDetail() {
               </div>
             </section>
 
-            <section className="zto-detail-section">
+            {activeSection === 'actual' && <section className="zto-detail-section">
               <h3>实际发货</h3>
               {detailDrawerRecord.packages.length ? (
                 <div className="zto-drawer-packages">
@@ -1307,7 +1427,7 @@ export default function LogisticsIssueDetail() {
               ) : (
                 <Alert showIcon type="warning" title="尚未录入运单，本条仍待发货" />
               )}
-            </section>
+            </section>}
 
             <section className="zto-detail-section">
               <h3>来源与同步</h3>
@@ -1323,7 +1443,7 @@ export default function LogisticsIssueDetail() {
               <h3>更多信息</h3>
               <div className="zto-detail-facts">
                 <div><span>截止日期</span><strong>{detailDrawerRecord.deadline || '长期'}</strong></div>
-                <div><span>发货时间</span><strong>{detailDrawerRecord.shipped_at ? dayjs(detailDrawerRecord.shipped_at).format('YYYY-MM-DD') : '—'}</strong></div>
+                {activeSection === 'actual' && <div><span>发货时间</span><strong>{detailDrawerRecord.shipped_at ? dayjs(detailDrawerRecord.shipped_at).format('YYYY-MM-DD') : '—'}</strong></div>}
                 <div><span>站点 / 站厅</span><strong>{[detailDrawerRecord.station_name, detailDrawerRecord.station_hall].filter(Boolean).join(' / ') || '—'}</strong></div>
                 <div><span>联系人</span><strong>{detailDrawerRecord.contact_person || '—'}</strong></div>
                 <div className="is-wide"><span>来源订单</span><strong>{detailDrawerRecord.order_id ? <a onClick={() => navigate(`/orders/${detailDrawerRecord.order_id}`)}>查看订单 #{detailDrawerRecord.order_id}</a> : '—'}</strong></div>
@@ -1332,6 +1452,45 @@ export default function LogisticsIssueDetail() {
             </section>
           </div>
         )}
+      </Drawer>
+
+      <Drawer
+        title={(
+          <DrawerTitle
+            icon="🕘"
+            title="本期操作记录"
+            description={`第 ${currentIssueNumber ?? '-'} 期 · 计划与实际发货的全部操作`}
+            status={<StatusPill tone="neutral">{issueLogsLoading ? '加载中' : `${issueOperationLogs.length} 条记录`}</StatusPill>}
+          />
+        )}
+        open={issueLogDrawerOpen}
+        onClose={() => setIssueLogDrawerOpen(false)}
+        size={520}
+        rootClassName="app-drawer-root"
+      >
+        <div className="app-drawer-panel">
+          {issueLogsLoading ? (
+            <div className="zto-log-empty">加载中...</div>
+          ) : issueOperationLogs.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本期暂无操作记录" />
+          ) : (
+            <Timeline
+              items={issueOperationLogs.map((log) => ({
+                color: log.status === 'failed' ? 'red' : 'blue',
+                children: (
+                  <div className="zto-issue-log-item">
+                    <div>
+                      <strong>{log.action_label}</strong>
+                      <Tag color={log.status === 'failed' ? 'red' : 'green'}>{log.status === 'failed' ? '失败' : '成功'}</Tag>
+                    </div>
+                    <span>{log.username || '系统'} · {dayjs(log.created_at).format('YYYY-MM-DD HH:mm:ss')}</span>
+                    {log.record_name && <small>{log.record_name}</small>}
+                  </div>
+                ),
+              }))}
+            />
+          )}
+        </div>
       </Drawer>
 
       <Drawer

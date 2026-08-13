@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import date, datetime
 
 from app.models.shipping_detail import ShippingDetailSourceType, ShippingDetailSyncStatus
-from app.schemas.history_import import ShippingImportRow
+from app.schemas.history_import import ShippingImportAdjustment, ShippingImportRow
 
 
 class ShipDetailIn(BaseModel):
@@ -108,11 +108,13 @@ class ShippingPlanImportPreviewOut(BaseModel):
     report_zto_total: int = 0
     confirmed_shipping_total: Optional[int] = None
     sample_rows: list[ShippingImportRow] = Field(default_factory=list)
+    adjustments: list[ShippingImportAdjustment] = Field(default_factory=list)
 
 
 class ShippingPlanImportCommitIn(BaseModel):
     import_session_id: str
     reason: str = Field(min_length=2, max_length=255)
+    adjustments_confirmed: bool = False
 
 
 class ShippingPlanImportCommitOut(BaseModel):

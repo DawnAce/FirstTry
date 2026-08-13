@@ -1,339 +1,257 @@
-import { useState, useMemo } from 'react';
-import { Table, Button, Space, Card, Input, Select, Segmented, Row, Col, Tag } from 'antd';
-import {
-  SendOutlined,
-  DownloadOutlined,
-  SearchOutlined,
-  FileTextOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  WarningOutlined,
-  EditOutlined,
-} from '@ant-design/icons';
+import { useMemo, useState } from 'react';
+import { Button, Card, Input, Progress, Segmented, Select, Space, Table, Tag } from 'antd';
+import { DownloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getPeriodsOverview } from '../api/logisticsOverview';
-import type { PeriodRow, PeriodStatus } from '../api/logisticsOverview';
 import type { TableColumnsType } from 'antd';
 import dayjs from 'dayjs';
-import { MetricCard, PageHeader } from '../components/UiPrimitives';
+import { getPeriodsOverview } from '../api/logisticsOverview';
+import type { PeriodRow, PlanStatus, WaybillStatus } from '../api/logisticsOverview';
+import { PageHeader } from '../components/UiPrimitives';
 
-const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-
-// 单一「上传状态」→ antd Tag 预设色（house style：状态一律用 Tag）。
-const statusTagColor: Record<PeriodStatus, string> = {
-  已上传: 'green',
-  异常: 'red',
-  待上传: 'gold',
-  草稿: 'orange',
+const planStatusColor: Record<PlanStatus, string> = {
   未创建: 'default',
+  草稿: 'orange',
+  待导入: 'gold',
+  有差异: 'red',
+  有变更: 'orange',
+  已就绪: 'green',
 };
 
-function StatusTag({ status }: { status: PeriodStatus }) {
-  return (
-    <Tag color={statusTagColor[status]} style={{ marginInlineEnd: 0 }}>
-      {status}
-    </Tag>
-  );
-}
+const waybillStatusColor: Record<WaybillStatus, string> = {
+  未开始: 'default',
+  待上传: 'gold',
+  部分完成: 'orange',
+  已完成: 'green',
+  需核对: 'red',
+};
 
-// 对账差值列（镜像单期页对账卡）：未传→—，一致→绿，少发→红「差N」，多发→红「多N」。
-function renderDelta(row: PeriodRow) {
-  if (row.detail_count === 0) {
-    return <span style={{ color: 'var(--color-text-secondary)' }}>—</span>;
-  }
-  if (row.delta === 0) {
-    return <span style={{ color: 'var(--color-success-text)' }}>一致</span>;
-  }
-  const magnitude = Math.abs(row.delta).toLocaleString();
-  return (
-    <span style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-      {row.delta > 0 ? `差 ${magnitude} 份` : `多 ${magnitude} 份`}
-    </span>
-  );
-}
-
-// 待上传家族含未创建（决策②）。
-function matchStatus(row: PeriodRow, filter: string): boolean {
-  if (filter === 'all') return true;
-  if (filter === '待上传') return row.status === '待上传' || row.status === '未创建';
-  return row.status === filter;
+function countBy<T extends string>(rows: PeriodRow[], field: 'plan_status' | 'waybill_status', values: T[]) {
+  return values.reduce<Record<string, number>>((result, value) => {
+    result[value] = rows.filter((row) => row[field] === value).length;
+    return result;
+  }, { all: rows.length });
 }
 
 export default function LogisticsIssues() {
   const navigate = useNavigate();
   const [searchNumber, setSearchNumber] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [planFilter, setPlanFilter] = useState<'all' | PlanStatus>('all');
+  const [waybillFilter, setWaybillFilter] = useState<'all' | WaybillStatus>('all');
   const [filterYear, setFilterYear] = useState<number | 'all'>('all');
 
-  const { data, isLoading: loading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['logistics-overview', 'periods'],
     queryFn: async () => (await getPeriodsOverview()).data,
   });
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
-
   const yearOptions = useMemo(() => {
-    const years = Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => b - a);
+    const years = Array.from(new Set(rows.map((row) => row.year))).sort((a, b) => b - a);
     return [
-      { label: '全部年份', value: 'all' as number | 'all' },
-      ...years.map((y) => ({ label: `${y} 年`, value: y as number | 'all' })),
+      { label: '全部年份', value: 'all' as const },
+      ...years.map((year) => ({ label: `${year} 年`, value: year })),
     ];
   }, [rows]);
-
   const yearRows = useMemo(
-    () => (filterYear === 'all' ? rows : rows.filter((r) => r.year === filterYear)),
-    [rows, filterYear],
+    () => (filterYear === 'all' ? rows : rows.filter((row) => row.year === filterYear)),
+    [filterYear, rows],
   );
-
-  const counts = useMemo(() => {
-    const c = { all: yearRows.length, 已上传: 0, 异常: 0, 待上传: 0, 草稿: 0 };
-    yearRows.forEach((r) => {
-      if (r.status === '已上传') c.已上传 += 1;
-      else if (r.status === '异常') c.异常 += 1;
-      else if (r.status === '草稿') c.草稿 += 1;
-      else c.待上传 += 1; // 待上传 + 未创建
-    });
-    return c;
-  }, [yearRows]);
-
-  const filtered = useMemo(
-    () =>
-      yearRows.filter((r) => {
-        if (searchNumber && !String(r.issue_number).includes(searchNumber)) return false;
-        return matchStatus(r, filterStatus);
-      }),
-    [yearRows, searchNumber, filterStatus],
+  const planCounts = useMemo(
+    () => countBy(yearRows, 'plan_status', ['待导入', '已就绪', '有差异', '有变更', '草稿', '未创建']),
+    [yearRows],
   );
-
-  const statCards = [
-    {
-      icon: <FileTextOutlined style={{ fontSize: 21, color: 'var(--color-accent)' }} />,
-      tone: 'info' as const,
-      label: '全部期数',
-      value: counts.all,
-      suffix: '期',
-      sub: filterYear === 'all' ? '不含休刊' : `${filterYear} 年`,
-      filter: 'all',
-    },
-    {
-      icon: <CheckCircleOutlined style={{ fontSize: 21, color: 'var(--color-success)' }} />,
-      tone: 'success' as const,
-      label: '已上传',
-      value: counts.已上传,
-      suffix: '期',
-      sub: '明细已录入',
-      subColor: 'var(--color-success)',
-      filter: '已上传',
-    },
-    {
-      icon: <ClockCircleOutlined style={{ fontSize: 21, color: 'var(--color-warning)' }} />,
-      tone: 'warning' as const,
-      label: '待上传',
-      value: counts.待上传,
-      suffix: '期',
-      sub: '● 含未创建，点此筛选',
-      subColor: 'var(--color-warning)',
-      filter: '待上传',
-    },
-    {
-      icon: <WarningOutlined style={{ fontSize: 21, color: 'var(--color-danger)' }} />,
-      tone: 'danger' as const,
-      label: '异常',
-      value: counts.异常,
-      suffix: '期',
-      sub: '● 差值≠0，点此排查',
-      subColor: 'var(--color-danger)',
-      filter: '异常',
-    },
-    {
-      icon: <EditOutlined style={{ fontSize: 21, color: 'var(--color-purple)' }} />,
-      tone: 'purple' as const,
-      label: '草稿',
-      value: counts.草稿,
-      suffix: '期',
-      sub: '报数未确认',
-      filter: '草稿',
-    },
-  ];
+  const waybillCounts = useMemo(
+    () => countBy(yearRows, 'waybill_status', ['待上传', '部分完成', '已完成', '需核对', '未开始']),
+    [yearRows],
+  );
+  const filtered = useMemo(() => yearRows.filter((row) => {
+    if (searchNumber && !String(row.issue_number).includes(searchNumber.trim())) return false;
+    if (planFilter !== 'all' && row.plan_status !== planFilter) return false;
+    if (waybillFilter !== 'all' && row.waybill_status !== waybillFilter) return false;
+    return true;
+  }), [planFilter, searchNumber, waybillFilter, yearRows]);
 
   const columns: TableColumnsType<PeriodRow> = [
     {
-      title: '期号',
+      title: '期数',
       dataIndex: 'issue_number',
+      width: 116,
       sorter: (a, b) => a.issue_number - b.issue_number,
-      render: (_, r) => (
-        <div>
-          <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>第 {r.issue_number} 期</div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>{r.year} 年</div>
+      render: (_, row) => (
+        <div className="logistics-period-cell">
+          <strong>第 {row.issue_number} 期</strong>
         </div>
       ),
     },
     {
       title: '出版日期',
       dataIndex: 'publish_date',
+      width: 126,
       sorter: (a, b) => dayjs(a.publish_date).valueOf() - dayjs(b.publish_date).valueOf(),
-      render: (_, r) => (
-        <div>
-          <div style={{ whiteSpace: 'nowrap' }}>{dayjs(r.publish_date).format('YYYY-MM-DD')}</div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{WEEKDAYS[dayjs(r.publish_date).day()]}</div>
+      render: (value: string) => (
+        <div className="logistics-date-cell">
+          <span>{dayjs(value).format('YYYY-MM-DD')}</span>
         </div>
       ),
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      render: (_, r) => <StatusTag status={r.status} />,
+      title: '计划状态',
+      dataIndex: 'plan_status',
+      width: 104,
+      render: (status: PlanStatus) => <Tag color={planStatusColor[status]}>{status}</Tag>,
     },
     {
-      title: '报数份数',
-      dataIndex: 'report_zt_total',
-      align: 'right',
-      render: (_, r) =>
-        r.issue_id == null ? (
-          <span style={{ color: 'var(--color-text-secondary)' }}>—</span>
-        ) : (
-          <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{r.report_zt_total.toLocaleString()}</span>
-        ),
-    },
-    {
-      title: '发货份数',
+      title: '计划份数',
       dataIndex: 'shipping_total',
+      width: 104,
       align: 'right',
-      render: (_, r) =>
-        r.detail_count > 0 ? (
-          <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{r.shipping_total.toLocaleString()}</span>
-        ) : (
-          <span style={{ color: 'var(--color-text-secondary)' }}>—</span>
-        ),
+      render: (value: number, row) => row.detail_count
+        ? <span className="logistics-number">{value.toLocaleString()}</span>
+        : <span className="logistics-muted">—</span>,
     },
     {
-      title: '对账差值',
-      dataIndex: 'delta',
+      title: '实际发货状态',
+      dataIndex: 'waybill_status',
+      width: 118,
+      render: (status: WaybillStatus) => <Tag color={waybillStatusColor[status]}>{status}</Tag>,
+    },
+    {
+      title: '实际发货进度',
+      key: 'progress',
+      width: 210,
+      render: (_, row) => {
+        if (!row.shipping_total) return <span className="logistics-muted">尚无发货计划</span>;
+        const percent = Math.min(100, Math.round((row.handled_total / row.shipping_total) * 100));
+        return (
+          <div className="logistics-progress-cell">
+            <div>
+              <strong>{row.actual_shipped_total.toLocaleString()}</strong>
+              <span> / {row.shipping_total.toLocaleString()} 份实际寄出</span>
+              {row.handled_total !== row.actual_shipped_total && <small>已核销 {row.handled_total.toLocaleString()} 份</small>}
+            </div>
+            <Progress percent={percent} showInfo={false} size="small" status={row.waybill_status === '需核对' ? 'exception' : 'normal'} />
+          </div>
+        );
+      },
+    },
+    {
+      title: '待处理',
+      dataIndex: 'pending_quantity',
+      width: 88,
       align: 'right',
-      sorter: (a, b) => a.delta - b.delta,
-      render: (_, r) => renderDelta(r),
-    },
-    {
-      title: '异常说明',
-      dataIndex: 'exception_note',
-      render: (_, r) => <span style={{ color: 'var(--color-text-tertiary)' }}>{r.exception_note}</span>,
-    },
-    {
-      title: '最后更新时间',
-      dataIndex: 'last_updated_at',
-      render: (_, r) => (
-        <span style={{ whiteSpace: 'nowrap', color: 'var(--color-text-tertiary)' }}>
-          {r.last_updated_at ? dayjs(r.last_updated_at).format('YYYY-MM-DD HH:mm') : '—'}
-        </span>
+      render: (value: number) => (
+        <span className={value ? 'logistics-number is-warning' : 'logistics-number'}>{value.toLocaleString()}</span>
       ),
+    },
+    {
+      title: '最后更新',
+      dataIndex: 'last_updated_at',
+      width: 142,
+      render: (value: string | null) => <span className="logistics-muted">{value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'}</span>,
     },
     {
       title: '操作',
       key: 'actions',
-      render: (_, r) =>
-        r.issue_id == null ? (
-          <Button size="small" type="link" onClick={(e) => { e.stopPropagation(); navigate('/print'); }}>
-            去创建
-          </Button>
-        ) : (
-          <Space size={4} style={{ whiteSpace: 'nowrap' }}>
-            <Button
-              size="small"
-              type="link"
-              icon={<SendOutlined />}
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/logistics/issues/${r.issue_id}`);
-              }}
-            >
-              进入详情
-            </Button>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={(e) => {
-                e.stopPropagation();
-                window.open(`/api/issues/${r.issue_id}/export/all`, '_blank');
-              }}
-            >
-              导出
-            </Button>
-          </Space>
-        ),
+      fixed: 'right',
+      width: 136,
+      render: (_, row) => row.issue_id == null ? <span className="logistics-muted">尚未开期</span> : (
+        <Space size={0}>
+          <Button type="link" size="small" onClick={(event) => {
+            event.stopPropagation();
+            navigate(`/logistics/issues/${row.issue_id}`);
+          }}>查看 <RightOutlined /></Button>
+          <Button type="text" size="small" icon={<DownloadOutlined />} aria-label="导出本期" onClick={(event) => {
+            event.stopPropagation();
+            window.open(`/api/issues/${row.issue_id}/export/all`, '_blank');
+          }} />
+        </Space>
+      ),
     },
   ];
 
   return (
-    <div className="history-page">
-      <PageHeader title="期数总览" description="查看所有期数上传进度与异常情况，进入单期处理具体发货数据。" />
+    <div className="history-page logistics-periods-page">
+      <PageHeader
+        title="快递管理"
+        description="发货计划与实际发货分开管理；上传运单不会修改计划。"
+      />
 
-      <Row gutter={16} style={{ marginBottom: 20 }}>
-        {statCards.map((card, idx) => (
-          <Col flex="1" key={idx} style={{ display: 'flex', minWidth: 150 }}>
-            <MetricCard
-              loading={loading}
-              onClick={() => setFilterStatus(card.filter)}
-              icon={card.icon}
-              tone={card.tone}
-              label={card.label}
-              value={card.value}
-              suffix={card.suffix}
-              note={card.sub}
-              noteTone={card.subColor ? card.tone : undefined}
-            />
-          </Col>
-        ))}
-      </Row>
+      <div className="logistics-summary-grid">
+        <Card size="small" className="logistics-summary-card">
+          <span>发货计划</span>
+          <strong>{(planCounts.已就绪 ?? 0).toLocaleString()} <small>期已就绪</small></strong>
+          <em>{(planCounts.待导入 ?? 0) + (planCounts.有差异 ?? 0) + (planCounts.有变更 ?? 0)} 期待处理</em>
+        </Card>
+        <Card size="small" className="logistics-summary-card">
+          <span>实际发货</span>
+          <strong>{(waybillCounts.已完成 ?? 0).toLocaleString()} <small>期已完成</small></strong>
+          <em>{(waybillCounts.待上传 ?? 0) + (waybillCounts.部分完成 ?? 0) + (waybillCounts.需核对 ?? 0)} 期待处理</em>
+        </Card>
+        <Card size="small" className="logistics-summary-card is-neutral">
+          <span>当前范围</span>
+          <strong>{yearRows.length.toLocaleString()} <small>期</small></strong>
+          <em>计划、运单可组合筛选</em>
+        </Card>
+      </div>
 
       <Card styles={{ body: { padding: 0 } }}>
-        <div className="history-toolbar">
-          <Segmented
-            value={filterStatus}
-            onChange={(val) => setFilterStatus(String(val))}
-            options={[
-              { label: <span>全部<span className="history-seg-count">{counts.all}</span></span>, value: 'all' },
-              { label: <span>已上传<span className="history-seg-count">{counts.已上传}</span></span>, value: '已上传' },
-              { label: <span>异常<span className="history-seg-count">{counts.异常}</span></span>, value: '异常' },
-              { label: <span>待上传<span className="history-seg-count">{counts.待上传}</span></span>, value: '待上传' },
-              { label: <span>草稿<span className="history-seg-count">{counts.草稿}</span></span>, value: '草稿' },
-            ]}
-          />
-          <Select
-            value={filterYear}
-            onChange={(val) => setFilterYear(val)}
-            options={yearOptions}
-            style={{ width: 130 }}
-          />
-          <Input
-            placeholder="搜索期号"
-            prefix={<SearchOutlined />}
-            allowClear
-            value={searchNumber}
-            onChange={(e) => setSearchNumber(e.target.value)}
-            style={{ width: 170 }}
-          />
-          <span className="history-toolbar-count">
-            共 <b>{filtered.length}</b> 期
-          </span>
+        <div className="logistics-filter-panel">
+          <div className="logistics-filter-row">
+            <span className="logistics-filter-label">计划状态</span>
+            <Segmented
+              value={planFilter}
+              onChange={(value) => setPlanFilter(value as 'all' | PlanStatus)}
+              options={[
+                { label: `全部 ${planCounts.all}`, value: 'all' },
+                { label: `待导入 ${planCounts.待导入 ?? 0}`, value: '待导入' },
+                { label: `已就绪 ${planCounts.已就绪 ?? 0}`, value: '已就绪' },
+                { label: `有差异 ${planCounts.有差异 ?? 0}`, value: '有差异' },
+                { label: `有变更 ${planCounts.有变更 ?? 0}`, value: '有变更' },
+                { label: `草稿 ${planCounts.草稿 ?? 0}`, value: '草稿' },
+                { label: `未创建 ${planCounts.未创建 ?? 0}`, value: '未创建' },
+              ]}
+            />
+          </div>
+          <div className="logistics-filter-row">
+            <span className="logistics-filter-label">运单状态</span>
+            <Segmented
+              value={waybillFilter}
+              onChange={(value) => setWaybillFilter(value as 'all' | WaybillStatus)}
+              options={[
+                { label: `全部 ${waybillCounts.all}`, value: 'all' },
+                { label: `待上传 ${waybillCounts.待上传 ?? 0}`, value: '待上传' },
+                { label: `部分完成 ${waybillCounts.部分完成 ?? 0}`, value: '部分完成' },
+                { label: `已完成 ${waybillCounts.已完成 ?? 0}`, value: '已完成' },
+                { label: `需核对 ${waybillCounts.需核对 ?? 0}`, value: '需核对' },
+                { label: `未开始 ${waybillCounts.未开始 ?? 0}`, value: '未开始' },
+              ]}
+            />
+          </div>
+          <div className="logistics-filter-tools">
+            <Select value={filterYear} onChange={setFilterYear} options={yearOptions} style={{ width: 124 }} />
+            <Input
+              placeholder="搜索期号"
+              prefix={<SearchOutlined />}
+              allowClear
+              value={searchNumber}
+              onChange={(event) => setSearchNumber(event.target.value)}
+              style={{ width: 160 }}
+            />
+            <span>共 <b>{filtered.length}</b> 期</span>
+          </div>
         </div>
         <Table
+          className="logistics-period-table"
           columns={columns}
           dataSource={filtered}
           rowKey="issue_number"
-          loading={loading}
-          pagination={{
-            pageSize: 20,
-            showSizeChanger: false,
-            showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${total} 条`,
-          }}
-          onRow={(record) => ({
-            onClick: () => {
-              if (record.issue_id == null) navigate('/print');
-              else navigate(`/logistics/issues/${record.issue_id}`);
-            },
-            style: { cursor: 'pointer' },
+          loading={isLoading}
+          scroll={{ x: 1180 }}
+          pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 期` }}
+          onRow={(row) => ({
+            onClick: row.issue_id == null ? undefined : () => navigate(`/logistics/issues/${row.issue_id}`),
+            className: row.issue_id == null ? 'is-disabled' : 'is-clickable',
           })}
         />
       </Card>

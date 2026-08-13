@@ -146,6 +146,18 @@ export interface ShippingPlanImportRow {
   company: string;
 }
 
+export interface ShippingPlanImportAdjustment {
+  sheet_name: string;
+  name: string;
+  quantity: number;
+  field: string;
+  original_value: string;
+  resulting_value: string;
+  original_notes: string;
+  resulting_notes: string;
+  operation: string;
+}
+
 export interface ShippingPlanImportPreview {
   issue_id: number;
   issue_number: number;
@@ -165,6 +177,7 @@ export interface ShippingPlanImportPreview {
   report_zto_total: number;
   confirmed_shipping_total: number | null;
   sample_rows: ShippingPlanImportRow[];
+  adjustments: ShippingPlanImportAdjustment[];
 }
 
 export interface ShippingPlanImportCommitResult {
@@ -235,10 +248,15 @@ export const commitShippingPlanImport = (
   issueId: number,
   importSessionId: string,
   reason: string,
+  adjustmentsConfirmed: boolean,
 ): Promise<AxiosResponse<ShippingPlanImportCommitResult>> =>
   api.post<ShippingPlanImportCommitResult>(
     `/shipping-details/issues/${issueId}/import-commit`,
-    { import_session_id: importSessionId, reason },
+    {
+      import_session_id: importSessionId,
+      reason,
+      adjustments_confirmed: adjustmentsConfirmed,
+    },
   );
 
 export interface ShipDetailPayload {

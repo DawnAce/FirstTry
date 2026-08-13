@@ -120,15 +120,24 @@ class BsCirculationOut(BaseModel):
 # --- ZTO-MF 跨期总览（工作台 + 期数总览）---------------------------------------
 
 class PeriodRowOut(BaseModel):
-    """某一期的物流总览行（服务端算好 status，前端不重算）。delta = 报数 − 发货。"""
+    """某一期的物流总览行。
+
+    ``status`` 保留给旧工作台兼容；新快递管理分别使用 ``plan_status`` 和
+    ``waybill_status``，避免把计划差异与实际发货进度混成一个状态。
+    """
 
     issue_number: int
     issue_id: Optional[int] = None
     year: int
     publish_date: date
     status: str            # 未创建 / 草稿 / 异常 / 待上传 / 已上传
+    plan_status: str       # 未创建 / 草稿 / 待导入 / 有差异 / 有变更 / 已就绪
+    waybill_status: str    # 未开始 / 待上传 / 部分完成 / 已完成 / 需核对
     report_zt_total: int   # 报数·中通合计
-    shipping_total: int    # 发货明细·合计
+    shipping_total: int    # 发货计划·合计（兼容旧字段名）
+    actual_shipped_total: int  # 实际寄出（含无需运单，不含无需发货）
+    handled_total: int         # 已核销（实际寄出 + 无需发货）
+    pending_quantity: int      # 当前计划 − 已核销
     delta: int             # 报数 − 发货（正数=发货缺口/少发）
     is_match: bool
     detail_count: int
