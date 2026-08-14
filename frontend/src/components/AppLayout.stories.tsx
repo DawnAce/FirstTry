@@ -51,6 +51,46 @@ export const Operator: Story = {
   },
 }
 
+// 发行履约下的邮局与快递使用同一套展开式树形导航，不再进入邮局中间页。
+export const FulfilmentNavigation: Story = {
+  name: '发行履约展开导航',
+  parameters: {
+    reactRouter: reactRouterParameters({
+      location: { path: '/post-delivery/deliveries' },
+      routing: { path: '/post-delivery/deliveries' },
+    }),
+  },
+  play: async ({ canvas }) => {
+    await expect((await canvas.findAllByText('发行履约')).length).toBeGreaterThan(0)
+    await expect((await canvas.findAllByText('邮局管理')).length).toBeGreaterThan(0)
+    await expect((await canvas.findAllByText('投递明细')).length).toBeGreaterThan(0)
+    await expect(canvas.getByText('待续投')).toBeVisible()
+    await expect(canvas.getByText('订报转投')).toBeVisible()
+    await expect(canvas.getByText('邮局工单')).toBeVisible()
+    await expect(canvas.getByText('快递管理')).toBeVisible()
+    await expect(canvas.getByText('发货计划')).toBeVisible()
+    await expect(canvas.getByText('实际发货')).toBeVisible()
+    await expect(canvas.getByRole('menuitem', { name: /邮局管理/ })).toHaveAttribute('aria-expanded', 'true')
+    await expect(canvas.getByRole('menuitem', { name: /快递管理/ })).toHaveAttribute('aria-expanded', 'true')
+    await expect(canvas.getByRole('menuitem', { name: /投递明细/ })).toHaveClass('ant-menu-item-selected')
+  },
+}
+
+export const FulfilmentCourierNavigation: Story = {
+  name: '发行履约快递选中态',
+  parameters: {
+    reactRouter: reactRouterParameters({
+      location: { path: '/logistics/shipments' },
+      routing: { path: '/logistics/shipments' },
+    }),
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole('menuitem', { name: /邮局管理/ })).toHaveAttribute('aria-expanded', 'true')
+    await expect(canvas.getByRole('menuitem', { name: /快递管理/ })).toHaveAttribute('aria-expanded', 'true')
+    await expect(canvas.getByRole('menuitem', { name: /实际发货/ })).toHaveClass('ant-menu-item-selected')
+  },
+}
+
 // 样式校验（全项目唯一 CssCheck）：断言 logo 标题解析出的 font-weight 为 700，
 // 证明共享 preview 真正加载了 src/index.css（.app-sider-logo-title 规则），而非仅渲染了无样式 DOM。
 export const CssCheck: Story = {

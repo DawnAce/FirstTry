@@ -55,7 +55,6 @@ const FinanceManagement = lazy(loadFinanceManagement);
 const Login = lazy(loadLogin);
 const BusinessHome = lazy(() => loadBusinessPortal().then((module) => ({ default: module.BusinessHome })));
 const BusinessCenterPortal = lazy(() => loadBusinessPortal().then((module) => ({ default: module.BusinessCenterPortal })));
-const PostalPortal = lazy(() => loadBusinessPortal().then((module) => ({ default: module.PostalPortal })));
 
 const routeModuleLoaders = [
   loadDashboard, loadReportEditor, loadLogisticsOverview, loadPostDelivery,
@@ -122,7 +121,7 @@ function App() {
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
             <Route path="/" element={<BusinessHome />} />
             <Route path="/business/:centerKey" element={<BusinessCenterPortal />} />
-            <Route path="/business/fulfilment/postal" element={<PostalPortal />} />
+            <Route path="/business/fulfilment/postal" element={<Navigate to="/post-delivery/deliveries" replace />} />
             <Route path="/print" element={<Dashboard />} />
             <Route path="/report/:issueId" element={<ReportEditor />} />
             <Route path="/recipients" element={<WorkbenchOrRedirect />} />

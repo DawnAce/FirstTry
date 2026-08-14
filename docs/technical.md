@@ -98,7 +98,7 @@ FirstTry/
 │   │   ├── businessPortalConfig.ts  # 五大业务中心、模块及路由归属配置
 │   │   ├── permissions.ts      # admin/operator/viewer 能力映射
 │   │   ├── pages/              # 页面组件
-│   │   │   ├── BusinessPortal.tsx # 业务首页、五大业务中心门户及邮局管理三级入口
+│   │   │   ├── BusinessPortal.tsx # 业务首页及五大业务中心门户
 │   │   │   ├── DashboardPage.tsx  # 印数管理仪表盘（/print）— 统计卡片、一键创建/补录、报数流程、近期印数表、趋势图（ECharts）、待处理/快捷入口侧栏
 │   │   │   ├── History.tsx        # 历史期数页（/history，从印数管理页进入）
 │   │   │   ├── HistoryImport.tsx  # 往期导入页（/history-import，从历史印数期数页右上角「导入往期」按钮进入）
@@ -2211,7 +2211,8 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - 组件库（Ant Design）
 - 页面组件通过 `React.lazy` 按路由拆包；TanStack Query 默认数据新鲜期为 60 秒、缓存回收期为 10 分钟，减少短时间往返页面时的重复读取
 - ZTO-MF 单期页通过 `logisticsIssueState.ts` 显式区分 Query 的 loading / error / success-empty 状态：请求失败不得回退为 `[]` 后渲染业务空态。计划区使用「发货计划对账」，实际区独立展示物理发货与核销；取得核销摘要后可区分「待录入运单 / 部分已发货 / 已完成发货核销 / 核销已完成 · 部分发货」。运单操作优先展示后端 `detail`，500 错误提示检查数据库迁移状态。
-- 快递管理的列表入口拆为 `/logistics/plans` 与 `/logistics/shipments`，在 `AppLayout` 中作为「快递管理」的两个嵌套菜单项；列表页不再用内容区标签卡模拟导航。两页共用期数总览接口，但分别采用计划状态与履约状态筛选。列表 Query 同样显式区分 error 与 success-empty，接口失败不得显示为 0 期。
+- 发行履约在 `AppLayout` 中使用统一的展开式树形导航：「邮局管理」直接展开投递明细、待续投、订报转投、邮局工单，「快递管理」直接展开发货计划、实际发货。两个父项共用同一段菜单生成逻辑与交互，不再为邮局替换整套侧栏；旧入口 `/business/fulfilment/postal` 保留并重定向至 `/post-delivery/deliveries`。选中态由 `findPostalFunction` / `findCourierFunction` 按深层路由映射，面包屑统一为“业务首页 / 发行履约 / 模块 / 子功能”。
+- 快递管理的列表入口拆为 `/logistics/plans` 与 `/logistics/shipments`；列表页不再用内容区标签卡模拟导航。两页共用期数总览接口，但分别采用计划状态与履约状态筛选。列表 Query 同样显式区分 error 与 success-empty，接口失败不得显示为 0 期。
 - 迁移 `f0a2c4e6b8d9` 为 `shipping_details` 增加 `actual_name / actual_phone / actual_address / actual_adjustment_reason / actual_adjusted_at`。这些字段只保存实际发货阶段的临时收件调整，空值表示沿用计划字段；实际调整不反向覆盖计划，清空或替换计划时必须保护已有实际历史。部署本版本必须执行 `alembic upgrade head`。
 - 表格固定列使用 `fixed: 'end'` + `scroll={{ x: 'max-content' }}`，操作列固定在右侧
 - 表格行 hover 使用不透明语义背景色（`var(--color-bg-subtle)`），避免固定列穿透问题
@@ -2229,7 +2230,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - Storybook 顶部工具栏可统一切换亮/暗主题、舒适/紧凑密度和圆润/克制圆角。新增或迁移业务页面时应补代表性 Story，并检查这些全局组合。
 - 邮局投递明细的字号、控件高度和信息密度以“发行计划 → 印数管理”为基准；通用值应在 `theme.tsx`、共享组件或 `index.css` 中修改，Storybook 负责复用这些配置做预览验证，不作为独立样式源。当前交互稿保存在 `docs/preview/postal-*.html`。
 - `ReportEditor.stories.tsx` 提供含全部 31 个可见项目、临时加印归属和中通校验数据的草稿态场景，用于核对完整页面而非精简占位稿。
-- Storybook 的“页面”分类覆盖业务首页、发行履约和邮局管理门户，便于按实际导航层级检查入口页面。
+- Storybook 的“应用框架 / 发行履约展开导航”场景覆盖邮局与快递的完整树形菜单，便于检查展开、选中和统一导航层级。
 - 历史业务页面已按普通页、复杂详情页、图表页三类完成迁移；`frontend/src/pages` 不再保留直接色值，新页面继续复用上述语义变量或当前 Ant Design token。
 
 ### 8.5 安全性
