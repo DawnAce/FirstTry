@@ -102,6 +102,7 @@ const sourceTypeMeta: Record<string, { label: string; color: string }> = {
   order_generated: { label: '订单生成', color: 'blue' },
   historical_import: { label: '历史导入', color: 'default' },
   complaint_makeup: { label: '投诉补发', color: 'volcano' },
+  recurring_generated: { label: '固定生成', color: 'cyan' },
 };
 const syncStatusMeta: Record<string, { label: string; color: string }> = {
   synced: { label: '已同步', color: 'green' },
@@ -775,6 +776,16 @@ export default function LogisticsIssueDetail() {
           )}
         </div>
       </div>
+
+      {activeSection === 'plan' && currentIssue && dayjs(currentIssue.publish_date).year() === 2026 && (
+        <Alert
+          type="info"
+          showIcon
+          title="2026年「上犹」的3个政府单位全年期数发货明细已全部列出。"
+          description="每期固定30份；手动上传的发货计划若包含相同明细，系统将在导入时自动忽略。"
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       {activeSection === 'plan' && <Card className="zto-reconcile-card" styles={{ body: { padding: 0 } }}>
         <div className="zto-reconcile-main">

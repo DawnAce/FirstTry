@@ -29,6 +29,7 @@ const sourceTypeLabels: Record<ShippingDetailSourceType, string> = {
   order_generated: '订单生成',
   historical_import: '历史导入',
   complaint_makeup: '投诉补发',
+  recurring_generated: '固定生成',
 };
 
 const sourceTypeColors: Record<ShippingDetailSourceType, string> = {
@@ -36,6 +37,7 @@ const sourceTypeColors: Record<ShippingDetailSourceType, string> = {
   order_generated: 'blue',
   historical_import: 'default',
   complaint_makeup: 'volcano',
+  recurring_generated: 'cyan',
 };
 
 const syncStatusLabels: Record<ShippingDetailSyncStatus, string> = {

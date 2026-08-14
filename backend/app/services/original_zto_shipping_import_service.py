@@ -399,11 +399,18 @@ def normalize_shipping_sub_channels(
 def read_original_zto_shipping_rows_with_adjustments(
     wb,
 ) -> tuple[list[ShippingImportRow], list[str], list[ShippingImportAdjustment]]:
+    return normalize_shipping_sub_channels_with_adjustments(
+        read_original_zto_shipping_rows_raw(wb)
+    )
+
+
+def read_original_zto_shipping_rows_raw(wb) -> list[ShippingImportRow]:
+    """Parse original rows without applying sub-channel adjustments."""
     rows: list[ShippingImportRow] = []
     for sheet_name, parser in _SHEET_PARSERS.items():
         if sheet_name in wb.sheetnames:
             rows.extend(parser(wb[sheet_name]))
-    return normalize_shipping_sub_channels_with_adjustments(rows)
+    return rows
 
 
 def read_original_zto_shipping_rows_with_warnings(

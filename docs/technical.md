@@ -449,13 +449,28 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | order_id | INT | 订单发货同步来源订单；手工行为空 |
 | order_item_id | INT | 订单发货同步来源明细；手工行为空 |
 | fulfillment_target_id | INT | 订单发货同步来源履约目标；手工行为空 |
-| source_type | ENUM | 来源：manual/order_generated/historical_import |
+| source_type | ENUM | 来源：manual/order_generated/historical_import/recurring_generated（另含 complaint_makeup 等既有业务来源） |
 | sync_status | ENUM | 同步状态：synced/manually_modified/orphaned |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
 订单发货同步行通过唯一索引 `uq_shipping_detail_order_target_issue`
 约束 `(issue_number, order_id, order_item_id, fulfillment_target_id)`，避免同一期同一订单履约目标在并发同步时生成重复发货明细；历史手工行的关联字段为 `NULL`，仍允许多行共存。
+
+#### 2026 年「上犹」政府单位固定明细
+
+- 规则仅限 2026 年非休刊期，固定生成上犹县政府办 10 份、上犹县人大办 11 份、上犹县政协办 9 份，每期 3 条、共 30 份；`source_type=recurring_generated`，前端显示「固定生成」。
+- `recurring_shipping_detail_service.py` 按姓名复用并原位校正已有记录，缺失时才新增；重复姓名会中止，避免静默制造多条。迁移 `a2c4e6f8b0d3` 为来源枚举增加 `recurring_generated`。回填命令为 `cd backend && python -m scripts.backfill_shangyou_government_2026`（默认回滚预演），确认后加 `--apply` 提交。
+- 上传或替换计划时，仅当目标刊期出版年份为 2026，才按这 3 个固定姓名从上传内容中排除重复项。完整命中 3 条、30 份时，预览提示“现有系统里已有2026年「上犹」的3个政府单位，导入数据会忽略该30份明细。”；部分命中则提示实际忽略的条数、份数和姓名。其他年份不执行此特例。
+- 计划替换只处理手工/历史导入行；整期清空、批量删除和单条删除均保护固定生成行。跨期复制既不会把来源期的固定生成行复制到目标期，也不会因目标期只有固定生成行而误判为已有普通计划。
+- 上犹原始工作表的解析继续沿用既有版式和列位，没有增加 G/H 列新版解析；本次修正由固定明细服务完成，不改变其他上犹行的解析行为。
+
+#### 2026-08-14 已上传数据专项核查
+
+- 发货计划：2026 年 49 个非休刊期均有上述 3 条固定明细，共 147 条、1470 份，无缺失、无重复；原有 7 期记录 ID 保留，属于原位校正，没有删除重建。
+- 实际发货 2638 期（2026-01-26）：3 条均正确匹配并已确认，共 30 份、3 个运单，历史实发数据完整保留。
+- 实际发货 2652 期（2026-05-18）：3 条、30 份识别正确，批次状态仍为 `previewed`，尚未确认。
+- 实际发货 2635 期（2026-01-05）：原表比可识别版式少一个空白列，导致 3 行错位；姓名被读为 `9/10/11`，单位名称进入地址，数量为 0，均为 `invalid` 且未关联。该批次仍为 `previewed`，没有写入正式实际发货。本次仅记录审计结果，未擅自修正或确认该批次。
 
 ### 3.12A 运单导入、延期合寄与逐包裹核销（6 张表）
 

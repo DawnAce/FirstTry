@@ -12,12 +12,14 @@ class ShippingDetailSourceType(str, enum.Enum):
     - manual: entered directly on the ZTO-MF page (legacy / V1.1 default)
     - order_generated: written by the order sync job (V1.3+)
     - historical_import: imported from a historical archive (V2)
+    - recurring_generated: fixed recipient generated for every active issue
     """
 
     manual = "manual"
     order_generated = "order_generated"
     historical_import = "historical_import"
     complaint_makeup = "complaint_makeup"
+    recurring_generated = "recurring_generated"
 
 
 class ShippingDetailSyncStatus(str, enum.Enum):
