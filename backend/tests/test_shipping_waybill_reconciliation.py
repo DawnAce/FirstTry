@@ -18,6 +18,8 @@ from app.models import (
     ShippingPackageAllocation,
     ShippingWaybillImportBatch,
     ShippingWaybillImportRow,
+    WaybillImportStatus,
+    WaybillMatchStatus,
 )
 from app.models.user import User, UserRole
 from app.schemas.shipping_detail import ShippingDetailOut
@@ -46,6 +48,7 @@ from app.services.shipping_waybill_service import (
     get_draft_import,
     parse_waybill_workbook,
     preview_import,
+    repair_postal_30_preview_rows,
     transfer_shipping_plan_quantity,
     update_import_row,
 )
@@ -107,6 +110,28 @@ def _high_speed_rail_workbook_bytes() -> bytes:
         "☑",
         "北京站",
     ])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _postal_30_workbook_bytes(*, compact: bool) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "已出邮政30"
+    ws.append(["刊物", "打印名称", "单号", "打印名称", "电话", "空列/地址", "地址/姓名", "姓名/份数", "份数"])
+    if compact:
+        ws.append([
+            "经营报1-5日", "上犹县政协办9", "9442663534703", "上犹县政协办9",
+            "0797-8541235", "江西省赣州市上犹县县政府大楼232室政协办",
+            "上犹县政协办", 9, "中国经营报",
+        ])
+    else:
+        ws.append([
+            "经营报5-18日", "上犹县政协办9", "9407632598208", "上犹县政协办9",
+            "0797-8541235", None, "江西省赣州市上犹县县政府大楼232室政协办",
+            "上犹县政协办", 9,
+        ])
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
@@ -238,6 +263,94 @@ def test_parser_recognizes_high_speed_rail_sheet_columns():
     assert rows[0].address == "北京市东城区北京站广场西侧商务专用通道 赵叶 15810698235"
     assert rows[0].quantity == 5
     assert rows[0].parse_reason is None
+
+
+def test_parser_recognizes_compact_postal_30_columns():
+    rows = parse_waybill_workbook(_postal_30_workbook_bytes(compact=True))
+    assert len(rows) == 1
+    assert (rows[0].recipient_name, rows[0].quantity) == ("上犹县政协办", 9)
+    assert rows[0].phone == "0797-8541235"
+    assert rows[0].address == "江西省赣州市上犹县县政府大楼232室政协办"
+    assert rows[0].tracking_no == "9442663534703"
+    assert rows[0].carrier == "邮政"
+
+
+def test_parser_keeps_spaced_postal_30_columns_compatible():
+    rows = parse_waybill_workbook(_postal_30_workbook_bytes(compact=False))
+    assert len(rows) == 1
+    assert (rows[0].recipient_name, rows[0].quantity) == ("上犹县政协办", 9)
+    assert rows[0].address == "江西省赣州市上犹县县政府大楼232室政协办"
+    assert rows[0].tracking_no == "9407632598208"
+
+
+def test_repair_compact_postal_30_preview_row_relinks_shipping_detail():
+    db = _db()
+    issue = Issue(issue_number=2635, publish_date=date(2026, 1, 5), status=IssueStatus.confirmed)
+    detail = ShippingDetail(
+        issue_number=2635,
+        sheet_name="上犹",
+        channel="赠阅",
+        sub_channel="政府",
+        transport="邮政物流",
+        frequency="周",
+        status="正常",
+        name="上犹县政协办",
+        phone="0797-8541235",
+        address="江西省赣州市上犹县县政府大楼232室政协办",
+        quantity=9,
+    )
+    db.add_all([issue, detail])
+    db.flush()
+    batch = ShippingWaybillImportBatch(
+        issue_id=issue.id,
+        issue_number=2635,
+        filename="单号经营报1-5日.xlsx",
+        file_hash="compact-postal-30",
+        status=WaybillImportStatus.previewed.value,
+        expected_quantity=9,
+        parsed_quantity=0,
+        matched_quantity=0,
+        pending_quantity=9,
+        matched_rows=0,
+        unmatched_rows=1,
+        warning_count=1,
+    )
+    db.add(batch)
+    db.flush()
+    row = ShippingWaybillImportRow(
+        batch_id=batch.id,
+        source_sheet="已出邮政30",
+        source_row=2,
+        carrier="邮政",
+        tracking_no="9442663534703",
+        recipient_name="9",
+        phone="0797-8541235",
+        address="上犹县政协办",
+        quantity=0,
+        raw_values=[
+            "经营报1-5日", "上犹县政协办9", "9442663534703", "上犹县政协办9",
+            "0797-8541235", "江西省赣州市上犹县县政府大楼232室政协办",
+            "上犹县政协办", "9", "中国经营报",
+        ],
+        match_status=WaybillMatchStatus.invalid.value,
+    )
+    db.add(row)
+    db.commit()
+
+    result = repair_postal_30_preview_rows(db, issue_number=2635, username="test")
+
+    db.refresh(row)
+    db.refresh(batch)
+    assert result.repaired_rows == 1
+    assert result.repaired_quantity == 9
+    assert row.recipient_name == "上犹县政协办"
+    assert row.address == detail.address
+    assert row.quantity == 9
+    assert row.match_status == WaybillMatchStatus.matched.value
+    assert row.shipping_detail_id == detail.id
+    assert batch.parsed_quantity == 9
+    assert batch.matched_quantity == 9
+    assert batch.pending_quantity == 0
 
 
 def test_parser_does_not_retain_total_row_as_unrecognized_data():

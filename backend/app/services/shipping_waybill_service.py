@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import sha256
 from io import BytesIO
@@ -73,6 +73,15 @@ class OrphanedWaybillRestoreResult:
     restored_deferrals: int = 0
 
 
+@dataclass
+class WaybillPreviewRepairResult:
+    issue_number: int
+    batch_id: int
+    repaired_rows: int = 0
+    repaired_quantity: int = 0
+    row_ids: list[int] = field(default_factory=list)
+
+
 def _text(value: Any) -> str:
     if value is None:
         return ""
@@ -121,6 +130,40 @@ def _is_meaningful_candidate(row: tuple[Any, ...] | list[Any]) -> bool:
         return False
     header_words = {"姓名", "收件人", "电话", "手机号", "地址", "份数", "数量", "运单号", "快递单号"}
     return len(set(values) & header_words) < 2
+
+
+def _row_value(row: tuple[Any, ...] | list[Any], index: int) -> Any:
+    return row[index] if index < len(row) else None
+
+
+def _parse_postal_30_fields(
+    row: tuple[Any, ...] | list[Any],
+) -> tuple[str, str, str, int, str]:
+    """Read both historical layouts of the postal-30 actual-waybill sheet.
+
+    The compact layout used by the 2026-01-05 workbook has address/name/quantity
+    in F/G/H. Later workbooks insert a blank F column and use G/H/I. The
+    quantity cell identifies the layout without changing the separate original
+    shipping-plan parser for the ``上犹`` worksheet.
+    """
+    compact_quantity = _quantity(_row_value(row, 7))
+    spaced_quantity = _quantity(_row_value(row, 8))
+    phone = _text(_row_value(row, 4))
+    if compact_quantity > 0 and spaced_quantity <= 0:
+        return (
+            _text(_row_value(row, 6)),
+            phone,
+            _text(_row_value(row, 5)),
+            compact_quantity,
+            "compact_fgh",
+        )
+    return (
+        _text(_row_value(row, 7)),
+        phone,
+        _text(_row_value(row, 6)),
+        spaced_quantity,
+        "spaced_ghi",
+    )
 
 
 def _parse_standard_sheet(ws) -> list[ParsedWaybillRow] | None:
@@ -213,7 +256,7 @@ def _parse_known_sheet(ws) -> list[ParsedWaybillRow]:
         tracking_c = _tracking(row[2]) if len(row) > 2 and _looks_like_tracking(row[2]) else ""
         tracking_e = _tracking(row[4]) if len(row) > 4 and _looks_like_tracking(row[4]) else ""
         if "邮政30" in title and tracking_c:
-            name, phone, address, qty = _text(row[7]), _text(row[4]), _text(row[6]), _quantity(row[8])
+            name, phone, address, qty, _layout = _parse_postal_30_fields(row)
             carrier, tracking = "邮政", tracking_c
         elif "高铁" in title and tracking_c:
             # 高铁运单表在地址后多一列展示名称：G=展示名称、H=姓名、I=份数。
@@ -717,6 +760,86 @@ def _recalculate_batch(db: Session, batch: ShippingWaybillImportBatch) -> None:
             and by_id[detail_id].handled_quantity + imported != (by_id[detail_id].quantity or 0)
         )
     batch.warning_count = len(unresolved) + detail_warnings
+
+
+def repair_postal_30_preview_rows(
+    db: Session,
+    *,
+    issue_number: int,
+    username: str = "system",
+) -> WaybillPreviewRepairResult:
+    """Repair compact F/G/H postal-30 rows from their stored raw-cell snapshot."""
+    batch = db.query(ShippingWaybillImportBatch).filter(
+        ShippingWaybillImportBatch.issue_number == issue_number,
+        ShippingWaybillImportBatch.status == WaybillImportStatus.previewed.value,
+    ).order_by(
+        ShippingWaybillImportBatch.created_at.desc(),
+        ShippingWaybillImportBatch.id.desc(),
+    ).first()
+    if not batch:
+        raise ValueError(f"{issue_number} 期没有待确认的实际发货预览批次")
+
+    result = WaybillPreviewRepairResult(
+        issue_number=issue_number,
+        batch_id=batch.id,
+    )
+    changes: list[dict[str, Any]] = []
+    for row in batch.rows:
+        if "邮政30" not in row.source_sheet or not row.raw_values:
+            continue
+        name, phone, address, quantity, layout = _parse_postal_30_fields(row.raw_values)
+        if layout != "compact_fgh" or not name or quantity <= 0:
+            continue
+
+        before = {
+            "name": row.recipient_name,
+            "phone": row.phone,
+            "address": row.address,
+            "quantity": row.quantity,
+            "match_status": row.match_status,
+            "shipping_detail_id": row.shipping_detail_id,
+        }
+        row.carrier = "邮政"
+        row.recipient_name = name
+        row.phone = phone or None
+        row.address = address or None
+        row.quantity = quantity
+        row.manual_reviewed = False
+        _match_draft_row(db, batch, row)
+        after = {
+            "name": row.recipient_name,
+            "phone": row.phone,
+            "address": row.address,
+            "quantity": row.quantity,
+            "match_status": row.match_status,
+            "shipping_detail_id": row.shipping_detail_id,
+        }
+        if before == after:
+            continue
+        result.repaired_rows += 1
+        result.repaired_quantity += quantity
+        result.row_ids.append(row.id)
+        changes.append({"row_id": row.id, "source_row": row.source_row, "before": before, "after": after})
+
+    if result.repaired_rows:
+        db.flush()
+        _recalculate_batch(db, batch)
+        record_operation(
+            db,
+            table_name="shipping_waybill_import_batches",
+            record_id=batch.id,
+            record_name=f"{issue_number}期实际发货解析修复",
+            action="repair_waybill_parse",
+            username=username,
+            issue_number=issue_number,
+            changes={
+                "layout": "compact_fgh",
+                "repaired_rows": result.repaired_rows,
+                "repaired_quantity": result.repaired_quantity,
+                "rows": changes,
+            },
+        )
+    return result
 
 
 def update_import_row(
