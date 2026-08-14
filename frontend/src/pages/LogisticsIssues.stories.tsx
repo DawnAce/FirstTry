@@ -34,7 +34,7 @@ const rows: PeriodRow[] = [
 ];
 
 const meta = {
-  title: '页面/发行履约/快递管理/期数总览',
+  title: '页面/发行履约/快递管理/二级列表',
   component: LogisticsIssues,
   decorators: [withRouter],
   parameters: {
@@ -55,4 +55,5 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const DualStatusOverview: Story = { name: '计划与运单双状态' };
+export const ShippingPlans: Story = { name: '发货计划', args: { mode: 'plan' } };
+export const ActualShipments: Story = { name: '实际发货', args: { mode: 'actual' } };

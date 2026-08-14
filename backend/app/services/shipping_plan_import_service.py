@@ -124,6 +124,7 @@ def _confirmed_shipping_total(db: Session, issue_id: int) -> int | None:
 def _has_fulfillment_history(detail: ShippingDetail) -> bool:
     return bool(
         detail.shipped_at
+        or detail.actual_name
         or detail.shipped_quantity is not None
         or detail.tracking_no
         or detail.packages

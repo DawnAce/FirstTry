@@ -179,6 +179,7 @@ const handlers = [
     deferrals: [],
     gap_details: [],
   })),
+  http.get('/api/shipping-waybills/deferrals/pending', () => HttpResponse.json([])),
   http.get('/api/shipping-details', () => HttpResponse.json(details)),
   http.patch('/api/shipping-waybills/imports/1/rows/:rowId', () => HttpResponse.json(batch)),
   http.post('/api/shipping-waybills/imports/1/rows', () => HttpResponse.json(batch)),
@@ -206,7 +207,7 @@ export const Unresolved: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('运单核对工作台')).toBeVisible();
     await expect(await canvas.findByText('发货计划对账')).toBeVisible();
-    await expect(await canvas.findByText('核销待补')).toBeVisible();
+    await expect(await canvas.findByText('未解释待补')).toBeVisible();
     const linkButton = await canvas.findByRole('button', { name: /关联这 4 个运单/ });
     await expect(linkButton).toBeVisible();
     await expect(getComputedStyle(linkButton).color).toBe('rgb(255, 255, 255)');

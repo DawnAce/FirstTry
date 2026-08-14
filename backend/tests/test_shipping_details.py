@@ -41,10 +41,13 @@ with patch.dict("sys.modules", {"cpca": _fake_cpca}):
         _snapshot,
         batch_update_shipping_details,
         clear_shipping_details_by_issue,
+        reset_actual_shipping_recipient,
+        update_actual_shipping_recipient,
         update_shipping_detail,
     )
 from app.schemas.shipping_detail import (
     ShippingDetailBatchUpdate,
+    ShippingActualRecipientUpdate,
     ShippingDetailCreate,
     ShippingDetailOut,
     ShippingDetailUpdate,
@@ -214,6 +217,53 @@ class ShippingDetailsSyncMetadataTests(unittest.TestCase):
         self.assertIn("sync_status", log.changes)
         db.close()
 
+    def test_actual_recipient_adjustment_does_not_change_plan_fields(self):
+        db = self.SessionLocal()
+        detail = ShippingDetail(
+            issue_number=2652,
+            sheet_name="每周（对公）",
+            channel="渠道订阅",
+            name="计划收件人",
+            phone="13800000000",
+            address="计划地址",
+            quantity=10,
+            source_type=ShippingDetailSourceType.order_generated,
+            sync_status=ShippingDetailSyncStatus.synced,
+        )
+        db.add(detail)
+        db.commit()
+        db.refresh(detail)
+
+        updated = update_actual_shipping_recipient(
+            detail.id,
+            ShippingActualRecipientUpdate(
+                name="实际收件人",
+                phone="13900000000",
+                reason="收件人临时调整",
+            ),
+            db=db,
+            user=User(id=1, username="admin", role=UserRole.admin, password_hash="x"),
+        )
+
+        self.assertEqual(updated.name, "计划收件人")
+        self.assertEqual(updated.phone, "13800000000")
+        self.assertEqual(updated.actual_name, "实际收件人")
+        self.assertEqual(updated.actual_phone, "13900000000")
+        self.assertEqual(updated.sync_status, ShippingDetailSyncStatus.synced)
+        self.assertEqual(
+            db.query(OperationLog).filter(OperationLog.action == "update_actual_recipient").count(),
+            1,
+        )
+
+        reset = reset_actual_shipping_recipient(
+            detail.id,
+            db=db,
+            user=User(id=1, username="admin", role=UserRole.admin, password_hash="x"),
+        )
+        self.assertIsNone(reset.actual_name)
+        self.assertEqual(reset.name, "计划收件人")
+        db.close()
+
     def test_batch_update_order_generated_detail_marks_sync_status_manually_modified(self):
         db = self.SessionLocal()
         detail = ShippingDetail(
@@ -287,6 +337,7 @@ class ShippingDetailsSyncMetadataTests(unittest.TestCase):
                 sheet_name="每周（对公）",
                 channel="渠道订阅",
                 name="手工订阅",
+                actual_name="上期临时收件人",
                 quantity=10,
             ),
             ShippingDetail(
@@ -322,6 +373,7 @@ class ShippingDetailsSyncMetadataTests(unittest.TestCase):
         self.assertEqual(copied, 1)
         self.assertEqual(len(copied_details), 1)
         self.assertEqual(copied_details[0].name, "手工订阅")
+        self.assertIsNone(copied_details[0].actual_name)
         self.assertIsNone(copied_details[0].order_id)
         self.assertIsNone(copied_details[0].order_item_id)
         self.assertIsNone(copied_details[0].fulfillment_target_id)

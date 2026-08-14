@@ -65,6 +65,13 @@ class ShippingDetailUpdate(BaseModel):
     tracking_no: Optional[str] = None
 
 
+class ShippingActualRecipientUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    address: Optional[str] = None
+    phone: Optional[str] = Field(default=None, max_length=50)
+    reason: str = Field(min_length=2, max_length=255)
+
+
 class ShippingDetailBatchPatch(BaseModel):
     status: Optional[str] = None
     deadline: Optional[str] = None
@@ -143,6 +150,11 @@ class ShippingDetailOut(BaseModel):
     name: str
     address: Optional[str]
     phone: Optional[str]
+    actual_name: Optional[str] = None
+    actual_address: Optional[str] = None
+    actual_phone: Optional[str] = None
+    actual_adjustment_reason: Optional[str] = None
+    actual_adjusted_at: Optional[datetime] = None
     quantity: int
     deadline: Optional[str]
     notes: Optional[str]

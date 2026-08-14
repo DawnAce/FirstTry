@@ -4394,15 +4394,6 @@ body {
   gap: 12px;
   min-height: 62px;
   padding: 11px 14px !important;
-  border-left: 3px solid var(--color-accent);
-}
-
-.logistics-summary-card:nth-child(2) .ant-card-body {
-  border-left-color: var(--color-success);
-}
-
-.logistics-summary-card.is-neutral .ant-card-body {
-  border-left-color: #a7adb5;
 }
 
 .logistics-summary-card span {
@@ -4412,7 +4403,7 @@ body {
 
 .logistics-summary-card strong {
   color: var(--color-text-primary);
-  font-size: 18px;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -4467,7 +4458,7 @@ body {
 
 .logistics-filter-tools {
   grid-column: 2;
-  grid-row: 1 / 3;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4479,6 +4470,12 @@ body {
 
 .logistics-filter-tools b {
   color: var(--color-text-primary);
+}
+
+.logistics-list-card.ant-card {
+  overflow: hidden;
+  border-color: var(--color-border);
+  border-radius: 12px;
 }
 
 .logistics-period-table .ant-table {
@@ -4578,6 +4575,10 @@ body {
 
 .zto-page-head {
   margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-card);
 }
 
 .zto-section-bar {
@@ -4767,6 +4768,169 @@ body {
   display: block;
   margin-top: 3px;
   color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+/* 快递管理所有弹窗、抽屉统一采用紧凑字号与参考页的白色卡片风格。 */
+.zto-compact-modal .ant-modal-content {
+  padding: 16px 18px;
+  border-radius: 12px;
+}
+
+.zto-compact-modal .ant-modal-header {
+  margin-bottom: 0;
+  padding: 12px 16px;
+}
+
+.zto-compact-modal .ant-modal:not(.complaint-form-modal) .ant-modal-title {
+  gap: 9px;
+  min-height: 32px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.zto-compact-modal .ant-modal:not(.complaint-form-modal) .ant-modal-title::before {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.zto-compact-modal .ant-modal-close {
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+}
+
+.zto-compact-modal .ant-modal-body {
+  padding: 10px 16px;
+}
+
+.zto-compact-modal .ant-modal-body,
+.zto-compact-modal .ant-modal-footer,
+.zto-compact-modal .ant-form-item,
+.zto-compact-modal .ant-form-item-label > label,
+.zto-compact-modal .ant-input,
+.zto-compact-modal .ant-input-number,
+.zto-compact-modal .ant-select,
+.zto-compact-modal .ant-btn,
+.zto-compact-modal .ant-table {
+  font-size: 12px;
+}
+
+.zto-compact-modal .ant-btn {
+  font-size: 12px !important;
+}
+
+.zto-compact-modal .ant-form-item {
+  margin-bottom: 13px;
+}
+
+.zto-compact-modal h3 {
+  font-size: 13px;
+}
+
+.zto-actual-recipient-form {
+  margin-top: 14px;
+}
+
+.app-drawer-root .ant-drawer-header {
+  padding: 14px 16px;
+}
+
+.app-drawer-root .ant-drawer-title {
+  font-size: 14px;
+}
+
+.app-drawer-root .ant-drawer-body {
+  padding: 14px 16px;
+  font-size: 12px;
+}
+
+.app-drawer-root .ant-drawer-footer {
+  padding: 10px 16px;
+}
+
+.app-drawer-root .ant-btn,
+.app-drawer-root .ant-input,
+.app-drawer-root .ant-select,
+.app-drawer-root .ant-form-item-label > label,
+.app-drawer-root .ant-table {
+  font-size: 12px;
+}
+
+.app-drawer-root h3,
+.app-drawer-root .app-drawer-panel > h3 {
+  font-size: 13px;
+}
+
+.waybill-page {
+  gap: 12px;
+}
+
+.waybill-head {
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-card);
+}
+
+.waybill-title-line h1 {
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.waybill-head p,
+.waybill-page .ant-alert-description,
+.waybill-page .ant-tag,
+.waybill-table-toolbar > span {
+  font-size: 11px;
+}
+
+.waybill-page .ant-btn,
+.waybill-page .ant-input,
+.waybill-page .ant-select,
+.waybill-page .ant-table,
+.waybill-page .ant-segmented {
+  font-size: 12px;
+}
+
+.waybill-upload-zone {
+  min-height: 250px;
+  padding: 34px;
+}
+
+.waybill-upload-zone > .anticon {
+  font-size: 38px;
+}
+
+.waybill-upload-zone h2 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+
+.waybill-upload-zone p {
+  margin-bottom: 16px;
+  font-size: 11px;
+}
+
+.waybill-status-result b,
+.waybill-status-metric b,
+.waybill-metrics b {
+  font-size: 16px;
+}
+
+.waybill-status-result small,
+.waybill-status-metric span,
+.waybill-status-metric small,
+.waybill-metrics span,
+.waybill-metrics small {
+  font-size: 11px;
+}
+
+.waybill-table-card .ant-table-thead > tr > th {
   font-size: 11px;
 }
 

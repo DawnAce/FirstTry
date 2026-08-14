@@ -20,6 +20,7 @@ from app.schemas.shipping_detail import (
     ShippingDetailBatchResult,
     ShippingDetailBatchUpdate,
     ShippingDetailCreate,
+    ShippingActualRecipientUpdate,
     ShippingPlanImportCommitIn,
     ShippingPlanImportCommitOut,
     ShippingPlanImportPreviewOut,
@@ -40,6 +41,7 @@ router = APIRouter(prefix="/api/shipping-details", tags=["shipping-details"])
 _TRACKED_FIELDS = [
     "issue_number", "sheet_name", "channel", "sub_channel", "transport", "frequency",
     "status", "name", "address", "phone", "quantity", "deadline",
+    "actual_name", "actual_address", "actual_phone", "actual_adjustment_reason", "actual_adjusted_at",
     "notes", "extra_info", "station_name", "station_hall",
     "contact_person", "seq_number", "period_count", "confirmation",
     "company", "shipped_at", "shipped_quantity", "tracking_no",
@@ -56,6 +58,11 @@ _COPY_FIELDS = [
         "shipped_at",
         "shipped_quantity",
         "tracking_no",
+        "actual_name",
+        "actual_address",
+        "actual_phone",
+        "actual_adjustment_reason",
+        "actual_adjusted_at",
         "order_id",
         "order_item_id",
         "fulfillment_target_id",
@@ -178,6 +185,7 @@ def _ensure_all_ids_found(requested_ids: list[int], details: list[ShippingDetail
 def _has_fulfillment_history(detail: ShippingDetail) -> bool:
     return bool(
         detail.shipped_at
+        or detail.actual_name
         or detail.shipped_quantity is not None
         or detail.tracking_no
         or detail.packages
@@ -437,6 +445,76 @@ def update_shipping_detail(
             changes=changes,
         )
     makeup_svc.sync_task_from_shipping_detail(db, detail, operator_id=getattr(user, "id", None))
+    db.commit()
+    db.refresh(detail)
+    return detail
+
+
+@router.put("/{detail_id}/actual-recipient", response_model=ShippingDetailOut)
+def update_actual_shipping_recipient(
+    detail_id: int,
+    data: ShippingActualRecipientUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """调整实际收件信息；计划字段保持不变，并记录调整原因。"""
+    detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
+    if not detail:
+        raise HTTPException(status_code=404, detail="发货明细不存在")
+    old_snapshot = _snapshot(detail)
+    normalized_address = normalize_address(data.address)["address"] if data.address else data.address
+    detail.actual_name = data.name.strip()
+    detail.actual_address = normalized_address
+    detail.actual_phone = data.phone.strip() if data.phone else None
+    detail.actual_adjustment_reason = data.reason.strip()
+    detail.actual_adjusted_at = datetime.now()
+    changes = _diff(old_snapshot, _snapshot(detail))
+    if changes:
+        record_operation(
+            db,
+            user=user,
+            table_name="shipping_details",
+            record_id=detail.id,
+            record_name=detail.name,
+            action="update_actual_recipient",
+            issue_number=detail.issue_number,
+            channel=detail.channel,
+            changes=changes,
+        )
+    db.commit()
+    db.refresh(detail)
+    return detail
+
+
+@router.delete("/{detail_id}/actual-recipient", response_model=ShippingDetailOut)
+def reset_actual_shipping_recipient(
+    detail_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """恢复沿用计划收件信息，历史调整仍保留在操作日志中。"""
+    detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
+    if not detail:
+        raise HTTPException(status_code=404, detail="发货明细不存在")
+    old_snapshot = _snapshot(detail)
+    detail.actual_name = None
+    detail.actual_address = None
+    detail.actual_phone = None
+    detail.actual_adjustment_reason = None
+    detail.actual_adjusted_at = None
+    changes = _diff(old_snapshot, _snapshot(detail))
+    if changes:
+        record_operation(
+            db,
+            user=user,
+            table_name="shipping_details",
+            record_id=detail.id,
+            record_name=detail.name,
+            action="reset_actual_recipient",
+            issue_number=detail.issue_number,
+            channel=detail.channel,
+            changes=changes,
+        )
     db.commit()
     db.refresh(detail)
     return detail
