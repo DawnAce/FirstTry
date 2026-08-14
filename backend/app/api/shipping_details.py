@@ -120,7 +120,10 @@ def _copy_shipping_details_from_previous(
         db.query(ShippingDetail.id)
         .filter(
             ShippingDetail.issue_number == issue_number,
-            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+            ShippingDetail.source_type.notin_([
+                ShippingDetailSourceType.complaint_makeup,
+                ShippingDetailSourceType.recurring_generated,
+            ]),
         )
         .with_for_update()
         .all()
@@ -137,6 +140,7 @@ def _copy_shipping_details_from_previous(
                 ShippingDetail.source_type.notin_([
                     ShippingDetailSourceType.order_generated,
                     ShippingDetailSourceType.complaint_makeup,
+                    ShippingDetailSourceType.recurring_generated,
                 ]),
             ),
         )
@@ -604,6 +608,8 @@ def batch_delete_shipping_details(
     _ensure_all_ids_found(data.ids, details)
     if any(d.source_type == ShippingDetailSourceType.complaint_makeup for d in details):
         raise HTTPException(status_code=409, detail="投诉补发记录请从邮局工单取消")
+    if any(d.source_type == ShippingDetailSourceType.recurring_generated for d in details):
+        raise HTTPException(status_code=409, detail="系统固定生成的发货明细不能手工删除")
     _ensure_no_fulfillment_history(details)
 
     for detail in details:
@@ -638,7 +644,10 @@ def clear_shipping_details_by_issue(
         db.query(ShippingDetail)
         .filter(
             ShippingDetail.issue_number == issue_number,
-            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+            ShippingDetail.source_type.notin_([
+                ShippingDetailSourceType.complaint_makeup,
+                ShippingDetailSourceType.recurring_generated,
+            ]),
         )
         .all()
     )
@@ -675,6 +684,8 @@ def delete_shipping_detail(
         raise HTTPException(status_code=404, detail="发货明细不存在")
     if detail.source_type == ShippingDetailSourceType.complaint_makeup:
         raise HTTPException(status_code=409, detail="投诉补发记录请从邮局工单取消")
+    if detail.source_type == ShippingDetailSourceType.recurring_generated:
+        raise HTTPException(status_code=409, detail="系统固定生成的发货明细不能手工删除")
     _ensure_no_fulfillment_history([detail])
     record_operation(
         db,

@@ -59,6 +59,7 @@ describe('shippingDetailDisplayColumns', () => {
     ['manual', '手工', 'default'],
     ['order_generated', '订单生成', 'blue'],
     ['historical_import', '历史导入', 'default'],
+    ['recurring_generated', '固定生成', 'cyan'],
   ])('preserves source_type label and color for %s', (value, label, color) => {
     expectTag(renderColumn('source_type', value), label, color);
   });

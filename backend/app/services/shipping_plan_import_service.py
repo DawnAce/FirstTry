@@ -37,8 +37,9 @@ from app.services.original_zto_shipping_import_service import (
     is_original_zto_shipping_workbook,
     normalize_shipping_sub_channels_with_adjustments,
     read_original_zto_shipping_basic_info,
-    read_original_zto_shipping_rows_with_adjustments,
+    read_original_zto_shipping_rows_raw,
 )
+from app.services.recurring_shipping_detail_service import exclude_recurring_shipping_import_rows
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.services.workbook_loader import load_uploaded_workbook
 
@@ -80,17 +81,27 @@ def _detail_signature(details: list[ShippingDetail]) -> list[dict[str, Any]]:
 
 def _parse_shipping_file(
     content: bytes,
+    *,
+    recurring_year: int | None = None,
 ) -> tuple[int | None, list[ShippingImportRow], list[str], list[ShippingImportAdjustment]]:
     workbook = load_uploaded_workbook(content, file_label="中通发货文件")
     if _is_template_shipping_workbook(workbook):
         issue_number = _parse_issue_number(_read_basic_info(workbook).get("期号"))
-        rows, warnings, adjustments = normalize_shipping_sub_channels_with_adjustments(
-            _read_shipping_rows(workbook)
+        rows, recurring_warnings = exclude_recurring_shipping_import_rows(
+            _read_shipping_rows(workbook), year=recurring_year
         )
+        rows, warnings, adjustments = normalize_shipping_sub_channels_with_adjustments(
+            rows
+        )
+        warnings.extend(recurring_warnings)
         return issue_number, rows, warnings, adjustments
     if is_original_zto_shipping_workbook(workbook):
         issue_number = _parse_issue_number(read_original_zto_shipping_basic_info(workbook).get("期号"))
-        rows, warnings, adjustments = read_original_zto_shipping_rows_with_adjustments(workbook)
+        rows, recurring_warnings = exclude_recurring_shipping_import_rows(
+            read_original_zto_shipping_rows_raw(workbook), year=recurring_year
+        )
+        rows, warnings, adjustments = normalize_shipping_sub_channels_with_adjustments(rows)
+        warnings.extend(recurring_warnings)
         return issue_number, rows, warnings, adjustments
     raise HTTPException(
         status_code=400,
@@ -145,7 +156,10 @@ def preview_shipping_plan_import(
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
 
-    file_issue_number, rows, warnings, adjustments = _parse_shipping_file(content)
+    file_issue_number, rows, warnings, adjustments = _parse_shipping_file(
+        content,
+        recurring_year=issue.publish_date.year,
+    )
     errors: list[str] = []
     if file_issue_number is None:
         errors.append("无法从中通文件识别期号，请检查基本信息或原表标题")

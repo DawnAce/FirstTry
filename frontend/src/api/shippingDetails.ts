@@ -1,7 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
 
-export type ShippingDetailSourceType = 'manual' | 'order_generated' | 'historical_import' | 'complaint_makeup';
+export type ShippingDetailSourceType = 'manual' | 'order_generated' | 'historical_import' | 'complaint_makeup' | 'recurring_generated';
 
 export type ShippingDetailSyncStatus = 'synced' | 'manually_modified' | 'orphaned';
 
