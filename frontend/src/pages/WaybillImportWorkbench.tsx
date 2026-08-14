@@ -706,7 +706,7 @@ export default function WaybillImportWorkbench() {
       accept=".xlsx,.xlsm"
       onChange={(event) => event.target.files?.[0] && acceptFile(event.target.files[0], forceReparseRef.current)}
     />
-    <Button type="link" size="small" icon={<LeftOutlined />} className="waybill-back" onClick={() => navigate(`/logistics/issues/${issueId}`)}>
+    <Button type="link" size="small" icon={<LeftOutlined />} className="waybill-back" onClick={() => navigate(`/logistics/issues/${issueId}?section=actual`)}>
       返回第 {issueQuery.data?.issue_number ?? '—'} 期快递管理
     </Button>
 
@@ -774,7 +774,7 @@ export default function WaybillImportWorkbench() {
             <span className="waybill-status-icon"><FileExcelOutlined /></span>
             <div><small>实际发货与核销</small><b>{fulfillmentQuery.data?.status === 'shipped' && fulfillmentQuery.data.shipment_status === 'partial' ? '核销已完成 · 部分发货' : displayedPendingQuantity ? '部分已发货' : '全部已发货'}</b></div>
           </div>
-          <div className="waybill-status-metric"><span>确认印数</span><b>{batch.expected_quantity.toLocaleString()}</b><small>份 · 核销基准</small></div>
+          <div className="waybill-status-metric"><span>计划应发</span><b>{batch.expected_quantity.toLocaleString()}</b><small>份 · 核销基准</small></div>
           <div className="waybill-status-metric"><span>实际发出</span><b>{(fulfillmentQuery.data?.actual_shipped_quantity ?? batch.matched_quantity).toLocaleString()}</b><small>份</small></div>
           <div className="waybill-status-metric"><span>无需发货</span><b>{adjustmentQuantity.toLocaleString()}</b><small>份</small></div>
           <div className="waybill-status-metric is-warning"><span>待月底合寄</span><b>{deferredQuantity.toLocaleString()}</b><small>份 · 已说明</small></div>
@@ -792,7 +792,7 @@ export default function WaybillImportWorkbench() {
       <Card className="waybill-table-card" styles={{ body: { padding: 0 } }}>
         <div className="waybill-table-toolbar">
           <Segmented<RowFilter> value={filter} options={filterOptions} onChange={setFilter} />
-          <span>{filter === 'gap' ? '确认印数与源文件总数的差额' : `当前显示 ${visibleRows.length} 行，按影响份数从高到低排列`}</span>
+          <span>{filter === 'gap' ? '计划应发与运单源文件总数的差额' : `当前显示 ${visibleRows.length} 行，按影响份数从高到低排列`}</span>
         </div>
         {filter === 'unresolved' && groupSuggestions[0] && <div className="waybill-match-suggestion">
           <div>
@@ -916,12 +916,13 @@ export default function WaybillImportWorkbench() {
           size="large"
           className="waybill-return-button"
           icon={<LeftOutlined />}
-          onClick={() => navigate(`/logistics/issues/${issueId}`)}
+          onClick={() => navigate(`/logistics/issues/${issueId}?section=actual`)}
         >返回第 {issueQuery.data?.issue_number ?? '—'} 期快递管理</Button>}
       </div>
     </>}
 
     <Modal
+      rootClassName="zto-compact-modal"
       title={editingRow ? `核对 ${editingRow.source_sheet} · 第 ${editingRow.source_row} 行` : '手工补充未识别行'}
       open={Boolean(editingRow) || addingRow}
       width={760}
@@ -972,6 +973,7 @@ export default function WaybillImportWorkbench() {
     </Modal>
 
     <Modal
+      rootClassName="zto-compact-modal"
       title="确认忽略这条源文件记录"
       open={Boolean(ignoreRow)}
       okText="记录原因并忽略"
@@ -997,6 +999,7 @@ export default function WaybillImportWorkbench() {
     </Modal>
 
     <Modal
+      rootClassName="zto-compact-modal"
       title={`标记 ${adjustmentSelectedQuantity.toLocaleString()} 份无需发货`}
       open={adjustmentOpen}
       okText="确认核销"
@@ -1007,7 +1010,7 @@ export default function WaybillImportWorkbench() {
       <Alert
         showIcon
         type="info"
-        title="该记录用于解释确认印数中没有出现在运单源文件里的份数"
+        title="该记录用于解释计划应发中没有出现在运单源文件里的份数"
         description="确认后会计入实际发货核销，但不会生成虚假的运单号。"
       />
       <Select
@@ -1032,6 +1035,7 @@ export default function WaybillImportWorkbench() {
     </Modal>
 
     <Modal
+      rootClassName="zto-compact-modal"
       title="补充无需发货记录的归属"
       open={Boolean(attributionAdjustment)}
       okText="确认归属"
@@ -1060,6 +1064,7 @@ export default function WaybillImportWorkbench() {
     </Modal>
 
     <Modal
+      rootClassName="zto-compact-modal"
       title={planTransferGap ? `计划纠错：从“${planTransferGap.name}”转出 ${planTransferGap.remaining_quantity} 份` : '计划纠错'}
       open={Boolean(planTransferGap)}
       okText="确认净额转移"
@@ -1110,6 +1115,7 @@ export default function WaybillImportWorkbench() {
     </Modal>
 
     <Modal
+      rootClassName="zto-compact-modal"
       title="月底合寄待办"
       open={consolidatedOpen}
       width={820}

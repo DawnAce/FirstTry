@@ -40,6 +40,8 @@ ACTION_LABELS: dict[str, str] = {
     "bulk_create": "登记月底合寄明细",
     "create_consolidated": "完成月底合寄发货",
     "transfer_quantity": "调整发货计划份数",
+    "update_actual_recipient": "调整实际收件信息",
+    "reset_actual_recipient": "恢复计划收件信息",
 }
 
 

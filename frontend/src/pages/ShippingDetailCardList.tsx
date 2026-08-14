@@ -83,6 +83,8 @@ export default function ShippingDetailCardList({
           const packageCopy = getPackageCopy(record);
           const selected = selectedRowKeys.some((key) => Number(key) === record.id);
           const ordinal = (currentPage - 1) * PAGE_SIZE + index + 1;
+          const recipientName = mode === 'actual' ? (record.actual_name || record.name) : record.name;
+          const recipientPhone = mode === 'actual' ? (record.actual_phone || record.phone) : record.phone;
           return (
             <article
               key={record.id}
@@ -112,8 +114,8 @@ export default function ShippingDetailCardList({
 
               <div className="zto-card-field zto-card-recipient">
                 <span>收件人</span>
-                <strong>{record.name || '—'}</strong>
-                <small>{record.phone || '—'}</small>
+                <strong>{recipientName || '—'}</strong>
+                <small>{recipientPhone || '—'}{mode === 'actual' && record.actual_name ? ' · 已调整' : ''}</small>
               </div>
 
               <div className="zto-card-field zto-card-channel">

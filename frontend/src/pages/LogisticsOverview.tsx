@@ -132,7 +132,7 @@ export default function LogisticsOverview() {
       <PageHeader
         title="快递管理"
         description="发货计划与实际发货分开管理，计划变化不会覆盖已导入运单。"
-        actions={<Button type="primary" icon={<BarChartOutlined />} onClick={() => navigate('/logistics/issues')}>查看期数总览</Button>}
+        actions={<Button type="primary" icon={<BarChartOutlined />} onClick={() => navigate('/logistics/plans')}>进入发货计划</Button>}
       />
 
       <Row gutter={16} className="dashboard-stat-row">
@@ -160,7 +160,7 @@ export default function LogisticsOverview() {
             title={
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 700, fontSize: 16 }}>期数状态总览</span>
-                <Button type="link" onClick={() => navigate('/logistics/issues')}>查看全部期数 <RightOutlined /></Button>
+                <Button type="link" onClick={() => navigate('/logistics/plans')}>查看发货计划 <RightOutlined /></Button>
               </div>
             }
           >
@@ -201,7 +201,7 @@ export default function LogisticsOverview() {
             </div>
             <div className="dashboard-pending-list">
               {reminderItems.map((item, idx) => (
-                <div key={idx} className="dashboard-pending-item" onClick={() => navigate('/logistics/issues')}>
+                <div key={idx} className="dashboard-pending-item" onClick={() => navigate(item.label.includes('实际发货') ? '/logistics/shipments' : '/logistics/plans')}>
                   <div className="dashboard-pending-dot" style={{ background: item.color }} />
                   <div className="dashboard-pending-content">
                     <div className="dashboard-pending-name">{item.label}</div>
@@ -219,13 +219,23 @@ export default function LogisticsOverview() {
               <span className="dashboard-sidebar-title">🚀 快捷操作</span>
             </div>
             <div className="dashboard-quick-links">
-              <div className="dashboard-quick-link" onClick={() => navigate('/logistics/issues')}>
+              <div className="dashboard-quick-link" onClick={() => navigate('/logistics/plans')}>
                 <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-accent-soft)' }}>
                   <UnorderedListOutlined style={{ color: 'var(--color-accent)' }} />
                 </div>
                 <div className="dashboard-quick-link-text">
-                  <div className="dashboard-quick-link-name">期数总览</div>
-                  <div className="dashboard-quick-link-desc">按计划状态和运单状态组合筛选</div>
+                  <div className="dashboard-quick-link-name">发货计划</div>
+                  <div className="dashboard-quick-link-desc">维护收件信息与计划应发份数</div>
+                </div>
+                <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12 }} />
+              </div>
+              <div className="dashboard-quick-link" onClick={() => navigate('/logistics/shipments')}>
+                <div className="dashboard-quick-link-icon" style={{ background: 'var(--color-success-soft)' }}>
+                  <UnorderedListOutlined style={{ color: 'var(--color-success)' }} />
+                </div>
+                <div className="dashboard-quick-link-text">
+                  <div className="dashboard-quick-link-name">实际发货</div>
+                  <div className="dashboard-quick-link-desc">上传运单并处理待核销明细</div>
                 </div>
                 <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12 }} />
               </div>

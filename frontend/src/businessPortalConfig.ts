@@ -42,7 +42,7 @@ export const businessCenters: BusinessCenter[] = [
     path: '/business/fulfilment',
     modules: [
       { key: 'postal', title: '邮局管理', description: '管理邮局渠道的订报、续投、投递与异常工单', icon: '📮', path: '/business/fulfilment/postal', matches: ['/business/fulfilment/postal', '/post-delivery'], detail: '包含：投递明细 · 待续投 · 订报转投 · 邮局工单' },
-      { key: 'courier', title: '快递管理', description: '管理快递发货、批次与物流轨迹', icon: '🚚', path: '/recipients', matches: ['/recipients', '/logistics', '/shipping'], detail: '独立履约渠道' },
+      { key: 'courier', title: '快递管理', description: '分别管理发货计划与实际发货', icon: '🚚', path: '/logistics/plans', matches: ['/recipients', '/logistics', '/shipping'], detail: '发货计划 · 实际发货' },
     ],
   },
   {
@@ -90,6 +90,11 @@ export const postalFunctions = [
   { title: '邮局工单', icon: '🎫', path: '/post-delivery/tickets' },
 ];
 
+export const courierFunctions = [
+  { title: '发货计划', icon: '📄', path: '/logistics/plans' },
+  { title: '实际发货', icon: '🚚', path: '/logistics/shipments' },
+];
+
 const matchesPrefix = (pathname: string, prefix: string) =>
   pathname === prefix || pathname.startsWith(`${prefix}/`) || (prefix === '/history' && pathname.startsWith('/history-'));
 
@@ -106,6 +111,22 @@ export function findPostalFunction(pathname: string) {
   return postalFunctions.find((item) => matchesPrefix(pathname, item.path));
 }
 
+export function findCourierFunction(pathname: string, search = '') {
+  const direct = courierFunctions.find((item) => matchesPrefix(pathname, item.path));
+  if (direct) return direct;
+  if (matchesPrefix(pathname, '/logistics/issues')) {
+    if (pathname.includes('/waybills/import') || new URLSearchParams(search).get('section') === 'actual') {
+      return courierFunctions[1];
+    }
+    return courierFunctions[0];
+  }
+  return undefined;
+}
+
 export function isPostalContext(pathname: string) {
   return matchesPrefix(pathname, '/business/fulfilment/postal') || matchesPrefix(pathname, '/post-delivery');
+}
+
+export function isCourierContext(pathname: string) {
+  return matchesPrefix(pathname, '/logistics') || matchesPrefix(pathname, '/recipients') || matchesPrefix(pathname, '/shipping');
 }

@@ -17,6 +17,11 @@ export interface ShippingDetail {
   name: string;
   address: string | null;
   phone: string | null;
+  actual_name: string | null;
+  actual_address: string | null;
+  actual_phone: string | null;
+  actual_adjustment_reason: string | null;
+  actual_adjusted_at: string | null;
   quantity: number;
   deadline: string | null;
   notes: string | null;
@@ -107,6 +112,13 @@ export interface ShippingDetailUpdate {
   confirmation?: string;
   company?: string;
   shipped_at?: string;
+}
+
+export interface ActualShippingRecipientUpdate {
+  name: string;
+  address?: string;
+  phone?: string;
+  reason: string;
 }
 
 export interface CopyShippingDetailsResult {
@@ -202,6 +214,15 @@ export const createShippingDetail = (data: ShippingDetailCreate): Promise<AxiosR
 
 export const updateShippingDetail = (id: number, data: ShippingDetailUpdate): Promise<AxiosResponse<ShippingDetail>> =>
   api.put<ShippingDetail>(`/shipping-details/${id}`, data);
+
+export const updateActualShippingRecipient = (
+  id: number,
+  data: ActualShippingRecipientUpdate,
+): Promise<AxiosResponse<ShippingDetail>> =>
+  api.put<ShippingDetail>(`/shipping-details/${id}/actual-recipient`, data);
+
+export const resetActualShippingRecipient = (id: number): Promise<AxiosResponse<ShippingDetail>> =>
+  api.delete<ShippingDetail>(`/shipping-details/${id}/actual-recipient`);
 
 export const deleteShippingDetail = (id: number): Promise<AxiosResponse<void>> =>
   api.delete(`/shipping-details/${id}`);

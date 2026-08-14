@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { businessCenters, findBusinessCenter, findBusinessModule, isPostalContext } from './businessPortalConfig';
+import {
+  businessCenters,
+  findBusinessCenter,
+  findBusinessModule,
+  findCourierFunction,
+  isCourierContext,
+  isPostalContext,
+} from './businessPortalConfig';
 
 describe('business portal route ownership', () => {
   it.each([
@@ -20,6 +27,15 @@ describe('business portal route ownership', () => {
     expect(isPostalContext('/business/fulfilment/postal')).toBe(true);
     expect(isPostalContext('/post-delivery/deliveries')).toBe(true);
     expect(isPostalContext('/recipients')).toBe(false);
+  });
+
+  it('maps courier pages and detail routes to the correct second-level navigation', () => {
+    expect(isCourierContext('/logistics/plans')).toBe(true);
+    expect(findCourierFunction('/logistics/plans')?.title).toBe('发货计划');
+    expect(findCourierFunction('/logistics/shipments')?.title).toBe('实际发货');
+    expect(findCourierFunction('/logistics/issues/12', '?section=plan')?.title).toBe('发货计划');
+    expect(findCourierFunction('/logistics/issues/12', '?section=actual')?.title).toBe('实际发货');
+    expect(findCourierFunction('/logistics/issues/12/waybills/import')?.title).toBe('实际发货');
   });
 
   it('uses emoji icons for every sidebar module', () => {

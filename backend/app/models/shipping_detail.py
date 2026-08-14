@@ -48,6 +48,13 @@ class ShippingDetail(Base):
     address = Column(Text)
     phone = Column(String(50))
     quantity = Column(Integer, default=0)
+    # 实际发货可以修正收件信息，但不能覆盖作为依据的计划值。
+    # 空值表示实际发货沿用计划字段 name/address/phone。
+    actual_name = Column(String(100), nullable=True)
+    actual_address = Column(Text, nullable=True)
+    actual_phone = Column(String(50), nullable=True)
+    actual_adjustment_reason = Column(String(255), nullable=True)
+    actual_adjusted_at = Column(DateTime, nullable=True)
     deadline = Column(String(50))
     notes = Column(Text)
     extra_info = Column(Text)

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Key } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Table,
   Button,
@@ -56,6 +56,8 @@ import {
   clearShippingDetailsByIssue,
   previewShippingPlanImport,
   commitShippingPlanImport,
+  resetActualShippingRecipient,
+  updateActualShippingRecipient,
 } from '../api/shippingDetails';
 import { getIssue } from '../api/issues';
 import { getOperationLogs, getRecentOperationLogs } from '../api/operationLogs';
@@ -116,6 +118,8 @@ const fieldLabels: Record<string, string> = {
   station_name: '站点', station_hall: '站厅', contact_person: '联系人',
   seq_number: '序号', period_count: '期数', confirmation: '确认', company: '签约公司',
   shipped_at: '发货时间',
+  actual_name: '实际收件人', actual_address: '实际地址', actual_phone: '实际电话',
+  actual_adjustment_reason: '实发调整原因', actual_adjusted_at: '实发调整时间',
 };
 
 interface ShippingFilters {
@@ -152,8 +156,10 @@ export default function LogisticsIssueDetail() {
   const issueId = Number(id);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { isAdmin, canMutate } = useAuth();
-  const [activeSection, setActiveSection] = useState<'plan' | 'actual'>('plan');
+  const requestedSection = searchParams.get('section') === 'actual' ? 'actual' : 'plan';
+  const activeSection = requestedSection;
   const [shippingFilters, setShippingFilters] = useState<ShippingFilters>({});
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ShippingDetail | null>(null);
@@ -171,13 +177,21 @@ export default function LogisticsIssueDetail() {
   const [changeLogOpen, setChangeLogOpen] = useState(false);
   const [packageRecord, setPackageRecord] = useState<ShippingDetail | null>(null);
   const [packageForm] = Form.useForm();
-  const [planImportOpen, setPlanImportOpen] = useState(false);
+  const [planImportOpen, setPlanImportOpen] = useState(() => searchParams.get('action') === 'import' && isAdmin);
   const [planImportFile, setPlanImportFile] = useState<File | null>(null);
   const [planImportPreview, setPlanImportPreview] = useState<ShippingPlanImportPreview | null>(null);
   const [planImportReason, setPlanImportReason] = useState('');
   const [planImportPreviewing, setPlanImportPreviewing] = useState(false);
   const [planImportCommitting, setPlanImportCommitting] = useState(false);
   const [planImportAdjustmentsConfirmed, setPlanImportAdjustmentsConfirmed] = useState(false);
+  const [actualRecipientRecord, setActualRecipientRecord] = useState<ShippingDetail | null>(null);
+  const [actualRecipientSaving, setActualRecipientSaving] = useState(false);
+  const [actualRecipientForm] = Form.useForm();
+
+  const switchSection = (section: 'plan' | 'actual') => {
+    setSelectedRowKeys([]);
+    setSearchParams({ section }, { replace: true });
+  };
 
   const { data: currentIssue } = useQuery({
     queryKey: ['issue', issueId],
@@ -236,7 +250,13 @@ export default function LogisticsIssueDetail() {
     if (shippingFilters.frequency && detail.frequency !== shippingFilters.frequency) return false;
     if (shippingFilters.transport && detail.transport !== shippingFilters.transport) return false;
     if (activeSection === 'plan' && shippingFilters.status && detail.status !== shippingFilters.status) return false;
-    if (shippingFilters.search && !detail.name.includes(shippingFilters.search)) return false;
+    if (shippingFilters.search) {
+      const keyword = shippingFilters.search.trim();
+      const searchable = activeSection === 'actual'
+        ? [detail.actual_name, detail.actual_phone, detail.actual_address, detail.name, detail.phone, detail.address]
+        : [detail.name, detail.phone, detail.address, detail.company];
+      if (!searchable.some((value) => value?.includes(keyword))) return false;
+    }
     if (shippingFilters.company?.length && !shippingFilters.company.includes(detail.company ?? '')) return false;
     return true;
   }), [activeSection, allDetails, shippingFilters]);
@@ -391,6 +411,50 @@ export default function LogisticsIssueDetail() {
     setDetailDrawerRecord(null);
     setPackageRecord(record);
     packageForm.setFieldsValue({ carrier: '中通', quantity: Math.max(record.quantity - record.handled_quantity, 1) });
+  };
+
+  const handleOpenActualRecipient = (record: ShippingDetail) => {
+    setDetailDrawerRecord(null);
+    setActualRecipientRecord(record);
+    actualRecipientForm.setFieldsValue({
+      name: record.actual_name || record.name,
+      phone: record.actual_phone || record.phone,
+      address: record.actual_address || record.address,
+      reason: record.actual_adjustment_reason || '',
+    });
+  };
+
+  const handleSaveActualRecipient = async () => {
+    if (!actualRecipientRecord) return;
+    setActualRecipientSaving(true);
+    try {
+      const values = await actualRecipientForm.validateFields();
+      await updateActualShippingRecipient(actualRecipientRecord.id, values);
+      message.success('实际收件信息已调整，发货计划保持不变');
+      setActualRecipientRecord(null);
+      actualRecipientForm.resetFields();
+      refreshShippingDetails();
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '调整实际收件信息失败'));
+    } finally {
+      setActualRecipientSaving(false);
+    }
+  };
+
+  const handleResetActualRecipient = async () => {
+    if (!actualRecipientRecord) return;
+    setActualRecipientSaving(true);
+    try {
+      await resetActualShippingRecipient(actualRecipientRecord.id);
+      message.success('实际发货已恢复沿用计划收件信息');
+      setActualRecipientRecord(null);
+      actualRecipientForm.resetFields();
+      refreshShippingDetails();
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '恢复计划收件信息失败'));
+    } finally {
+      setActualRecipientSaving(false);
+    }
   };
 
   const handleAddPackage = async () => {
@@ -625,9 +689,9 @@ export default function LogisticsIssueDetail() {
         size="small"
         icon={<LeftOutlined />}
         className="zto-page-back"
-        onClick={() => navigate('/logistics/issues')}
+        onClick={() => navigate(activeSection === 'plan' ? '/logistics/plans' : '/logistics/shipments')}
       >
-        期数总览
+        返回{activeSection === 'plan' ? '发货计划' : '实际发货'}列表
       </Button>
 
       <div className="zto-page-head">
@@ -658,7 +722,7 @@ export default function LogisticsIssueDetail() {
             role="tab"
             aria-selected={activeSection === 'plan'}
             className={activeSection === 'plan' ? 'is-active' : ''}
-            onClick={() => { setActiveSection('plan'); setSelectedRowKeys([]); }}
+            onClick={() => switchSection('plan')}
           >
             <strong>发货计划</strong>
             <span>收件人、地址与应发份数，不含运单</span>
@@ -668,7 +732,7 @@ export default function LogisticsIssueDetail() {
             role="tab"
             aria-selected={activeSection === 'actual'}
             className={activeSection === 'actual' ? 'is-active' : ''}
-            onClick={() => { setActiveSection('actual'); setSelectedRowKeys([]); }}
+            onClick={() => switchSection('actual')}
           >
             <strong>实际发货</strong>
             <span>运单、实发份数与核销结果</span>
@@ -1013,6 +1077,7 @@ export default function LogisticsIssueDetail() {
       )}
 
       <Modal
+        rootClassName="zto-compact-modal"
         title={`上传 / 替换发货计划 · 第 ${currentIssueNumber ?? '-'} 期`}
         open={planImportOpen}
         onCancel={closePlanImport}
@@ -1168,6 +1233,41 @@ export default function LogisticsIssueDetail() {
       </Modal>
 
       <Modal
+        rootClassName="zto-compact-modal"
+        title={`调整实际收件信息${actualRecipientRecord ? ` · ${actualRecipientRecord.name}` : ''}`}
+        open={!!actualRecipientRecord}
+        okText="保存实际信息"
+        confirmLoading={actualRecipientSaving}
+        onOk={handleSaveActualRecipient}
+        onCancel={() => { setActualRecipientRecord(null); actualRecipientForm.resetFields(); }}
+      >
+        <Alert
+          showIcon
+          type="info"
+          title="这里只调整本次实际发货信息"
+          description="发货计划中的原收件人、电话和地址会完整保留，不会被反向修改。"
+        />
+        <Form form={actualRecipientForm} layout="vertical" className="zto-actual-recipient-form">
+          <Form.Item name="name" label="实际收件人" rules={[{ required: true, message: '请输入实际收件人' }]}>
+            <Input placeholder="请输入实际收件人" />
+          </Form.Item>
+          <Form.Item name="phone" label="实际电话">
+            <Input placeholder="请输入实际联系电话" />
+          </Form.Item>
+          <Form.Item name="address" label="实际地址">
+            <Input.TextArea placeholder="请输入实际收件地址" rows={2} />
+          </Form.Item>
+          <Form.Item name="reason" label="调整原因" rules={[{ required: true, min: 2, message: '请填写调整原因' }]}>
+            <Input.TextArea placeholder="例如：收件人临时要求改寄新地址" rows={2} maxLength={255} showCount />
+          </Form.Item>
+        </Form>
+        {actualRecipientRecord?.actual_name && (
+          <Button type="link" danger loading={actualRecipientSaving} onClick={handleResetActualRecipient}>恢复沿用计划收件信息</Button>
+        )}
+      </Modal>
+
+      <Modal
+        rootClassName="zto-compact-modal"
         title={`补录运单${packageRecord ? ` · ${packageRecord.name}` : ''}`}
         open={!!packageRecord}
         onOk={handleAddPackage}
@@ -1187,6 +1287,7 @@ export default function LogisticsIssueDetail() {
       </Modal>
 
       <Modal
+        rootClassName="zto-compact-modal"
         title={editingRecord ? '编辑计划明细' : '新增计划明细'}
         open={modalVisible}
         onOk={handleSubmit}
@@ -1274,6 +1375,7 @@ export default function LogisticsIssueDetail() {
       </Modal>
 
       <Modal
+        rootClassName="zto-compact-modal"
         title="确认后变更与差异归因"
         open={changeLogOpen}
         onCancel={() => setChangeLogOpen(false)}
@@ -1326,7 +1428,7 @@ export default function LogisticsIssueDetail() {
         title={detailDrawerRecord ? (
           <DrawerTitle
             icon="🚚"
-            title={detailDrawerRecord.name || (activeSection === 'plan' ? '计划明细' : '实际发货明细')}
+            title={(activeSection === 'actual' ? detailDrawerRecord.actual_name : detailDrawerRecord.name) || detailDrawerRecord.name || (activeSection === 'plan' ? '计划明细' : '实际发货明细')}
             description={`${detailDrawerRecord.channel || '未分类'} · ${activeSection === 'plan' ? '发货计划' : '实际发货'} #${detailDrawerRecord.id}`}
             tone={activeSection === 'plan' ? 'neutral' : detailDrawerRecord.fulfillment_status === 'partial' ? 'warning' : detailDrawerRecord.fulfillment_status === 'pending' ? 'neutral' : 'success'}
             status={(
@@ -1343,6 +1445,9 @@ export default function LogisticsIssueDetail() {
         footer={detailDrawerRecord ? (
           <div className="app-drawer-footer zto-detail-drawer-footer">
             <Button icon={<HistoryOutlined />} onClick={() => handleShowLogs(detailDrawerRecord)}>操作日志</Button>
+            {activeSection === 'actual' && canMutate && (
+              <Button onClick={() => handleOpenActualRecipient(detailDrawerRecord)}>调整实发信息</Button>
+            )}
             {activeSection === 'actual' && canMutate && detailDrawerRecord.shipping_requirement !== 'no_tracking_required' && detailDrawerRecord.handled_quantity < detailDrawerRecord.quantity && (
               <Button onClick={() => handleOpenPackage(detailDrawerRecord)}>补录运单</Button>
             )}
@@ -1383,7 +1488,7 @@ export default function LogisticsIssueDetail() {
             </div>}
 
             <section className="zto-detail-section">
-              <h3>收件与计划信息</h3>
+              <h3>{activeSection === 'actual' ? '计划收件信息' : '收件与计划信息'}</h3>
               <div className="zto-detail-facts">
                 <div><span>联系电话</span><strong>{detailDrawerRecord.phone || '—'}</strong></div>
                 <div><span>渠道</span><strong><Tag color={channelColors[detailDrawerRecord.channel] || 'default'}>{detailDrawerRecord.channel || '—'}</Tag></strong></div>
@@ -1395,6 +1500,17 @@ export default function LogisticsIssueDetail() {
                 <div><span>数据状态</span><strong>{detailDrawerRecord.status || '—'}</strong></div>
               </div>
             </section>
+
+            {activeSection === 'actual' && <section className="zto-detail-section">
+              <h3>实际收件信息</h3>
+              <div className="zto-detail-facts">
+                <div><span>实际收件人</span><strong>{detailDrawerRecord.actual_name || detailDrawerRecord.name || '—'}</strong></div>
+                <div><span>实际电话</span><strong>{detailDrawerRecord.actual_phone || detailDrawerRecord.phone || '—'}</strong></div>
+                <div className="is-wide"><span>实际地址</span><strong>{detailDrawerRecord.actual_address || detailDrawerRecord.address || '—'}</strong></div>
+                <div><span>信息来源</span><strong>{detailDrawerRecord.actual_name ? <Tag color="orange">实际发货已调整</Tag> : <Tag color="blue">沿用发货计划</Tag>}</strong></div>
+                {detailDrawerRecord.actual_adjustment_reason && <div><span>调整原因</span><strong>{detailDrawerRecord.actual_adjustment_reason}</strong></div>}
+              </div>
+            </section>}
 
             {activeSection === 'actual' && <section className="zto-detail-section">
               <h3>实际发货</h3>

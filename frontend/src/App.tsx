@@ -126,7 +126,9 @@ function App() {
             <Route path="/print" element={<Dashboard />} />
             <Route path="/report/:issueId" element={<ReportEditor />} />
             <Route path="/recipients" element={<WorkbenchOrRedirect />} />
-            <Route path="/logistics/issues" element={<LogisticsIssues />} />
+            <Route path="/logistics/issues" element={<Navigate to="/logistics/plans" replace />} />
+            <Route path="/logistics/plans" element={<LogisticsIssues mode="plan" />} />
+            <Route path="/logistics/shipments" element={<LogisticsIssues mode="actual" />} />
             <Route path="/logistics/issues/:id" element={<LogisticsIssueDetail />} />
             <Route path="/logistics/issues/:id/waybills/import" element={<RequireMutationAccess fallback="/logistics/issues"><WaybillImportWorkbench /></RequireMutationAccess>} />
             <Route path="/post-delivery" element={<Navigate to="/post-delivery/deliveries" replace />} />

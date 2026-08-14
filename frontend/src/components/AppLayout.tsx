@@ -9,9 +9,12 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import GlobalSearch from './GlobalSearch';
 import {
+  courierFunctions,
   findBusinessCenter,
   findBusinessModule,
+  findCourierFunction,
   findPostalFunction,
+  isCourierContext,
   isPostalContext,
   postalFunctions,
 } from '../businessPortalConfig';
@@ -27,7 +30,9 @@ export default function AppLayout() {
   const center = findBusinessCenter(pathname);
   const module = findBusinessModule(center, pathname);
   const postalContext = isPostalContext(pathname);
+  const courierContext = isCourierContext(pathname);
   const postalFunction = findPostalFunction(pathname);
+  const courierFunction = findCourierFunction(pathname, location.search);
   const isBusinessHome = pathname === '/';
   const isCenterPortal = center?.path === pathname;
   const isPostalPortal = pathname === '/business/fulfilment/postal';
@@ -36,13 +41,26 @@ export default function AppLayout() {
     ? [{ key: '/', icon: <span className="business-nav-emoji">🏠</span>, label: '业务首页' }]
     : postalContext
       ? postalFunctions.map((item) => ({ key: item.path, icon: <span className="business-nav-emoji">{item.icon}</span>, label: item.title }))
-      : center?.modules.map((item) => ({ key: item.path, icon: <span className="business-nav-emoji">{item.icon}</span>, label: item.title })) ?? [];
+      : center?.modules.map((item) => item.key === 'courier'
+        ? {
+            key: 'courier-navigation',
+            icon: <span className="business-nav-emoji">{item.icon}</span>,
+            label: item.title,
+            children: courierFunctions.map((child) => ({
+              key: child.path,
+              icon: <span className="business-nav-emoji">{child.icon}</span>,
+              label: child.title,
+            })),
+          }
+        : { key: item.path, icon: <span className="business-nav-emoji">{item.icon}</span>, label: item.title }) ?? [];
 
   const selectedKeys = isBusinessHome
     ? ['/']
     : postalContext
       ? postalFunction ? [postalFunction.path] : []
-      : !isCenterPortal && module ? [module.path] : [];
+      : courierFunction
+        ? [courierFunction.path]
+        : !isCenterPortal && module ? [module.path] : [];
 
   const breadcrumbs: Array<{ label: string; path?: string }> = [{ label: '业务首页', path: isBusinessHome ? undefined : '/' }];
   if (center) breadcrumbs.push({ label: center.title, path: isCenterPortal ? undefined : center.path });
@@ -51,6 +69,7 @@ export default function AppLayout() {
     if (postalFunction) breadcrumbs.push({ label: postalFunction.title });
   } else if (module && !isCenterPortal) {
     breadcrumbs.push({ label: module.title });
+    if (courierContext && courierFunction) breadcrumbs.push({ label: courierFunction.title });
   }
 
   const userMenuItems: MenuProps['items'] = [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: logout }];
@@ -74,12 +93,20 @@ export default function AppLayout() {
               </button>
             )}
             {center && <div className="business-nav-caption">{postalContext ? '邮局管理' : center.title}</div>}
-            <Menu mode="inline" selectedKeys={selectedKeys} onClick={({ key }) => navigate(key)} items={menuItems} />
+            <Menu
+              mode="inline"
+              defaultOpenKeys={['courier-navigation']}
+              selectedKeys={selectedKeys}
+              onClick={({ key }) => { if (key.startsWith('/')) navigate(key); }}
+              items={menuItems}
+            />
             <div className="business-nav-note">
               {isBusinessHome
                 ? '具体业务菜单已收进各业务中心，首页不再平铺全部功能。'
                 : postalContext
                   ? '投递明细、待续投、订报转投和邮局工单统一归属邮局管理。'
+                  : courierContext
+                    ? '发货计划与实际发货分开管理；上传运单不会覆盖计划。'
                   : `当前只显示“${center?.title}”下的功能，减少无关菜单干扰。`}
             </div>
           </div>

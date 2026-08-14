@@ -2211,6 +2211,8 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - 组件库（Ant Design）
 - 页面组件通过 `React.lazy` 按路由拆包；TanStack Query 默认数据新鲜期为 60 秒、缓存回收期为 10 分钟，减少短时间往返页面时的重复读取
 - ZTO-MF 单期页通过 `logisticsIssueState.ts` 显式区分 Query 的 loading / error / success-empty 状态：请求失败不得回退为 `[]` 后渲染业务空态。计划区使用「发货计划对账」，实际区独立展示物理发货与核销；取得核销摘要后可区分「待录入运单 / 部分已发货 / 已完成发货核销 / 核销已完成 · 部分发货」。运单操作优先展示后端 `detail`，500 错误提示检查数据库迁移状态。
+- 快递管理的列表入口拆为 `/logistics/plans` 与 `/logistics/shipments`，在 `AppLayout` 中作为「快递管理」的两个嵌套菜单项；列表页不再用内容区标签卡模拟导航。两页共用期数总览接口，但分别采用计划状态与履约状态筛选。列表 Query 同样显式区分 error 与 success-empty，接口失败不得显示为 0 期。
+- 迁移 `f0a2c4e6b8d9` 为 `shipping_details` 增加 `actual_name / actual_phone / actual_address / actual_adjustment_reason / actual_adjusted_at`。这些字段只保存实际发货阶段的临时收件调整，空值表示沿用计划字段；实际调整不反向覆盖计划，清空或替换计划时必须保护已有实际历史。部署本版本必须执行 `alembic upgrade head`。
 - 表格固定列使用 `fixed: 'end'` + `scroll={{ x: 'max-content' }}`，操作列固定在右侧
 - 表格行 hover 使用不透明语义背景色（`var(--color-bg-subtle)`），避免固定列穿透问题
 - 操作按钮使用图标 + Tooltip 替代文字按钮，节省空间

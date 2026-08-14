@@ -61,6 +61,11 @@ const makeDetail = (id: number, overrides: Partial<ShippingDetail>): ShippingDet
   created_at: '2026-05-22T13:36:00',
   updated_at: '2026-05-25T09:10:00',
   ...overrides,
+  actual_name: overrides.actual_name ?? null,
+  actual_address: overrides.actual_address ?? null,
+  actual_phone: overrides.actual_phone ?? null,
+  actual_adjustment_reason: overrides.actual_adjustment_reason ?? null,
+  actual_adjusted_at: overrides.actual_adjusted_at ?? null,
 })
 
 const featured = [
