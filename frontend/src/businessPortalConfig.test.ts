@@ -4,8 +4,11 @@ import {
   findBusinessCenter,
   findBusinessModule,
   findCourierFunction,
+  findPostalFunction,
   isCourierContext,
   isPostalContext,
+  courierFunctions,
+  postalFunctions,
 } from './businessPortalConfig';
 
 describe('business portal route ownership', () => {
@@ -23,10 +26,19 @@ describe('business portal route ownership', () => {
     expect(findBusinessModule(center, path)?.key).toBe(moduleKey);
   });
 
-  it('keeps postal pages in their third-level context', () => {
+  it('maps postal pages to the correct expanded navigation child', () => {
     expect(isPostalContext('/business/fulfilment/postal')).toBe(true);
     expect(isPostalContext('/post-delivery/deliveries')).toBe(true);
     expect(isPostalContext('/recipients')).toBe(false);
+    expect(findPostalFunction('/post-delivery/deliveries')?.title).toBe('投递明细');
+    expect(findPostalFunction('/post-delivery/renewals')?.title).toBe('待续投');
+    expect(findPostalFunction('/post-delivery/subscription')?.title).toBe('订报转投');
+    expect(findPostalFunction('/post-delivery/tickets')?.title).toBe('邮局工单');
+  });
+
+  it('defines both fulfilment modules as child navigation groups', () => {
+    expect(postalFunctions.map((item) => item.title)).toEqual(['投递明细', '待续投', '订报转投', '邮局工单']);
+    expect(courierFunctions.map((item) => item.title)).toEqual(['发货计划', '实际发货']);
   });
 
   it('maps courier pages and detail routes to the correct second-level navigation', () => {

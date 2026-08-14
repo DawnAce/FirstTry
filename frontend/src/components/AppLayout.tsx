@@ -14,8 +14,6 @@ import {
   findBusinessModule,
   findCourierFunction,
   findPostalFunction,
-  isCourierContext,
-  isPostalContext,
   postalFunctions,
 } from '../businessPortalConfig';
 import type { MenuProps } from 'antd';
@@ -29,47 +27,47 @@ export default function AppLayout() {
   const pathname = location.pathname;
   const center = findBusinessCenter(pathname);
   const module = findBusinessModule(center, pathname);
-  const postalContext = isPostalContext(pathname);
-  const courierContext = isCourierContext(pathname);
   const postalFunction = findPostalFunction(pathname);
   const courierFunction = findCourierFunction(pathname, location.search);
   const isBusinessHome = pathname === '/';
   const isCenterPortal = center?.path === pathname;
-  const isPostalPortal = pathname === '/business/fulfilment/postal';
 
   const menuItems: MenuProps['items'] = isBusinessHome
     ? [{ key: '/', icon: <span className="business-nav-emoji">🏠</span>, label: '业务首页' }]
-    : postalContext
-      ? postalFunctions.map((item) => ({ key: item.path, icon: <span className="business-nav-emoji">{item.icon}</span>, label: item.title }))
-      : center?.modules.map((item) => item.key === 'courier'
-        ? {
-            key: 'courier-navigation',
-            icon: <span className="business-nav-emoji">{item.icon}</span>,
-            label: item.title,
-            children: courierFunctions.map((child) => ({
-              key: child.path,
-              icon: <span className="business-nav-emoji">{child.icon}</span>,
-              label: child.title,
-            })),
-          }
-        : { key: item.path, icon: <span className="business-nav-emoji">{item.icon}</span>, label: item.title }) ?? [];
+    : center?.modules.map((item) => {
+        const children = item.key === 'postal'
+          ? postalFunctions
+          : item.key === 'courier'
+            ? courierFunctions
+            : undefined;
+        return children
+          ? {
+              key: `${item.key}-navigation`,
+              icon: <span className="business-nav-emoji">{item.icon}</span>,
+              label: item.title,
+              children: children.map((child) => ({
+                key: child.path,
+                icon: <span className="business-nav-emoji">{child.icon}</span>,
+                label: child.title,
+              })),
+            }
+          : { key: item.path, icon: <span className="business-nav-emoji">{item.icon}</span>, label: item.title };
+      }) ?? [];
 
   const selectedKeys = isBusinessHome
     ? ['/']
-    : postalContext
-      ? postalFunction ? [postalFunction.path] : []
+    : postalFunction
+      ? [postalFunction.path]
       : courierFunction
         ? [courierFunction.path]
         : !isCenterPortal && module ? [module.path] : [];
 
   const breadcrumbs: Array<{ label: string; path?: string }> = [{ label: '业务首页', path: isBusinessHome ? undefined : '/' }];
   if (center) breadcrumbs.push({ label: center.title, path: isCenterPortal ? undefined : center.path });
-  if (postalContext) {
-    breadcrumbs.push({ label: '邮局管理', path: isPostalPortal ? undefined : '/business/fulfilment/postal' });
-    if (postalFunction) breadcrumbs.push({ label: postalFunction.title });
-  } else if (module && !isCenterPortal) {
+  if (module && !isCenterPortal) {
     breadcrumbs.push({ label: module.title });
-    if (courierContext && courierFunction) breadcrumbs.push({ label: courierFunction.title });
+    const currentFunction = postalFunction ?? courierFunction;
+    if (currentFunction) breadcrumbs.push({ label: currentFunction.title });
   }
 
   const userMenuItems: MenuProps['items'] = [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: logout }];
@@ -88,14 +86,15 @@ export default function AppLayout() {
 
           <div className="app-sider-menu">
             {!isBusinessHome && (
-              <button className="business-nav-back" onClick={() => navigate(postalContext ? '/business/fulfilment' : '/')}>
-                ← 返回{postalContext ? '发行履约' : '业务首页'}
+              <button className="business-nav-back" onClick={() => navigate('/')}>
+                ← 返回业务首页
               </button>
             )}
-            {center && <div className="business-nav-caption">{postalContext ? '邮局管理' : center.title}</div>}
+            {center && <div className="business-nav-caption">{center.title}</div>}
             <Menu
+              key={center?.key ?? 'business-home'}
               mode="inline"
-              defaultOpenKeys={['courier-navigation']}
+              defaultOpenKeys={center?.key === 'fulfilment' ? ['postal-navigation', 'courier-navigation'] : []}
               selectedKeys={selectedKeys}
               onClick={({ key }) => { if (key.startsWith('/')) navigate(key); }}
               items={menuItems}
@@ -103,10 +102,8 @@ export default function AppLayout() {
             <div className="business-nav-note">
               {isBusinessHome
                 ? '具体业务菜单已收进各业务中心，首页不再平铺全部功能。'
-                : postalContext
-                  ? '投递明细、待续投、订报转投和邮局工单统一归属邮局管理。'
-                  : courierContext
-                    ? '发货计划与实际发货分开管理；上传运单不会覆盖计划。'
+                : center?.key === 'fulfilment'
+                  ? '邮局管理与快递管理均可直接展开；上传运单不会覆盖发货计划。'
                   : `当前只显示“${center?.title}”下的功能，减少无关菜单干扰。`}
             </div>
           </div>
