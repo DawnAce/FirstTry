@@ -29,6 +29,7 @@ ACTION_LABELS: dict[str, str] = {
     "confirm_source": "确认来源识别与映射",
     "import_waybills": "导入运单",
     "review_waybill": "核对并修改运单信息",
+    "repair_waybill_parse": "修复运单解析",
     "add_waybill_row": "补录运单信息",
     "bulk_match_waybills": "批量关联运单与发货明细",
     "add_package": "补录运单",
