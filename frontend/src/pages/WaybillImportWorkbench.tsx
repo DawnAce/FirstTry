@@ -205,7 +205,7 @@ export default function WaybillImportWorkbench() {
     !item.target_publish_date
     || !issueQuery.data?.publish_date
     || !dayjs(item.target_publish_date).isAfter(dayjs(issueQuery.data.publish_date), 'day')
-  )), [issueQuery.data?.publish_date, pendingDeferrals]);
+  )), [issueQuery.data, pendingDeferrals]);
   const visibleDeferrals = useMemo(() => pendingDeferrals.filter((item) => {
     if (consolidatedFilter === 'due') return dueDeferrals.some((due) => due.id === item.id);
     if (consolidatedFilter === 'twice_monthly') return item.deferral_type === 'twice_monthly_consolidation';
