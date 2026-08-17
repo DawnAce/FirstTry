@@ -39,11 +39,13 @@ export interface ShippingDetail {
   shipping_requirement: string | null;
   physical_shipped_quantity: number;
   no_shipment_quantity: number;
+  warehouse_stock_in_quantity: number;
   deferred_quantity: number;
   no_shipment_reason: string | null;
+  warehouse_stock_in_reason: string | null;
   handled_quantity: number;
   package_count: number;
-  fulfillment_status: 'pending' | 'partial' | 'shipped' | 'no_tracking_required' | 'no_shipment_required';
+  fulfillment_status: 'pending' | 'partial' | 'shipped' | 'no_tracking_required' | 'no_shipment_required' | 'warehouse_stock_in';
   packages: ShippingPackage[];
   order_id: number | null;
   order_item_id: number | null;

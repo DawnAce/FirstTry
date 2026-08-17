@@ -50,4 +50,19 @@ describe('getPackageCopy', () => {
       fulfillment_status: 'no_shipment_required',
     }))).toEqual({ title: '无需发货', detail: '每月两次合寄 · 暂停寄送' });
   });
+
+  it('shows warehouse stock-in separately from no-shipment', () => {
+    expect(getPackageCopy(detail({
+      quantity: 72,
+      handled_quantity: 72,
+      physical_shipped_quantity: 0,
+      no_shipment_quantity: 0,
+      warehouse_stock_in_quantity: 72,
+      warehouse_stock_in_reason: '转库留存 · 当期报纸入马飞中通库房备货',
+      fulfillment_status: 'warehouse_stock_in',
+    }))).toEqual({
+      title: '转库留存/库存入库',
+      detail: '转库留存 · 当期报纸入马飞中通库房备货',
+    });
+  });
 });

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from hashlib import sha256
 from io import BytesIO
 import re
@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, joinedload, noload
 from app.models import (
     Issue,
     IssueAuditSnapshot,
+    PublicationSchedule,
     ShippingDetail,
     ShippingDetailSourceType,
     ShippingDeferral,
@@ -46,6 +47,12 @@ from app.schemas.shipping_waybill import (
 )
 from app.services.operation_log_service import record_operation
 from app.services.original_zto_shipping_import_service import is_original_zto_shipping_workbook
+
+
+WAREHOUSE_STOCK_IN = "warehouse_stock_in"
+WAREHOUSE_STOCK_IN_REASON = "转库留存 · 当期报纸入马飞中通库房备货"
+TWICE_MONTHLY_CONSOLIDATION = "twice_monthly_consolidation"
+MONTH_END_CONSOLIDATION = "month_end_consolidation"
 
 
 @dataclass
@@ -704,6 +711,10 @@ def _match_draft_row(
     if len(candidates) == 1:
         detail = candidates[0]
         row.shipping_detail_id = detail.id
+        if detail.is_mafei_warehouse_retention:
+            row.match_status = WaybillMatchStatus.invalid.value
+            row.match_reason = "马飞—库房留存只能按“转库留存/库存入库”核销"
+            return
         if row.no_tracking_required and detail.packages:
             row.match_status = WaybillMatchStatus.invalid.value
             row.match_reason = "该明细已有运单，不能改为无需运单"
@@ -1005,6 +1016,11 @@ def _materialize_matched_row(
     ).first()
     if not detail:
         raise HTTPException(status_code=400, detail="关联的发货明细不存在")
+    if detail.is_mafei_warehouse_retention:
+        raise HTTPException(
+            status_code=400,
+            detail="马飞—库房留存不能生成运单，只能按“转库留存/库存入库”核销",
+        )
     if row.no_tracking_required:
         if detail.packages:
             raise HTTPException(status_code=409, detail="该明细已有运单，不能改为无需运单")
@@ -1394,8 +1410,24 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
         ShippingDeferral.issue_id == issue.id
     ).order_by(ShippingDeferral.created_at, ShippingDeferral.id).all()
     adjustment_quantity = sum(max(adjustment.quantity or 0, 0) for adjustment in adjustments)
+    warehouse_stock_in_quantity = sum(
+        max(adjustment.quantity or 0, 0)
+        for adjustment in adjustments
+        if adjustment.adjustment_type == WAREHOUSE_STOCK_IN
+    )
+    no_shipment_quantity = adjustment_quantity - warehouse_stock_in_quantity
     deferred_quantity = sum(
         max(deferral.quantity or 0, 0) for deferral in deferrals if deferral.status == "pending"
+    )
+    twice_monthly_deferred_quantity = sum(
+        max(deferral.quantity or 0, 0)
+        for deferral in deferrals
+        if deferral.status == "pending" and deferral.deferral_type == TWICE_MONTHLY_CONSOLIDATION
+    )
+    month_end_deferred_quantity = sum(
+        max(deferral.quantity or 0, 0)
+        for deferral in deferrals
+        if deferral.status == "pending" and deferral.deferral_type == MONTH_END_CONSOLIDATION
     )
     attributed_adjustment_quantity = sum(
         max(adjustment.quantity or 0, 0) for adjustment in adjustments if adjustment.is_attributed
@@ -1438,9 +1470,15 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
             if row.shipping_detail_id is not None and row.match_status == WaybillMatchStatus.matched.value:
                 source_by_detail[row.shipping_detail_id] += max(row.quantity or 0, 0)
     pending_deferred_by_detail: dict[int, int] = defaultdict(int)
+    pending_twice_monthly_by_detail: dict[int, int] = defaultdict(int)
+    pending_month_end_by_detail: dict[int, int] = defaultdict(int)
     for deferral in deferrals:
         if deferral.status == "pending" and deferral.shipping_detail_id is not None:
             pending_deferred_by_detail[deferral.shipping_detail_id] += max(deferral.quantity or 0, 0)
+            if deferral.deferral_type == TWICE_MONTHLY_CONSOLIDATION:
+                pending_twice_monthly_by_detail[deferral.shipping_detail_id] += max(deferral.quantity or 0, 0)
+            elif deferral.deferral_type == MONTH_END_CONSOLIDATION:
+                pending_month_end_by_detail[deferral.shipping_detail_id] += max(deferral.quantity or 0, 0)
     adjustment_by_detail: dict[int, int] = defaultdict(int)
     for adjustment in adjustments:
         if adjustment.shipping_detail_id is not None:
@@ -1455,6 +1493,14 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
                 0,
             )
             deferred = min(pending_deferred_by_detail.get(detail.id, 0), raw_gap)
+            twice_monthly_deferred = min(
+                pending_twice_monthly_by_detail.get(detail.id, 0),
+                deferred,
+            )
+            month_end_deferred = min(
+                pending_month_end_by_detail.get(detail.id, 0),
+                max(deferred - twice_monthly_deferred, 0),
+            )
             remaining = max(raw_gap - deferred, 0)
             if raw_gap:
                 marker = f"{detail.sheet_name or ''}{detail.frequency or ''}"
@@ -1469,8 +1515,13 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
                     planned_quantity=detail.quantity or 0,
                     source_quantity=source_quantity,
                     deferred_quantity=deferred,
+                    twice_monthly_deferred_quantity=twice_monthly_deferred,
+                    month_end_deferred_quantity=month_end_deferred,
                     remaining_quantity=remaining,
                     suggested_month_end="月底" in marker or "整月" in marker,
+                    required_adjustment_type=(
+                        WAREHOUSE_STOCK_IN if detail.is_mafei_warehouse_retention else None
+                    ),
                 ))
         gap_details.sort(key=lambda item: (-item.remaining_quantity, item.shipping_detail_id))
     return FulfillmentSummaryOut(
@@ -1483,7 +1534,11 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
         no_tracking_quantity=no_tracking,
         actual_shipped_quantity=actual_shipped,
         adjustment_quantity=adjustment_quantity,
+        no_shipment_quantity=no_shipment_quantity,
+        warehouse_stock_in_quantity=warehouse_stock_in_quantity,
         deferred_quantity=deferred_quantity,
+        twice_monthly_deferred_quantity=twice_monthly_deferred_quantity,
+        month_end_deferred_quantity=month_end_deferred_quantity,
         unexplained_pending_quantity=unexplained_pending,
         attributed_adjustment_quantity=attributed_adjustment_quantity,
         unattributed_adjustment_quantity=unattributed_adjustment_quantity,
@@ -1543,7 +1598,7 @@ def create_fulfillment_adjustment(
         raise HTTPException(status_code=404, detail="刊期不存在")
     reason = body.reason.strip()
     if not reason:
-        raise HTTPException(status_code=400, detail="无需发货原因不能为空")
+        raise HTTPException(status_code=400, detail="核销原因不能为空")
     before = fulfillment_summary(db, issue_id)
     if body.quantity > before.pending_quantity:
         raise HTTPException(status_code=400, detail="无需发货份数不能超过当前待处理份数")
@@ -1552,6 +1607,16 @@ def create_fulfillment_adjustment(
         issue=issue,
         shipping_detail_id=body.shipping_detail_id,
     )
+    if detail.is_mafei_warehouse_retention and body.adjustment_type != WAREHOUSE_STOCK_IN:
+        raise HTTPException(
+            status_code=400,
+            detail="马飞—库房留存必须按“转库留存/库存入库”核销",
+        )
+    if not detail.is_mafei_warehouse_retention and body.adjustment_type == WAREHOUSE_STOCK_IN:
+        raise HTTPException(
+            status_code=400,
+            detail="“转库留存/库存入库”仅适用于马飞—库房留存",
+        )
     adjustment = ShippingFulfillmentAdjustment(
         issue_id=issue.id,
         issue_number=issue.issue_number,
@@ -1601,6 +1666,14 @@ def attribute_fulfillment_adjustment(
         issue=issue,
         shipping_detail_id=body.shipping_detail_id,
     )
+    if detail.is_mafei_warehouse_retention:
+        adjustment.adjustment_type = WAREHOUSE_STOCK_IN
+        adjustment.reason = WAREHOUSE_STOCK_IN_REASON
+    elif adjustment.adjustment_type == WAREHOUSE_STOCK_IN:
+        raise HTTPException(
+            status_code=400,
+            detail="“转库留存/库存入库”仅适用于马飞—库房留存",
+        )
     previous_detail_id = adjustment.shipping_detail_id
     _attribute_adjustment(adjustment, detail)
     db.flush()
@@ -1658,6 +1731,56 @@ def refresh_detail_shipping_fields(detail: ShippingDetail) -> None:
     _refresh_legacy_shipping_fields(detail)
 
 
+def _month_bounds(value: date) -> tuple[date, date]:
+    start = value.replace(day=1)
+    if value.month == 12:
+        return start, date(value.year + 1, 1, 1)
+    return start, date(value.year, value.month + 1, 1)
+
+
+def _deferral_target(
+    db: Session,
+    issue: Issue,
+    deferral_type: str,
+) -> tuple[int | None, date, str]:
+    """Resolve the immutable shipment batch for this issue within its natural month."""
+    month_start, next_month = _month_bounds(issue.publish_date)
+    schedules = db.query(PublicationSchedule).filter(
+        PublicationSchedule.publish_date >= month_start,
+        PublicationSchedule.publish_date < next_month,
+        PublicationSchedule.is_suspended.is_(False),
+    ).order_by(PublicationSchedule.publish_date).all()
+    issue_numbers_by_date = {
+        candidate.publish_date: candidate.issue_number
+        for candidate in db.query(Issue).filter(
+            Issue.publish_date >= month_start,
+            Issue.publish_date < next_month,
+        ).all()
+    }
+    monthly_issues = [
+        (row.publish_date, row.issue_number or issue_numbers_by_date.get(row.publish_date))
+        for row in schedules
+    ]
+    if issue.publish_date not in {publish_date for publish_date, _ in monthly_issues}:
+        monthly_issues.append((issue.publish_date, issue.issue_number))
+        monthly_issues.sort(key=lambda item: item[0])
+    if not monthly_issues:
+        monthly_issues = [(issue.publish_date, issue.issue_number)]
+
+    current_index = next(
+        index for index, item in enumerate(monthly_issues) if item[0] == issue.publish_date
+    )
+    if deferral_type == TWICE_MONTHLY_CONSOLIDATION:
+        target_index = min(1, len(monthly_issues) - 1) if current_index <= 1 else len(monthly_issues) - 1
+        phase = "first" if current_index <= 1 else "second"
+    else:
+        target_index = len(monthly_issues) - 1
+        phase = "month_end"
+    target_date, target_issue_number = monthly_issues[target_index]
+    batch = f"{issue.publish_date:%Y-%m}-{phase}"
+    return target_issue_number, target_date, batch
+
+
 def create_shipping_deferrals(
     db: Session,
     issue_id: int,
@@ -1667,6 +1790,11 @@ def create_shipping_deferrals(
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
+    target_issue_number, target_publish_date, consolidation_batch = _deferral_target(
+        db,
+        issue,
+        body.deferral_type,
+    )
     summary = fulfillment_summary(db, issue_id)
     gap_by_detail = {
         item.shipping_detail_id: item.remaining_quantity for item in summary.gap_details
@@ -1687,13 +1815,21 @@ def create_shipping_deferrals(
     for item in body.items:
         available = gap_by_detail.get(item.shipping_detail_id, 0)
         if item.quantity > available:
-            raise HTTPException(status_code=400, detail="待月底合寄份数不能超过该明细的文件缺口")
+            raise HTTPException(status_code=400, detail="待合寄份数不能超过该明细的计划缺口")
         detail = by_id[item.shipping_detail_id]
+        if detail.is_mafei_warehouse_retention:
+            raise HTTPException(
+                status_code=400,
+                detail="马飞—库房留存不能标记合寄，必须按“转库留存/库存入库”核销",
+            )
         deferral = ShippingDeferral(
             issue_id=issue.id,
             issue_number=issue.issue_number,
             shipping_detail_id=detail.id,
             deferral_type=body.deferral_type,
+            target_issue_number=target_issue_number,
+            target_publish_date=target_publish_date,
+            consolidation_batch=consolidation_batch,
             quantity=item.quantity,
             reason=body.reason.strip(),
             detail_name_snapshot=detail.name,
@@ -1706,7 +1842,7 @@ def create_shipping_deferrals(
         created.append(deferral)
         total += item.quantity
     if total > summary.unexplained_pending_quantity:
-        raise HTTPException(status_code=400, detail="待月底合寄总数不能超过当前未解释待处理份数")
+        raise HTTPException(status_code=400, detail="待合寄总数不能超过当前未解释待处理份数")
     db.flush()
     record_operation(
         db,
@@ -1731,6 +1867,8 @@ def list_pending_shipping_deferrals(db: Session) -> list[ShippingDeferral]:
     return db.query(ShippingDeferral).filter(
         ShippingDeferral.status == "pending"
     ).order_by(
+        ShippingDeferral.target_publish_date,
+        ShippingDeferral.deferral_type,
         ShippingDeferral.detail_name_snapshot,
         ShippingDeferral.issue_number,
         ShippingDeferral.id,
@@ -1744,9 +1882,9 @@ def delete_shipping_deferral(
 ) -> FulfillmentSummaryOut:
     deferral = db.query(ShippingDeferral).filter(ShippingDeferral.id == deferral_id).first()
     if not deferral:
-        raise HTTPException(status_code=404, detail="待月底合寄记录不存在")
+        raise HTTPException(status_code=404, detail="待合寄记录不存在")
     if deferral.status != "pending":
-        raise HTTPException(status_code=409, detail="已完成的月底合寄记录不能删除")
+        raise HTTPException(status_code=409, detail="已完成的合寄记录不能删除")
     issue_id = deferral.issue_id
     db.delete(deferral)
     record_operation(
@@ -1778,6 +1916,15 @@ def create_consolidated_package(
         raise HTTPException(status_code=409, detail="部分待合寄记录不存在或已经完成")
     if any(item.shipping_detail_id is None for item in deferrals):
         raise HTTPException(status_code=400, detail="待合寄记录缺少收件明细归属")
+    deferral_types = {item.deferral_type for item in deferrals}
+    if len(deferral_types) != 1:
+        raise HTTPException(status_code=400, detail="一张合寄运单不能混合两种合寄方式")
+    consolidation_batches = {
+        item.consolidation_batch for item in deferrals if item.consolidation_batch
+    }
+    has_legacy_batch = any(not item.consolidation_batch for item in deferrals)
+    if len(consolidation_batches) > 1 or (has_legacy_batch and consolidation_batches):
+        raise HTTPException(status_code=400, detail="一张合寄运单只能核销同一个目标批次")
     recipient_keys = {
         _match_key(
             item.detail_name_snapshot or "",
@@ -1787,7 +1934,7 @@ def create_consolidated_package(
         for item in deferrals
     }
     if len(recipient_keys) != 1:
-        raise HTTPException(status_code=400, detail="一张月底合寄运单只能关联同一收件人")
+        raise HTTPException(status_code=400, detail="一张合寄运单只能关联同一收件人")
     carrier = body.carrier.strip()
     tracking_no = _tracking(body.tracking_no)
     duplicate = db.query(ShippingPackage.id).filter(

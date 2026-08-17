@@ -2697,6 +2697,10 @@ body {
   min-height: 124px;
 }
 
+.zto-reconcile-main.has-five-metrics {
+  grid-template-columns: minmax(250px, 1.2fr) repeat(5, minmax(92px, 0.62fr));
+}
+
 .zto-reconcile-result {
   display: flex;
   align-items: center;
@@ -3719,6 +3723,14 @@ body {
   grid-template-columns: minmax(210px, 1.1fr) repeat(5, minmax(92px, .7fr));
 }
 
+.waybill-status-row.has-six-metrics {
+  grid-template-columns: minmax(210px, 1.1fr) repeat(6, minmax(86px, .66fr));
+}
+
+.waybill-status-row.has-seven-metrics {
+  grid-template-columns: minmax(200px, 1fr) repeat(7, minmax(80px, .62fr));
+}
+
 .waybill-status-result {
   display: flex;
   align-items: center;
@@ -4119,7 +4131,10 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .waybill-status-row {
+  .waybill-status-row,
+  .waybill-status-row.has-five-metrics,
+  .waybill-status-row.has-six-metrics,
+  .waybill-status-row.has-seven-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4213,7 +4228,8 @@ body {
     flex-direction: column;
   }
 
-  .zto-reconcile-main {
+  .zto-reconcile-main,
+  .zto-reconcile-main.has-five-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

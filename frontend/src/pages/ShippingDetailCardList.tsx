@@ -19,6 +19,7 @@ const fulfillmentMeta: Record<ShippingDetail['fulfillment_status'], { label: str
   shipped: { label: '已核销', color: 'green' },
   no_tracking_required: { label: '已核销', color: 'green' },
   no_shipment_required: { label: '无需发货', color: 'green' },
+  warehouse_stock_in: { label: '库存入库', color: 'cyan' },
 };
 
 interface ShippingDetailCardListProps {
@@ -37,7 +38,7 @@ function getRowTone(record: ShippingDetail, mode: 'plan' | 'actual') {
     return 'primary';
   }
   if (record.fulfillment_status === 'partial' || record.fulfillment_status === 'pending') return 'warning';
-  if (record.shipping_requirement === 'no_tracking_required' || ['no_tracking_required', 'no_shipment_required'].includes(record.fulfillment_status)) return 'success';
+  if (record.shipping_requirement === 'no_tracking_required' || ['no_tracking_required', 'no_shipment_required', 'warehouse_stock_in'].includes(record.fulfillment_status)) return 'success';
   return 'primary';
 }
 
@@ -46,7 +47,7 @@ function StatusIcon({ record, mode }: { record: ShippingDetail; mode: 'plan' | '
     if (record.sync_status === 'orphaned' || record.status === '停发') return <WarningOutlined />;
     return <InboxOutlined />;
   }
-  if (record.shipping_requirement === 'no_tracking_required' || ['no_tracking_required', 'no_shipment_required'].includes(record.fulfillment_status)) {
+  if (record.shipping_requirement === 'no_tracking_required' || ['no_tracking_required', 'no_shipment_required', 'warehouse_stock_in'].includes(record.fulfillment_status)) {
     return <CheckCircleOutlined />;
   }
   if (record.fulfillment_status === 'partial') return <WarningOutlined />;

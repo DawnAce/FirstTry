@@ -51,7 +51,11 @@ export interface FulfillmentSummary {
   no_tracking_quantity: number;
   actual_shipped_quantity: number;
   adjustment_quantity: number;
+  no_shipment_quantity: number;
+  warehouse_stock_in_quantity: number;
   deferred_quantity: number;
+  twice_monthly_deferred_quantity: number;
+  month_end_deferred_quantity: number;
   unexplained_pending_quantity: number;
   attributed_adjustment_quantity: number;
   unattributed_adjustment_quantity: number;
@@ -78,8 +82,11 @@ export interface ShippingGapDetail {
   planned_quantity: number;
   source_quantity: number;
   deferred_quantity: number;
+  twice_monthly_deferred_quantity: number;
+  month_end_deferred_quantity: number;
   remaining_quantity: number;
   suggested_month_end: boolean;
+  required_adjustment_type: 'warehouse_stock_in' | null;
 }
 
 export interface ShippingDeferral {
@@ -87,7 +94,10 @@ export interface ShippingDeferral {
   issue_id: number;
   issue_number: number;
   shipping_detail_id: number | null;
-  deferral_type: 'month_end_consolidation';
+  deferral_type: 'twice_monthly_consolidation' | 'month_end_consolidation';
+  target_issue_number: number | null;
+  target_publish_date: string | null;
+  consolidation_batch: string | null;
   quantity: number;
   reason: string;
   status: 'pending' | 'fulfilled' | 'cancelled';
@@ -106,7 +116,7 @@ export interface FulfillmentAdjustment {
   issue_id: number;
   issue_number: number;
   shipping_detail_id: number | null;
-  adjustment_type: 'no_shipment_required';
+  adjustment_type: 'no_shipment_required' | 'warehouse_stock_in';
   quantity: number;
   reason: string;
   detail_name_snapshot: string | null;
@@ -184,9 +194,10 @@ export const addFulfillmentAdjustment = (
   quantity: number,
   reason: string,
   shippingDetailId: number,
+  adjustmentType: FulfillmentAdjustment['adjustment_type'] = 'no_shipment_required',
 ): Promise<AxiosResponse<FulfillmentSummary>> =>
   api.post<FulfillmentSummary>(`/shipping-waybills/issues/${issueId}/adjustments`, {
-    adjustment_type: 'no_shipment_required',
+    adjustment_type: adjustmentType,
     quantity,
     reason,
     shipping_detail_id: shippingDetailId,
@@ -226,9 +237,10 @@ export const addShippingDeferrals = (
   issueId: number,
   items: Array<{ shipping_detail_id: number; quantity: number }>,
   reason: string,
+  deferralType: ShippingDeferral['deferral_type'],
 ): Promise<AxiosResponse<FulfillmentSummary>> =>
   api.post<FulfillmentSummary>(`/shipping-waybills/issues/${issueId}/deferrals`, {
-    deferral_type: 'month_end_consolidation',
+    deferral_type: deferralType,
     reason,
     items,
   });

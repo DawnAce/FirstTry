@@ -12,6 +12,7 @@ from app.models import (
     Issue,
     IssueAuditSnapshot,
     IssueStatus,
+    PublicationSchedule,
     ShippingDetail,
     ShippingDeferral,
     ShippingFulfillmentAdjustment,
@@ -37,6 +38,7 @@ from app.schemas.shipping_waybill import (
     WaybillImportRowUpdate,
 )
 from app.services.shipping_waybill_service import (
+    _deferral_target,
     add_import_row,
     attribute_fulfillment_adjustment,
     bulk_match_import_rows,
@@ -682,7 +684,7 @@ def test_confirmed_unmatched_split_packages_can_be_bulk_linked_then_close_file_g
         issue.id,
         FulfillmentAdjustmentIn(
             quantity=1,
-            reason="每月两次合寄 · 暂停寄送",
+            reason="客户要求暂停本期发货",
             shipping_detail_id=detail.id,
         ),
         user,
@@ -905,6 +907,102 @@ def test_month_end_deferrals_are_separate_from_unexplained_pending_quantity():
     assert confirmed.unexplained_pending_quantity == 0
 
 
+def test_twice_monthly_deferrals_target_second_and_last_issue_of_five_issue_month():
+    db = _db()
+    user = User(username="twice-monthly", password_hash="x", role=UserRole.admin)
+    publish_dates = [
+        date(2026, 8, 3),
+        date(2026, 8, 10),
+        date(2026, 8, 17),
+        date(2026, 8, 24),
+        date(2026, 8, 31),
+    ]
+    db.add_all([
+        PublicationSchedule(year=2026, issue_number=6001 + index, publish_date=publish_date)
+        for index, publish_date in enumerate(publish_dates)
+    ])
+    db.add(user)
+    db.commit()
+
+    created_deferrals = []
+    for index in (0, 2):
+        issue = Issue(
+            issue_number=6001 + index,
+            publish_date=publish_dates[index],
+            status=IssueStatus.confirmed,
+        )
+        normal = ShippingDetail(
+            issue_number=issue.issue_number, sheet_name="每周", channel="个人订阅",
+            transport="中通物流", frequency="周", status="正常",
+            name=f"正常客户{index}", phone=f"1380000060{index}",
+            address=f"北京市每周路{index}号", quantity=1,
+        )
+        consolidated = ShippingDetail(
+            issue_number=issue.issue_number, sheet_name="每月两次合寄", channel="个人订阅",
+            transport="中通物流", frequency="每月两次", status="正常",
+            name="两次合寄客户", phone="13900000666",
+            address="北京市合寄路6号", quantity=1,
+        )
+        db.add_all([issue, normal, consolidated])
+        db.flush()
+        db.add(IssueAuditSnapshot(
+            issue_id=issue.id, snapshot_type="confirm", report_total=2,
+            shipping_total=2, delta=0, is_match=True,
+        ))
+        db.commit()
+        preview_import(
+            db,
+            issue.id,
+            f"{issue.issue_number}.xlsx",
+            _single_waybill_bytes(normal.name, normal.phone, normal.address),
+            user,
+        )
+        summary = create_shipping_deferrals(
+            db,
+            issue.id,
+            ShippingDeferralBulkIn(
+                deferral_type="twice_monthly_consolidation",
+                reason="每月两次合寄 · 前两期一批、当月剩余期次月底一批",
+                items=[ShippingDeferralItemIn(shipping_detail_id=consolidated.id, quantity=1)],
+            ),
+            user,
+        )
+        assert summary.twice_monthly_deferred_quantity == 1
+        assert summary.month_end_deferred_quantity == 0
+        created_deferrals.append(summary.deferrals[0])
+
+    assert created_deferrals[0].target_issue_number == 6002
+    assert created_deferrals[0].target_publish_date == date(2026, 8, 10)
+    assert created_deferrals[0].consolidation_batch == "2026-08-first"
+    assert created_deferrals[1].target_issue_number == 6005
+    assert created_deferrals[1].target_publish_date == date(2026, 8, 31)
+    assert created_deferrals[1].consolidation_batch == "2026-08-second"
+
+
+def test_twice_monthly_four_issue_month_uses_two_plus_two_batches():
+    db = _db()
+    publish_dates = [date(2026, 9, day) for day in (7, 14, 21, 28)]
+    db.add_all([
+        PublicationSchedule(year=2026, issue_number=6101 + index, publish_date=publish_date)
+        for index, publish_date in enumerate(publish_dates)
+    ])
+    first_issue = Issue(issue_number=6101, publish_date=publish_dates[0], status=IssueStatus.confirmed)
+    third_issue = Issue(issue_number=6103, publish_date=publish_dates[2], status=IssueStatus.confirmed)
+    db.add_all([first_issue, third_issue])
+    db.commit()
+
+    assert _deferral_target(db, first_issue, "twice_monthly_consolidation") == (
+        6102,
+        date(2026, 9, 14),
+        "2026-09-first",
+    )
+    assert _deferral_target(db, third_issue, "twice_monthly_consolidation") == (
+        6104,
+        date(2026, 9, 28),
+        "2026-09-second",
+    )
+
+
 def test_one_consolidated_package_fulfills_same_recipient_across_issues():
     db = _db()
     user = User(username="consolidator", password_hash="x", role=UserRole.admin)
@@ -1001,3 +1099,94 @@ def test_plan_quantity_transfer_keeps_issue_total_unchanged():
     assert result.target_quantity == 1
     assert result.planned_quantity == 69
     assert db.query(ShippingDetail).filter(ShippingDetail.issue_number == 5201).count() == 2
+
+
+def test_mafei_warehouse_retention_requires_stock_in_adjustment():
+    db = _db()
+    user = User(username="warehouse", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=5202, publish_date=date(2026, 5, 25), status=IssueStatus.confirmed)
+    reserve = ShippingDetail(
+        issue_number=5202, sheet_name="每周（对公）", channel="库房留存",
+        transport="库房留存", frequency="周", status="正常", name="马飞",
+        address="中通库房", quantity=72,
+    )
+    db.add_all([user, issue, reserve])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=issue.id,
+        snapshot_type="confirm",
+        report_total=72,
+        shipping_total=72,
+        delta=0,
+        is_match=True,
+    ))
+    db.commit()
+
+    try:
+        create_fulfillment_adjustment(
+            db,
+            issue.id,
+            FulfillmentAdjustmentIn(
+                adjustment_type="no_shipment_required",
+                quantity=72,
+                reason="无需发货",
+                shipping_detail_id=reserve.id,
+            ),
+            user,
+        )
+        assert False, "Mafei warehouse retention must reject no-shipment adjustment"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400
+
+    completed = create_fulfillment_adjustment(
+        db,
+        issue.id,
+        FulfillmentAdjustmentIn(
+            adjustment_type="warehouse_stock_in",
+            quantity=72,
+            reason="转库留存 · 当期报纸入马飞中通库房备货",
+            shipping_detail_id=reserve.id,
+        ),
+        user,
+    )
+    assert completed.adjustment_quantity == 72
+    assert completed.no_shipment_quantity == 0
+    assert completed.warehouse_stock_in_quantity == 72
+    assert completed.actual_shipped_quantity == 0
+    assert completed.handled_quantity == 72
+    assert completed.pending_quantity == 0
+
+    db.expire_all()
+    stored = db.query(ShippingDetail).filter(ShippingDetail.id == reserve.id).one()
+    assert stored.warehouse_stock_in_quantity == 72
+    assert stored.no_shipment_quantity == 0
+    assert stored.fulfillment_status == "warehouse_stock_in"
+
+
+def test_stock_in_adjustment_is_rejected_for_non_mafei_detail():
+    db = _db()
+    user = User(username="warehouse_guard", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=5203, publish_date=date(2026, 6, 1), status=IssueStatus.confirmed)
+    detail = ShippingDetail(
+        issue_number=5203, sheet_name="每周", channel="个人订阅",
+        transport="中通物流", frequency="周", status="正常", name="普通读者",
+        address="北京市测试路", quantity=1,
+    )
+    db.add_all([user, issue, detail])
+    db.commit()
+
+    try:
+        create_fulfillment_adjustment(
+            db,
+            issue.id,
+            FulfillmentAdjustmentIn(
+                adjustment_type="warehouse_stock_in",
+                quantity=1,
+                reason="错误库存入库",
+                shipping_detail_id=detail.id,
+            ),
+            user,
+        )
+        assert False, "stock-in adjustment must be exclusive to Mafei warehouse retention"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 400

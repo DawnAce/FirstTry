@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, computed_field
@@ -69,7 +69,11 @@ class FulfillmentSummaryOut(BaseModel):
     no_tracking_quantity: int
     actual_shipped_quantity: int
     adjustment_quantity: int
+    no_shipment_quantity: int = 0
+    warehouse_stock_in_quantity: int = 0
     deferred_quantity: int = 0
+    twice_monthly_deferred_quantity: int = 0
+    month_end_deferred_quantity: int = 0
     unexplained_pending_quantity: int = 0
     attributed_adjustment_quantity: int
     unattributed_adjustment_quantity: int
@@ -96,8 +100,11 @@ class ShippingGapDetailOut(BaseModel):
     planned_quantity: int
     source_quantity: int
     deferred_quantity: int
+    twice_monthly_deferred_quantity: int = 0
+    month_end_deferred_quantity: int = 0
     remaining_quantity: int
     suggested_month_end: bool
+    required_adjustment_type: Optional[str] = None
 
 
 class ShippingDeferralOut(BaseModel):
@@ -106,6 +113,9 @@ class ShippingDeferralOut(BaseModel):
     issue_number: int
     shipping_detail_id: Optional[int]
     deferral_type: str
+    target_issue_number: Optional[int]
+    target_publish_date: Optional[date]
+    consolidation_batch: Optional[str]
     quantity: int
     reason: str
     status: str
@@ -127,7 +137,10 @@ class ShippingDeferralItemIn(BaseModel):
 
 
 class ShippingDeferralBulkIn(BaseModel):
-    deferral_type: str = Field(default="month_end_consolidation", pattern="^month_end_consolidation$")
+    deferral_type: str = Field(
+        default="month_end_consolidation",
+        pattern="^(twice_monthly_consolidation|month_end_consolidation)$",
+    )
     reason: str = Field(min_length=1, max_length=255)
     items: list[ShippingDeferralItemIn] = Field(min_length=1)
 
@@ -194,7 +207,10 @@ class FulfillmentAdjustmentOut(BaseModel):
 
 
 class FulfillmentAdjustmentIn(BaseModel):
-    adjustment_type: str = Field(default="no_shipment_required", pattern="^no_shipment_required$")
+    adjustment_type: str = Field(
+        default="no_shipment_required",
+        pattern="^(no_shipment_required|warehouse_stock_in)$",
+    )
     quantity: int = Field(gt=0)
     reason: str = Field(min_length=1, max_length=255)
     shipping_detail_id: int

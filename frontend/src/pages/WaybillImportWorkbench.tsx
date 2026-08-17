@@ -22,6 +22,7 @@ import {
 import type { TableColumnsType } from 'antd';
 import {
   CheckCircleOutlined,
+  DatabaseOutlined,
   EditOutlined,
   FileExcelOutlined,
   LeftOutlined,
@@ -47,6 +48,7 @@ import {
   attributeFulfillmentAdjustment,
   bulkMatchWaybillImportRows,
   confirmWaybillImport,
+  deleteFulfillmentAdjustment,
   getFulfillmentSummary,
   getPendingShippingDeferrals,
   getWaybillImportDraft,
@@ -57,6 +59,7 @@ import {
 import type {
   WaybillImportBatch,
   FulfillmentAdjustment,
+  ShippingDeferral,
   ShippingGapDetail,
   WaybillImportRow,
   WaybillImportRowInput,
@@ -80,11 +83,28 @@ const statusMeta: Record<WaybillImportRow['match_status'], { label: string; colo
   ignored: { label: '已忽略', color: 'default' },
 };
 
-const suspendedConsolidatedShippingReason = '每月两次合寄 · 暂停寄送';
+const legacySuspendedConsolidationReason = '每月两次合寄 · 暂停寄送';
+const defaultNoShipmentReason = '客户要求暂停本期发货';
+const otherNoShipmentReason = '其他原因';
+const noShipmentReasonOptions = [
+  defaultNoShipmentReason,
+  '客户取消／停刊',
+  '本期确认无需寄送',
+  otherNoShipmentReason,
+].map((value) => ({ value, label: value }));
+const twiceMonthlyConsolidationReason = '每月两次合寄 · 前两期一批、当月剩余期次月底一批';
 const monthEndConsolidationReason = '月底合寄 · 本期报纸随月底最后一期统一寄送';
+const warehouseStockInReason = '转库留存 · 当期报纸入马飞中通库房备货';
+type AdjustmentType = FulfillmentAdjustment['adjustment_type'];
+type DeferralType = ShippingDeferral['deferral_type'];
+type ConsolidatedFilter = 'due' | 'twice_monthly' | 'month_end' | 'all';
 
 function adjustmentReasonLabel(reason: string): string {
-  return reason === '双周停刊' ? suspendedConsolidatedShippingReason : reason;
+  return reason === '双周停刊' ? legacySuspendedConsolidationReason : reason;
+}
+
+function deferralTypeLabel(type: DeferralType): string {
+  return type === 'twice_monthly_consolidation' ? '每月两次合寄' : '月底合寄';
 }
 
 interface RowFormValues {
@@ -123,7 +143,9 @@ export default function WaybillImportWorkbench() {
   const [ignoreRow, setIgnoreRow] = useState<WaybillImportRow | null>(null);
   const [ignoreReason, setIgnoreReason] = useState('');
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
-  const [adjustmentReason, setAdjustmentReason] = useState(suspendedConsolidatedShippingReason);
+  const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>('no_shipment_required');
+  const [adjustmentReason, setAdjustmentReason] = useState(defaultNoShipmentReason);
+  const [customAdjustmentReason, setCustomAdjustmentReason] = useState('');
   const [adjustmentDetailId, setAdjustmentDetailId] = useState<number | undefined>();
   const [attributionAdjustment, setAttributionAdjustment] = useState<FulfillmentAdjustment | null>(null);
   const [savingAdjustment, setSavingAdjustment] = useState(false);
@@ -138,6 +160,7 @@ export default function WaybillImportWorkbench() {
   const [transferReason, setTransferReason] = useState('计划份数归属纠错');
   const [savingTransfer, setSavingTransfer] = useState(false);
   const [consolidatedOpen, setConsolidatedOpen] = useState(false);
+  const [consolidatedFilter, setConsolidatedFilter] = useState<ConsolidatedFilter>('due');
   const [selectedDeferralIds, setSelectedDeferralIds] = useState<number[]>([]);
   const [consolidatedCarrier, setConsolidatedCarrier] = useState('中通');
   const [consolidatedTracking, setConsolidatedTracking] = useState('');
@@ -174,6 +197,21 @@ export default function WaybillImportWorkbench() {
     queryKey: ['shippingDeferrals', 'pending'],
     queryFn: async () => (await getPendingShippingDeferrals()).data,
   });
+  const pendingDeferrals = useMemo(
+    () => pendingDeferralsQuery.data ?? [],
+    [pendingDeferralsQuery.data],
+  );
+  const dueDeferrals = useMemo(() => pendingDeferrals.filter((item) => (
+    !item.target_publish_date
+    || !issueQuery.data?.publish_date
+    || !dayjs(item.target_publish_date).isAfter(dayjs(issueQuery.data.publish_date), 'day')
+  )), [issueQuery.data?.publish_date, pendingDeferrals]);
+  const visibleDeferrals = useMemo(() => pendingDeferrals.filter((item) => {
+    if (consolidatedFilter === 'due') return dueDeferrals.some((due) => due.id === item.id);
+    if (consolidatedFilter === 'twice_monthly') return item.deferral_type === 'twice_monthly_consolidation';
+    if (consolidatedFilter === 'month_end') return item.deferral_type === 'month_end_consolidation';
+    return true;
+  }), [consolidatedFilter, dueDeferrals, pendingDeferrals]);
 
   const batch = batchOverride === undefined ? draftQuery.data ?? null : batchOverride;
   const details = useMemo(() => detailsQuery.data ?? [], [detailsQuery.data]);
@@ -205,9 +243,13 @@ export default function WaybillImportWorkbench() {
   const planUnexplainedDelta = confirmationSummary?.plan_unexplained_delta ?? planDelta;
   const planReconciled = confirmationSummary?.plan_is_reconciled ?? planDelta === 0;
   const adjustmentQuantity = fulfillmentQuery.data?.adjustment_quantity ?? 0;
+  const noShipmentQuantity = fulfillmentQuery.data?.no_shipment_quantity ?? adjustmentQuantity;
+  const warehouseStockInQuantity = fulfillmentQuery.data?.warehouse_stock_in_quantity ?? 0;
   const deferredQuantity = fulfillmentQuery.data?.deferred_quantity ?? 0;
+  const twiceMonthlyDeferredQuantity = fulfillmentQuery.data?.twice_monthly_deferred_quantity ?? 0;
+  const monthEndDeferredQuantity = fulfillmentQuery.data?.month_end_deferred_quantity ?? deferredQuantity;
   const fileGapQuantity = batch?.file_gap_quantity ?? Math.max((batch?.expected_quantity ?? 0) - (batch?.parsed_quantity ?? 0), 0);
-  const remainingFileGap = Math.max(fileGapQuantity - adjustmentQuantity, 0);
+  const remainingFileGap = Math.max(fileGapQuantity - adjustmentQuantity - deferredQuantity, 0);
   const displayedHandledQuantity = (batch?.matched_quantity ?? 0) + adjustmentQuantity;
   const displayedPendingQuantity = Math.max((batch?.expected_quantity ?? 0) - displayedHandledQuantity, 0);
   const currentPendingQuantity = batch?.status === 'previewed'
@@ -221,7 +263,23 @@ export default function WaybillImportWorkbench() {
   const adjustmentSelectedQuantity = gapDetails.find(
     (item) => item.shipping_detail_id === adjustmentDetailId,
   )?.remaining_quantity ?? 0;
+  const selectedGap = gapDetails.find((item) => item.shipping_detail_id === selectedGapIds[0]);
+  const selectedIncludesWarehouseStock = selectedGapIds.some((detailId) => (
+    gapDetails.find((item) => item.shipping_detail_id === detailId)?.required_adjustment_type === 'warehouse_stock_in'
+  ));
   const unassignedAdjustments = fulfillmentQuery.data?.adjustments.filter((item) => !item.is_attributed) ?? [];
+  const legacyConsolidationAdjustments = fulfillmentQuery.data?.adjustments.filter((item) => (
+    item.adjustment_type === 'no_shipment_required'
+    && (item.reason === legacySuspendedConsolidationReason || item.reason === '双周停刊')
+  )) ?? [];
+  const manualMatchCount = (batch?.rows ?? []).filter((row) => (
+    row.match_status === 'unmatched' || row.match_status === 'ambiguous'
+  )).length;
+  const resolvedAdjustmentReason = adjustmentType === 'warehouse_stock_in'
+    ? warehouseStockInReason
+    : adjustmentReason === otherNoShipmentReason
+      ? customAdjustmentReason.trim()
+      : adjustmentReason;
 
   const suggestedAdjustmentDetail = useMemo(() => {
     if (!remainingFileGap) return undefined;
@@ -433,7 +491,7 @@ export default function WaybillImportWorkbench() {
     }
   };
 
-  const handleCreateDeferrals = async () => {
+  const handleCreateDeferrals = async (deferralType: DeferralType) => {
     const selected = gapDetails.filter((item) => (
       selectedGapIds.includes(item.shipping_detail_id) && item.remaining_quantity > 0
     ));
@@ -446,7 +504,10 @@ export default function WaybillImportWorkbench() {
           shipping_detail_id: item.shipping_detail_id,
           quantity: item.remaining_quantity,
         })),
-        monthEndConsolidationReason,
+        deferralType === 'twice_monthly_consolidation'
+          ? twiceMonthlyConsolidationReason
+          : monthEndConsolidationReason,
+        deferralType,
       );
       queryClient.setQueryData(['shippingFulfillment', issueId], response.data);
       setSelectedGapIds([]);
@@ -455,9 +516,10 @@ export default function WaybillImportWorkbench() {
         queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
         queryClient.invalidateQueries({ queryKey: ['shippingDeferrals', 'pending'] }),
       ]);
-      message.success(`已登记 ${selected.reduce((sum, item) => sum + item.remaining_quantity, 0)} 份待月底合寄`);
+      const label = deferralType === 'twice_monthly_consolidation' ? '每月两次合寄' : '待月底合寄';
+      message.success(`已登记 ${selected.reduce((sum, item) => sum + item.remaining_quantity, 0)} 份${label}`);
     } catch (error) {
-      message.error(logisticsApiErrorMessage(error, '登记月底合寄失败'));
+      message.error(logisticsApiErrorMessage(error, '登记合寄待办失败'));
     } finally {
       setSavingDeferral(false);
     }
@@ -519,23 +581,24 @@ export default function WaybillImportWorkbench() {
         queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
         queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
       ]);
-      message.success(`月底合寄运单已核销 ${response.data.quantity} 份`);
+      message.success(`合寄运单已核销 ${response.data.quantity} 份`);
     } catch (error) {
-      message.error(logisticsApiErrorMessage(error, '月底合寄核销失败'));
+      message.error(logisticsApiErrorMessage(error, '合寄核销失败'));
     } finally {
       setSavingConsolidated(false);
     }
   };
 
   const handleAdjustment = async () => {
-    if (!adjustmentSelectedQuantity || !adjustmentReason.trim() || !adjustmentDetailId) return;
+    if (!adjustmentSelectedQuantity || !resolvedAdjustmentReason || !adjustmentDetailId) return;
     setSavingAdjustment(true);
     try {
       const response = await addFulfillmentAdjustment(
         issueId,
         adjustmentSelectedQuantity,
-        adjustmentReason.trim(),
+        resolvedAdjustmentReason,
         adjustmentDetailId,
+        adjustmentType,
       );
       queryClient.setQueryData(['shippingFulfillment', issueId], response.data);
       await Promise.all([
@@ -544,9 +607,33 @@ export default function WaybillImportWorkbench() {
         queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
       ]);
       setAdjustmentOpen(false);
-      message.success(`已将 ${adjustmentSelectedQuantity} 份标记为无需发货`);
+      message.success(adjustmentType === 'warehouse_stock_in'
+        ? `已将 ${adjustmentSelectedQuantity} 份登记为转库留存/库存入库`
+        : `已将 ${adjustmentSelectedQuantity} 份标记为无需发货`);
     } catch (error) {
-      message.error(logisticsApiErrorMessage(error, '标记无需发货失败'));
+      message.error(logisticsApiErrorMessage(
+        error,
+        adjustmentType === 'warehouse_stock_in' ? '登记库存入库失败' : '标记无需发货失败',
+      ));
+    } finally {
+      setSavingAdjustment(false);
+    }
+  };
+
+  const reopenLegacyConsolidation = async (adjustment: FulfillmentAdjustment) => {
+    setSavingAdjustment(true);
+    try {
+      const response = await deleteFulfillmentAdjustment(adjustment.id);
+      queryClient.setQueryData(['shippingFulfillment', issueId], response.data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['report', issueId] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
+      ]);
+      setFilter('gap');
+      message.success('已撤销旧口径核销，请在计划缺口中重新登记“每月两次合寄”');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '撤销旧口径核销失败'));
     } finally {
       setSavingAdjustment(false);
     }
@@ -683,11 +770,11 @@ export default function WaybillImportWorkbench() {
   };
 
   const filterOptions: Array<{ label: string; value: RowFilter }> = batch ? [
-    { label: `待处理 ${batch.unmatched_rows}`, value: 'unresolved' },
-    { label: `文件未覆盖 ${remainingFileGap}`, value: 'gap' },
-    { label: `全部 ${batch.rows.length}`, value: 'all' },
-    { label: `已匹配 ${batch.matched_rows}`, value: 'matched' },
-    { label: '待人工匹配', value: 'manual' },
+    { label: `导入行待处理 ${batch.unmatched_rows}行`, value: 'unresolved' },
+    { label: `计划缺口待归因 ${remainingFileGap}份`, value: 'gap' },
+    { label: `全部导入 ${batch.rows.length}行`, value: 'all' },
+    { label: `已匹配 ${batch.matched_rows}行`, value: 'matched' },
+    { label: `待人工匹配 ${manualMatchCount}行`, value: 'manual' },
     { label: '缺单 / 未识别 / 无效', value: 'invalid' },
     { label: '重复运单', value: 'duplicate' },
     { label: '无需运单', value: 'no_tracking' },
@@ -723,7 +810,7 @@ export default function WaybillImportWorkbench() {
       </div>
       <div className="waybill-head-actions">
         <Button icon={<LinkOutlined />} onClick={() => setConsolidatedOpen(true)}>
-          月底合寄待办 {pendingDeferralsQuery.data?.length ?? 0}
+          合寄待办 {pendingDeferralsQuery.data?.length ?? 0}
         </Button>
         {batch && <Button icon={<PlusOutlined />} onClick={openAdd}>手工补充一行</Button>}
         {batch?.status !== 'confirmed' && <>
@@ -769,15 +856,17 @@ export default function WaybillImportWorkbench() {
       </Card>
 
       <Card className="waybill-status-card" styles={{ body: { padding: 0 } }}>
-        <div className="waybill-status-row has-five-metrics">
+        <div className="waybill-status-row has-seven-metrics">
           <div className={`waybill-status-result ${fulfillmentQuery.data?.shipment_status === 'partial' ? 'is-partial' : displayedPendingQuantity ? 'is-partial' : 'is-success'}`}>
             <span className="waybill-status-icon"><FileExcelOutlined /></span>
             <div><small>实际发货与核销</small><b>{fulfillmentQuery.data?.status === 'shipped' && fulfillmentQuery.data.shipment_status === 'partial' ? '核销已完成 · 部分发货' : displayedPendingQuantity ? '部分已发货' : '全部已发货'}</b></div>
           </div>
           <div className="waybill-status-metric"><span>计划应发</span><b>{batch.expected_quantity.toLocaleString()}</b><small>份 · 核销基准</small></div>
           <div className="waybill-status-metric"><span>实际发出</span><b>{(fulfillmentQuery.data?.actual_shipped_quantity ?? batch.matched_quantity).toLocaleString()}</b><small>份</small></div>
-          <div className="waybill-status-metric"><span>无需发货</span><b>{adjustmentQuantity.toLocaleString()}</b><small>份</small></div>
-          <div className="waybill-status-metric is-warning"><span>待月底合寄</span><b>{deferredQuantity.toLocaleString()}</b><small>份 · 已说明</small></div>
+          <div className="waybill-status-metric"><span>无需发货</span><b>{noShipmentQuantity.toLocaleString()}</b><small>份</small></div>
+          <div className="waybill-status-metric is-success"><span>转库留存</span><b>{warehouseStockInQuantity.toLocaleString()}</b><small>份 · 库存入库</small></div>
+          <div className="waybill-status-metric is-warning"><span>待每月两次合寄</span><b>{twiceMonthlyDeferredQuantity.toLocaleString()}</b><small>份 · 延期待寄</small></div>
+          <div className="waybill-status-metric is-warning"><span>待月底合寄</span><b>{monthEndDeferredQuantity.toLocaleString()}</b><small>份 · 延期待寄</small></div>
           <div className={`waybill-status-metric${unexplainedPendingQuantity ? ' is-danger' : ''}`}><span>未解释待补</span><b>{unexplainedPendingQuantity.toLocaleString()}</b><small>份</small></div>
         </div>
       </Card>
@@ -789,10 +878,28 @@ export default function WaybillImportWorkbench() {
         description="这是一份发货计划明细，姓名、电话、地址和份数已完整保留并显示在下方；在补充真实运单号或人工确认为“无需运单”前，这些记录不会计入实际发货。"
       />}
 
+      {!!legacyConsolidationAdjustments.length && <Alert
+        showIcon
+        type="warning"
+        title={`发现 ${legacyConsolidationAdjustments.length} 条按旧口径登记的“每月两次合寄”无需发货记录`}
+        description={<div>
+          <span>系统不会自动改动历史核销。已完成的记录可保留；尚未实际寄出的应先撤销，再到计划缺口登记“每月两次合寄”。</span>
+          <Popconfirm
+            title="确认撤销第一条旧口径核销？"
+            description="撤销后这笔份数会重新进入计划缺口，不会自动生成合寄待办。"
+            okText="确认撤销"
+            cancelText="保留记录"
+            onConfirm={() => void reopenLegacyConsolidation(legacyConsolidationAdjustments[0])}
+          >
+            <Button type="link" size="small" danger loading={savingAdjustment}>撤销第一条并重新归因</Button>
+          </Popconfirm>
+        </div>}
+      />}
+
       <Card className="waybill-table-card" styles={{ body: { padding: 0 } }}>
         <div className="waybill-table-toolbar">
           <Segmented<RowFilter> value={filter} options={filterOptions} onChange={setFilter} />
-          <span>{filter === 'gap' ? '计划应发与运单源文件总数的差额' : `当前显示 ${visibleRows.length} 行，按影响份数从高到低排列`}</span>
+          <span>{filter === 'gap' ? '这里核对计划中尚未被运单覆盖的份数，不是导入文件行' : `当前显示 ${visibleRows.length} 行，按影响份数从高到低排列`}</span>
         </div>
         {filter === 'unresolved' && groupSuggestions[0] && <div className="waybill-match-suggestion">
           <div>
@@ -810,8 +917,8 @@ export default function WaybillImportWorkbench() {
           <Alert
             showIcon
             type={unexplainedPendingQuantity ? 'warning' : 'success'}
-            title={`源文件差额 ${remainingFileGap.toLocaleString()} 份：待月底合寄 ${deferredQuantity.toLocaleString()} 份，未解释 ${unexplainedPendingQuantity.toLocaleString()} 份`}
-            description="月底合寄属于计划内延期，不要登记为暂停寄送或无需发货；计划数量录错时使用“计划纠错”。"
+            title={`计划缺口 ${remainingFileGap.toLocaleString()} 份：转库留存 ${warehouseStockInQuantity.toLocaleString()} 份，每月两次合寄 ${twiceMonthlyDeferredQuantity.toLocaleString()} 份，月底合寄 ${monthEndDeferredQuantity.toLocaleString()} 份，未解释 ${unexplainedPendingQuantity.toLocaleString()} 份`}
+            description="两种合寄都属于计划内延期，但寄送批次不同；客户暂停本期发货才使用“无需发货”，计划数量录错时使用“计划纠错”。"
           />
           <div className="waybill-gap-actions">
             <Button onClick={() => setSelectedGapIds(recommendedMonthEndGapIds(gapDetails))}>
@@ -821,18 +928,36 @@ export default function WaybillImportWorkbench() {
               type="primary"
               icon={<StopOutlined />}
               loading={savingDeferral}
-              disabled={!selectedGapIds.length}
-              onClick={() => void handleCreateDeferrals()}
+              disabled={!selectedGapIds.length || selectedIncludesWarehouseStock}
+              onClick={() => void handleCreateDeferrals('twice_monthly_consolidation')}
+            >标记每月两次合寄</Button>
+            <Button
+              icon={<StopOutlined />}
+              loading={savingDeferral}
+              disabled={!selectedGapIds.length || selectedIncludesWarehouseStock}
+              onClick={() => void handleCreateDeferrals('month_end_consolidation')}
             >标记待月底合寄</Button>
             <Button
-              disabled={selectedGapIds.length !== 1}
+              icon={<DatabaseOutlined />}
+              disabled={selectedGapIds.length !== 1 || selectedGap?.required_adjustment_type !== 'warehouse_stock_in'}
               onClick={() => {
+                setAdjustmentType('warehouse_stock_in');
                 setAdjustmentDetailId(selectedGapIds[0]);
-                setAdjustmentReason('');
+                setAdjustmentReason(warehouseStockInReason);
+                setAdjustmentOpen(true);
+              }}
+            >转库留存/库存入库</Button>
+            <Button
+              disabled={selectedGapIds.length !== 1 || selectedGap?.required_adjustment_type === 'warehouse_stock_in'}
+              onClick={() => {
+                setAdjustmentType('no_shipment_required');
+                setAdjustmentDetailId(selectedGapIds[0]);
+                setAdjustmentReason(defaultNoShipmentReason);
+                setCustomAdjustmentReason('');
                 setAdjustmentOpen(true);
               }}
             >确认为无需发货</Button>
-            <span>勾选月底明细后批量登记；每条记录保留具体收件人归属。</span>
+            <span>勾选计划缺口后选择合寄方式；每条记录保留具体收件人归属。</span>
           </div>
           <Table<ShippingGapDetail>
             rowKey="shipping_detail_id"
@@ -853,8 +978,11 @@ export default function WaybillImportWorkbench() {
               { title: '文件', dataIndex: 'source_quantity', width: 72, align: 'right' },
               {
                 title: '处理状态', key: 'state', width: 150,
-                render: (_, row) => row.deferred_quantity
-                  ? <Tag color="blue">待月底合寄 {row.deferred_quantity}份</Tag>
+                render: (_, row) => row.twice_monthly_deferred_quantity
+                  ? <Tag color="purple">每月两次合寄 {row.twice_monthly_deferred_quantity}份</Tag>
+                  : row.month_end_deferred_quantity
+                    ? <Tag color="blue">待月底合寄 {row.month_end_deferred_quantity}份</Tag>
+                  : row.required_adjustment_type === 'warehouse_stock_in' ? <Tag color="cyan">固定：库存入库</Tag>
                   : row.suggested_month_end ? <Tag color="gold">建议月底合寄</Tag> : <Tag color="red">待核对</Tag>,
               },
               {
@@ -879,7 +1007,7 @@ export default function WaybillImportWorkbench() {
           {!!unassignedAdjustments.length && <Alert
             showIcon
             type="warning"
-            title="存在尚未归属具体收件人的历史无需发货记录"
+            title="存在尚未归属具体明细的历史核销记录"
             description={<Button size="small" type="link" onClick={() => {
               setAttributionAdjustment(unassignedAdjustments[0]);
               setAdjustmentDetailId(suggestedAdjustmentDetail?.id);
@@ -899,7 +1027,7 @@ export default function WaybillImportWorkbench() {
       <div className="waybill-confirm-bar">
         <div>
           <b>{batch.status === 'confirmed' ? `已核销 ${displayedHandledQuantity.toLocaleString()} 份` : `准备核销 ${batch.matched_quantity.toLocaleString()} 份`}</b>
-          <span>{batch.status === 'confirmed' ? `仍有 ${currentPendingQuantity.toLocaleString()} 份未实际寄出，其中 ${deferredQuantity.toLocaleString()} 份待月底合寄。` : `确认后保留 ${displayedPendingQuantity.toLocaleString()} 份待处理；未解决行仍可继续关联。`}</span>
+          <span>{batch.status === 'confirmed' ? `仍有 ${currentPendingQuantity.toLocaleString()} 份未实际寄出，其中 ${deferredQuantity.toLocaleString()} 份待合寄。` : `确认后保留 ${displayedPendingQuantity.toLocaleString()} 份待处理；未解决行仍可继续关联。`}</span>
         </div>
         {batch.status === 'previewed' ? <Popconfirm
           title={`确认导入已核销的 ${batch.matched_quantity.toLocaleString()} 份？`}
@@ -1000,38 +1128,64 @@ export default function WaybillImportWorkbench() {
 
     <Modal
       rootClassName="zto-compact-modal"
-      title={`标记 ${adjustmentSelectedQuantity.toLocaleString()} 份无需发货`}
+      title={adjustmentType === 'warehouse_stock_in'
+        ? `登记 ${adjustmentSelectedQuantity.toLocaleString()} 份转库留存/库存入库`
+        : `标记 ${adjustmentSelectedQuantity.toLocaleString()} 份无需发货`}
       open={adjustmentOpen}
       okText="确认核销"
-      okButtonProps={{ loading: savingAdjustment, disabled: !adjustmentReason.trim() || !adjustmentSelectedQuantity || !adjustmentDetailId }}
+      okButtonProps={{ loading: savingAdjustment, disabled: !resolvedAdjustmentReason || !adjustmentSelectedQuantity || !adjustmentDetailId }}
       onOk={() => void handleAdjustment()}
       onCancel={() => setAdjustmentOpen(false)}
     >
       <Alert
         showIcon
         type="info"
-        title="该记录用于解释计划应发中没有出现在运单源文件里的份数"
-        description="确认后会计入实际发货核销，但不会生成虚假的运单号。"
+        title={adjustmentType === 'warehouse_stock_in'
+          ? '马飞—库房留存固定使用此核销类型'
+          : '该记录用于解释计划应发中没有出现在运单源文件里的份数'}
+        description={adjustmentType === 'warehouse_stock_in'
+          ? '确认后计入当期库存入库，不计为实际寄出，也不会生成运单号。'
+          : '确认后会计入实际发货核销，但不会生成虚假的运单号。'}
       />
       <Select
         className="waybill-reason-input"
         showSearch
         optionFilterProp="label"
         value={adjustmentDetailId}
-        placeholder="选择这笔无需发货对应的收件明细"
-        options={details.filter((detail) => detail.source_type !== 'complaint_makeup').map((detail) => ({
+        placeholder={adjustmentType === 'warehouse_stock_in' ? '选择马飞—库房留存明细' : '选择这笔无需发货对应的收件明细'}
+        options={details.filter((detail) => (
+          detail.source_type !== 'complaint_makeup'
+          && (adjustmentType === 'warehouse_stock_in'
+            ? detail.name.trim() === '马飞' && detail.channel.trim() === '库房留存'
+            : !(detail.name.trim() === '马飞' && detail.channel.trim() === '库房留存'))
+        )).map((detail) => ({
           value: detail.id,
           label: detailLabel(detail),
         }))}
         onChange={setAdjustmentDetailId}
       />
-      <Input
+      {adjustmentType === 'warehouse_stock_in' ? <Input
         className="waybill-reason-input"
-        value={adjustmentReason}
-        maxLength={255}
-        placeholder={`例如：${suspendedConsolidatedShippingReason}`}
-        onChange={(event) => setAdjustmentReason(event.target.value)}
-      />
+        value={warehouseStockInReason}
+        disabled
+      /> : <>
+        <Select
+          className="waybill-reason-input"
+          value={adjustmentReason}
+          options={noShipmentReasonOptions}
+          onChange={(value) => {
+            setAdjustmentReason(value);
+            if (value !== otherNoShipmentReason) setCustomAdjustmentReason('');
+          }}
+        />
+        {adjustmentReason === otherNoShipmentReason && <Input
+          className="waybill-reason-input"
+          value={customAdjustmentReason}
+          maxLength={255}
+          placeholder="填写其他无需发货原因"
+          onChange={(event) => setCustomAdjustmentReason(event.target.value)}
+        />}
+      </>}
     </Modal>
 
     <Modal
@@ -1116,9 +1270,9 @@ export default function WaybillImportWorkbench() {
 
     <Modal
       rootClassName="zto-compact-modal"
-      title="月底合寄待办"
+      title="合寄待办"
       open={consolidatedOpen}
-      width={820}
+      width={980}
       okText="登记运单并完成核销"
       okButtonProps={{
         loading: savingConsolidated,
@@ -1133,32 +1287,56 @@ export default function WaybillImportWorkbench() {
         title="同一张运单可以核销同一收件人的多个历史刊期"
         description="请只勾选同一收件人的记录；系统会把包裹份数分别归入对应刊期。"
       />
+      <Segmented<ConsolidatedFilter>
+        className="waybill-reason-input"
+        value={consolidatedFilter}
+        options={[
+          { label: `本期应寄 ${dueDeferrals.length}`, value: 'due' },
+          { label: `每月两次 ${pendingDeferrals.filter((item) => item.deferral_type === 'twice_monthly_consolidation').length}`, value: 'twice_monthly' },
+          { label: `月底合寄 ${pendingDeferrals.filter((item) => item.deferral_type === 'month_end_consolidation').length}`, value: 'month_end' },
+          { label: `全部 ${pendingDeferrals.length}`, value: 'all' },
+        ]}
+        onChange={(value) => {
+          setConsolidatedFilter(value);
+          setSelectedDeferralIds([]);
+        }}
+      />
       <div className="waybill-consolidated-fields">
         <Select
           value={consolidatedCarrier}
           options={['中通', '顺丰', '邮政', '邮政挂号'].map((value) => ({ value, label: value }))}
           onChange={setConsolidatedCarrier}
         />
-        <Input value={consolidatedTracking} placeholder="输入月底合寄运单号" onChange={(event) => setConsolidatedTracking(event.target.value)} />
+        <Input value={consolidatedTracking} placeholder="输入实际合寄运单号" onChange={(event) => setConsolidatedTracking(event.target.value)} />
       </div>
       <Table
         rowKey="id"
         size="small"
         pagination={{ pageSize: 8, showSizeChanger: false }}
         loading={pendingDeferralsQuery.isLoading}
-        dataSource={pendingDeferralsQuery.data ?? []}
+        dataSource={visibleDeferrals}
         rowSelection={{
           selectedRowKeys: selectedDeferralIds,
           onChange: (keys) => setSelectedDeferralIds(keys.map(Number)),
         }}
         columns={[
           { title: '刊期', dataIndex: 'issue_number', width: 90 },
+          {
+            title: '合寄方式', dataIndex: 'deferral_type', width: 130,
+            render: (value: DeferralType) => <Tag color={value === 'twice_monthly_consolidation' ? 'purple' : 'blue'}>{deferralTypeLabel(value)}</Tag>,
+          },
+          {
+            title: '目标批次', key: 'target', width: 145,
+            render: (_, row: ShippingDeferral) => row.target_issue_number
+              ? `第 ${row.target_issue_number} 期${row.target_publish_date ? ` · ${dayjs(row.target_publish_date).format('MM-DD')}` : ''}`
+              : row.target_publish_date ? dayjs(row.target_publish_date).format('YYYY-MM-DD') : '历史待办',
+          },
           { title: '收件人', dataIndex: 'detail_name_snapshot', width: 130 },
           { title: '电话', dataIndex: 'detail_phone_snapshot', width: 130 },
           { title: '地址', dataIndex: 'detail_address_snapshot', ellipsis: true },
           { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
         ]}
-        locale={{ emptyText: <Empty description="当前没有待月底合寄记录" /> }}
+        locale={{ emptyText: <Empty description="当前没有待合寄记录" /> }}
       />
     </Modal>
   </div>;

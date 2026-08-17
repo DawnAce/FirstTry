@@ -172,8 +172,10 @@ class ShippingDetailOut(BaseModel):
     shipping_requirement: Optional[str] = None
     physical_shipped_quantity: int
     no_shipment_quantity: int
+    warehouse_stock_in_quantity: int = 0
     deferred_quantity: int = 0
     no_shipment_reason: Optional[str] = None
+    warehouse_stock_in_reason: Optional[str] = None
     handled_quantity: int
     package_count: int
     fulfillment_status: str

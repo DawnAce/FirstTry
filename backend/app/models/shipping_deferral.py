@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -22,6 +22,9 @@ class ShippingDeferral(Base):
     deferral_type = Column(
         String(32), nullable=False, default="month_end_consolidation", server_default="month_end_consolidation"
     )
+    target_issue_number = Column(Integer, nullable=True, index=True)
+    target_publish_date = Column(Date, nullable=True, index=True)
+    consolidation_batch = Column(String(32), nullable=True, index=True)
     quantity = Column(Integer, nullable=False)
     reason = Column(String(255), nullable=False)
     status = Column(String(20), nullable=False, default="pending", server_default="pending", index=True)
