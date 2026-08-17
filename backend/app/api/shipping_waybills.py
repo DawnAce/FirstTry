@@ -207,6 +207,11 @@ def add_manual_package(
     detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
     if not detail:
         raise HTTPException(status_code=404, detail="发货明细不存在")
+    if detail.is_mafei_warehouse_retention:
+        raise HTTPException(
+            status_code=400,
+            detail="马飞—库房留存不能生成运单，只能按“转库留存/库存入库”核销",
+        )
     tracking_no = body.tracking_no.strip().upper()
     duplicate = db.query(ShippingPackage.id).filter(
         ShippingPackage.carrier == body.carrier.strip(),
@@ -293,6 +298,11 @@ def set_no_tracking_requirement(
     detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
     if not detail:
         raise HTTPException(status_code=404, detail="发货明细不存在")
+    if body.no_tracking_required and detail.is_mafei_warehouse_retention:
+        raise HTTPException(
+            status_code=400,
+            detail="马飞—库房留存不能标记无需运单，只能按“转库留存/库存入库”核销",
+        )
     if body.no_tracking_required and detail.packages:
         raise HTTPException(status_code=409, detail="该明细已有运单，请先删除运单")
     old = detail.shipping_requirement

@@ -1,6 +1,9 @@
 import type { ShippingDetail } from '../api/shippingDetails';
 
 export function getPackageCopy(record: ShippingDetail): { title: string; detail: string | null } {
+  if (record.fulfillment_status === 'warehouse_stock_in') {
+    return { title: '转库留存/库存入库', detail: record.warehouse_stock_in_reason || null };
+  }
   if (record.fulfillment_status === 'no_shipment_required') {
     return { title: '无需发货', detail: record.no_shipment_reason || null };
   }

@@ -152,8 +152,29 @@ class ShippingDetail(Base):
         return 0
 
     @property
-    def no_shipment_quantity(self) -> int:
+    def is_mafei_warehouse_retention(self) -> bool:
+        """马飞的库房留存只能按库存入库核销。"""
+        return self.name.strip() == "马飞" and self.channel.strip() == "库房留存"
+
+    @property
+    def fulfillment_adjustment_quantity(self) -> int:
         return sum(max(adjustment.quantity or 0, 0) for adjustment in self.fulfillment_adjustments)
+
+    @property
+    def no_shipment_quantity(self) -> int:
+        return sum(
+            max(adjustment.quantity or 0, 0)
+            for adjustment in self.fulfillment_adjustments
+            if adjustment.adjustment_type != "warehouse_stock_in"
+        )
+
+    @property
+    def warehouse_stock_in_quantity(self) -> int:
+        return sum(
+            max(adjustment.quantity or 0, 0)
+            for adjustment in self.fulfillment_adjustments
+            if adjustment.adjustment_type == "warehouse_stock_in"
+        )
 
     @property
     def deferred_quantity(self) -> int:
@@ -168,13 +189,29 @@ class ShippingDetail(Base):
         reasons = list(dict.fromkeys(
             adjustment.reason.strip()
             for adjustment in self.fulfillment_adjustments
-            if adjustment.reason and adjustment.reason.strip()
+            if adjustment.adjustment_type != "warehouse_stock_in"
+            and adjustment.reason
+            and adjustment.reason.strip()
+        ))
+        return "；".join(reasons) or None
+
+    @property
+    def warehouse_stock_in_reason(self) -> str | None:
+        reasons = list(dict.fromkeys(
+            adjustment.reason.strip()
+            for adjustment in self.fulfillment_adjustments
+            if adjustment.adjustment_type == "warehouse_stock_in"
+            and adjustment.reason
+            and adjustment.reason.strip()
         ))
         return "；".join(reasons) or None
 
     @property
     def handled_quantity(self) -> int:
-        return min(self.physical_shipped_quantity + self.no_shipment_quantity, self.quantity or 0)
+        return min(
+            self.physical_shipped_quantity + self.fulfillment_adjustment_quantity,
+            self.quantity or 0,
+        )
 
     @property
     def package_count(self) -> int:
@@ -193,6 +230,8 @@ class ShippingDetail(Base):
             return "pending"
         if handled < planned:
             return "partial"
+        if self.warehouse_stock_in_quantity and self.physical_shipped_quantity <= 0:
+            return "warehouse_stock_in"
         if self.no_shipment_quantity and self.physical_shipped_quantity <= 0:
             return "no_shipment_required"
         return "shipped"

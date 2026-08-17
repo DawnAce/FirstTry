@@ -538,6 +538,11 @@ def ship_shipping_detail(
     detail = db.query(ShippingDetail).filter(ShippingDetail.id == detail_id).first()
     if not detail:
         raise HTTPException(status_code=404, detail="发货明细不存在")
+    if detail.is_mafei_warehouse_retention:
+        raise HTTPException(
+            status_code=400,
+            detail="马飞—库房留存不能标记已发货，只能按“转库留存/库存入库”核销",
+        )
     old_snapshot = _snapshot(detail)
     ship_date = data.shipped_at or date.today()
     detail.shipped_at = datetime.combine(ship_date, time())

@@ -6,7 +6,7 @@ from app.database import Base
 
 
 class ShippingFulfillmentAdjustment(Base):
-    """期级实际发货核销项，例如停刊、取消寄送等无需发货份数。"""
+    """期级非运单核销项，包括无需发货和转库留存。"""
 
     __tablename__ = "shipping_fulfillment_adjustments"
 

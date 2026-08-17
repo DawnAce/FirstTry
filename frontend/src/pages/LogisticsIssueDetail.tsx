@@ -140,12 +140,13 @@ const fulfillmentMeta: Record<string, { label: string; color: string }> = {
   shipped: { label: '已完成核销', color: 'green' },
   no_tracking_required: { label: '无需运单', color: 'blue' },
   no_shipment_required: { label: '无需发货', color: 'green' },
+  warehouse_stock_in: { label: '库存入库', color: 'cyan' },
 };
 
 const matchesFulfillmentView = (detail: ShippingDetail, filter?: string) => {
   if (!filter || filter === 'all') return true;
   if (filter === 'completed') {
-    return ['shipped', 'no_tracking_required', 'no_shipment_required'].includes(detail.fulfillment_status);
+    return ['shipped', 'no_tracking_required', 'no_shipment_required', 'warehouse_stock_in'].includes(detail.fulfillment_status);
   }
   if (filter === 'pending') return detail.fulfillment_status === 'pending';
   if (filter === 'issue') return detail.fulfillment_status === 'partial' || detail.sync_status !== 'synced';
@@ -856,7 +857,7 @@ export default function LogisticsIssueDetail() {
       </Card>}
 
       {activeSection === 'actual' && <Card className="zto-fulfillment-card" styles={{ body: { padding: 0 } }}>
-        <div className="zto-reconcile-main">
+        <div className="zto-reconcile-main has-five-metrics">
           <div className={`zto-reconcile-result ${fulfillmentPanelState.tone}`}>
             <div className="zto-reconcile-icon">
               {fulfillmentPanelState.kind === 'shipped'
@@ -870,7 +871,7 @@ export default function LogisticsIssueDetail() {
             <div>
               <span>实际发货与核销</span>
               <strong>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '核销已完成 · 部分发货' : fulfillmentPanelState.label}</strong>
-              <small>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '无需发货份数已明确归因，实际寄出的份数少于计划应发。' : fulfillmentPanelState.description}</small>
+              <small>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '无需发货或转库留存份数已明确归因，实际寄出的份数少于计划应发。' : fulfillmentPanelState.description}</small>
               {fulfillmentPanelState.kind === 'error' && (
                 <Button className="zto-inline-retry" size="small" icon={<ReloadOutlined />} onClick={retryFulfillmentData}>重新加载</Button>
               )}
@@ -888,8 +889,13 @@ export default function LogisticsIssueDetail() {
           </div>
           <div className="zto-reconcile-metric">
             <span>无需发货</span>
-            <strong>{fulfillment?.adjustment_quantity?.toLocaleString() ?? '—'}</strong>
+            <strong>{fulfillment?.no_shipment_quantity?.toLocaleString() ?? '—'}</strong>
             <small>{fulfillment ? `份 · 未归属 ${fulfillment.unattributed_adjustment_quantity.toLocaleString()}` : '等待数据'}</small>
+          </div>
+          <div className="zto-reconcile-metric">
+            <span>转库留存</span>
+            <strong>{fulfillment?.warehouse_stock_in_quantity?.toLocaleString() ?? '—'}</strong>
+            <small>份 · 库存入库</small>
           </div>
           <div className="zto-reconcile-metric">
             <span>核销待补</span>
@@ -1398,7 +1404,7 @@ export default function LogisticsIssueDetail() {
           const adjustments = fulfillment?.adjustments ?? [];
           return <div className="zto-change-modal-sections">
             <section>
-              <h3>无需发货归因</h3>
+              <h3>非运单核销归因</h3>
               {adjustments.length ? <Table
                 size="small"
                 rowKey="id"
@@ -1407,13 +1413,14 @@ export default function LogisticsIssueDetail() {
                 columns={[
                   { title: '收件人', dataIndex: 'detail_name_snapshot', render: (value: string | null) => value || <Tag color="orange">待补充归属</Tag> },
                   { title: '渠道', dataIndex: 'detail_channel_snapshot', render: (value: string | null) => value || '—' },
+                  { title: '核销类型', dataIndex: 'adjustment_type', render: (value: string) => value === 'warehouse_stock_in' ? <Tag color="cyan">转库留存/库存入库</Tag> : <Tag color="green">无需发货</Tag> },
                   { title: '原因', dataIndex: 'reason' },
                   { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
                   { title: '状态', key: 'state', width: 110, render: (_: unknown, item) => item.is_attributed
                     ? <Tag color="green">已归因</Tag>
                     : <Button type="link" size="small" onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import`)}>补充归属</Button> },
                 ]}
-              /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无无需发货归因记录" />}
+              /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无非运单核销记录" />}
             </section>
             <section>
               <h3>人工修改 / 孤立明细</h3>
@@ -1546,7 +1553,17 @@ export default function LogisticsIssueDetail() {
                       description={detailDrawerRecord.no_shipment_reason || '已登记无需发货原因'}
                     />
                   )}
+                  {!!detailDrawerRecord.warehouse_stock_in_quantity && (
+                    <Alert
+                      showIcon
+                      type="success"
+                      title={`${detailDrawerRecord.warehouse_stock_in_quantity.toLocaleString()} 份转库留存/库存入库`}
+                      description={detailDrawerRecord.warehouse_stock_in_reason || '已登记进入马飞中通库房备货'}
+                    />
+                  )}
                 </div>
+              ) : detailDrawerRecord.fulfillment_status === 'warehouse_stock_in' ? (
+                <Alert showIcon type="success" title="转库留存/库存入库，已完成核销" description={detailDrawerRecord.warehouse_stock_in_reason || '已登记进入马飞中通库房备货'} />
               ) : detailDrawerRecord.fulfillment_status === 'no_shipment_required' ? (
                 <Alert showIcon type="success" title="无需发货，已完成核销" description={detailDrawerRecord.no_shipment_reason || '已登记无需发货原因'} />
               ) : detailDrawerRecord.shipping_requirement === 'no_tracking_required' ? (
