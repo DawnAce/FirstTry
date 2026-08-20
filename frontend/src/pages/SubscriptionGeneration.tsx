@@ -183,8 +183,8 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
   const [issuesFor, setIssuesFor] = useState<number | null>(null);
   const [recordsFor, setRecordsFor] = useState<number | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [fileA, setFileA] = useState<File | null>(null);
-  const [fileB, setFileB] = useState<File | null>(null);
+  const [filesA, setFilesA] = useState<UploadFile[]>([]);
+  const [filesB, setFilesB] = useState<UploadFile[]>([]);
   const [draftVersion, setDraftVersion] = useState<ImportVersion | null>(null);
   const [activated, setActivated] = useState(false);
   const [generationDone, setGenerationDone] = useState(false);
@@ -197,7 +197,11 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
     qc.invalidateQueries({ queryKey: ['subBatches'] });
   };
   const uploadMut = useMutation({
-    mutationFn: () => createSubImport(batchId, fileA as File, fileB),
+    mutationFn: () => createSubImport(
+      batchId,
+      filesA.map((file) => (file.originFileObj ?? file) as File),
+      filesB.map((file) => (file.originFileObj ?? file) as File),
+    ),
     onSuccess: (res) => {
       setDraftVersion(res.data);
       message.success(`已创建待确认版本 V${res.data.version_no}`);
@@ -311,24 +315,26 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
         {!draftVersion && (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Flex gap={12} wrap>
-              <Upload.Dragger className="subscription-upload" maxCount={1} accept=".xlsx,.xls,.csv"
-                beforeUpload={(f) => { setFileA(f); return false; }} onRemove={() => setFileA(null)}
-                fileList={fileA ? [{ uid: 'a', name: fileA.name } as UploadFile] : []}>
+              <Upload.Dragger className="subscription-upload" multiple maxCount={20} accept=".xlsx,.xls,.csv"
+                beforeUpload={(f) => { setFilesA((prev) => [...prev, f]); return false; }}
+                onRemove={(f) => { setFilesA((prev) => prev.filter((item) => item.uid !== f.uid)); }}
+                fileList={filesA}>
                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                 <p className="ant-upload-text">来源 A · 订阅明细</p>
-                <p className="ant-upload-hint">.xlsx / .xls，必填</p>
+                <p className="ant-upload-hint">.xlsx / .xls，必填，可多选（最多 20 个）</p>
               </Upload.Dragger>
-              <Upload.Dragger className="subscription-upload" maxCount={1} accept=".xlsx,.csv"
-                beforeUpload={(f) => { setFileB(f); return false; }} onRemove={() => setFileB(null)}
-                fileList={fileB ? [{ uid: 'b', name: fileB.name } as UploadFile] : []}>
+              <Upload.Dragger className="subscription-upload" multiple maxCount={20} accept=".xlsx,.csv"
+                beforeUpload={(f) => { setFilesB((prev) => [...prev, f]); return false; }}
+                onRemove={(f) => { setFilesB((prev) => prev.filter((item) => item.uid !== f.uid)); }}
+                fileList={filesB}>
                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                 <p className="ant-upload-text">来源 B · 读者统计（可选）</p>
-                <p className="ant-upload-hint">CSV 需 UTF-8 / 带 BOM</p>
+                <p className="ant-upload-hint">可多选（最多 20 个）；CSV 需 UTF-8 / 带 BOM</p>
               </Upload.Dragger>
             </Flex>
             <Flex justify="flex-end" gap={8}>
               <Button onClick={() => setWorkspaceOpen(false)}>取消</Button>
-              <Button type="primary" icon={<UploadOutlined />} disabled={!fileA} loading={uploadMut.isPending}
+              <Button type="primary" icon={<UploadOutlined />} disabled={filesA.length === 0} loading={uploadMut.isPending}
                 onClick={() => uploadMut.mutate()}>上传并校验</Button>
             </Flex>
           </Space>
@@ -359,7 +365,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
                 <Button onClick={() => setIssuesFor(draftVersion.id)}>校验问题{blockCount + warnCount ? ` (${blockCount + warnCount})` : ''}</Button>
               </Space>
               <Space>
-                <Button onClick={() => { setDraftVersion(null); setFileA(null); setFileB(null); }}>重新选择文件</Button>
+                <Button onClick={() => { setDraftVersion(null); setFilesA([]); setFilesB([]); }}>重新选择文件</Button>
                 <Popconfirm title={`设 V${draftVersion.version_no} 为当前有效版本？`} description="旧有效版本会保留在版本历史中。" onConfirm={() => activateMut.mutate(draftVersion.id)}>
                   <Button type="primary" disabled={!canActivate} loading={activateMut.isPending}>设为有效版本</Button>
                 </Popconfirm>

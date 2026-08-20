@@ -103,6 +103,31 @@ def test_merge_a_all_plus_b_postal_this_month(db):
     assert s["region_count"] == 4                                     # 北京/上海/广东/山西
 
 
+def test_multiple_files_per_source_are_preserved_and_merged_in_order(db):
+    a1 = _source_a([("甲", "13000000001", "北京市西城区月坛北街1号", "100037")])
+    a2 = _source_a([("乙", "13000000002", "上海市嘉定区嘉好路325号", "201802")])
+    b1 = _source_b_csv([
+        ("丙", "13000000003", "广东省广州市天河区体育西路100号", "510620", "邮局", "2026/8/1"),
+    ])
+    b2 = _source_b_csv([
+        ("丁", "13000000004", "山西省太原市小店区龙城北街8号", "030032", "邮局", "2026/8/1"),
+    ])
+    batch = _batch(db)
+
+    version = import_svc.create_version(db, batch, [
+        ("A", "a-1.xlsx", a1), ("A", "a-2.xlsx", a2),
+        ("B", "b-1.csv", b1), ("B", "b-2.csv", b2),
+    ], operator_id=None)
+
+    assert version.status == SubscriptionImportStatus.validation_passed
+    assert version.summary_json["from_a"] == 2
+    assert version.summary_json["from_b"] == 2
+    assert [record.name for record in version.records] == ["甲", "乙", "丙", "丁"]
+    assert [(source.file_role, source.original_filename) for source in version.source_files] == [
+        ("A", "a-1.xlsx"), ("A", "a-2.xlsx"), ("B", "b-1.csv"), ("B", "b-2.csv"),
+    ]
+
+
 def test_month_multiplier_july(db):
     a = _source_a([("甲", "13000000001", "北京市西城区月坛北街1号", "100037")])
     batch = _batch(db, month=7)

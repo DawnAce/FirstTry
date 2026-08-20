@@ -69,6 +69,7 @@ def province_to_region(province: Optional[str]) -> Optional[str]:
 class ParsedRow:
     source_file_role: str
     source_row: int
+    source_filename: str = ""
     name: str = ""
     phone: str = ""
     address: str = ""

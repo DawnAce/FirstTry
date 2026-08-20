@@ -1,8 +1,8 @@
 """邮局订报数据生成模块 · 导入版本流水（上传→解析→合并→校验→落库，不可变）。
 
-一次上传两份来源即建一个新版本 V_n：
-1. 原样落盘两份文件（含 SHA-256）。
-2. 解析来源A（全量）+ 来源B（仅 物流=邮局 且 起投月=本批月）。
+一次上传一组来源文件即建一个新版本 V_n：
+1. 原样落盘全部来源文件（含 SHA-256）。
+2. 逐份解析来源A（全量）+ 来源B（仅 物流=邮局 且 起投月=本批月）。
 3. 合并（A 在前、B 追加），按 姓名+电话 去重。
 4. 逐行补：cpca 拆 省/市/区 + 地区短名、月数 N=13−起始月、金额=份数×N×20。
 5. 三级校验；有 block → validation_failed，否则 validation_passed。
@@ -60,6 +60,27 @@ def _merge_rows(rows_a: List[parser.ParsedRow], rows_b: List[parser.ParsedRow]) 
     return list(rows_a) + list(rows_b)
 
 
+def _parse_source_files(
+    files: List[Tuple[str, bytes]], role: str, batch: SubscriptionBatch
+) -> parser.ParseResult:
+    """按上传顺序解析同一来源的多份文件，并保留文件名用于问题定位。"""
+    combined = parser.ParseResult()
+    for filename, content in files:
+        if role == "A":
+            current = parser.parse_source_a(content, filename)
+        else:
+            current = parser.parse_source_b(content, filename, batch.year, batch.start_month)
+        for row in current.rows:
+            row.source_filename = filename
+        for issue in current.issues:
+            issue.sheet_or_file = (
+                f"{filename} / {issue.sheet_or_file}" if issue.sheet_or_file else filename
+            )
+        combined.rows.extend(current.rows)
+        combined.issues.extend(current.issues)
+    return combined
+
+
 def create_version(
     db: Session,
     batch: SubscriptionBatch,
@@ -78,7 +99,7 @@ def create_version(
     db.add(version)
     db.flush()
 
-    file_a = file_b = None
+    source_files: dict[str, List[Tuple[str, bytes]]] = {"A": [], "B": []}
     for role, filename, content in files:
         stored = attachment_service.store_file(
             f"subscription/{batch.year}-{batch.start_month:02d}", filename, content
@@ -89,24 +110,22 @@ def create_version(
             original_filename=filename, stored_path=stored,
             size=len(content), sha256=attachment_service.sha256_hex(content),
         ))
-        if role == "A":
-            file_a = (filename, content)
-        elif role == "B":
-            file_b = (filename, content)
+        if role in source_files:
+            source_files[role].append((filename, content))
 
     all_issues: List[dict] = []
 
-    if file_a is None:
+    if not source_files["A"]:
         all_issues.append({"level": "block", "source": "A", "code": "missing_file",
                            "message": "缺来源A（订阅明细）", "row_no": None, "field": "", "sheet_or_file": ""})
         pr_a = parser.ParseResult()
     else:
-        pr_a = parser.parse_source_a(file_a[1], file_a[0])
+        pr_a = _parse_source_files(source_files["A"], "A", batch)
         all_issues.extend(_pi(i) for i in pr_a.issues)
 
     pr_b = parser.ParseResult()
-    if file_b is not None:
-        pr_b = parser.parse_source_b(file_b[1], file_b[0], batch.year, batch.start_month)
+    if source_files["B"]:
+        pr_b = _parse_source_files(source_files["B"], "B", batch)
         all_issues.extend(_pi(i) for i in pr_b.issues)
 
     merged = _merge_rows(pr_a.rows, pr_b.rows)
@@ -117,7 +136,7 @@ def create_version(
     records: List[SubscriptionRecord] = []
     for row, (prov, city, dist) in zip(merged, provs):
         amount = calc.compute_amount(row.copies, N, batch.unit_price)
-        records.append(SubscriptionRecord(
+        record = SubscriptionRecord(
             version_id=version.id,
             name=row.name or "(未填写)", phone=row.phone or None,
             province=prov, city=city, district=dist,
@@ -128,7 +147,10 @@ def create_version(
             remittance_name=row.remittance_name or None,
             remittance_date=row.remittance_date or None,
             source_file_role=row.source_file_role, source_row=row.source_row,
-        ))
+        )
+        # 仅用于本轮校验生成可定位的文件名；原始文件关系由 source_files 持久化。
+        record.source_filename = row.source_filename
+        records.append(record)
 
     all_issues.extend(validator.validate_rows(records))
 

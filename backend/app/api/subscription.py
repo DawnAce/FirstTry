@@ -37,6 +37,7 @@ from app.services.operation_log_service import record_operation
 from app.upload import read_upload
 
 router = APIRouter(prefix="/api/subscription", tags=["subscription"])
+MAX_FILES_PER_SOURCE = 20
 
 
 def _log(db: Session, *, table: str, record_id: int, action: str, user: User, name: Optional[str] = None):
@@ -69,16 +70,22 @@ def get_batch(batch_id: int, db: Session = Depends(get_db), _user: User = Depend
 @router.post("/batches/{batch_id}/imports", response_model=ImportVersionOut)
 async def create_import(
     batch_id: int,
-    file_a: UploadFile = File(..., description="来源A 订阅明细"),
-    file_b: Optional[UploadFile] = File(None, description="来源B 读者统计"),
+    file_a: List[UploadFile] = File(..., description="来源A 订阅明细（可多份）"),
+    file_b: Optional[List[UploadFile]] = File(None, description="来源B 读者统计（可多份）"),
     reason: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_admin),
 ):
     batch = batch_svc.get_batch(db, batch_id)
-    files = [("A", file_a.filename, await read_upload(file_a, label="来源A文件"))]
-    if file_b is not None:
-        files.append(("B", file_b.filename, await read_upload(file_b, label="来源B文件")))
+    files_b = file_b or []
+    if len(file_a) > MAX_FILES_PER_SOURCE or len(files_b) > MAX_FILES_PER_SOURCE:
+        raise HTTPException(status_code=400, detail=f"每个来源最多上传 {MAX_FILES_PER_SOURCE} 个文件")
+
+    files = []
+    for upload in file_a:
+        files.append(("A", upload.filename, await read_upload(upload, label="来源A文件")))
+    for upload in files_b:
+        files.append(("B", upload.filename, await read_upload(upload, label="来源B文件")))
     version = import_svc.create_version(db, batch, files, reason=reason, operator_id=getattr(user, "id", None))
     _log(db, table="subscription_import_versions", record_id=version.id, action="create", user=user,
          name=f"批次{batch_id} V{version.version_no}")
