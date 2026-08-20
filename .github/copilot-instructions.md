@@ -1,5 +1,7 @@
 # Copilot Instructions
 
+> The repository-wide source of truth is `/AGENTS.md`. Read and follow it before making changes. This file retains Copilot-specific context; if duplicated guidance diverges, `/AGENTS.md` takes precedence.
+
 ## Project Overview
 
 This is the **每周印数管理系统** (Weekly Print Report System) for 《中国经营报》(China Business Journal).

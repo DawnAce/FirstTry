@@ -1,7 +1,8 @@
 # 交接说明 · 发行系统（FirstTry）
 
-> 更新：2026-08-11 ｜ 交接自 Claude Code → codex
+> 更新：2026-08-20 ｜ 交接自 Claude Code → Codex
 > 本文件是接手入口，给出「现状 / 待办 / 约定」三件事。功能细节以 `requirements.md`（业务）、`technical.md`（技术）、`user-guide.md`（操作）为准，本文件不重复。
+> 仓库级工作规则以根目录 `AGENTS.md` 为准；开始任务前应先读取并遵守其中的业务不变量、数据安全、测试、文档和 Git 约定。
 
 ---
 
@@ -38,6 +39,8 @@
 ---
 
 ## 4. 开发约定（务必遵守）
+
+以下为交接时必须特别注意的约定；完整且持续维护的项目规则见根目录 `AGENTS.md`。
 
 1. **禁止直推 main**。main 受保护：必须开 PR、CI 全绿、`enforce_admins` 亦生效。CI 配置见 `.github/workflows/ci.yml`：后端 job 先对空 MySQL 跑完整 Alembic 迁移，再跑 pytest；前端 job 跑 lint、Vitest 和生产构建。检查名仍为“前端类型检查 (tsc)”以兼容分支保护规则。
 2. **迁移**：新增表用 Alembic；**downgrade 删表只用 `drop_table`，不要先 `drop_index`**（FK 依赖会报错，踩过两次）。

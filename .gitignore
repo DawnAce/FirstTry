@@ -38,3 +38,8 @@ Thumbs.db
 
 # Third-party prompt extensions
 .github/prompts/
+
+# Codex local work / generated artifacts (may contain real business data or PII)
+.codex-work/
+.codex-tmp-*/
+outputs/
