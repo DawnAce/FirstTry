@@ -30,41 +30,44 @@ def validate_rows(rows: List, summary_b: Optional[dict] = None,
     for r in rows:
         row_no = getattr(r, "source_row", None)
         src = getattr(r, "source_file_role", None) or "A"
+        sheet = getattr(r, "source_filename", "") or ""
 
         # 阻断：份数非正。
         copies = getattr(r, "copies", None)
         if not copies or int(copies) <= 0:
-            issues.append(_issue("block", f"份数非正数：{copies!r}", source=src, row_no=row_no, field="copies", code="copies_non_positive"))
+            issues.append(_issue("block", f"份数非正数：{copies!r}", source=src, row_no=row_no, field="copies", code="copies_non_positive", sheet=sheet))
 
         # 阻断：订阅月数缺失/非正（金额算不出）。
         months = getattr(r, "months", None)
         if not months or int(months) <= 0:
-            issues.append(_issue("block", f"订阅月数缺失或非正：{months!r}", source=src, row_no=row_no, field="months", code="months_invalid"))
+            issues.append(_issue("block", f"订阅月数缺失或非正：{months!r}", source=src, row_no=row_no, field="months", code="months_invalid", sheet=sheet))
 
         # 阻断：地址无法识别（规范化后省份仍空）。
         if not (getattr(r, "province", "") or getattr(r, "region_name", "")):
-            issues.append(_issue("block", "地址无法识别省/地区", source=src, row_no=row_no, field="address", code="address_unresolved"))
+            issues.append(_issue("block", "地址无法识别省/地区", source=src, row_no=row_no, field="address", code="address_unresolved", sheet=sheet))
 
         # 警告：电话格式可疑。
         phone = getattr(r, "phone", "")
         if phone and not _PHONE_RE.match(phone):
-            issues.append(_issue("warn", f"电话格式可疑：{phone}", source=src, row_no=row_no, field="phone", code="phone_suspicious"))
+            issues.append(_issue("warn", f"电话格式可疑：{phone}", source=src, row_no=row_no, field="phone", code="phone_suspicious", sheet=sheet))
 
         # 警告：邮编格式可疑。
         postal = getattr(r, "postal_code", "")
         if postal and not _POSTAL_RE.match(postal):
-            issues.append(_issue("warn", f"邮编格式可疑：{postal}", source=src, row_no=row_no, field="postal_code", code="postal_suspicious"))
+            issues.append(_issue("warn", f"邮编格式可疑：{postal}", source=src, row_no=row_no, field="postal_code", code="postal_suspicious", sheet=sheet))
 
         # 阻断：批次内重复订户（默认 姓名+电话，可配置）。
         key = tuple((getattr(r, f, "") or "").strip() for f in dedup_fields)
         if any(key):
             if key in seen:
+                previous_row, previous_file = seen[key]
+                previous_location = f"{previous_file} 第 {previous_row} 行" if previous_file else f"第 {previous_row} 行"
                 issues.append(_issue(
-                    "block", f"重复订户（{'+'.join(dedup_fields)}）：与第 {seen[key]} 行重复",
-                    source=src, row_no=row_no, field="+".join(dedup_fields), code="duplicate_subscriber",
+                    "block", f"重复订户（{'+'.join(dedup_fields)}）：与{previous_location}重复",
+                    source=src, row_no=row_no, field="+".join(dedup_fields), code="duplicate_subscriber", sheet=sheet,
                 ))
             else:
-                seen[key] = row_no
+                seen[key] = (row_no, sheet)
 
     # 对账：来源A 份数 vs 来源B 统计份数（B 存在时）。
     if summary_b and summary_b.get("total_copies"):

@@ -130,11 +130,11 @@ export function createSubBatch(body: BatchCreatePayload): Promise<AxiosResponse<
 }
 
 export function createSubImport(
-  batchId: number, fileA: File, fileB: File | null, reason?: string,
+  batchId: number, filesA: File[], filesB: File[], reason?: string,
 ): Promise<AxiosResponse<ImportVersion>> {
   const fd = new FormData();
-  fd.append('file_a', fileA);
-  if (fileB) fd.append('file_b', fileB);
+  filesA.forEach((file) => fd.append('file_a', file));
+  filesB.forEach((file) => fd.append('file_b', file));
   if (reason) fd.append('reason', reason);
   return api.post(`/subscription/batches/${batchId}/imports`, fd);
 }
