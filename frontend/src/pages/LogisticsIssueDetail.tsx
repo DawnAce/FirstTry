@@ -84,15 +84,19 @@ import {
 } from './logisticsIssueState';
 import ShippingDetailCardList from './ShippingDetailCardList';
 
-const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '库房留存', '报社留存'] as const;
-const SUB_CHANNEL_OPTIONS = ['监管', '政府'] as const;
+const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '自用', '库房留存', '报社留存'] as const;
+const SUB_CHANNEL_OPTIONS_BY_CHANNEL: Record<string, readonly string[]> = {
+  '赠阅': ['监管', '政府', '客情维护'],
+  '自用': ['业务', '会议'],
+};
+const SUB_CHANNEL_OPTIONS = ['监管', '政府', '客情维护', '业务', '会议'] as const;
 const FREQUENCY_OPTIONS = ['周', '半月', '月'] as const;
 const TRANSPORT_OPTIONS = ['中通物流', '邮政物流', '包车运输', '库房留存'] as const;
 const SHIPPING_STATUS_OPTIONS = ['正常', '停发'] as const;
 
 const channelColors: Record<string, string> = {
   '渠道订阅': 'blue', '对公订阅': 'blue', '个人订阅': 'green', '记者站': 'purple',
-  '赠阅': 'orange', '库房留存': 'default', '报社留存': 'cyan',
+  '赠阅': 'orange', '自用': 'geekblue', '库房留存': 'default', '报社留存': 'cyan',
 };
 const transportColors: Record<string, string> = {
   '中通物流': 'blue', '邮政物流': 'green', '包车运输': 'orange', '库房留存': 'default',
@@ -1319,7 +1323,10 @@ export default function LogisticsIssueDetail() {
             <Select
               placeholder="请选择渠道"
               onChange={(value) => {
-                if (value !== '赠阅') form.setFieldValue('sub_channel', null);
+                const subChannel = form.getFieldValue('sub_channel');
+                if (subChannel && !(SUB_CHANNEL_OPTIONS_BY_CHANNEL[value] ?? []).includes(subChannel)) {
+                  form.setFieldValue('sub_channel', null);
+                }
               }}
             >
               {CHANNEL_OPTIONS.map((ch) => <Select.Option key={ch} value={ch}>{ch}</Select.Option>)}
@@ -1331,11 +1338,12 @@ export default function LogisticsIssueDetail() {
             {({ getFieldValue, setFieldValue }) => {
               const channel = getFieldValue('channel');
               const legacySubChannel = getFieldValue('sub_channel');
-              if (channel === '赠阅') {
+              const subChannelOptions = SUB_CHANNEL_OPTIONS_BY_CHANNEL[channel];
+              if (subChannelOptions) {
                 return (
                 <Form.Item label="子渠道" name="sub_channel">
                   <Select placeholder="请选择子渠道" allowClear>
-                    {SUB_CHANNEL_OPTIONS.map((sc) => <Select.Option key={sc} value={sc}>{sc}</Select.Option>)}
+                    {subChannelOptions.map((sc) => <Select.Option key={sc} value={sc}>{sc}</Select.Option>)}
                   </Select>
                 </Form.Item>
                 );

@@ -13,8 +13,17 @@ const channelColors: Record<string, string> = {
   '个人订阅': 'green',
   '记者站': 'purple',
   '赠阅': 'orange',
+  '自用': 'geekblue',
   '库房留存': 'gray',
   '报社留存': 'cyan',
+};
+
+const subChannelColors: Record<string, string> = {
+  '监管': 'orange',
+  '政府': 'gold',
+  '客情维护': 'magenta',
+  '业务': 'blue',
+  '会议': 'purple',
 };
 
 const transportColors: Record<string, string> = {
@@ -105,7 +114,7 @@ export const shippingDetailDisplayColumns: TableColumnsType<ShippingDetail> = [
     dataIndex: 'sub_channel',
     key: 'sub_channel',
     width: 80,
-    render: (v: string | null) => v ? <Tag color={v === '监管' ? 'orange' : 'gold'}>{v}</Tag> : '-',
+    render: (v: string | null) => v ? <Tag color={subChannelColors[v] || 'default'}>{v}</Tag> : '-',
   },
   {
     title: '签约公司',
