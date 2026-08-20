@@ -1194,6 +1194,40 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertEqual(row.sub_channel, "")
         self.assertEqual(row.notes, "送前联系；历史说明：20260122新增")
 
+    def test_original_zto_parser_keeps_business_sub_channels_for_matching_channels(self):
+        wb = load_workbook(io.BytesIO(build_original_zto_shipping_upload()))
+        corporate = wb["每周（对公）"]
+        corporate.append([
+            "业务用报", "北京市测试地址1号", "13800138001", 10, "中国经营报",
+            "自用", "业务", "", "周", "中通物流", "北京", "",
+        ])
+        corporate.append([
+            "会议用报", "北京市测试地址2号", "13800138002", 20, "中国经营报",
+            "自用", "会议", "", "周", "中通物流", "北京", "",
+        ])
+        corporate.append([
+            "客情维护用报", "北京市测试地址3号", "13800138003", 30, "中国经营报",
+            "赠阅", "客情维护", "", "周", "中通物流", "北京", "",
+        ])
+
+        rows = read_original_zto_shipping_rows(wb)
+        row_map = {row.name: row for row in rows}
+
+        self.assertEqual(row_map["业务用报"].sub_channel, "业务")
+        self.assertEqual(row_map["会议用报"].sub_channel, "会议")
+        self.assertEqual(row_map["客情维护用报"].sub_channel, "客情维护")
+        self.assertFalse(any("历史说明" in row_map[name].notes for name in row_map if name.endswith("用报")))
+
+    def test_original_zto_parser_moves_sub_channel_used_under_wrong_channel(self):
+        wb = load_workbook(io.BytesIO(build_original_zto_shipping_upload()))
+        wb["每周（读者）"]["H3"] = "会议"
+
+        rows = read_original_zto_shipping_rows(wb)
+
+        row = next(row for row in rows if row.name == "黄雪")
+        self.assertEqual(row.sub_channel, "")
+        self.assertEqual(row.notes, "历史说明：会议")
+
     def test_preview_warns_when_nonstandard_sub_channel_is_moved(self):
         db = self.SessionLocal()
         self._seed_upload_templates(db)

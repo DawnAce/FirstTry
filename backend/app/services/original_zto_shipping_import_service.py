@@ -16,7 +16,10 @@ _KNOWN_SHEETS = {
     "月底-整月",
 }
 
-_STANDARD_SUB_CHANNELS = {"监管", "政府"}
+_STANDARD_SUB_CHANNELS_BY_CHANNEL = {
+    "赠阅": {"监管", "政府", "客情维护"},
+    "自用": {"业务", "会议"},
+}
 
 _ISSUE_NUMBER_PATTERN = re.compile(r"第\s*(\d+)\s*期")
 _PRIMARY_ISSUE_SHEET = "每周合计"
@@ -359,7 +362,9 @@ def normalize_shipping_sub_channels_with_adjustments(
     adjustments: list[ShippingImportAdjustment] = []
     for row in rows:
         value = row.sub_channel.strip()
-        if not value or value in _STANDARD_SUB_CHANNELS:
+        channel = row.channel.strip()
+        allowed_values = _STANDARD_SUB_CHANNELS_BY_CHANNEL.get(channel, set())
+        if not value or value in allowed_values:
             normalized.append(row)
             continue
 
