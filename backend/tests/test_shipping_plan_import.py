@@ -29,6 +29,7 @@ from app.services.shipping_plan_import_service import (
     commit_shipping_plan_import,
     preview_shipping_plan_import,
 )
+from app.services.recurring_shipping_detail_service import SHANGYOU_GOVERNMENT_RECIPIENTS
 from app.services.shipping_waybill_service import fulfillment_summary
 
 
@@ -67,6 +68,39 @@ def shipping_file_with_adjustment(issue_number: int) -> bytes:
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+def shipping_file_with_fixed_rows(issue_number: int) -> bytes:
+    workbook = load_workbook(io.BytesIO(shipping_file(issue_number)))
+    sheet = workbook["发货明细"]
+    for recipient in SHANGYOU_GOVERNMENT_RECIPIENTS:
+        sheet.append([
+            "上犹", "赠阅", "政府", "邮政物流", "周", "正常",
+            recipient["name"], recipient["address"], recipient["phone"], recipient["quantity"],
+            "", "政府赠报，邮政", "", "", "", "", None, None, "上犹县政府",
+        ])
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def add_recurring_rows(db, issue_number: int) -> None:
+    for recipient in SHANGYOU_GOVERNMENT_RECIPIENTS:
+        db.add(ShippingDetail(
+            issue_number=issue_number,
+            sheet_name="上犹",
+            channel="赠阅",
+            sub_channel="政府",
+            transport="邮政物流",
+            frequency="周",
+            status="正常",
+            name=recipient["name"],
+            address=recipient["address"],
+            phone=recipient["phone"],
+            quantity=recipient["quantity"],
+            source_type=ShippingDetailSourceType.recurring_generated,
+        ))
+    db.commit()
 
 
 @pytest.fixture()
@@ -175,6 +209,77 @@ def test_preview_returns_each_automatic_adjustment_for_confirmation(db):
         adjustments_confirmed=True,
     )
     assert result.created_count == 2
+
+
+def test_template_reupload_ignores_fixed_rows_and_preserves_generated_plan(db):
+    issue = add_issue(db)
+    add_recurring_rows(db, issue.issue_number)
+
+    preview = preview_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        filename="2638中通明细.xlsx",
+        content=shipping_file_with_fixed_rows(issue.issue_number),
+    )
+
+    assert preview.can_commit is True
+    assert preview.imported_row_count == 2
+    assert preview.imported_quantity == 10
+    assert preview.preserved_row_count == 3
+    assert preview.preserved_quantity == 30
+    assert preview.resulting_row_count == 5
+    assert preview.resulting_quantity == 40
+    assert any("会忽略该30份明细" in warning for warning in preview.warnings)
+
+    result = commit_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        import_session_id=preview.import_session_id,
+        reason="核对固定明细去重",
+        user=admin(),
+    )
+    rows = db.query(ShippingDetail).filter(
+        ShippingDetail.issue_number == issue.issue_number
+    ).all()
+    assert result.created_count == 2
+    assert result.preserved_count == 3
+    assert len(rows) == 5
+    assert sum(row.quantity or 0 for row in rows) == 40
+
+
+def test_commit_rejects_new_nonreplaceable_fixed_duplicate_after_preview(db):
+    issue = add_issue(db)
+    add_recurring_rows(db, issue.issue_number)
+    preview = preview_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        filename="2638中通明细.xlsx",
+        content=shipping_file(issue.issue_number),
+    )
+    recipient = SHANGYOU_GOVERNMENT_RECIPIENTS[0]
+    db.add(ShippingDetail(
+        issue_number=issue.issue_number,
+        sheet_name="订单生成",
+        channel="赠阅",
+        name=recipient["name"],
+        address=recipient["address"],
+        phone=recipient["phone"],
+        quantity=recipient["quantity"],
+        source_type=ShippingDetailSourceType.order_generated,
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        commit_shipping_plan_import(
+            db,
+            issue_id=issue.id,
+            import_session_id=preview.import_session_id,
+            reason="并发冲突测试",
+            user=admin(),
+        )
+
+    assert exc.value.status_code == 409
+    assert "固定收件人" in exc.value.detail
 
 
 def test_commit_replaces_manual_rows_and_preserves_generated_rows(db):

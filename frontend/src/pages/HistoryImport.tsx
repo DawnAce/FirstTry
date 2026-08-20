@@ -364,10 +364,16 @@ export default function HistoryImport() {
               </div>
             </div>
             <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>发货明细</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>导入后发货计划</Text>
               <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                {preview.shipping_detail_count}
+                {preview.shipping_resulting_detail_count} 条 / {preview.shipping_resulting_quantity} 份
               </div>
+              {preview.shipping_fixed_detail_count > 0 && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  本次导入 {preview.shipping_detail_count} 条，另保留固定明细{' '}
+                  {preview.shipping_fixed_detail_count} 条 / {preview.shipping_fixed_quantity} 份
+                </Text>
+              )}
             </div>
           </div>
 

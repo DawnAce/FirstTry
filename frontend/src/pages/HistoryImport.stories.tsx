@@ -11,7 +11,11 @@ const preview = {
   page_count: 24,
   report_entry_count: 31,
   temp_detail_count: 0,
-  shipping_detail_count: 86,
+  shipping_detail_count: 83,
+  shipping_fixed_detail_count: 3,
+  shipping_fixed_quantity: 30,
+  shipping_resulting_detail_count: 86,
+  shipping_resulting_quantity: 1569,
   readiness: {
     same_issue: true,
     issue_exists: false,

@@ -7,14 +7,29 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.history_import_cache import save_history_import_session, pop_history_import_session
-from app.models import Issue, IssueStatus, PublicationSchedule, ReportEntry, ReportItemTemplate, ShippingDetail, TempPrintDetail
+from app.models import (
+    Issue,
+    IssueStatus,
+    PublicationSchedule,
+    ReportEntry,
+    ReportItemTemplate,
+    ShippingDetail,
+    ShippingDetailSourceType,
+    TempPrintDetail,
+)
 from app.services.original_zto_shipping_import_service import (
     is_original_zto_shipping_workbook,
     normalize_shipping_sub_channels,
     read_original_zto_shipping_basic_info,
-    read_original_zto_shipping_rows_with_warnings,
+    read_original_zto_shipping_rows_raw,
 )
 from app.services.raw_report_import_service import parse_raw_report_workbook
+from app.services.recurring_shipping_detail_service import (
+    exclude_recurring_shipping_import_rows,
+    recurring_shipping_detail_signature,
+    recurring_shipping_details_for_issue,
+    recurring_shipping_invariant_errors,
+)
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.services.workbook_loader import load_uploaded_workbook
 from app.schemas.history_import import (
@@ -272,6 +287,8 @@ def _report_mapping_options(db: Session) -> list[ReportMappingOption]:
 def _zto_total_validation_errors(
     report_rows: list[HistoryImportRow],
     shipping_rows: list[ShippingImportRow],
+    *,
+    preserved_shipping_quantity: int = 0,
 ) -> list[str]:
     report_total = sum(
         row.value or 0
@@ -281,12 +298,15 @@ def _zto_total_validation_errors(
     )
     if report_total == 0:
         return []
-    shipping_total = sum(row.quantity or 0 for row in shipping_rows)
+    imported_shipping_total = sum(row.quantity or 0 for row in shipping_rows)
+    shipping_total = imported_shipping_total + preserved_shipping_quantity
     if report_total == shipping_total:
         return []
     diff = abs(report_total - shipping_total)
     return [
-        f"中通物流份数不一致：报数合计 {report_total} 份，发货明细合计 {shipping_total} 份，相差 {diff} 份。请先核对导入文件后再提交。"
+        f"中通物流份数不一致：报数合计 {report_total} 份，导入后发货明细合计 {shipping_total} 份"
+        f"（本次导入 {imported_shipping_total} 份，系统固定明细 {preserved_shipping_quantity} 份），"
+        f"相差 {diff} 份。请先核对导入文件后再提交。"
     ]
 
 
@@ -461,12 +481,24 @@ def preview_history_import(
         report_rows = raw_report.report_rows
         temp_rows = []
     shipping_import_warnings: list[str] = []
+    shipping_year = datetime.date.fromisoformat(publish_date).year
     if uses_template_shipping:
-        shipping_rows, shipping_import_warnings = normalize_shipping_sub_channels(
-            _read_shipping_rows(shipping_wb)
+        shipping_rows, recurring_warnings = exclude_recurring_shipping_import_rows(
+            _read_shipping_rows(shipping_wb), year=shipping_year
         )
+        shipping_rows, shipping_import_warnings = normalize_shipping_sub_channels(shipping_rows)
     else:
-        shipping_rows, shipping_import_warnings = read_original_zto_shipping_rows_with_warnings(shipping_wb)
+        shipping_rows, recurring_warnings = exclude_recurring_shipping_import_rows(
+            read_original_zto_shipping_rows_raw(shipping_wb), year=shipping_year
+        )
+        shipping_rows, shipping_import_warnings = normalize_shipping_sub_channels(shipping_rows)
+    shipping_import_warnings.extend(recurring_warnings)
+    recurring_rows = recurring_shipping_details_for_issue(
+        db,
+        issue_number=issue_number,
+        year=shipping_year,
+    )
+    recurring_quantity = sum(row.quantity or 0 for row in recurring_rows)
 
     manual_temp_print_required_quantity = 0
     manual_temp_print_self_quantity = 0
@@ -492,7 +524,11 @@ def preview_history_import(
     validation_errors.extend(template_validation_errors)
 
     if not validation_errors and not unmapped_report_items:
-        validation_errors.extend(_zto_total_validation_errors(enriched_report_rows, shipping_rows))
+        validation_errors.extend(_zto_total_validation_errors(
+            enriched_report_rows,
+            shipping_rows,
+            preserved_shipping_quantity=recurring_quantity,
+        ))
 
     payload: dict = {
         "issue_number": issue_number,
@@ -502,6 +538,9 @@ def preview_history_import(
         "report_rows": [r.model_dump() for r in enriched_report_rows],
         "temp_rows": [r.model_dump() for r in temp_rows],
         "shipping_rows": [r.model_dump() for r in shipping_rows],
+        "shipping_year": shipping_year,
+        "recurring_shipping_signature": recurring_shipping_detail_signature(recurring_rows),
+        "recurring_shipping_quantity": recurring_quantity,
         "manual_temp_print_required_quantity": manual_temp_print_required_quantity,
         "manual_temp_print_self_quantity": manual_temp_print_self_quantity,
         "manual_temp_rows": [r.model_dump() for r in manual_temp_rows],
@@ -538,6 +577,12 @@ def preview_history_import(
         report_entry_count=len(enriched_report_rows),
         temp_detail_count=len(temp_rows),
         shipping_detail_count=len(shipping_rows),
+        shipping_fixed_detail_count=len(recurring_rows),
+        shipping_fixed_quantity=recurring_quantity,
+        shipping_resulting_detail_count=len(shipping_rows) + len(recurring_rows),
+        shipping_resulting_quantity=(
+            sum(row.quantity or 0 for row in shipping_rows) + recurring_quantity
+        ),
         can_commit=can_commit,
         import_session_id=session_id,
         errors=validation_errors,
@@ -656,7 +701,11 @@ def _apply_manual_report_mappings(
             detail=f"归类后总数 {mapped_total} 份，与原表总印数 {source_total} 份不一致",
         )
     shipping_rows = [ShippingImportRow(**row) for row in payload.get("shipping_rows", [])]
-    zto_errors = _zto_total_validation_errors([HistoryImportRow(**row) for row in rows], shipping_rows)
+    zto_errors = _zto_total_validation_errors(
+        [HistoryImportRow(**row) for row in rows],
+        shipping_rows,
+        preserved_shipping_quantity=int(payload.get("recurring_shipping_quantity", 0) or 0),
+    )
     if zto_errors:
         raise HTTPException(status_code=422, detail=zto_errors[0])
     return rows
@@ -689,15 +738,47 @@ def commit_history_import(
             detail=f"该期已存在：第 {issue_number} 期已录入系统，无法重复导入",
         )
 
+    publish_date_str: str = payload["publish_date"]
+    publish_date = datetime.date.fromisoformat(publish_date_str)
+    shipping_year = int(payload.get("shipping_year", publish_date.year))
+    recurring_rows = recurring_shipping_details_for_issue(
+        db,
+        issue_number=issue_number,
+        year=shipping_year,
+        for_update=True,
+    )
+    if recurring_shipping_detail_signature(recurring_rows) != payload.get(
+        "recurring_shipping_signature", []
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="预览后本期系统固定发货明细已发生变化，请重新预览",
+        )
+
+    shipping_rows = [ShippingImportRow(**row) for row in payload.get("shipping_rows", [])]
+    filtered_shipping_rows, _warnings = exclude_recurring_shipping_import_rows(
+        shipping_rows,
+        year=shipping_year,
+    )
+    if len(filtered_shipping_rows) != len(shipping_rows):
+        raise HTTPException(
+            status_code=409,
+            detail="导入会话中仍包含系统固定发货明细，请重新预览",
+        )
+
+    payload["recurring_shipping_quantity"] = sum(row.quantity or 0 for row in recurring_rows)
     payload["report_rows"] = _apply_manual_report_mappings(db, payload, manual_report_mappings)
+    zto_errors = _zto_total_validation_errors(
+        [HistoryImportRow(**row) for row in payload.get("report_rows", [])],
+        shipping_rows,
+        preserved_shipping_quantity=payload["recurring_shipping_quantity"],
+    )
+    if zto_errors:
+        raise HTTPException(status_code=409, detail=zto_errors[0])
 
     required_temp_quantity = int(payload.get("manual_temp_print_required_quantity", 0) or 0)
     if required_temp_quantity > 0 or manual_temp_rows is not None:
         payload["temp_rows"] = _validate_manual_temp_rows(required_temp_quantity, manual_temp_rows)
-
-    from datetime import date as _date
-    publish_date_str: str = payload["publish_date"]
-    publish_date = _date.fromisoformat(publish_date_str)
 
     issue = Issue(
         issue_number=issue_number,
@@ -751,7 +832,18 @@ def commit_history_import(
             period_count=row.get("period_count"),
             confirmation=row.get("confirmation", ""),
             company=row.get("company", ""),
+            source_type=ShippingDetailSourceType.historical_import,
         ))
+
+    db.flush()
+    recurring_errors = recurring_shipping_invariant_errors(
+        db,
+        issue_number=issue_number,
+        year=shipping_year,
+        for_update=True,
+    )
+    if recurring_errors:
+        raise HTTPException(status_code=409, detail=recurring_errors[0])
 
     db.commit()
     db.refresh(issue)

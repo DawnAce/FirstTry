@@ -40,6 +40,7 @@ ACTION_LABELS: dict[str, str] = {
     "attribute": "关联无需发货记录",
     "bulk_create": "登记合寄明细",
     "generate_fixed": "生成固定发货明细",
+    "delete_duplicate": "清理重复固定发货明细",
     "create_consolidated": "完成合寄发货",
     "transfer_quantity": "调整发货计划份数",
     "update_actual_recipient": "调整实际收件信息",

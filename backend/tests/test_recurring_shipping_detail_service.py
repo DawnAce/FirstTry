@@ -16,8 +16,13 @@ from app.models import (
 from app.schemas.history_import import ShippingImportRow
 from app.services.recurring_shipping_detail_service import (
     SHANGYOU_GOVERNMENT_NAMES,
+    SHANGYOU_GOVERNMENT_RECIPIENTS,
     ensure_recurring_shipping_details,
     exclude_recurring_shipping_import_rows,
+)
+from app.services.recurring_shipping_cleanup_service import (
+    build_recurring_duplicate_cleanup_plan,
+    delete_recurring_duplicate_candidates,
 )
 from app.services.shipping_plan_import_service import _parse_shipping_file
 
@@ -219,3 +224,69 @@ def test_backfill_rejects_duplicate_existing_recipient(db):
 
     with pytest.raises(ValueError, match="存在重复固定收件人"):
         ensure_recurring_shipping_details(db, year=2026)
+
+
+def test_duplicate_cleanup_only_applies_safe_identity_matches(db):
+    db.add(PublicationSchedule(
+        year=2026,
+        issue_number=2635,
+        publish_date=date(2026, 1, 5),
+        is_suspended=False,
+    ))
+    db.commit()
+    ensure_recurring_shipping_details(db, year=2026)
+    db.commit()
+    recipient_by_name = {
+        recipient["name"]: recipient
+        for recipient in SHANGYOU_GOVERNMENT_RECIPIENTS
+    }
+
+    safe_data = recipient_by_name["上犹县政府办"]
+    safe = ShippingDetail(
+        issue_number=2635,
+        sheet_name="上犹",
+        channel="赠阅",
+        name=safe_data["name"],
+        address=safe_data["address"],
+        phone=safe_data["phone"],
+        quantity=safe_data["quantity"],
+        source_type=ShippingDetailSourceType.manual,
+    )
+    protected_data = recipient_by_name["上犹县人大办"]
+    protected = ShippingDetail(
+        issue_number=2635,
+        sheet_name="上犹",
+        channel="赠阅",
+        name=protected_data["name"],
+        address=protected_data["address"],
+        phone=protected_data["phone"],
+        quantity=protected_data["quantity"],
+        shipped_quantity=protected_data["quantity"],
+        source_type=ShippingDetailSourceType.historical_import,
+    )
+    mismatch_data = recipient_by_name["上犹县政协办"]
+    mismatch = ShippingDetail(
+        issue_number=2635,
+        sheet_name="上犹",
+        channel="赠阅",
+        name=mismatch_data["name"],
+        address="不同地址",
+        phone=mismatch_data["phone"],
+        quantity=mismatch_data["quantity"],
+        source_type=ShippingDetailSourceType.manual,
+    )
+    db.add_all([safe, protected, mismatch])
+    db.commit()
+
+    plan = build_recurring_duplicate_cleanup_plan(db, year=2026)
+
+    assert plan.candidate_ids == [safe.id]
+    assert [item.detail_id for item in plan.protected] == [protected.id]
+    assert [item.detail_id for item in plan.skipped] == [mismatch.id]
+    assert db.get(ShippingDetail, safe.id) is not None
+
+    assert delete_recurring_duplicate_candidates(db, plan) == 1
+    db.commit()
+    assert db.get(ShippingDetail, safe.id) is None
+    assert db.get(ShippingDetail, protected.id) is not None
+    assert db.get(ShippingDetail, mismatch.id) is not None
