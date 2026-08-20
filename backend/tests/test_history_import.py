@@ -19,6 +19,7 @@ from app.models import (
     ReportEntry,
     TempPrintDetail,
     ShippingDetail,
+    ShippingDetailSourceType,
 )
 from app.services.history_import_template_service import (
     build_report_import_template,
@@ -27,6 +28,7 @@ from app.services.history_import_template_service import (
 from app.services.history_import_service import preview_history_import, commit_history_import
 from app.services.original_zto_shipping_import_service import read_original_zto_shipping_rows
 from app.services.raw_report_import_service import parse_raw_report_workbook
+from app.services.recurring_shipping_detail_service import SHANGYOU_GOVERNMENT_RECIPIENTS
 from app.schemas.history_import import ManualReportMapping, TempPrintDetailRow
 
 
@@ -173,7 +175,27 @@ def build_shipping_upload(issue_number: int = 2648, quantity: int = 10) -> bytes
     return _wb_to_bytes(wb)
 
 
-def build_original_zto_shipping_upload(issue_number: int = 2648, high_speed_sheet_name: str = "高铁展示") -> bytes:
+def build_zto_report_upload(issue_number: int = 2648, quantity: int = 575) -> bytes:
+    workbook = load_workbook(io.BytesIO(build_report_upload(issue_number)))
+    report = workbook["报数项"]
+    report.delete_rows(2, report.max_row)
+    report.append([
+        "zto",
+        "中通物流公司",
+        "中通物流公司",
+        "中通物流公司",
+        "否",
+        quantity,
+    ])
+    return _wb_to_bytes(workbook)
+
+
+def build_original_zto_shipping_upload(
+    issue_number: int = 2648,
+    high_speed_sheet_name: str = "高铁展示",
+    *,
+    full_shangyou: bool = False,
+) -> bytes:
     wb = Workbook()
     summary = wb.active
     summary.title = "每周合计"
@@ -204,7 +226,10 @@ def build_original_zto_shipping_upload(issue_number: int = 2648, high_speed_shee
     shangyou.append([f"2026年4月20日《中国经营报》中通发货表", "", f"总第{issue_number}期"])
     shangyou.append(["姓名", "地址", "电话", "份数", "刊物", "渠道", "子渠道", "签约公司", "频率", "运输方式", "城市", "备注"])
     shangyou.append(["上犹县政府办", "江西省赣州市上犹县东山镇犹江大道16号", "0797-8542306", 10, "中国经营报", "赠阅", "政府", "上犹县政府", "周", "邮政物流", "赣州", "政府赠报，邮政"])
-    shangyou.append(["", "", "合计", 10])
+    if full_shangyou:
+        shangyou.append(["上犹县人大办", "江西省赣州市上犹县东山镇犹江大道16号县政府大楼211室人大办", "0797-8541223", 11, "中国经营报", "赠阅", "政府", "上犹县政府", "周", "邮政物流", "赣州", "政府赠报，邮政"])
+        shangyou.append(["上犹县政协办", "江西省赣州市上犹县东山镇犹江大道16号县政府大楼232室政协办", "0797-8541235", 9, "中国经营报", "赠阅", "政府", "上犹县政府", "周", "邮政物流", "赣州", "政府赠报，邮政"])
+    shangyou.append(["", "", "合计", 30 if full_shangyou else 10])
 
     suspended = wb.create_sheet("停发-双周（读者）")
     suspended.append([f"2026年4月上半月《中国经营报》中通发货表", "", f"总第{issue_number}期"])
@@ -218,6 +243,26 @@ def build_original_zto_shipping_upload(issue_number: int = 2648, high_speed_shee
     monthly.append(["", "", "合计", "", 3])
 
     return _wb_to_bytes(wb)
+
+
+def seed_recurring_shipping_rows(db, issue_number: int) -> None:
+    for recipient in SHANGYOU_GOVERNMENT_RECIPIENTS:
+        db.add(ShippingDetail(
+            issue_number=issue_number,
+            sheet_name="上犹",
+            channel="赠阅",
+            sub_channel="政府",
+            transport="邮政物流",
+            frequency="周",
+            status="正常",
+            name=recipient["name"],
+            address=recipient["address"],
+            phone=recipient["phone"],
+            quantity=recipient["quantity"],
+            company="上犹县政府",
+            source_type=ShippingDetailSourceType.recurring_generated,
+        ))
+    db.commit()
 
 
 def build_raw_report_upload() -> bytes:
@@ -998,11 +1043,12 @@ class HistoryImportPreviewTests(unittest.TestCase):
     def test_commit_applies_manual_classification_for_legacy_side_values(self):
         db = self.SessionLocal()
         self._seed_raw_report_templates(db)
+        seed_recurring_shipping_rows(db, 2647)
 
         preview = preview_history_import(
             db,
             build_raw_report_upload_with_unlabeled_side_values(),
-            build_shipping_upload(2647, quantity=1412),
+            build_shipping_upload(2647, quantity=1382),
         )
 
         self.assertEqual(preview.mapped_total, 9163)
@@ -1045,7 +1091,9 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertEqual(result.issue_number, 2648)
         self.assertEqual(result.shipping_issue_source, "每周合计!B1")
         self.assertEqual(result.publish_date, "2026-04-20")
-        self.assertEqual(result.shipping_detail_count, 6)
+        self.assertEqual(result.shipping_detail_count, 5)
+        self.assertEqual(result.shipping_fixed_detail_count, 0)
+        self.assertEqual(result.shipping_resulting_detail_count, 5)
         self.assertTrue(result.can_commit)
 
         payload = get_history_import_session(result.import_session_id)
@@ -1062,8 +1110,8 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertEqual(row_map[("每周（读者）", "黄雪")]["sub_channel"], "监管")
         self.assertEqual(row_map[("高铁展示", "赵叶")]["company"], "北京悦途出行")
         self.assertEqual(row_map[("高铁展示", "赵叶")]["quantity"], 5)
-        self.assertEqual(row_map[("上犹", "上犹县政府办")]["channel"], "赠阅")
-        self.assertEqual(row_map[("上犹", "上犹县政府办")]["company"], "上犹县政府")
+        self.assertNotIn(("上犹", "上犹县政府办"), row_map)
+        self.assertTrue(any("本次导入会忽略" in warning for warning in result.warnings))
         self.assertNotIn(("停发-双周（读者）", "丁联诚"), row_map)
         self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["channel"], "赠阅")
         self.assertEqual(row_map[("月底-整月", "宣传部5号格")]["sub_channel"], "监管")
@@ -1261,8 +1309,8 @@ class HistoryImportPreviewTests(unittest.TestCase):
         self.assertTrue(result.can_commit)
         # Same data as the default-named high-speed sheet (赵叶 + 李四 = 2 rail rows),
         # only the sheet *name* differs (alias "北京悦途出行（高铁）"), so the count must
-        # match the default workbook's 6 — the alias is normalized to the "高铁展示" sheet.
-        self.assertEqual(result.shipping_detail_count, 6)
+        # match the default workbook's five imported rows after the fixed Shangyou row is removed.
+        self.assertEqual(result.shipping_detail_count, 5)
         payload = get_history_import_session(result.import_session_id)
         self.assertIsNotNone(payload)
         row_map = {
@@ -1511,15 +1559,95 @@ class HistoryImportCommitTests(unittest.TestCase):
         result = commit_history_import(db, preview.import_session_id)
 
         shipping = db.query(ShippingDetail).filter(ShippingDetail.issue_number == 2648).all()
-        self.assertEqual(len(shipping), 6)
+        self.assertEqual(len(shipping), 5)
         by_name = {row.name: row for row in shipping}
         self.assertEqual(by_name["叶剑"].channel, "渠道订阅")
         self.assertEqual(by_name["叶剑"].company, "广州日报")
         self.assertEqual(by_name["赵叶"].station_name, "北京站")
         self.assertEqual(by_name["赵叶"].confirmation, "☑")
         self.assertNotIn("丁联诚", by_name)
+        self.assertNotIn("上犹县政府办", by_name)
         self.assertEqual(by_name["宣传部5号格"].frequency, "月")
-        self.assertEqual(result.shipping_detail_count, 6)
+        self.assertTrue(all(
+            row.source_type == ShippingDetailSourceType.historical_import
+            for row in shipping
+        ))
+        self.assertEqual(result.shipping_detail_count, 5)
+        db.close()
+
+    def test_history_import_filters_full_fixed_set_and_counts_preserved_rows(self):
+        db = self.SessionLocal()
+        db.add(ReportItemTemplate(
+            category="zto",
+            sub_category="中通物流公司",
+            display_name="中通物流公司",
+            default_value=0,
+            is_variable=False,
+            destination="中通物流公司",
+            sort_order=1,
+        ))
+        db.commit()
+        seed_recurring_shipping_rows(db, 2648)
+
+        preview = preview_history_import(
+            db,
+            build_zto_report_upload(quantity=575),
+            build_original_zto_shipping_upload(full_shangyou=True),
+        )
+
+        self.assertTrue(preview.can_commit)
+        self.assertEqual(preview.shipping_detail_count, 5)
+        self.assertEqual(preview.shipping_fixed_detail_count, 3)
+        self.assertEqual(preview.shipping_fixed_quantity, 30)
+        self.assertEqual(preview.shipping_resulting_detail_count, 8)
+        self.assertEqual(preview.shipping_resulting_quantity, 575)
+        self.assertIn(
+            "现有系统里已有2026年「上犹」的3个政府单位，导入数据会忽略该30份明细。",
+            preview.warnings,
+        )
+
+        result = commit_history_import(db, preview.import_session_id)
+        rows = db.query(ShippingDetail).filter(ShippingDetail.issue_number == 2648).all()
+        self.assertEqual(result.shipping_detail_count, 5)
+        self.assertEqual(len(rows), 8)
+        self.assertEqual(sum(row.quantity or 0 for row in rows), 575)
+        fixed = [
+            row for row in rows
+            if row.source_type == ShippingDetailSourceType.recurring_generated
+        ]
+        self.assertEqual(len(fixed), 3)
+        db.close()
+
+    def test_commit_rejects_changed_fixed_rows_after_preview(self):
+        db = self.SessionLocal()
+        db.add(ReportItemTemplate(
+            category="zto",
+            sub_category="中通物流公司",
+            display_name="中通物流公司",
+            default_value=0,
+            is_variable=False,
+            destination="中通物流公司",
+            sort_order=1,
+        ))
+        db.commit()
+        seed_recurring_shipping_rows(db, 2648)
+        preview = preview_history_import(
+            db,
+            build_zto_report_upload(quantity=575),
+            build_original_zto_shipping_upload(full_shangyou=True),
+        )
+        fixed = db.query(ShippingDetail).filter(
+            ShippingDetail.issue_number == 2648,
+            ShippingDetail.source_type == ShippingDetailSourceType.recurring_generated,
+        ).first()
+        fixed.quantity += 1
+        db.commit()
+
+        with self.assertRaises(HTTPException) as ctx:
+            commit_history_import(db, preview.import_session_id)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("固定发货明细已发生变化", ctx.exception.detail)
         db.close()
 
     def test_commit_raises_400_for_missing_session(self):

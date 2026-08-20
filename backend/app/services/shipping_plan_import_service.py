@@ -39,7 +39,12 @@ from app.services.original_zto_shipping_import_service import (
     read_original_zto_shipping_basic_info,
     read_original_zto_shipping_rows_raw,
 )
-from app.services.recurring_shipping_detail_service import exclude_recurring_shipping_import_rows
+from app.services.recurring_shipping_detail_service import (
+    exclude_recurring_shipping_import_rows,
+    recurring_shipping_detail_signature,
+    recurring_shipping_details_for_issue,
+    recurring_shipping_invariant_errors,
+)
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.services.workbook_loader import load_uploaded_workbook
 
@@ -192,6 +197,11 @@ def preview_shipping_plan_import(
         )
         .all()
     )
+    recurring_rows = recurring_shipping_details_for_issue(
+        db,
+        issue_number=issue.issue_number,
+        year=issue.publish_date.year,
+    )
     imported_quantity = sum(row.quantity or 0 for row in rows)
     replaced_quantity = sum(detail.quantity or 0 for detail in replaceable)
     preserved_quantity = sum(detail.quantity or 0 for detail in preserved)
@@ -214,6 +224,7 @@ def preview_shipping_plan_import(
             "rows": [row.model_dump() for row in rows],
             "adjustment_count": len(adjustments),
             "replaceable_signature": _detail_signature(replaceable),
+            "recurring_shipping_signature": recurring_shipping_detail_signature(recurring_rows),
         })
 
     return ShippingPlanImportPreviewOut(
@@ -297,7 +308,24 @@ def commit_shipping_plan_import(
     if any(_has_fulfillment_history(detail) for detail in replaceable):
         raise HTTPException(status_code=409, detail="本期明细已关联新的运单或核销记录，请重新预览")
 
+    recurring_rows = recurring_shipping_details_for_issue(
+        db,
+        issue_number=issue.issue_number,
+        year=issue.publish_date.year,
+        for_update=True,
+    )
+    if recurring_shipping_detail_signature(recurring_rows) != payload.get(
+        "recurring_shipping_signature", []
+    ):
+        raise HTTPException(status_code=409, detail="本期系统固定明细已发生变化，请重新预览")
+
     rows = [ShippingImportRow(**row) for row in payload.get("rows", [])]
+    filtered_rows, _warnings = exclude_recurring_shipping_import_rows(
+        rows,
+        year=issue.publish_date.year,
+    )
+    if len(filtered_rows) != len(rows):
+        raise HTTPException(status_code=409, detail="导入会话中仍包含系统固定明细，请重新预览")
     old_quantity = sum(detail.quantity or 0 for detail in replaceable)
     old_ids = [detail.id for detail in replaceable]
     for detail in replaceable:
@@ -306,6 +334,14 @@ def commit_shipping_plan_import(
     for row in rows:
         db.add(_detail_from_row(issue.issue_number, row))
     db.flush()
+    recurring_errors = recurring_shipping_invariant_errors(
+        db,
+        issue_number=issue.issue_number,
+        year=issue.publish_date.year,
+        for_update=True,
+    )
+    if recurring_errors:
+        raise HTTPException(status_code=409, detail=recurring_errors[0])
 
     # A legacy clear could leave confirmed import rows without their deleted
     # package/detail links. Reconnect those preserved rows to the newly imported

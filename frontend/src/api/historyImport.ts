@@ -16,6 +16,10 @@ export interface HistoryImportPreview {
   report_entry_count: number;
   temp_detail_count: number;
   shipping_detail_count: number;
+  shipping_fixed_detail_count: number;
+  shipping_fixed_quantity: number;
+  shipping_resulting_detail_count: number;
+  shipping_resulting_quantity: number;
   readiness: CommitReadiness;
   errors: string[];
   warnings: string[];

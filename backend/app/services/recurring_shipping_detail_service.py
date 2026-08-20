@@ -68,6 +68,88 @@ class RecurringShippingBackfillResult:
     changed_issue_numbers: list[int] = field(default_factory=list)
 
 
+def recurring_shipping_details_for_issue(
+    db: Session,
+    *,
+    issue_number: int,
+    year: int | None,
+    for_update: bool = False,
+) -> list[ShippingDetail]:
+    """Return the fixed rows that must be preserved beside imported rows."""
+    if year != 2026:
+        return []
+    query = db.query(ShippingDetail).filter(
+        ShippingDetail.issue_number == issue_number,
+        ShippingDetail.name.in_(SHANGYOU_GOVERNMENT_NAMES),
+        ShippingDetail.source_type == ShippingDetailSourceType.recurring_generated,
+    )
+    if for_update:
+        query = query.with_for_update()
+    return query.order_by(ShippingDetail.id).all()
+
+
+def recurring_shipping_detail_signature(
+    details: Iterable[ShippingDetail],
+) -> list[dict[str, int | str | None]]:
+    """Build a stable preview/commit signature without exposing recipient PII."""
+    return [
+        {
+            "id": detail.id,
+            "name": detail.name,
+            "quantity": detail.quantity or 0,
+            "updated_at": detail.updated_at.isoformat() if detail.updated_at else None,
+        }
+        for detail in details
+    ]
+
+
+def recurring_shipping_invariant_errors(
+    db: Session,
+    *,
+    issue_number: int,
+    year: int | None,
+    for_update: bool = False,
+) -> list[str]:
+    """Reject duplicate or non-generated ownership of 2026 fixed recipients.
+
+    Missing rows are permitted because the one-off generator may not have been
+    run for a newly added schedule yet. Once a fixed recipient exists, however,
+    exactly one canonical ``recurring_generated`` row must own that recipient.
+    """
+    if year != 2026:
+        return []
+    query = db.query(ShippingDetail).filter(
+        ShippingDetail.issue_number == issue_number,
+        ShippingDetail.name.in_(SHANGYOU_GOVERNMENT_NAMES),
+    )
+    if for_update:
+        query = query.with_for_update()
+    rows = query.order_by(ShippingDetail.id).all()
+    by_name: dict[str, list[ShippingDetail]] = {}
+    for row in rows:
+        by_name.setdefault(row.name.strip(), []).append(row)
+
+    expected_by_name = {
+        str(recipient["name"]): int(recipient["quantity"])
+        for recipient in SHANGYOU_GOVERNMENT_RECIPIENTS
+    }
+    errors: list[str] = []
+    for name, matches in by_name.items():
+        if len(matches) != 1:
+            errors.append(f"{issue_number} 期固定收件人「{name}」存在 {len(matches)} 条明细")
+            continue
+        row = matches[0]
+        if row.source_type != ShippingDetailSourceType.recurring_generated:
+            errors.append(f"{issue_number} 期固定收件人「{name}」不是系统固定生成明细")
+        expected_quantity = expected_by_name[name]
+        if (row.quantity or 0) != expected_quantity:
+            errors.append(
+                f"{issue_number} 期固定收件人「{name}」应为 {expected_quantity} 份，"
+                f"当前为 {row.quantity or 0} 份"
+            )
+    return errors
+
+
 def exclude_recurring_shipping_import_rows(
     rows: Iterable[ShippingImportRow],
     *,

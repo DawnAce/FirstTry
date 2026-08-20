@@ -87,6 +87,10 @@ class HistoryImportPreviewOut(BaseModel):
     report_entry_count: int
     temp_detail_count: int
     shipping_detail_count: int
+    shipping_fixed_detail_count: int = 0
+    shipping_fixed_quantity: int = 0
+    shipping_resulting_detail_count: int = 0
+    shipping_resulting_quantity: int = 0
     can_commit: bool            # top-level convenience copy
     import_session_id: str
     errors: list[str] = []
