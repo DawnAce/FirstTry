@@ -766,7 +766,7 @@ export default function ReportEditor() {
   // Extract 临时加印 from social_use for prominent display at top
   const tempEntry = entries.find(e => e.category === 'social_use' && e.sub_category === '临时加印');
   const tempSelfEntry = entries.find(e => e.category === 'social_use' && e.sub_category === '临时加印_自留');
-  const tempExpressValue = (tempEntry?.value ?? 0) - (tempSelfEntry?.value ?? 0);
+  const tempExpressValue = Math.max((tempEntry?.value ?? 0) - (tempSelfEntry?.value ?? 0), 0);
 
   const formatCount = (value: number) => value.toLocaleString('zh-CN');
   const total = calculateTotal();
@@ -782,7 +782,7 @@ export default function ReportEditor() {
     ? tempDetails.reduce((sum, detail) => sum + detail.self_quantity, 0)
     : (tempSelfEntry?.value ?? 0);
   const tempExpressDisplayValue = tempDetails.length > 0
-    ? tempDetails.reduce((sum, detail) => sum + detail.quantity - detail.self_quantity, 0)
+    ? Math.max(tempDetails.reduce((sum, detail) => sum + detail.quantity - detail.self_quantity, 0), 0)
     : tempExpressValue;
   const socialEntries = groupedEntries.social_use ?? [];
   const bindingEntries = groupedEntries.binding ?? [];
