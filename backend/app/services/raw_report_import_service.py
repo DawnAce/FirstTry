@@ -407,6 +407,15 @@ def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
     entries.setdefault(("social_use", "临时加印"), 0)
     entries.setdefault(("social_use", "临时加印_自留"), 0)
 
+    # The total is authoritative.  Some legacy workbooks keep stale values in
+    # the allocation sheets even after the current-period total is reset to
+    # zero.  Importing those stale values produces confusing displays such as
+    # 0 total / 50 self-distributed / -50 express.  A zero total means there is
+    # no allocation for the period, so clear every downstream allocation.
+    if entries[("social_use", "临时加印")] == 0:
+        entries[("social_use", "临时加印_自留")] = 0
+        temp_print_rows.clear()
+
     report_rows = [
         HistoryImportRow(
             category=category,
@@ -418,7 +427,13 @@ def parse_raw_report_workbook(workbook: Workbook) -> RawReportParseResult:
         )
         for (category, sub_category), value in entries.items()
     ]
-    mapped_total = sum(row.value for row in report_rows)
+    # Self-distribution only explains how a temporary-print total is split; it
+    # is not an additional print quantity and must not be counted twice.
+    mapped_total = sum(
+        row.value
+        for row in report_rows
+        if row.sub_category != "临时加印_自留"
+    )
 
     return RawReportParseResult(
         issue_number=issue_number,

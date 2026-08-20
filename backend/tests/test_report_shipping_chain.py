@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.exports import export_all, export_report, export_shipping
 from app.api.reports import confirm_report, get_report
 from app.database import Base
-from app.models import Issue, IssueAuditSnapshot, IssueStatus, OperationLog, PublicationSchedule, ReportEntry, ShippingDetail, User, UserRole
+from app.models import Issue, IssueAuditSnapshot, IssueStatus, OperationLog, PublicationSchedule, ReportEntry, ShippingDetail, TempPrintDetail, User, UserRole
 from app.schemas.report import ReportDataUpdate
 
 
@@ -118,6 +118,27 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(snapshot.shipping_total, 10)
         self.assertEqual(snapshot.delta, 12)
         self.assertEqual(snapshot.is_match, False)
+
+    def test_confirm_zero_temp_total_clears_stale_allocations(self):
+        db = self.SessionLocal()
+        issue = Issue(issue_number=3012, publish_date=date(2026, 8, 3), status=IssueStatus.draft)
+        db.add(issue)
+        db.flush()
+        db.add_all([
+            ReportEntry(issue_id=issue.id, category="social_use", sub_category="临时加印", value=0),
+            ReportEntry(issue_id=issue.id, category="social_use", sub_category="临时加印_自留", value=50),
+            TempPrintDetail(issue_id=issue.id, department="财经中心", quantity=50, self_quantity=50),
+        ])
+        db.commit()
+
+        confirm_report(issue.id, db=db, user=_admin_user())
+
+        self_entry = db.query(ReportEntry).filter_by(
+            issue_id=issue.id,
+            sub_category="临时加印_自留",
+        ).one()
+        self.assertEqual(self_entry.value, 0)
+        self.assertEqual(db.query(TempPrintDetail).filter_by(issue_id=issue.id).count(), 0)
 
     def test_confirm_report_applies_submitted_entries_in_same_transaction(self):
         db = self.SessionLocal()

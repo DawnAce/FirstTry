@@ -194,13 +194,7 @@ export default function HistoryImport() {
         queryClient.invalidateQueries({ queryKey: ['publication-schedule'] }),
         queryClient.invalidateQueries({ queryKey: ['publication-schedules'] }),
       ]);
-      if (res.data.schedule_page_count_updated) {
-        message.success(
-          `第 ${res.data.issue_number} 期数据导入成功，刊期表版数已从 ${res.data.previous_schedule_page_count ?? '-'} 版更新为 ${res.data.new_page_count ?? '-'} 版`,
-        );
-      } else {
-        message.success(`第 ${res.data.issue_number} 期数据导入成功`);
-      }
+      message.success(`第 ${res.data.issue_number} 期数据导入成功`);
       navigate(`/report/${res.data.issue_id}`);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };

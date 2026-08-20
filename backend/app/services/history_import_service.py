@@ -35,6 +35,14 @@ _SHIPPING_COLUMNS = [
     "网点名称", "网点大厅", "联系人", "序号", "期数", "公司",
 ]
 
+_REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES = {
+    "临时加印_自留",
+    "营报传媒加印",
+    "财经中心加印",
+    "中经未来",
+    "产经中心加印",
+}
+
 
 def _normalize_date(value: object) -> str:
     """Return an ISO YYYY-MM-DD string from an Excel cell value (datetime, date, or string)."""
@@ -230,6 +238,10 @@ def _raw_report_validation_result(raw_report) -> tuple[list[str], int, int]:
     temp_total = row_map.get(("social_use", "临时加印"), 0)
     temp_self = row_map.get(("social_use", "临时加印_自留"), 0)
     pending_temp = max(temp_total - temp_self, 0)
+    if temp_self > temp_total:
+        errors.append(
+            f"临时加印自留分发 {temp_self} 份不能大于加印总数 {temp_total} 份"
+        )
     unresolved_total = sum(item.value for item in raw_report.unmapped_rows)
     projected_total = raw_report.mapped_total + unresolved_total
     if not raw_report.unmapped_rows and raw_report.source_total != raw_report.mapped_total:
@@ -264,7 +276,8 @@ def _zto_total_validation_errors(
     report_total = sum(
         row.value or 0
         for row in report_rows
-        if resolve_report_destination(row.category, row.sub_category, row.destination) == DESTINATION_ZTO
+        if row.sub_category not in _REPORT_TOTAL_EXCLUDED_SUB_CATEGORIES
+        and resolve_report_destination(row.category, row.sub_category, row.destination) == DESTINATION_ZTO
     )
     if report_total == 0:
         return []
@@ -502,8 +515,8 @@ def preview_history_import(
     schedule_row = _find_schedule_row(db, issue_number, publish_date)
     if schedule_row is not None and schedule_row.page_count is not None and schedule_row.page_count != page_count:
         warnings.append(
-            f"印数表版数为 {page_count} 版，与刊期表登记的 {schedule_row.page_count} 版不一致。"
-            f"导入后将以印数表为准，自动把刊期表第 {issue_number} 期的版数更新为 {page_count} 版。"
+            f"印数表实际版数为 {page_count} 版，与刊期计划的 {schedule_row.page_count} 版不同。"
+            f"导入后将分别保留：实际版数 {page_count} 版，计划版数仍为 {schedule_row.page_count} 版。"
         )
 
     readiness = CommitReadiness(
@@ -743,25 +756,16 @@ def commit_history_import(
     db.commit()
     db.refresh(issue)
 
-    # Sync publication_schedule.page_count to the actually-imported value
-    schedule_page_count_updated = False
-    previous_schedule_page_count: int | None = None
-    schedule_row = _find_schedule_row(db, issue_number, publish_date_str)
-    if schedule_row is not None and schedule_row.page_count != issue.page_count:
-        previous_schedule_page_count = schedule_row.page_count
-        schedule_row.page_count = issue.page_count
-        if schedule_row.issue_number is None:
-            schedule_row.issue_number = issue_number
-        db.commit()
-        schedule_page_count_updated = True
-
     return HistoryImportCommitOut(
         issue_id=issue.id,
         issue_number=issue.issue_number,
         report_entry_count=len(payload.get("report_rows", [])),
         temp_detail_count=len(payload.get("temp_rows", [])),
         shipping_detail_count=len(payload.get("shipping_rows", [])),
-        schedule_page_count_updated=schedule_page_count_updated,
-        previous_schedule_page_count=previous_schedule_page_count,
+        # Kept for API compatibility.  Planned page count and actual page
+        # count are separate business facts; importing actuals must never
+        # rewrite the publication plan.
+        schedule_page_count_updated=False,
+        previous_schedule_page_count=None,
         new_page_count=issue.page_count,
     )

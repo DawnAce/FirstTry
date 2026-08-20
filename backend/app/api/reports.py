@@ -62,6 +62,18 @@ def _apply_report_updates(
             entry.value = entry_data.value
 
 
+def _normalize_zero_temp_print(entries: list[ReportEntry]) -> bool:
+    """Make a zero temporary-print total authoritative over allocations."""
+    by_key = {(entry.category, entry.sub_category): entry for entry in entries}
+    total = by_key.get(("social_use", "临时加印"))
+    self_entry = by_key.get(("social_use", "临时加印_自留"))
+    if total is None or (total.value or 0) != 0:
+        return False
+    if self_entry is not None:
+        self_entry.value = 0
+    return True
+
+
 def _copy_previous_shipping_details_for_confirm(
     db: Session,
     issue: Issue,
@@ -285,6 +297,10 @@ def update_report(issue_id: int, data: ReportDataUpdate, db: Session = Depends(g
 
     entries = db.query(ReportEntry).filter(ReportEntry.issue_id == issue_id).all()
     _apply_report_updates(entries, data)
+    if _normalize_zero_temp_print(entries):
+        db.query(TempPrintDetail).filter(TempPrintDetail.issue_id == issue_id).delete(
+            synchronize_session=False
+        )
 
     db.commit()
     invalidate_overview_cache()
@@ -306,6 +322,10 @@ def confirm_report(
     entries = db.query(ReportEntry).filter(ReportEntry.issue_id == issue_id).all()
     if data is not None:
         _apply_report_updates(entries, data)
+    if _normalize_zero_temp_print(entries):
+        db.query(TempPrintDetail).filter(TempPrintDetail.issue_id == issue_id).delete(
+            synchronize_session=False
+        )
     errors = []
     for e in entries:
         if e.is_variable and e.value is None:

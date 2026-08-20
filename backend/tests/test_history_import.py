@@ -11,7 +11,15 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.history_import_cache import get_history_import_session
-from app.models import ReportItemTemplate, Issue, IssueStatus, ReportEntry, TempPrintDetail, ShippingDetail
+from app.models import (
+    ReportItemTemplate,
+    Issue,
+    IssueStatus,
+    PublicationSchedule,
+    ReportEntry,
+    TempPrintDetail,
+    ShippingDetail,
+)
 from app.services.history_import_template_service import (
     build_report_import_template,
     build_shipping_import_template,
@@ -353,10 +361,25 @@ def build_raw_report_upload_with_department_add_print() -> bytes:
     return _wb_to_bytes(wb)
 
 
+def build_raw_report_upload_with_zero_total_and_stale_allocations() -> bytes:
+    wb = load_workbook(io.BytesIO(build_raw_report_upload()))
+    social = wb["社用报`"]
+    social.insert_rows(24)
+    social["A24"] = "财经中心加印"
+    social["B24"] = 50
+    # The following original row remains the authoritative total of zero.
+    social["B25"] = 0
+    wb["收发室自留分发（需打印）"]["B18"] = 50
+    wb["北京印厂"]["C12"] = 9315
+    return _wb_to_bytes(wb)
+
+
 def build_raw_report_upload_with_resolved_temp_print() -> bytes:
     wb = load_workbook(io.BytesIO(build_raw_report_upload_with_temp_print()))
     wb["收发室自留分发（需打印）"]["B18"] = 12
-    wb["北京印厂"]["C12"] = 9289
+    # The 12 self-distributed copies explain the 12 temporary copies; they do
+    # not add another 12 to the print-factory total.
+    wb["北京印厂"]["C12"] = 9277
     return _wb_to_bytes(wb)
 
 
@@ -435,6 +458,21 @@ class RawReportImportParserTests(unittest.TestCase):
         self.assertEqual(len(result.temp_print_rows), 1)
         self.assertEqual(result.temp_print_rows[0].department, "财经中心")
         self.assertEqual(result.temp_print_rows[0].quantity, 200)
+        workbook.close()
+
+    def test_zero_temp_total_clears_stale_self_and_department_allocations(self):
+        workbook = load_workbook(
+            io.BytesIO(build_raw_report_upload_with_zero_total_and_stale_allocations()),
+            data_only=True,
+        )
+
+        result = parse_raw_report_workbook(workbook)
+
+        row_map = {(row.category, row.sub_category): row.value for row in result.report_rows}
+        self.assertEqual(row_map[("social_use", "临时加印")], 0)
+        self.assertEqual(row_map[("social_use", "临时加印_自留")], 0)
+        self.assertEqual(result.temp_print_rows, [])
+        self.assertEqual(result.mapped_total, 9265)
         workbook.close()
 
 
@@ -885,7 +923,7 @@ class HistoryImportPreviewTests(unittest.TestCase):
         result = preview_history_import(
             db,
             build_raw_report_upload_with_resolved_temp_print(),
-            build_shipping_upload(2647, quantity=1436),
+            build_shipping_upload(2647, quantity=1424),
         )
 
         self.assertTrue(result.can_commit)
@@ -1394,6 +1432,35 @@ class HistoryImportCommitTests(unittest.TestCase):
         self.assertEqual(result.shipping_detail_count, 1)
         self.assertEqual(result.issue_number, 2648)
         self.assertIsNotNone(result.issue_id)
+        db.close()
+
+    def test_commit_keeps_planned_page_count_separate_from_actual_page_count(self):
+        db = self.SessionLocal()
+        self._seed_templates(db)
+        db.add(PublicationSchedule(
+            year=2026,
+            issue_number=2648,
+            publish_date=date(2026, 4, 20),
+            is_suspended=False,
+            page_count=24,
+        ))
+        db.commit()
+        report_wb = load_workbook(io.BytesIO(build_report_upload()))
+        report_wb["基本信息"]["B4"] = 32
+
+        preview = preview_history_import(
+            db,
+            _wb_to_bytes(report_wb),
+            build_shipping_upload(),
+        )
+        result = commit_history_import(db, preview.import_session_id)
+
+        issue = db.query(Issue).filter_by(issue_number=2648).one()
+        schedule = db.query(PublicationSchedule).filter_by(issue_number=2648).one()
+        self.assertEqual(issue.page_count, 32)
+        self.assertEqual(schedule.page_count, 24)
+        self.assertFalse(result.schedule_page_count_updated)
+        self.assertEqual(result.new_page_count, 32)
         db.close()
 
     def test_commit_persists_original_zto_shipping_fields(self):

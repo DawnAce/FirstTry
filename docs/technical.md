@@ -1725,7 +1725,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 校验失败时 `can_commit` 为 `false`，`errors` 包含具体错误信息，`import_session_id` 为空字符串。只有临时加印或未识别报数项需要人工处理时，`errors` 为空且 `import_session_id` 有值：`manual_temp_print_required_quantity` / `manual_temp_rows` 用于临时加印分配，`unmapped_report_items` / `report_mapping_options` 用于报数项归类。前端补齐后可提交；服务端会重新校验归类后的总印数和中通份数，防止绕过预览校验。
 
-`warnings` 用于不阻塞导入的提示。当印数表识别出的 `page_count` 与刊期表（`publication_schedule.page_count`）登记的版数不一致时，预览会在 `warnings` 中追加一条提示；提交时服务端会以印数表为准自动更新刊期表的版数（详见下文 commit 响应）。
+`warnings` 用于不阻塞导入的提示。当印数表识别出的实际 `page_count` 与刊期表（`publication_schedule.page_count`）的计划版数不一致时，预览会提示差异，但两者分别保留；导入实际印数不会覆盖刊期计划。
 
 预览结果通过内存缓存（`history_import_cache`）保存 15 分钟，由 `import_session_id` 索引。
 
@@ -1764,13 +1764,13 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
   "report_entry_count": 30,
   "temp_detail_count": 2,
   "shipping_detail_count": 81,
-  "schedule_page_count_updated": true,
-  "previous_schedule_page_count": 24,
+  "schedule_page_count_updated": false,
+  "previous_schedule_page_count": null,
   "new_page_count": 32
 }
 ```
 
-`schedule_page_count_updated` 表示本次提交是否顺带同步更新了 `publication_schedule.page_count`。当印数表的版数与刊期表登记的不同（或刊期行原本没填版数）时，服务端会以印数表为准把刊期表对应行的 `page_count` 更新过来，并在响应里返回 `previous_schedule_page_count`（更新前的值，可能为 `null`）与 `new_page_count`（最终写入的值）。匹配优先按 `issue_number` 查找，找不到时再回退到 `publish_date` 匹配。
+`schedule_page_count_updated` 为了兼容旧版客户端而保留，现固定返回 `false`。`new_page_count` 表示导入到印数记录的实际版数；刊期计划版数不会被改写。
 
 **错误**：
 - 400：会话不存在或已过期
