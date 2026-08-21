@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { ReportSourceDocument, ReportSourceItem } from '../api/reportSources';
 import {
+  compareReportEntriesToSources,
   sourceAdjustmentDescription,
   sourceCardStatus,
+  sourceCorrectionSuggestions,
   sourceIssueLinkLabel,
   sourceItemQuantityLabel,
   sourcePurposeLabel,
   sourceQuantityLabel,
+  sourceTargetTreatment,
 } from './reportSourceDisplay';
 
 const item = (overrides: Partial<ReportSourceItem> = {}): ReportSourceItem => ({
@@ -100,5 +103,83 @@ describe('report source card display', () => {
     expect(sourceAdjustmentDescription(item({
       item_kind: 'adjustment', adjustment_kind: 'archive_only', source_action: 'archive_only',
     }))).toBe('仅归档 · 不改变印数、结算或补发');
+  });
+
+  it('detects source mismatches per item even when the channel total still matches', () => {
+    const rows = [
+      item({ source_quantity: 1214, print_delta: 1214, sub_category: '本市' }),
+      item({ id: 2, source_quantity: 5702, print_delta: 5702, sub_category: '外埠' }),
+    ];
+    const result = compareReportEntriesToSources(
+      [document(rows)],
+      2650,
+      [
+        { category: 'postal', sub_category: '本市', value: 1215 },
+        { category: 'postal', sub_category: '外埠', value: 5701 },
+      ],
+    );
+
+    expect(result.channels.postal.difference).toBe(0);
+    expect(result.mismatches).toEqual([
+      { category: 'postal', subCategory: '本市', sourceValue: 1214, reportValue: 1215, difference: -1 },
+      { category: 'postal', subCategory: '外埠', sourceValue: 5702, reportValue: 5701, difference: 1 },
+    ]);
+  });
+
+  it('explains how mixed target issue states will be handled', () => {
+    const suggestion = {
+      issue_number: 2649,
+      source_period: '2026-04#4',
+      item_kind: 'base' as const,
+      category: 'chengdu' as const,
+      sub_category: '成都杂志铺',
+      source_label: '2026年4月第4期',
+      source_quantity: 366,
+      applied_quantity: 366,
+      source_status: 'confirmed' as const,
+      adjustment_kind: null,
+      source_action: 'base' as const,
+      supersedes_item_id: null,
+      confidence: 0.99,
+      notes: null,
+      target_issue_status: 'confirmed' as const,
+    };
+
+    expect(sourceTargetTreatment(suggestion)).toEqual({
+      label: '已确认期 → 仅归档凭证',
+      archiveOnly: true,
+    });
+  });
+
+  it('builds a manual correction from every active editable contribution', () => {
+    const editableBase = item({ target_issue_status: 'draft' });
+    const editableAddition = item({
+      id: 2,
+      issue_number: 2651,
+      source_action: 'prepress_addition',
+      target_issue_status: 'scheduled',
+    });
+    const locked = item({ id: 3, issue_number: 2652, target_issue_status: 'confirmed' });
+    const replaced = item({ id: 4, issue_number: 2653, effect_status: 'replaced', target_issue_status: 'draft' });
+
+    expect(sourceCorrectionSuggestions(document([
+      editableBase,
+      editableAddition,
+      locked,
+      replaced,
+    ]))).toEqual([
+      expect.objectContaining({
+        issue_number: 2650,
+        source_action: 'base',
+        supersedes_item_id: editableBase.id,
+        source_status: 'confirmed',
+      }),
+      expect.objectContaining({
+        issue_number: 2651,
+        source_action: 'prepress_addition',
+        supersedes_item_id: editableAddition.id,
+        source_status: 'confirmed',
+      }),
+    ]);
   });
 });

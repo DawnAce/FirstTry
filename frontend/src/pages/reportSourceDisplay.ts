@@ -1,9 +1,25 @@
 import type {
   ReportSourceDocument,
   ReportSourceItem,
+  ReportSourceSuggestion,
 } from '../api/reportSources';
 
 export type SourceCardTone = 'neutral' | 'success' | 'warning' | 'danger';
+
+export interface SourceEntryComparison {
+  category: string;
+  subCategory: string;
+  sourceValue: number;
+  reportValue: number | null;
+  difference: number;
+}
+
+export interface SourceChannelComparison {
+  sourceTotal: number;
+  reportTotal: number;
+  difference: number;
+  mismatches: SourceEntryComparison[];
+}
 
 const purposeLabels: Record<string, string> = {
   base: '原始报数',
@@ -16,6 +32,35 @@ const purposeLabels: Record<string, string> = {
 
 export function sourceItemsForIssue(document: ReportSourceDocument, issueNumber: number) {
   return document.items.filter(item => item.issue_number === issueNumber);
+}
+
+export function sourceCorrectionSuggestions(document: ReportSourceDocument): ReportSourceSuggestion[] {
+  return document.items
+    .filter(item => (
+      item.item_kind === 'base'
+      && item.source_status === 'confirmed'
+      && item.effect_status === 'active'
+      && ['base', 'prepress_addition'].includes(item.source_action)
+      && item.target_issue_status !== 'confirmed'
+      && item.target_issue_status !== 'exported'
+    ))
+    .map(item => ({
+      issue_number: item.issue_number,
+      source_period: null,
+      item_kind: item.item_kind,
+      category: item.category as ReportSourceSuggestion['category'],
+      sub_category: item.sub_category,
+      source_label: item.source_label,
+      source_quantity: item.source_quantity,
+      applied_quantity: item.applied_quantity,
+      source_status: 'confirmed',
+      adjustment_kind: null,
+      source_action: item.source_action,
+      supersedes_item_id: item.id,
+      confidence: null,
+      notes: item.notes,
+      target_issue_status: item.target_issue_status,
+    }));
 }
 
 export function sourcePurposeLabel(document: ReportSourceDocument, items: ReportSourceItem[]) {
@@ -41,7 +86,7 @@ export function sourceCardStatus(
     return { label: '已替换', tone: 'neutral' };
   }
   if (currentItems.length === 0) return { label: '待关联刊期', tone: 'warning' };
-  return { label: '已人工确认', tone: 'success' };
+  return { label: '来源已人工确认', tone: 'success' };
 }
 
 export function sourceQuantityLabel(items: ReportSourceItem[]) {
@@ -83,4 +128,74 @@ export function sourceAdjustmentDescription(item: ReportSourceItem) {
     ? ` · 待发 ${Math.max(0, item.shipping_delta - item.shipped_quantity)}`
     : '';
   return `${settlement} · ${shipping}${pending}`;
+}
+
+export function compareReportEntriesToSources(
+  documents: ReportSourceDocument[],
+  issueNumber: number,
+  entries: { category: string; sub_category: string; value: number }[],
+): { channels: Record<string, SourceChannelComparison>; mismatches: SourceEntryComparison[] } {
+  const sourceTotals = new Map<string, { category: string; subCategory: string; value: number }>();
+  for (const document of documents) {
+    for (const item of document.items) {
+      if (item.issue_number !== issueNumber
+        || item.source_status !== 'confirmed'
+        || item.effect_status !== 'active'
+        || !['base', 'prepress_addition'].includes(item.source_action)) continue;
+      const key = `${item.category}\u0000${item.sub_category}`;
+      const current = sourceTotals.get(key);
+      sourceTotals.set(key, {
+        category: item.category,
+        subCategory: item.sub_category,
+        value: (current?.value ?? 0) + item.print_delta,
+      });
+    }
+  }
+  const reportValues = new Map<string, number>(entries.map(entry => (
+    [`${entry.category}\u0000${entry.sub_category}`, entry.value] as const
+  )));
+  const mismatches: SourceEntryComparison[] = [];
+  const channels: Record<string, SourceChannelComparison> = {};
+  for (const [key, source] of sourceTotals) {
+    const reportValue = reportValues.get(key) ?? null;
+    const difference = source.value - (reportValue ?? 0);
+    const channel = channels[source.category] ?? {
+      sourceTotal: 0,
+      reportTotal: 0,
+      difference: 0,
+      mismatches: [],
+    };
+    channel.sourceTotal += source.value;
+    channel.reportTotal += reportValue ?? 0;
+    channel.difference = channel.sourceTotal - channel.reportTotal;
+    if (reportValue !== source.value) {
+      const mismatch = {
+        category: source.category,
+        subCategory: source.subCategory,
+        sourceValue: source.value,
+        reportValue,
+        difference,
+      };
+      channel.mismatches.push(mismatch);
+      mismatches.push(mismatch);
+    }
+    channels[source.category] = channel;
+  }
+  return { channels, mismatches };
+}
+
+export function sourceTargetTreatment(suggestion: ReportSourceSuggestion) {
+  if (suggestion.item_kind === 'adjustment') {
+    return { label: '已确认期 → 按所选凭证处理', archiveOnly: false };
+  }
+  if (suggestion.target_issue_status === 'confirmed' || suggestion.target_issue_status === 'exported') {
+    return { label: '已确认期 → 仅归档凭证', archiveOnly: true };
+  }
+  if (suggestion.target_issue_status === 'scheduled') {
+    return { label: '尚未创建 → 创建后写入印数', archiveOnly: false };
+  }
+  if (suggestion.target_issue_status === 'draft') {
+    return { label: '草稿期 → 写入印数', archiveOnly: false };
+  }
+  return { label: '提交时复核刊期状态', archiveOnly: false };
 }

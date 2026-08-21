@@ -293,10 +293,11 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 
 1. 只有人工确认、目标期仍为草稿且 `source_action` 为 `base` / `prepress_addition` 的有效条目参与印数；`report_entries` 写入所有有效 `print_delta` 的合计。
 2. 创建新期时，`apply_confirmed_source_bases_to_issue()` 聚合有效基础与印前追加贡献；待确认或已替换值不会带入。
-3. 已确认期的来源确认永不回写 `report_entries`。后续调整只生成结算与补发增量。
+3. `confirm_document()` 在同一事务内逐期锁定 `issues`。基础 / 印前追加行遇到 `confirmed` 或 `exported` 期时，服务端将该行转换为 `item_kind=adjustment`、`source_action=archive_only`、`adjustment_kind=archive_only`，并清空拟写入数、保持印数 / 结算 / 补发增量为 0；同一文件中的草稿期行仍正常写入。显式追加、补损或冲减仍必须由用户选择调整类型。
 4. 成都汇总为 `settlement_total = base_quantity + settlement_delta`，`pending_shipping = max(0, shipping_delta - shipped_quantity)`。
 5. 定向重传将旧明细置为 `replaced`，新明细通过 `supersedes_item_id` 追溯旧项并继承其基础 / 追加角色。迁移 `a8c1e4f7b2d5` 回填历史贡献，并重算未确认期的来源合计。
-6. `report_source_documents` 删除时级联删除映射；删除原文件仅管理员可执行，并同步清理附件。
+6. 人工核对数字更正不直接修改已确认文档，也不绕过同文件普通上传去重。`correct_source_document()` 校验原附件存在且 SHA-256 未变化，复制原附件建立新文档版本，在 `extraction_json.correction_of_document_id` 记录上一个版本；新明细必须覆盖原文档全部仍可编辑的有效印前项，并通过 `supersedes_item_id` 替换。附件复制、新文档、印数重算以及 `correct_source` / `confirm_source` 日志在同一事务边界内完成，失败时回滚数据库并删除新附件。
+7. `report_source_documents` 删除时级联删除映射；删除原文件仅管理员可执行，并同步清理附件。
 
 ### 3.6 recipients（收件人）
 管理所有收件人信息。
@@ -1186,11 +1187,15 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 #### POST /api/report-sources/{document_id}/confirm
 
-用人工核对后的 `items` 替换该文档的刊期映射。基础项可写入尚未确认的 `report_entries`；调整项根据 `adjustment_kind` 生成结算 / 补发增量。已确认报数不会被回写。上传与确认分别写入 `operation_logs` 的 `upload_source`、`confirm_source` 操作。
+用人工核对后的 `items` 替换该文档的刊期映射。基础项可写入尚未确认的 `report_entries`；调整项根据 `adjustment_kind` 生成结算 / 补发增量。服务端逐项锁定目标刊期，已确认 / 已导出目标自动按仅归档凭证保存，不回写印数。上传与确认分别写入 `operation_logs` 的 `upload_source`、`confirm_source` 操作。
+
+#### POST /api/report-sources/{document_id}/correction
+
+更正已人工确认来源的核对数字，请求体与确认接口相同，但每条明细必须以 `supersedes_item_id` 指向所选文档中当前有效且目标期未锁定的印前来源。服务端读取并校验原归档附件，创建同 SHA-256 的新核对版本后复用确认事务；旧明细仅在新版本完整校验并成功写入后标记为 `replaced`。该接口不重新执行 OCR，也不物理删除或直接改写旧记录。
 
 #### GET /api/report-sources/issues/{issue_id}
 
-返回某期通过刊期明细或上传刊期锚点关联的全部文档和渠道汇总，包括文件可用状态、基础数量、结算增量 / 合计、应补发 / 已补发 / 待补发及待确认数量。报数编辑页右侧「数据来源与调整」将所有用途统一渲染为文件卡片。
+返回某期通过刊期明细或上传刊期锚点关联的全部文档和渠道汇总，包括文件可用状态、基础数量、结算增量 / 合计、应补发 / 已补发 / 待补发及待确认数量。每条明细附带实时计算的 `target_issue_status`，因此历史 `OCR待核对` 文件可直接继续核对并显示草稿写入 / 锁定期仅归档提示，无需重新上传。报数编辑页右侧「数据来源与调整」将所有用途统一渲染为文件卡片。
 
 #### GET /api/report-sources/{document_id}/download
 
@@ -1204,7 +1209,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 删除来源文档、全部刊期映射和对应附件，并写入 `delete_source` 操作日志。管理员可删除任意来源；普通操作员只能撤销本人上传且仍为 `pending_review` 的文件，不能删除已完成核对的归档。前端「重新上传」通过此接口先撤销错误文件，再恢复文件选择状态。
 
-**确认报数联动**：`POST /api/issues/{issue_id}/report/confirm` 会查询该期 `report_source_items`；存在非 `confirmed` 来源项时返回 422，防止关闭抽屉后遗漏 OCR / 渠道待确认数据。
+**确认报数联动**：`POST /api/issues/{issue_id}/report/confirm` 会查询该期 `report_source_items`；存在非 `confirmed` 来源项时返回 422，防止关闭抽屉后遗漏 OCR / 渠道待确认数据。同时按 `(category, sub_category)` 聚合 `confirmed + active + base/prepress_addition` 的 `print_delta`，逐项比较本次提交的报数值；北京邮发、北京报零、广州日报、成都杂志铺任一来源项目不一致时返回 422。校验不只比较渠道合计，避免两个项目一增一减后错误抵消。
 
 ### 4.6 物流管理
 

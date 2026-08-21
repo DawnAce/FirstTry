@@ -41,6 +41,7 @@ import { IssueDeleteConfirmButton } from '../components/IssueDeleteConfirmButton
 import { DrawerTitle, StatusPill } from '../components/UiPrimitives';
 import {
   confirmReportSource,
+  correctReportSource,
   deleteReportSource,
   downloadReportSource,
   getIssueReportSources,
@@ -50,6 +51,7 @@ import {
 import type {
   ReportSourceAdjustmentKind,
   ReportSourceChannel,
+  ReportSourceConfirmItem,
   ReportSourceDocumentType,
   ReportSourceDocument,
   ReportSourceItem,
@@ -60,6 +62,8 @@ import type {
 import { sortVisibleSocialUseEntries } from './reportOrder';
 import { formatIssueReportTitle } from './reportTitle';
 import {
+  compareReportEntriesToSources,
+  sourceCorrectionSuggestions,
   sourceAdjustmentDescription,
   sourceCardStatus,
   sourceIssueLinkLabel,
@@ -67,6 +71,7 @@ import {
   sourceItemsForIssue,
   sourcePurposeLabel,
   sourceQuantityLabel,
+  sourceTargetTreatment,
 } from './reportSourceDisplay';
 import './ReportEditor.css';
 
@@ -113,7 +118,7 @@ const adjustmentKindOptions: { label: string; value: ReportSourceAdjustmentKind 
   { label: '冲减（减少结算）', value: 'reduction' },
 ];
 
-type SourceOperation = 'initial' | 'addition' | 'replacement' | 'postpress';
+type SourceOperation = 'initial' | 'addition' | 'replacement' | 'correction' | 'postpress';
 
 // Items hidden from social_use display (shown separately or managed by temp print details)
 const EXTRA_ITEMS = ['临时加印', '临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'];
@@ -521,6 +526,18 @@ export default function ReportEditor() {
     setSourceDrawerOpen(true);
   };
 
+  const openSourceCorrection = (document: ReportSourceDocument) => {
+    resetSourceDrawer();
+    const suggestions = sourceCorrectionSuggestions(document);
+    setSourceChannel(document.channel);
+    setSourceDocumentType(document.document_type);
+    setSourceOperation('correction');
+    setSourceReplacementTarget(document);
+    setSourcePreview({ ...document, suggestions, duplicate: false });
+    setSourceSuggestions(suggestions);
+    setSourceDrawerOpen(true);
+  };
+
   const openSourceReview = (document: ReportSourceDocument) => {
     resetSourceDrawer();
     setSourceChannel(document.channel);
@@ -551,6 +568,7 @@ export default function ReportEditor() {
       supersedes_item_id: item.supersedes_item_id,
       confidence: null,
       notes: item.notes,
+      target_issue_status: item.target_issue_status,
     }));
     setSourcePreview({ ...document, suggestions, duplicate: false });
     setSourceSuggestions(suggestions);
@@ -574,7 +592,9 @@ export default function ReportEditor() {
         sourceDocumentType,
       );
       if (response.data.duplicate && response.data.extraction_status === 'confirmed') {
-        message.info('这份文件已经归档并确认，无需重复上传');
+        message.info(sourceOperation === 'replacement'
+          ? '文件内容与原归档一致；如只需修改人工核对数字，请使用“更正核对数字”'
+          : '这份文件已经归档并确认，无需重复上传');
         setSourceDrawerOpen(false);
         resetSourceDrawer();
         queryClient.invalidateQueries({ queryKey: ['reportSources', issueId] });
@@ -619,6 +639,18 @@ export default function ReportEditor() {
     )));
   };
 
+  const updateSourceIssueNumber = (index: number, value: number | null) => {
+    setSourceSuggestions(current => current.map((suggestion, suggestionIndex) => (
+      suggestionIndex === index
+        ? {
+            ...suggestion,
+            issue_number: value,
+            target_issue_status: value === issue?.issue_number ? issue.status : null,
+          }
+        : suggestion
+    )));
+  };
+
   const addSourceSuggestion = () => {
     if (!issue) return;
     setSourceSuggestions(current => [...current, {
@@ -638,6 +670,7 @@ export default function ReportEditor() {
       supersedes_item_id: null,
       confidence: null,
       notes: 'OCR未识别，人工补录',
+      target_issue_status: issue.status,
     }]);
   };
 
@@ -655,10 +688,14 @@ export default function ReportEditor() {
       message.warning('仍有 OCR 待核对项，请逐行确认状态');
       return;
     }
+    if (sourceOperation === 'correction' && sourceSuggestions.some(suggestion => suggestion.source_status !== 'confirmed')) {
+      message.warning('更正核对数字时，所有明细都必须设为已人工核对');
+      return;
+    }
     const replacementItems = sourceReplacementTarget?.items.filter(item => (
       item.effect_status === 'active' && item.source_status === 'confirmed' && item.item_kind === 'base'
     )) ?? [];
-    if (sourceOperation === 'replacement' && sourceSuggestions.some(suggestion => !replacementItems.some(item => (
+    if ((sourceOperation === 'replacement' || sourceOperation === 'correction') && sourceSuggestions.some(suggestion => !replacementItems.some(item => (
       item.issue_number === suggestion.issue_number
       && item.category === suggestion.category
       && item.sub_category === suggestion.sub_category
@@ -668,7 +705,7 @@ export default function ReportEditor() {
     }
     setSourceConfirming(true);
     try {
-      await confirmReportSource(sourcePreview.id, sourceSuggestions.map(suggestion => ({
+      const confirmedItems: ReportSourceConfirmItem[] = sourceSuggestions.map(suggestion => ({
         issue_number: suggestion.issue_number!,
         item_kind: suggestion.item_kind,
         category: suggestion.category,
@@ -681,22 +718,30 @@ export default function ReportEditor() {
         source_action: suggestion.item_kind === 'adjustment'
           ? 'postpress_addition'
           : sourceOperation === 'addition' ? 'prepress_addition'
-          : sourceOperation === 'replacement'
+          : sourceOperation === 'replacement' || sourceOperation === 'correction'
             ? (replacementItems.find(item => (
                 item.issue_number === suggestion.issue_number
                 && item.category === suggestion.category
                 && item.sub_category === suggestion.sub_category
               ))?.source_action ?? 'base')
             : 'base',
-        supersedes_item_id: sourceOperation === 'replacement'
-          ? replacementItems.find(item => (
+        supersedes_item_id: sourceOperation === 'correction'
+          ? suggestion.supersedes_item_id
+          : sourceOperation === 'replacement'
+            ? replacementItems.find(item => (
               item.issue_number === suggestion.issue_number
               && item.category === suggestion.category
               && item.sub_category === suggestion.sub_category
             ))?.id ?? null
-          : null,
+            : null,
         notes: suggestion.notes,
-      })));
+      }));
+      if (sourceOperation === 'correction') {
+        if (!sourceReplacementTarget) throw new Error('更正来源不存在');
+        await correctReportSource(sourceReplacementTarget.id, confirmedItems);
+      } else {
+        await confirmReportSource(sourcePreview.id, confirmedItems);
+      }
       const updatedReport = await getReport(Number(issueId));
       setEntries(updatedReport.data.entries);
       entriesRef.current = updatedReport.data.entries;
@@ -704,7 +749,9 @@ export default function ReportEditor() {
         queryClient.invalidateQueries({ queryKey: ['reportSources', issueId] }),
         queryClient.invalidateQueries({ queryKey: ['report', issueId] }),
       ]);
-      message.success('来源识别与刊期映射已确认');
+      message.success(sourceOperation === 'correction'
+        ? '来源核对数字已更正，旧记录已保留为“已替换”'
+        : '来源识别与刊期映射已确认');
       setSourceDrawerOpen(false);
       resetSourceDrawer();
     } catch (err: any) {
@@ -798,6 +845,11 @@ export default function ReportEditor() {
   const sourceChannelSummaries = Object.fromEntries(
     (sourceSummary?.channels ?? []).map(channel => [channel.channel, channel]),
   );
+  const sourceEntryComparison = compareReportEntriesToSources(
+    sourceSummary?.documents ?? [],
+    issue.issue_number,
+    entries,
+  );
   const currentSourceItems = (sourceSummary?.documents ?? []).flatMap(document =>
     document.items.filter(item => item.issue_number === issue.issue_number),
   );
@@ -833,6 +885,7 @@ export default function ReportEditor() {
     initial: '上传基础来源',
     addition: '印数确认前追加',
     replacement: '定向替换原来源',
+    correction: '更正已确认的核对数字',
     postpress: '上传确认后凭证',
   };
   const previewChannelSummary = sourceChannelSummaries[sourceChannel];
@@ -847,7 +900,7 @@ export default function ReportEditor() {
     .reduce((sum, item) => sum + (item.applied_quantity ?? 0), 0);
   const replacedContribution = replacementCurrentItems.reduce((sum, item) => sum + item.print_delta, 0);
   const currentSourceTotal = previewChannelSummary?.source_total ?? 0;
-  const previewSourceTotal = sourceOperation === 'replacement'
+  const previewSourceTotal = sourceOperation === 'replacement' || sourceOperation === 'correction'
     ? currentSourceTotal - replacedContribution + previewContribution
     : sourceOperation === 'addition'
       ? currentSourceTotal + previewContribution
@@ -1225,6 +1278,8 @@ export default function ReportEditor() {
                   <h2>数据来源与调整</h2>
                   {sourcePendingCount > 0
                     ? <span className="report-editor-pill is-orange">{sourcePendingCount} 项待处理</span>
+                    : sourceEntryComparison.mismatches.length > 0
+                      ? <span className="report-editor-pill is-orange">{sourceEntryComparison.mismatches.length} 项数字不一致</span>
                     : <span className="report-editor-pill">已关联 {sourceSummary?.document_count ?? 0} 份</span>}
                 </div>
                 {sourceLoading ? (
@@ -1234,6 +1289,11 @@ export default function ReportEditor() {
                     {sourceChannels.map(channel => {
                       const state = sourceStateForChannel(channel);
                       const channelSummary = sourceChannelSummaries[channel];
+                      const liveComparison = sourceEntryComparison.channels[channel];
+                      const sourceTotal = liveComparison?.sourceTotal ?? channelSummary?.source_total ?? 0;
+                      const reportTotal = liveComparison?.reportTotal ?? channelSummary?.base_quantity ?? 0;
+                      const sourceDifference = liveComparison?.difference ?? channelSummary?.source_difference ?? 0;
+                      const entryMismatches = liveComparison?.mismatches ?? [];
                       const printDocuments = state.documents.filter(document => document.items.some(item => (
                         item.issue_number === issue.issue_number && item.item_kind === 'base'
                       )));
@@ -1247,14 +1307,26 @@ export default function ReportEditor() {
                             </Button>}
                           </div>
                           {(channelSummary?.active_source_count ?? 0) > 0 && (
-                            <div className={`report-editor-source-total ${channelSummary?.source_difference ? 'has-difference' : ''}`}>
-                              <span>有效来源合计 <b>{formatCount(channelSummary?.source_total ?? 0)} 份</b></span>
+                            <div className={`report-editor-source-total ${entryMismatches.length > 0 ? 'has-difference' : ''}`}>
+                              <span>有效来源合计 <b>{formatCount(sourceTotal)} 份</b></span>
                               <small>
-                                {channelSummary?.source_difference
-                                  ? `与当前印数相差 ${channelSummary.source_difference > 0 ? '+' : ''}${formatCount(channelSummary.source_difference)} 份`
+                                {entryMismatches.length > 0
+                                  ? sourceDifference === 0
+                                    ? `渠道合计一致，但 ${entryMismatches.length} 个项目不一致`
+                                    : `当前印数 ${formatCount(reportTotal)} 份，相差 ${sourceDifference > 0 ? '+' : ''}${formatCount(sourceDifference)} 份`
                                   : `与当前印数一致 · ${channelSummary?.active_source_count ?? 0} 份来源`}
                               </small>
                             </div>
+                          )}
+                          {entryMismatches.length > 0 && (
+                            <ul className="report-editor-source-mismatches">
+                              {entryMismatches.map(mismatch => (
+                                <li key={`${mismatch.category}-${mismatch.subCategory}`}>
+                                  <b>{mismatch.subCategory}</b>
+                                  <span>来源 {formatCount(mismatch.sourceValue)} · 当前 {mismatch.reportValue == null ? '缺少项目' : formatCount(mismatch.reportValue)}</span>
+                                </li>
+                              ))}
+                            </ul>
                           )}
                           {state.documents.length > 0 ? (
                             <div className="report-editor-source-files">
@@ -1292,6 +1364,7 @@ export default function ReportEditor() {
                                   </div>
                                   <div className="report-editor-source-card-meta">
                                     <span>{purpose}</span>
+                                    {document.extraction_json?.correction_of_document_id && <span>人工更正版</span>}
                                     {quantity && <span>{quantity}</span>}
                                     <span>{issueLinks}</span>
                                     <span>{Math.max(1, Math.round(document.size / 1024))} KB</span>
@@ -1326,7 +1399,10 @@ export default function ReportEditor() {
                                       {!isConfirmed && document.extraction_status === 'confirmed' && !isReplaced && baseItems.some(item => (
                                         item.source_status === 'confirmed' && item.effect_status === 'active'
                                       )) && (
-                                        <Button size="small" type="link" onClick={() => openSourceReplacement(document)}>重新上传</Button>
+                                        <>
+                                          <Button size="small" type="link" onClick={() => openSourceCorrection(document)}>更正核对数字</Button>
+                                          <Button size="small" type="link" onClick={() => openSourceReplacement(document)}>重新上传文件</Button>
+                                        </>
                                       )}
                                     </div>
                                   )}
@@ -1444,12 +1520,14 @@ export default function ReportEditor() {
         title={(
           <DrawerTitle
             icon="📎"
-            title="原始来源文件与识别"
-            description={`第 ${issue.issue_number} 期 · 文件先归档，再由你确认识别结果`}
+            title={sourceOperation === 'correction' ? '更正来源核对数字' : '原始来源文件与识别'}
+            description={sourceOperation === 'correction'
+              ? `第 ${issue.issue_number} 期 · 沿用原归档文件，只创建新的核对版本`
+              : `第 ${issue.issue_number} 期 · 文件先归档，再由你确认识别结果`}
             tone="info"
             status={(
               <StatusPill tone={sourcePreview ? 'warning' : 'neutral'}>
-                {sourcePreview ? 'OCR待核对' : '等待上传'}
+                {sourceOperation === 'correction' ? '待确认更正' : sourcePreview ? 'OCR待核对' : '等待上传'}
               </StatusPill>
             )}
           />
@@ -1465,8 +1543,10 @@ export default function ReportEditor() {
           <div className="app-drawer-footer">
             <span className="app-drawer-footer-tip">
               <b>✓</b>
-              {sourcePreview
-                ? '只有人工确认后的数据才会写入；待确认值会继续提醒'
+              {sourceOperation === 'correction'
+                ? '提交后生成新的核对版本；旧数字保留为已替换记录'
+                : sourcePreview
+                ? '人工核对只确认识别结果；服务端提交时会再次按每期状态决定写入或仅归档'
                 : '支持 PDF、JPG、JPEG、PNG，原文件只归档一份'}
             </span>
             <Button onClick={() => {
@@ -1475,7 +1555,9 @@ export default function ReportEditor() {
             }}>关闭</Button>
             {sourcePreview ? (
               <Button type="primary" loading={sourceConfirming} onClick={() => { void handleSourceConfirm(); }}>
-                {sourceOperation === 'replacement' ? '确认替换并更新印数' : '确认识别与映射'}
+                {sourceOperation === 'correction'
+                  ? '确认更正并更新印数'
+                  : sourceOperation === 'replacement' ? '确认替换并更新印数' : '确认识别与映射'}
               </Button>
             ) : (
               <Button
@@ -1492,10 +1574,12 @@ export default function ReportEditor() {
       >
         <div className="report-source-drawer">
           <Alert
-            type={sourceOperation === 'replacement' ? 'warning' : 'info'}
+            type={sourceOperation === 'replacement' || sourceOperation === 'correction' ? 'warning' : 'info'}
             showIcon
             title={sourceOperationLabels[sourceOperation]}
-            description={sourceOperation === 'replacement'
+            description={sourceOperation === 'correction'
+              ? `直接更正“${sourceReplacementTarget?.display_name ?? '所选文件'}”的人工核对数字；原文件和旧数字不会被删除。`
+              : sourceOperation === 'replacement'
               ? `只替换“${sourceReplacementTarget?.display_name ?? '所选文件'}”的有效贡献，其他追加来源保持不变。`
               : sourceOperation === 'addition'
                 ? '新文件确认后会与现有有效来源相加，不会覆盖之前的数字。'
@@ -1535,7 +1619,7 @@ export default function ReportEditor() {
             </div>
           </section>}
 
-          <section className="report-source-panel">
+          {sourceOperation !== 'correction' && <section className="report-source-panel">
             <h3><span aria-hidden>②</span>上传原始文件</h3>
             <Upload.Dragger
               className="report-source-dragger"
@@ -1564,12 +1648,12 @@ export default function ReportEditor() {
                 </>
               )}
             </Upload.Dragger>
-          </section>
+          </section>}
 
           {sourcePreview && (
             <section className="report-source-panel">
               <div className="report-source-review-head">
-                <h3><span aria-hidden>③</span>核对识别结果</h3>
+                <h3><span aria-hidden>③</span>{sourceOperation === 'correction' ? '更正核对数字' : '核对识别结果'}</h3>
                 <div className="report-source-review-actions">
                   {sourcePreview.extraction_status === 'pending_review' && (
                     <Button
@@ -1590,7 +1674,9 @@ export default function ReportEditor() {
                       重新上传
                     </Button>
                   )}
-                  <Button size="small" icon={<PlusOutlined />} onClick={addSourceSuggestion}>人工补录</Button>
+                  {sourceOperation !== 'correction' && (
+                    <Button size="small" icon={<PlusOutlined />} onClick={addSourceSuggestion}>人工补录</Button>
+                  )}
                 </div>
               </div>
               <div className="report-source-file-meta">
@@ -1602,8 +1688,8 @@ export default function ReportEditor() {
                 <Alert
                   type="info"
                   showIcon
-                  title="确认后的印数变化"
-                  description={sourceOperation === 'replacement'
+                  title={sourceOperation === 'correction' ? '更正后的印数变化' : '确认后的印数变化'}
+                  description={sourceOperation === 'replacement' || sourceOperation === 'correction'
                     ? `替换贡献：${formatCount(replacedContribution)} → ${formatCount(previewContribution)} 份；来源合计：${formatCount(currentSourceTotal)} → ${formatCount(previewSourceTotal)} 份。`
                     : sourceOperation === 'addition'
                       ? `本次追加 +${formatCount(previewContribution)} 份；来源合计：${formatCount(currentSourceTotal)} → ${formatCount(previewSourceTotal)} 份。`
@@ -1631,21 +1717,24 @@ export default function ReportEditor() {
                 />
               ) : (
                 <div className="report-source-review-list">
-                  {sourceSuggestions.map((suggestion, index) => (
+                  {sourceSuggestions.map((suggestion, index) => {
+                    const targetTreatment = sourceTargetTreatment(suggestion);
+                    return (
                     <div className="report-source-review-row" key={`${suggestion.source_period || suggestion.issue_number}-${suggestion.sub_category}-${index}`}>
                       <div className="report-source-review-row-head">
                         <strong>{suggestion.source_label || suggestion.sub_category}</strong>
+                        <small className={targetTreatment.archiveOnly ? 'is-archive' : ''}>{targetTreatment.label}</small>
                         {suggestion.confidence != null && (
                           <small>OCR {Math.round(suggestion.confidence * 100)}%</small>
                         )}
-                        <Button
+                        {sourceOperation !== 'correction' && <Button
                           type="text"
                           size="small"
                           danger
                           icon={<DeleteOutlined />}
                           aria-label={`删除第${index + 1}条来源明细`}
                           onClick={() => setSourceSuggestions(current => current.filter((_, rowIndex) => rowIndex !== index))}
-                        />
+                        />}
                       </div>
                       <div className="report-source-review-fields">
                         <label>
@@ -1653,13 +1742,15 @@ export default function ReportEditor() {
                           <InputNumber
                             controls={false}
                             precision={0}
+                            disabled={sourceOperation === 'correction'}
                             value={suggestion.issue_number}
-                            onChange={value => updateSourceSuggestion(index, 'issue_number', value)}
+                            onChange={value => updateSourceIssueNumber(index, value)}
                           />
                         </label>
                         <label>
                           项目
                           <Input
+                            disabled={sourceOperation === 'correction'}
                             value={suggestion.sub_category}
                             onChange={event => updateSourceSuggestion(index, 'sub_category', event.target.value)}
                           />
@@ -1674,7 +1765,12 @@ export default function ReportEditor() {
                             onChange={value => updateSourceSuggestion(index, 'source_quantity', value)}
                           />
                         </label>
-                        {suggestion.item_kind === 'base' ? (
+                        {suggestion.item_kind === 'base' && targetTreatment.archiveOnly ? (
+                          <label>
+                            最终处理
+                            <Input value="仅归档凭证（不修改印数）" disabled />
+                          </label>
+                        ) : suggestion.item_kind === 'base' ? (
                           <label>
                             写入份数
                             <InputNumber
@@ -1698,15 +1794,17 @@ export default function ReportEditor() {
                         <label className="is-wide">
                           核对状态
                           <Select
+                            disabled={sourceOperation === 'correction'}
                             value={suggestion.source_status}
                             options={sourceStatusOptions}
                             onChange={value => updateSourceSuggestion(index, 'source_status', value)}
                           />
                         </label>
                       </div>
+                      {targetTreatment.archiveOnly && <p>目标期印数已锁定，本行只保存来源证明，不改变印数、结算或补发。</p>}
                       {suggestion.notes && <p>{suggestion.notes}</p>}
                     </div>
-                  ))}
+                  );})}
                 </div>
               )}
               {sourcePreview.extraction_json?.raw_text && (

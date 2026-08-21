@@ -820,6 +820,28 @@
   color: #a06616;
 }
 
+.report-editor-source-mismatches {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 6px 7px;
+  border-radius: 7px;
+  color: var(--color-warning-text);
+  background: var(--color-warning-soft);
+  font-size: 9px;
+  list-style: none;
+}
+
+.report-editor-source-mismatches li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.report-editor-source-mismatches span {
+  text-align: right;
+}
+
 .report-editor-source-files {
   display: grid;
   gap: 5px;
@@ -978,6 +1000,7 @@
 
 .report-editor-source-card-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 4px;
 }
@@ -1292,6 +1315,11 @@
   color: #4a719e;
   background: #eaf3ff;
   font-size: 9px;
+}
+
+.report-source-review-row-head small.is-archive {
+  color: var(--color-warning-text);
+  background: var(--color-warning-soft);
 }
 
 .report-source-review-fields {

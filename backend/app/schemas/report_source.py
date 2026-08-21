@@ -17,6 +17,7 @@ SourceAction = Literal[
     "reduction",
     "archive_only",
 ]
+TargetIssueStatus = Literal["draft", "confirmed", "exported", "scheduled"]
 AppliedPhase = Literal["pre_confirmation", "post_confirmation"]
 EffectStatus = Literal["active", "replaced"]
 
@@ -36,6 +37,7 @@ class SourceSuggestion(BaseModel):
     supersedes_item_id: Optional[int] = None
     confidence: Optional[float] = Field(default=None, ge=0, le=1)
     notes: Optional[str] = None
+    target_issue_status: Optional[TargetIssueStatus] = None
 
 
 class ReportSourceItemConfirmIn(BaseModel):
@@ -83,6 +85,7 @@ class ReportSourceItemOut(BaseModel):
     notes: Optional[str] = None
     confirmed_at: Optional[datetime] = None
     created_at: datetime
+    target_issue_status: Optional[TargetIssueStatus] = None
 
     model_config = {"from_attributes": True}
 

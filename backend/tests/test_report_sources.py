@@ -11,6 +11,7 @@ from app.database import Base
 from app.models import (
     Issue,
     IssueStatus,
+    OperationLog,
     PublicationSchedule,
     ReportEntry,
     ReportSourceDocument,
@@ -248,6 +249,7 @@ def test_confirmed_issue_evidence_defaults_to_archive_only(db, user, monkeypatch
     suggestion = document.extraction_json["suggestions"][0]
     assert suggestion["item_kind"] == "adjustment"
     assert suggestion["adjustment_kind"] == "archive_only"
+    assert suggestion["target_issue_status"] == "confirmed"
     assert document.items[0].source_action == "archive_only"
     assert document.items[0].adjustment_kind == "archive_only"
 
@@ -363,7 +365,7 @@ def test_operator_cannot_delete_confirmed_source(db):
     assert db.query(ReportSourceDocument).count() == 1
 
 
-def test_confirmed_base_updates_draft_but_never_confirmed_issue(db, user):
+def test_confirmed_base_updates_draft_and_archives_locked_issue(db, user):
     issue = _issue_with_entries(db)
     document = _document(db, channel="postal", document_type="weekly")
     db.commit()
@@ -395,21 +397,133 @@ def test_confirmed_base_updates_draft_but_never_confirmed_issue(db, user):
     locked_value = db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value
     second = _document(db, channel="postal", document_type="weekly", suffix="2")
     db.commit()
-    with pytest.raises(HTTPException) as exc_info:
-        report_source_service.confirm_document(
-            db,
-            document=second,
-            user=user,
-            data=ReportSourceConfirmIn(items=[ReportSourceItemConfirmIn(
-                issue_number=issue.issue_number,
-                category="postal",
-                sub_category="本市",
-                source_quantity=9999,
-                applied_quantity=9999,
-            )]),
-        )
-    assert exc_info.value.status_code == 409
+    confirmed = report_source_service.confirm_document(
+        db,
+        document=second,
+        user=user,
+        data=ReportSourceConfirmIn(items=[ReportSourceItemConfirmIn(
+            issue_number=issue.issue_number,
+            category="postal",
+            sub_category="本市",
+            source_quantity=9999,
+            applied_quantity=9999,
+        )]),
+    )
+    archived = confirmed.items[0]
+    assert archived.item_kind == "adjustment"
+    assert archived.source_action == "archive_only"
+    assert archived.adjustment_kind == "archive_only"
+    assert archived.print_delta == 0
+    assert archived.settlement_delta == 0
+    assert archived.shipping_delta == 0
     assert db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value == locked_value
+
+
+def test_monthly_source_mixes_draft_bases_and_confirmed_archive_evidence(db, user):
+    issues = [
+        _issue_with_entries(db, number=2646),
+        _issue_with_entries(db, number=2647),
+        _issue_with_entries(db, number=2648),
+        _issue_with_entries(db, number=2649, status=IssueStatus.confirmed),
+    ]
+    locked_entry = db.query(ReportEntry).filter_by(
+        issue_id=issues[-1].id,
+        category="chengdu",
+    ).one()
+    locked_entry.value = 365
+    document = _document(db, channel="chengdu", document_type="monthly", suffix="mixed-april")
+    db.commit()
+
+    confirmed = report_source_service.confirm_document(
+        db,
+        document=document,
+        user=user,
+        data=ReportSourceConfirmIn(items=[
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="chengdu",
+                sub_category="成都杂志铺",
+                source_quantity=366,
+                applied_quantity=366,
+            )
+            for issue in issues
+        ]),
+    )
+
+    rows = {item.issue_number: item for item in confirmed.items}
+    for issue in issues[:3]:
+        assert rows[issue.issue_number].item_kind == "base"
+        assert rows[issue.issue_number].source_action == "base"
+        assert rows[issue.issue_number].print_delta == 366
+        assert db.query(ReportEntry).filter_by(
+            issue_id=issue.id,
+            category="chengdu",
+        ).one().value == 366
+    archived = rows[2649]
+    assert archived.item_kind == "adjustment"
+    assert archived.source_action == "archive_only"
+    assert archived.adjustment_kind == "archive_only"
+    assert archived.print_delta == 0
+    assert archived.settlement_delta == 0
+    assert archived.shipping_delta == 0
+    assert locked_entry.value == 365
+    assert confirmed.extraction_status == "confirmed"
+
+
+def test_pending_cross_issue_source_summary_includes_current_target_statuses(db):
+    draft = _issue_with_entries(db, number=2646)
+    _issue_with_entries(db, number=2649, status=IssueStatus.confirmed)
+    document = _document(db, channel="chengdu", document_type="monthly", suffix="pending-mixed")
+    db.add_all([
+        ReportSourceItem(
+            document_id=document.id,
+            issue_number=issue_number,
+            item_kind="base",
+            category="chengdu",
+            sub_category="成都杂志铺",
+            source_quantity=366,
+            applied_quantity=366,
+            source_status="pending_review",
+            source_action="base",
+            print_delta=0,
+        )
+        for issue_number in (2646, 2649)
+    ])
+    db.commit()
+
+    summary = report_source_service.get_issue_summary(db, draft)
+
+    statuses = {
+        item.issue_number: item.target_issue_status
+        for item in summary.documents[0].items
+    }
+    assert statuses == {2646: "draft", 2649: "confirmed"}
+
+
+def test_exported_issue_source_is_archived_without_changing_print(db, user):
+    issue = _issue_with_entries(db, number=2650, status=IssueStatus.exported)
+    locked_value = db.query(ReportEntry).filter_by(issue_id=issue.id, category="chengdu").one().value
+    document = _document(db, channel="chengdu", document_type="monthly", suffix="exported")
+    db.commit()
+
+    confirmed = report_source_service.confirm_document(
+        db,
+        document=document,
+        user=user,
+        data=ReportSourceConfirmIn(items=[ReportSourceItemConfirmIn(
+            issue_number=issue.issue_number,
+            category="chengdu",
+            sub_category="成都杂志铺",
+            source_quantity=999,
+            applied_quantity=999,
+        )]),
+    )
+
+    archived = confirmed.items[0]
+    assert archived.item_kind == "adjustment"
+    assert archived.source_action == "archive_only"
+    assert archived.print_delta == 0
+    assert db.query(ReportEntry).filter_by(issue_id=issue.id, category="chengdu").one().value == locked_value
 
 
 def _confirm_chengdu_source(db, user, issue, *, quantity, suffix, action="base", supersedes=None):
@@ -478,6 +592,244 @@ def test_replacing_prepress_addition_changes_only_that_contribution(db, user):
     assert entry.value == 370
     assert addition.items[0].effect_status == "replaced"
     assert replacement.items[0].source_action == "prepress_addition"
+
+
+def test_manual_correction_reuses_archived_file_and_preserves_old_version(db, user, tmp_path, monkeypatch):
+    issue = _issue_with_entries(db)
+    source_bytes = b"same-confirmed-source"
+    source_path = tmp_path / "source.jpg"
+    source_path.write_bytes(source_bytes)
+    original = _document(db, channel="postal", document_type="weekly", suffix="manual-error")
+    original.stored_path = "uploads/report_sources/original.jpg"
+    original.size = len(source_bytes)
+    original.sha256 = report_source_service.attachment_service.sha256_hex(source_bytes)
+    db.commit()
+    original = report_source_service.confirm_document(
+        db,
+        document=original,
+        user=user,
+        data=ReportSourceConfirmIn(items=[
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="本市",
+                source_quantity=1204,
+                applied_quantity=1214,
+            ),
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="外埠",
+                source_quantity=5692,
+                applied_quantity=5702,
+            ),
+        ]),
+    )
+    original_items = {item.sub_category: item for item in original.items}
+    stored_copy: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        report_source_service.attachment_service,
+        "resolve_path",
+        lambda stored_path: source_path if stored_path == original.stored_path else tmp_path / "missing",
+    )
+
+    def store_copy(category, filename, content):
+        stored_copy.update(category=category, filename=filename, content=content)
+        return "uploads/report_sources/corrected.jpg"
+
+    monkeypatch.setattr(report_source_service.attachment_service, "store_file", store_copy)
+
+    corrected = report_source_service.correct_source_document(
+        db,
+        document=original,
+        user=user,
+        data=ReportSourceConfirmIn(items=[
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="本市",
+                source_quantity=1204,
+                applied_quantity=1214,
+                supersedes_item_id=original_items["本市"].id,
+            ),
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="外埠",
+                source_quantity=5585,
+                applied_quantity=5595,
+                supersedes_item_id=original_items["外埠"].id,
+            ),
+        ]),
+    )
+
+    assert corrected.id != original.id
+    assert corrected.sha256 == original.sha256
+    assert corrected.extraction_json["correction_of_document_id"] == original.id
+    assert stored_copy == {
+        "category": "report_sources",
+        "filename": original.original_filename,
+        "content": source_bytes,
+    }
+    assert db.query(ReportSourceDocument).count() == 2
+    db.refresh(original_items["本市"])
+    db.refresh(original_items["外埠"])
+    assert original_items["本市"].effect_status == "replaced"
+    assert original_items["外埠"].effect_status == "replaced"
+    corrected_items = {item.sub_category: item for item in corrected.items}
+    assert corrected_items["本市"].supersedes_item_id == original_items["本市"].id
+    assert corrected_items["外埠"].supersedes_item_id == original_items["外埠"].id
+    assert corrected_items["本市"].source_action == "base"
+    assert corrected_items["外埠"].source_action == "base"
+    assert db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value == 1214
+    assert db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="外埠").one().value == 5595
+    correction_log = db.query(OperationLog).filter_by(action="correct_source").one()
+    assert correction_log.record_id == corrected.id
+    assert correction_log.changes["correction_of_document_id"] == original.id
+
+
+def test_manual_correction_rejects_incomplete_mapping_without_changing_source(db, user):
+    issue = _issue_with_entries(db)
+    original = _document(db, channel="postal", document_type="weekly", suffix="incomplete-correction")
+    db.commit()
+    original = report_source_service.confirm_document(
+        db,
+        document=original,
+        user=user,
+        data=ReportSourceConfirmIn(items=[
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="本市",
+                source_quantity=1204,
+                applied_quantity=1214,
+            ),
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="外埠",
+                source_quantity=5692,
+                applied_quantity=5702,
+            ),
+        ]),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        report_source_service.correct_source_document(
+            db,
+            document=original,
+            user=user,
+            data=ReportSourceConfirmIn(items=[ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="本市",
+                source_quantity=1204,
+                applied_quantity=1215,
+                supersedes_item_id=original.items[0].id,
+            )]),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "来源状态已变化，请刷新后重新发起更正"
+    assert all(item.effect_status == "active" for item in original.items)
+    assert db.query(ReportSourceDocument).count() == 1
+
+
+def test_report_confirmation_blocks_source_mismatches_per_item_when_channel_total_matches(db, user):
+    issue = _issue_with_entries(db)
+    document = _document(db, channel="postal", document_type="weekly", suffix="postal-mismatch")
+    db.commit()
+    report_source_service.confirm_document(
+        db,
+        document=document,
+        user=user,
+        data=ReportSourceConfirmIn(items=[
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="本市",
+                source_quantity=1214,
+                applied_quantity=1214,
+            ),
+            ReportSourceItemConfirmIn(
+                issue_number=issue.issue_number,
+                category="postal",
+                sub_category="外埠",
+                source_quantity=5702,
+                applied_quantity=5702,
+            ),
+        ]),
+    )
+    db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="本市").one().value = 1215
+    db.query(ReportEntry).filter_by(issue_id=issue.id, sub_category="外埠").one().value = 5701
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        confirm_report(issue.id, db=db, user=user)
+
+    assert exc_info.value.status_code == 422
+    errors = {row["field"]: row["message"] for row in exc_info.value.detail}
+    assert errors["北京邮发/本市"] == "来源确认值为 1214 份，当前印数为 1215 份，请核对"
+    assert errors["北京邮发/外埠"] == "来源确认值为 5702 份，当前印数为 5701 份，请核对"
+    db.refresh(issue)
+    assert issue.status == IssueStatus.draft
+
+
+@pytest.mark.parametrize(
+    ("channel", "sub_category"),
+    [
+        ("postal", "本市"),
+        ("retail", "东部"),
+        ("guangzhou", "零售"),
+        ("chengdu", "成都杂志铺"),
+    ],
+)
+def test_source_mismatch_detection_covers_every_supported_channel(db, channel, sub_category):
+    issue = _issue_with_entries(db)
+    entry = db.query(ReportEntry).filter_by(
+        issue_id=issue.id,
+        category=channel,
+        sub_category=sub_category,
+    ).first()
+    if entry is None:
+        entry = ReportEntry(
+            issue_id=issue.id,
+            category=channel,
+            sub_category=sub_category,
+            value=367,
+        )
+        db.add(entry)
+    else:
+        entry.value = 367
+    document = _document(db, channel=channel, document_type="monthly", suffix=f"mismatch-{channel}")
+    db.add(ReportSourceItem(
+        document_id=document.id,
+        issue_number=issue.issue_number,
+        item_kind="base",
+        category=channel,
+        sub_category=sub_category,
+        source_quantity=366,
+        applied_quantity=366,
+        source_status="confirmed",
+        source_action="base",
+        print_delta=366,
+        effect_status="active",
+    ))
+    db.commit()
+
+    mismatches = report_source_service.get_report_source_mismatches(
+        db,
+        issue_number=issue.issue_number,
+        entries=db.query(ReportEntry).filter(ReportEntry.issue_id == issue.id).all(),
+    )
+
+    assert mismatches == [{
+        "category": channel,
+        "sub_category": sub_category,
+        "source_value": 366,
+        "report_value": 367,
+    }]
 
 
 def test_adjustments_change_settlement_and_shipping_not_print_count(db, user):

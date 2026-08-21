@@ -12,6 +12,7 @@ export type ReportSourceAction =
   | 'damage_reshipment'
   | 'reduction'
   | 'archive_only';
+export type ReportSourceTargetIssueStatus = 'draft' | 'confirmed' | 'exported' | 'scheduled';
 
 export interface ReportSourceSuggestion {
   issue_number: number | null;
@@ -28,6 +29,7 @@ export interface ReportSourceSuggestion {
   supersedes_item_id: number | null;
   confidence: number | null;
   notes: string | null;
+  target_issue_status?: ReportSourceTargetIssueStatus | null;
 }
 
 export interface ReportSourceItem {
@@ -55,6 +57,7 @@ export interface ReportSourceItem {
   notes: string | null;
   confirmed_at: string | null;
   created_at: string;
+  target_issue_status?: ReportSourceTargetIssueStatus | null;
 }
 
 export interface ReportSourceDocument {
@@ -74,6 +77,8 @@ export interface ReportSourceDocument {
     warnings?: string[];
     raw_text?: string;
     source_date?: string | null;
+    correction_of_document_id?: number;
+    correction_kind?: 'manual_review';
   } | null;
   uploaded_by: string | null;
   created_at: string;
@@ -142,6 +147,12 @@ export const uploadReportSource = (
 
 export const confirmReportSource = (documentId: number, items: ReportSourceConfirmItem[]) =>
   api.post<ReportSourceDocument>(`/report-sources/${documentId}/confirm`, {
+    items,
+    apply_base_values: true,
+  });
+
+export const correctReportSource = (documentId: number, items: ReportSourceConfirmItem[]) =>
+  api.post<ReportSourceDocument>(`/report-sources/${documentId}/correction`, {
     items,
     apply_base_values: true,
   });

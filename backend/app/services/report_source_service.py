@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from contextlib import suppress
 from datetime import date, datetime
 from pathlib import Path
@@ -38,6 +39,7 @@ ALLOWED_SUFFIXES = {".pdf", ".jpg", ".jpeg", ".png"}
 VALID_CHANNELS = set(CHANNEL_LABELS)
 VALID_DOCUMENT_TYPES = {"weekly", "monthly", "adjustment"}
 PREPRESS_ACTIONS = {"base", "prepress_addition"}
+LOCKED_ISSUE_STATUSES = {IssueStatus.confirmed, IssueStatus.exported}
 
 
 def _suffix(filename: str) -> str:
@@ -141,11 +143,23 @@ def _build_display_name(
     return f"{stamp}_{channel_label}_原始报数{suffix}"
 
 
-def _document_out(document: ReportSourceDocument, *, upload: bool = False, duplicate: bool = False):
+def _document_out(
+    document: ReportSourceDocument,
+    *,
+    upload: bool = False,
+    duplicate: bool = False,
+    target_issue_statuses: dict[int, str] | None = None,
+):
     try:
         file_available = attachment_service.resolve_path(document.stored_path).is_file()
     except ValueError:
         file_available = False
+    item_outputs = []
+    for item in document.items:
+        output = ReportSourceItemOut.model_validate(item)
+        if target_issue_statuses is not None:
+            output.target_issue_status = target_issue_statuses.get(item.issue_number)
+        item_outputs.append(output)
     data = dict(
         id=document.id,
         channel=document.channel,
@@ -163,7 +177,7 @@ def _document_out(document: ReportSourceDocument, *, upload: bool = False, dupli
         uploaded_by=document.uploader.username if document.uploader else None,
         created_at=document.created_at,
         updated_at=document.updated_at,
-        items=[ReportSourceItemOut.model_validate(item) for item in document.items],
+        items=item_outputs,
     )
     if upload:
         raw_suggestions = (document.extraction_json or {}).get("suggestions", [])
@@ -173,6 +187,23 @@ def _document_out(document: ReportSourceDocument, *, upload: bool = False, dupli
             duplicate=duplicate,
         )
     return ReportSourceDocumentOut(**data)
+
+
+def _target_issue_statuses(db: Session, issue_numbers: set[int]) -> dict[int, str]:
+    if not issue_numbers:
+        return {}
+    issues = db.query(Issue.issue_number, Issue.status).filter(Issue.issue_number.in_(issue_numbers)).all()
+    result = {
+        issue_number: status.value if isinstance(status, IssueStatus) else str(status)
+        for issue_number, status in issues
+    }
+    scheduled = db.query(PublicationSchedule.issue_number).filter(
+        PublicationSchedule.issue_number.in_(issue_numbers)
+    ).all()
+    for (issue_number,) in scheduled:
+        if issue_number is not None:
+            result.setdefault(issue_number, "scheduled")
+    return result
 
 
 def create_source_document(
@@ -237,6 +268,13 @@ def create_source_document(
     for suggestion in suggestions:
         resolved = _resolve_period_issue(db, suggestion.get("source_period"))
         suggestion["issue_number"] = resolved if suggestion.get("source_period") else default_issue_number
+    target_statuses = _target_issue_statuses(
+        db,
+        {suggestion["issue_number"] for suggestion in suggestions if suggestion.get("issue_number") is not None},
+    )
+    for suggestion in suggestions:
+        issue_number = suggestion.get("issue_number")
+        suggestion["target_issue_status"] = target_statuses.get(issue_number) if issue_number is not None else None
     extraction["suggestions"] = suggestions
     extraction["source_date"] = source_date.isoformat() if source_date else None
 
@@ -322,6 +360,115 @@ def get_document(db: Session, document_id: int) -> ReportSourceDocument:
     if document is None:
         raise HTTPException(status_code=404, detail="来源文件不存在")
     return document
+
+
+def correct_source_document(
+    db: Session,
+    *,
+    document: ReportSourceDocument,
+    data: ReportSourceConfirmIn,
+    user: User,
+) -> ReportSourceDocument:
+    """Create an audit-safe manual correction version of a confirmed source.
+
+    The archived evidence and its existing mappings remain immutable.  A second
+    document row stores the same bytes as a new review version, while the new
+    items supersede every still-editable contribution from the selected source.
+    Locked issues are intentionally excluded and keep their original evidence.
+    """
+    if document.extraction_status != "confirmed":
+        raise HTTPException(status_code=409, detail="只有已人工确认的来源可以更正核对数字")
+
+    issue_statuses = {
+        issue_number: status
+        for issue_number, status in db.query(Issue.issue_number, Issue.status).filter(
+            Issue.issue_number.in_({item.issue_number for item in document.items})
+        ).all()
+    }
+    eligible_targets = {
+        item.id: item
+        for item in document.items
+        if (
+            item.effect_status == "active"
+            and item.source_status == "confirmed"
+            and item.source_action in PREPRESS_ACTIONS
+            and issue_statuses.get(item.issue_number) not in LOCKED_ISSUE_STATUSES
+        )
+    }
+    if not eligible_targets:
+        raise HTTPException(status_code=409, detail="该来源对应的可更正刊期均已锁定")
+    if any(item.source_status != "confirmed" for item in data.items):
+        raise HTTPException(status_code=400, detail="更正核对数字时，所有明细都必须人工确认")
+
+    requested_target_ids = [item.supersedes_item_id for item in data.items]
+    if any(item_id is None for item_id in requested_target_ids):
+        raise HTTPException(status_code=400, detail="更正明细缺少原来源关联")
+    requested_target_set = set(requested_target_ids)
+    if len(requested_target_set) != len(requested_target_ids):
+        raise HTTPException(status_code=400, detail="同一原来源明细不能重复更正")
+    if requested_target_set != set(eligible_targets):
+        raise HTTPException(status_code=409, detail="来源状态已变化，请刷新后重新发起更正")
+
+    try:
+        original_path = attachment_service.resolve_path(document.stored_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="来源文件路径无效，无法创建更正版本") from exc
+    if not original_path.is_file():
+        raise HTTPException(status_code=404, detail="来源文件丢失，无法创建更正版本")
+    try:
+        content = original_path.read_bytes()
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="来源文件无法读取，无法创建更正版本") from exc
+    digest = attachment_service.sha256_hex(content)
+    if digest != document.sha256:
+        raise HTTPException(status_code=409, detail="来源文件校验失败，请联系管理员核查归档文件")
+
+    extraction_json = deepcopy(document.extraction_json) if isinstance(document.extraction_json, dict) else {}
+    extraction_json["correction_of_document_id"] = document.id
+    extraction_json["correction_kind"] = "manual_review"
+    stored_path = attachment_service.store_file(ATTACHMENT_CATEGORY, document.original_filename, content)
+    corrected = ReportSourceDocument(
+        channel=document.channel,
+        document_type=document.document_type,
+        original_filename=document.original_filename,
+        display_name=document.display_name,
+        stored_path=stored_path,
+        mime_type=document.mime_type,
+        size=len(content),
+        sha256=digest,
+        source_date=document.source_date,
+        upload_issue_number=document.upload_issue_number,
+        extraction_status="pending_review",
+        extraction_json=extraction_json,
+        uploaded_by=user.id,
+    )
+    try:
+        db.add(corrected)
+        db.flush()
+        issue_numbers = {item.issue_number for item in data.items}
+        record_operation(
+            db,
+            user=user,
+            table_name="report_source_documents",
+            record_id=corrected.id,
+            record_name=corrected.display_name,
+            action="correct_source",
+            issue_number=next(iter(issue_numbers)) if len(issue_numbers) == 1 else None,
+            channel=CHANNEL_LABELS[document.channel],
+            changes={
+                "correction_of_document_id": document.id,
+                "sha256": digest,
+                "target_items": sorted(requested_target_set),
+            },
+        )
+        confirm_document(db, document=corrected, data=data, user=user, commit=False)
+        db.commit()
+    except Exception:
+        with suppress(Exception):
+            db.rollback()
+        attachment_service.delete_file(stored_path)
+        raise
+    return get_document(db, corrected.id)
 
 
 def delete_source_document(
@@ -429,6 +576,7 @@ def confirm_document(
     document: ReportSourceDocument,
     data: ReportSourceConfirmIn,
     user: User,
+    commit: bool = True,
 ) -> ReportSourceDocument:
     if document.extraction_status == "confirmed":
         raise HTTPException(status_code=409, detail="已确认来源不可直接改写，请使用“重新上传”定向替换")
@@ -438,10 +586,6 @@ def confirm_document(
     replacement_targets: list[ReportSourceItem] = []
     affected_draft_keys: dict[int, set[tuple[str, str]]] = {}
     for item in data.items:
-        key = (item.issue_number, item.item_kind, item.category, item.sub_category, document.channel)
-        if key in seen:
-            raise HTTPException(status_code=400, detail="同一来源文件存在重复刊期映射")
-        seen.add(key)
         if item.category != document.channel:
             raise HTTPException(status_code=400, detail="明细渠道与来源文件渠道不一致")
         # Lock the issue row while deciding whether this is a prepress
@@ -458,6 +602,9 @@ def confirm_document(
             raise HTTPException(status_code=400, detail=f"第{item.issue_number}期不在系统刊期表中")
 
         settlement_delta = shipping_delta = 0
+        item_kind = item.item_kind
+        adjustment_kind = item.adjustment_kind
+        applied_quantity = item.applied_quantity
         source_action = item.source_action
         applied_phase = "pre_confirmation"
         print_delta = 0
@@ -466,17 +613,31 @@ def confirm_document(
             settlement_delta, shipping_delta = _adjustment_deltas(item.adjustment_kind, item.source_quantity)
             source_action = _action_for_adjustment(item.adjustment_kind)
             applied_phase = "post_confirmation"
-            if known_issue is None or known_issue.status != IssueStatus.confirmed:
-                raise HTTPException(status_code=409, detail="印数确认后的调整只能登记到已确认刊期")
+            if known_issue is None or known_issue.status not in LOCKED_ISSUE_STATUSES:
+                raise HTTPException(status_code=409, detail=f"第{item.issue_number}期尚未确认，不能登记确认后调整")
         elif item.adjustment_kind is not None:
             raise HTTPException(status_code=400, detail="基础来源不能设置调整类型")
         elif source_action not in PREPRESS_ACTIONS:
             raise HTTPException(status_code=400, detail="印数来源只能选择基础数据或印前追加")
-        elif known_issue is not None and known_issue.status == IssueStatus.confirmed:
-            raise HTTPException(status_code=409, detail="印数已确认，请将后续数据登记到结算与补发凭证")
+        elif known_issue is not None and known_issue.status in LOCKED_ISSUE_STATUSES:
+            if item.supersedes_item_id is not None:
+                raise HTTPException(status_code=409, detail=f"第{item.issue_number}期印数已确认，不能替换原始来源")
+            # A monthly/weekly source can span draft and confirmed issues. Keep
+            # the same immutable file, but archive locked-period rows as
+            # evidence only so they never rewrite print, settlement or shipping.
+            item_kind = "adjustment"
+            adjustment_kind = "archive_only"
+            applied_quantity = None
+            source_action = "archive_only"
+            applied_phase = "post_confirmation"
+
+        key = (item.issue_number, item_kind, item.category, item.sub_category, document.channel)
+        if key in seen:
+            raise HTTPException(status_code=400, detail="同一来源文件存在重复刊期映射")
+        seen.add(key)
 
         if item.supersedes_item_id is not None:
-            if item.item_kind != "base":
+            if item_kind != "base":
                 raise HTTPException(status_code=400, detail="后续调整暂不支持通过印数来源替换")
             replacement_target = (
                 db.query(ReportSourceItem)
@@ -501,8 +662,8 @@ def confirm_document(
             replacement_targets.append(replacement_target)
 
         confirmed = item.source_status == "confirmed"
-        if item.item_kind == "base":
-            print_delta = item.applied_quantity or 0
+        if item_kind == "base":
+            print_delta = applied_quantity or 0
             if confirmed and source_action == "base" and replacement_target is None:
                 active_base = (
                     db.query(ReportSourceItem.id)
@@ -523,19 +684,19 @@ def confirm_document(
             ReportSourceItem(
                 document_id=document.id,
                 issue_number=item.issue_number,
-                item_kind=item.item_kind,
+                item_kind=item_kind,
                 category=item.category,
                 sub_category=item.sub_category,
                 source_label=item.source_label,
                 source_quantity=item.source_quantity,
-                applied_quantity=item.applied_quantity,
+                applied_quantity=applied_quantity,
                 source_status=item.source_status,
                 source_action=source_action,
                 applied_phase=applied_phase,
                 print_delta=print_delta,
                 effect_status="active",
                 supersedes_item_id=item.supersedes_item_id,
-                adjustment_kind=item.adjustment_kind,
+                adjustment_kind=adjustment_kind,
                 settlement_delta=settlement_delta,
                 shipping_delta=shipping_delta,
                 notes=item.notes,
@@ -544,7 +705,7 @@ def confirm_document(
             )
         )
 
-        if confirmed and item.item_kind == "base" and known_issue is not None:
+        if confirmed and item_kind == "base" and known_issue is not None:
             affected_draft_keys.setdefault(known_issue.id, set()).add((item.category, item.sub_category))
 
     db.query(ReportSourceItem).filter(ReportSourceItem.document_id == document.id).delete()
@@ -560,7 +721,7 @@ def confirm_document(
     if data.apply_base_values:
         for issue_id, keys in affected_draft_keys.items():
             affected_issue = db.query(Issue).filter(Issue.id == issue_id).first()
-            if affected_issue is None or affected_issue.status == IssueStatus.confirmed:
+            if affected_issue is None or affected_issue.status != IssueStatus.draft:
                 raise HTTPException(status_code=409, detail="刊期状态已变化，请刷新后重新选择来源操作")
             missing = [
                 key for key in keys
@@ -601,8 +762,11 @@ def confirm_document(
             "replaced_items": [item.id for item in replacement_targets],
         },
     )
-    db.commit()
-    return get_document(db, document.id)
+    if commit:
+        db.commit()
+        return get_document(db, document.id)
+    db.flush()
+    return document
 
 
 def _base_quantities(db: Session, issue: Issue) -> dict[str, int]:
@@ -627,6 +791,31 @@ def apply_confirmed_source_bases_to_issue(db: Session, issue: Issue) -> int:
     return _apply_print_totals_to_issue(db, issue)
 
 
+def get_report_source_mismatches(
+    db: Session,
+    *,
+    issue_number: int,
+    entries: Iterable[ReportEntry],
+) -> list[dict[str, object]]:
+    """Compare every confirmed source contribution with the current report row."""
+    source_totals = _active_print_totals(db, issue_number)
+    entry_values = {
+        (entry.category, entry.sub_category): entry.value
+        for entry in entries
+    }
+    mismatches: list[dict[str, object]] = []
+    for (category, sub_category), source_value in sorted(source_totals.items()):
+        report_value = entry_values.get((category, sub_category))
+        if report_value != source_value:
+            mismatches.append({
+                "category": category,
+                "sub_category": sub_category,
+                "source_value": source_value,
+                "report_value": report_value,
+            })
+    return mismatches
+
+
 def get_issue_summary(
     db: Session,
     issue: Issue | None = None,
@@ -648,6 +837,10 @@ def get_issue_summary(
         .all()
     )
     issue_items = [item for document in documents for item in document.items if item.issue_number == number]
+    target_statuses = _target_issue_statuses(
+        db,
+        {item.issue_number for document in documents for item in document.items},
+    )
     if bases is None:
         if issue is None:
             raise ValueError("bases are required when issue is not supplied")
@@ -696,7 +889,10 @@ def get_issue_summary(
     return IssueSourceSummaryOut(
         issue_number=number,
         document_count=len(documents),
-        documents=[_document_out(document) for document in documents],
+        documents=[
+            _document_out(document, target_issue_statuses=target_statuses)
+            for document in documents
+        ],
         channels=channels,
     )
 

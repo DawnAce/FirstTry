@@ -31,6 +31,8 @@ from app.schemas.report import (
 from app.auth import get_current_user, require_admin
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
 from app.services.operation_log_service import record_operation
+from app.services.report_source_service import get_report_source_mismatches
+from app.services.report_source_ocr import CHANNEL_LABELS
 from app.cache import invalidate_overview_cache
 
 router = APIRouter(prefix="/api/issues/{issue_id}/report", tags=["reports"])
@@ -332,6 +334,25 @@ def confirm_report(
             errors.append({"field": f"{e.category}/{e.sub_category}", "message": "必填变动项为空", "level": "error"})
         if e.value is not None and e.value < 0:
             errors.append({"field": f"{e.category}/{e.sub_category}", "message": "数值不能为负数", "level": "error"})
+
+    for mismatch in get_report_source_mismatches(
+        db,
+        issue_number=issue.issue_number,
+        entries=entries,
+    ):
+        category = str(mismatch["category"])
+        sub_category = str(mismatch["sub_category"])
+        channel_label = CHANNEL_LABELS.get(category, category)
+        report_value = mismatch["report_value"]
+        report_value_label = f"{report_value} 份" if report_value is not None else "缺少对应项目"
+        errors.append({
+            "field": f"{channel_label}/{sub_category}",
+            "message": (
+                f"来源确认值为 {mismatch['source_value']} 份，"
+                f"当前印数为 {report_value_label}，请核对"
+            ),
+            "level": "error",
+        })
 
     pending_sources = (
         db.query(ReportSourceItem)
