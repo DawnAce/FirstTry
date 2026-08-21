@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect } from 'storybook/test'
 import { http, HttpResponse } from 'msw'
 import { reactRouterParameters, withRouter } from 'storybook-addon-remix-react-router'
 import type { ShippingDetail } from '../api/shippingDetails'
@@ -110,11 +111,11 @@ const handlers = [
       current_delta: 0,
       current_is_match: true,
       has_shipping_drift: true,
-      plan_delta: 50,
-      plan_is_match: false,
+      plan_delta: 0,
+      plan_is_match: true,
       plan_attributed_quantity: 0,
-      plan_unexplained_delta: 50,
-      plan_is_reconciled: false,
+      plan_unexplained_delta: 0,
+      plan_is_reconciled: true,
       unattributed_adjustment_quantity: 0,
     },
   })),
@@ -179,7 +180,14 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const ConfirmedWithChanges: Story = { name: '已确认（确认后有变更）' }
+export const ConfirmedWithChanges: Story = {
+  name: '当前计划一致（确认后有变更）',
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('计划已对平')).toBeVisible()
+    await expect(await canvas.findByText('确认报数')).toBeVisible()
+    await expect(await canvas.findByText('当前计划已与确认报数对平，以下保留确认时快照差异。')).toBeVisible()
+  },
+}
 
 export const LoadFailure: Story = {
   name: '接口失败（不得显示为空数据）',

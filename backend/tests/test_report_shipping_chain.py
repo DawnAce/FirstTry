@@ -12,7 +12,19 @@ from sqlalchemy.pool import StaticPool
 from app.api.exports import export_all, export_report, export_shipping
 from app.api.reports import confirm_report, get_report
 from app.database import Base
-from app.models import Issue, IssueAuditSnapshot, IssueStatus, OperationLog, PublicationSchedule, ReportEntry, ShippingDetail, TempPrintDetail, User, UserRole
+from app.models import (
+    Issue,
+    IssueAuditSnapshot,
+    IssueStatus,
+    OperationLog,
+    PublicationSchedule,
+    ReportEntry,
+    ShippingDetail,
+    ShippingDetailSourceType,
+    TempPrintDetail,
+    User,
+    UserRole,
+)
 from app.schemas.report import ReportDataUpdate
 
 
@@ -118,6 +130,150 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(snapshot.shipping_total, 10)
         self.assertEqual(snapshot.delta, 12)
         self.assertEqual(snapshot.is_match, False)
+
+    def test_confirm_initializes_plan_when_current_issue_only_has_recurring_rows(self):
+        db = self.SessionLocal()
+        previous_issue = Issue(
+            issue_number=2665,
+            publish_date=date(2026, 8, 17),
+            status=IssueStatus.confirmed,
+        )
+        current_issue = Issue(
+            issue_number=2666,
+            publish_date=date(2026, 8, 24),
+            status=IssueStatus.draft,
+        )
+        db.add_all([previous_issue, current_issue])
+        db.flush()
+        db.add(ReportEntry(
+            issue_id=current_issue.id,
+            category="social_use",
+            sub_category="营报传媒_读者",
+            value=1440,
+        ))
+
+        fixed_rows = [
+            ("上犹县政府办", 10),
+            ("上犹县人大办", 11),
+            ("上犹县政协办", 9),
+        ]
+        for issue_number in (2665, 2666):
+            db.add_all([
+                ShippingDetail(
+                    issue_number=issue_number,
+                    sheet_name="上犹",
+                    channel="赠阅",
+                    name=name,
+                    quantity=quantity,
+                    source_type=ShippingDetailSourceType.recurring_generated,
+                )
+                for name, quantity in fixed_rows
+            ])
+        db.add_all([
+            ShippingDetail(
+                issue_number=2665,
+                sheet_name="每周",
+                channel="渠道订阅",
+                name="普通计划甲",
+                quantity=900,
+                source_type=ShippingDetailSourceType.historical_import,
+            ),
+            ShippingDetail(
+                issue_number=2665,
+                sheet_name="每周",
+                channel="渠道订阅",
+                name="普通计划乙",
+                quantity=510,
+                source_type=ShippingDetailSourceType.manual,
+            ),
+            ShippingDetail(
+                issue_number=2665,
+                sheet_name="投诉补发",
+                channel="投诉补发",
+                name="不应复制的补发",
+                quantity=7,
+                source_type=ShippingDetailSourceType.complaint_makeup,
+            ),
+        ])
+        db.commit()
+
+        result = confirm_report(current_issue.id, db=db, user=_admin_user())
+
+        self.assertEqual(result["shipping_details_copied"], 2)
+        self.assertEqual(result["zt_report_total"], 1440)
+        self.assertEqual(result["zt_shipping_total"], 1440)
+        self.assertNotIn("warning", result)
+        current_rows = db.query(ShippingDetail).filter_by(issue_number=2666).all()
+        self.assertEqual(len(current_rows), 5)
+        self.assertEqual(sum(row.quantity or 0 for row in current_rows), 1440)
+        self.assertEqual(
+            sum(
+                row.source_type == ShippingDetailSourceType.recurring_generated
+                for row in current_rows
+            ),
+            3,
+        )
+        self.assertNotIn("不应复制的补发", {row.name for row in current_rows})
+        snapshot = db.query(IssueAuditSnapshot).filter_by(
+            issue_id=current_issue.id,
+            snapshot_type="confirm",
+        ).one()
+        self.assertEqual(snapshot.shipping_total, 1440)
+        self.assertTrue(snapshot.is_match)
+
+    def test_current_plan_reconciles_to_confirmed_report_after_late_plan_upload(self):
+        db = self.SessionLocal()
+        issue = Issue(
+            issue_number=2666,
+            publish_date=date(2026, 8, 24),
+            status=IssueStatus.confirmed,
+        )
+        db.add(issue)
+        db.flush()
+        db.add_all([
+            ReportEntry(
+                issue_id=issue.id,
+                category="social_use",
+                sub_category="营报传媒_读者",
+                value=1440,
+            ),
+            IssueAuditSnapshot(
+                issue_id=issue.id,
+                snapshot_type="confirm",
+                report_total=1440,
+                shipping_total=30,
+                delta=1410,
+                is_match=False,
+            ),
+            ShippingDetail(
+                issue_number=2666,
+                sheet_name="固定明细",
+                channel="赠阅",
+                name="固定30份",
+                quantity=30,
+                source_type=ShippingDetailSourceType.recurring_generated,
+            ),
+            ShippingDetail(
+                issue_number=2666,
+                sheet_name="上传计划",
+                channel="渠道订阅",
+                name="上传1410份",
+                quantity=1410,
+                source_type=ShippingDetailSourceType.historical_import,
+            ),
+        ])
+        db.commit()
+
+        report = get_report(issue.id, db=db)
+
+        self.assertEqual(report.shipping_check.report_zt_total, 1440)
+        self.assertEqual(report.shipping_check.shipping_total, 1440)
+        self.assertTrue(report.shipping_check.is_match)
+        self.assertEqual(report.confirmation_summary.confirmed_shipping_total, 30)
+        self.assertTrue(report.confirmation_summary.has_shipping_drift)
+        self.assertEqual(report.confirmation_summary.plan_delta, 0)
+        self.assertEqual(report.confirmation_summary.plan_unexplained_delta, 0)
+        self.assertTrue(report.confirmation_summary.plan_is_reconciled)
 
     def test_confirm_zero_temp_total_clears_stale_allocations(self):
         db = self.SessionLocal()
@@ -444,7 +600,7 @@ class ReportShippingChainTests(unittest.TestCase):
         self.assertEqual(report.confirmation_summary.current_delta, -20)
         self.assertEqual(report.confirmation_summary.current_is_match, False)
         self.assertEqual(report.confirmation_summary.has_shipping_drift, True)
-        self.assertEqual(report.confirmation_summary.plan_delta, 32)
+        self.assertEqual(report.confirmation_summary.plan_delta, 20)
         self.assertEqual(report.confirmation_summary.plan_is_match, False)
 
 

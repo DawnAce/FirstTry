@@ -235,10 +235,12 @@ export default function WaybillImportWorkbench() {
       .reduce((sum, detail) => sum + detail.quantity, 0),
     [details],
   );
-  const confirmedPlanQuantity = reportQuery.data?.confirmation_summary?.confirmed_shipping_total ?? null;
+  const confirmedReportQuantity = reportQuery.data?.confirmation_summary?.confirmed_report_total
+    ?? reportQuery.data?.shipping_check?.report_zt_total
+    ?? null;
   const currentPlanQuantity = reportQuery.data?.confirmation_summary?.current_shipping_total ?? detailsPlanQuantity;
   const confirmationSummary = reportQuery.data?.confirmation_summary;
-  const planDelta = confirmedPlanQuantity == null ? null : currentPlanQuantity - confirmedPlanQuantity;
+  const planDelta = confirmedReportQuantity == null ? null : currentPlanQuantity - confirmedReportQuantity;
   const planAttributedQuantity = confirmationSummary?.plan_attributed_quantity ?? 0;
   const planUnexplainedDelta = confirmationSummary?.plan_unexplained_delta ?? planDelta;
   const planReconciled = confirmationSummary?.plan_is_reconciled ?? planDelta === 0;
@@ -848,10 +850,10 @@ export default function WaybillImportWorkbench() {
             <span className="waybill-status-icon"><CheckCircleOutlined /></span>
             <div><small>发货计划对账</small><b>{planReconciled ? '计划已对平' : '计划仍有差异'}</b></div>
           </div>
-          <div className="waybill-status-metric"><span>确认时计划</span><b>{confirmedPlanQuantity?.toLocaleString() ?? '—'}</b><small>份</small></div>
+          <div className="waybill-status-metric"><span>确认报数</span><b>{confirmedReportQuantity?.toLocaleString() ?? '—'}</b><small>份</small></div>
           <div className="waybill-status-metric"><span>当前计划</span><b>{currentPlanQuantity.toLocaleString()}</b><small>份</small></div>
           <div className="waybill-status-metric"><span>已归因停发</span><b>{planAttributedQuantity.toLocaleString()}</b><small>份</small></div>
-          <div className="waybill-status-metric"><span>未解释差异</span><b>{planUnexplainedDelta?.toLocaleString() ?? '—'}</b><small>份</small></div>
+          <div className="waybill-status-metric"><span>未解释差异</span><b>{planUnexplainedDelta == null ? '—' : Math.abs(planUnexplainedDelta).toLocaleString()}</b><small>份</small></div>
         </div>
       </Card>
 
