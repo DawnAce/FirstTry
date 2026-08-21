@@ -1187,7 +1187,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 #### POST /api/report-sources/{document_id}/confirm
 
-用人工核对后的 `items` 替换该文档的刊期映射。基础项可写入尚未确认的 `report_entries`；调整项根据 `adjustment_kind` 生成结算 / 补发增量。服务端逐项锁定目标刊期，已确认 / 已导出目标自动按仅归档凭证保存，不回写印数。上传与确认分别写入 `operation_logs` 的 `upload_source`、`confirm_source` 操作。
+用人工核对后的 `items` 原子替换该文档的刊期映射。基础项可写入尚未确认的 `report_entries`；调整项根据 `adjustment_kind` 生成结算 / 补发增量。服务端逐项锁定目标刊期，已确认 / 已导出目标自动按仅归档凭证保存，不回写印数。「继续核对」同一未完成文档时，基础来源唯一性检查排除该文档将被替换的自身映射，但仍阻断其他文档创建第二份基础来源；前端按行回传已有 `source_action`，避免跨期文件的基础 / 追加 / 归档用途被统一改写。上传与确认分别写入 `operation_logs` 的 `upload_source`、`confirm_source` 操作。
 
 #### POST /api/report-sources/{document_id}/correction
 
@@ -1195,7 +1195,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 #### GET /api/report-sources/issues/{issue_id}
 
-返回某期通过刊期明细或上传刊期锚点关联的全部文档和渠道汇总，包括文件可用状态、基础数量、结算增量 / 合计、应补发 / 已补发 / 待补发及待确认数量。每条明细附带实时计算的 `target_issue_status`，因此历史 `OCR待核对` 文件可直接继续核对并显示草稿写入 / 锁定期仅归档提示，无需重新上传。报数编辑页右侧「数据来源与调整」将所有用途统一渲染为文件卡片。
+返回某期通过刊期明细或上传刊期锚点关联的全部文档和渠道汇总，包括文件可用状态、基础数量、结算增量 / 合计、应补发 / 已补发 / 待补发及待确认数量。每条明细附带实时计算的 `target_issue_status`，因此历史 `OCR待核对` 文件可直接继续核对并显示草稿写入 / 锁定期仅归档提示，无需重新上传。报数确认只检查本期待确认明细；文件上传于本期却没有任何本期映射时仍按未识别文件阻断。同一文件仅其他期存在待处理明细时保留跨期提示，但不阻断本期已核对报数。报数编辑页右侧「数据来源与调整」将所有用途统一渲染为文件卡片。
 
 #### GET /api/report-sources/{document_id}/download
 

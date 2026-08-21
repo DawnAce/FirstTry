@@ -1,10 +1,12 @@
 import type {
+  ReportSourceAction,
   ReportSourceDocument,
   ReportSourceItem,
   ReportSourceSuggestion,
 } from '../api/reportSources';
 
 export type SourceCardTone = 'neutral' | 'success' | 'warning' | 'danger';
+export type SourceOperation = 'initial' | 'addition' | 'replacement' | 'correction' | 'postpress' | 'review';
 
 export interface SourceEntryComparison {
   category: string;
@@ -29,6 +31,20 @@ const purposeLabels: Record<string, string> = {
   damage_reshipment: '补损重发',
   reduction: '冲减',
 };
+
+export function sourceActionForSubmission(
+  operation: SourceOperation,
+  suggestion: ReportSourceSuggestion,
+  replacementAction?: ReportSourceAction,
+): ReportSourceAction {
+  if (operation === 'review') return suggestion.source_action;
+  if (suggestion.item_kind === 'adjustment') return 'postpress_addition';
+  if (operation === 'addition') return 'prepress_addition';
+  if (operation === 'replacement' || operation === 'correction') {
+    return replacementAction ?? 'base';
+  }
+  return 'base';
+}
 
 export function sourceItemsForIssue(document: ReportSourceDocument, issueNumber: number) {
   return document.items.filter(item => item.issue_number === issueNumber);

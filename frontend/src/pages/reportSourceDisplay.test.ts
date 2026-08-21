@@ -3,6 +3,7 @@ import type { ReportSourceDocument, ReportSourceItem } from '../api/reportSource
 import {
   compareReportEntriesToSources,
   sourceAdjustmentDescription,
+  sourceActionForSubmission,
   sourceCardStatus,
   sourceCorrectionSuggestions,
   sourceIssueLinkLabel,
@@ -181,5 +182,38 @@ describe('report source card display', () => {
         source_status: 'confirmed',
       }),
     ]);
+  });
+
+  it('preserves each existing source action when continuing a cross-issue review', () => {
+    const baseSuggestion = {
+      issue_number: 2666,
+      source_period: null,
+      item_kind: 'base' as const,
+      category: 'chengdu' as const,
+      sub_category: '成都杂志铺',
+      source_label: '2026年8月第4期',
+      source_quantity: 363,
+      applied_quantity: 363,
+      source_status: 'confirmed' as const,
+      adjustment_kind: null,
+      source_action: 'prepress_addition' as const,
+      supersedes_item_id: null,
+      confidence: null,
+      notes: null,
+      target_issue_status: 'draft' as const,
+    };
+    const archiveSuggestion = {
+      ...baseSuggestion,
+      issue_number: 2665,
+      item_kind: 'adjustment' as const,
+      applied_quantity: null,
+      adjustment_kind: 'archive_only' as const,
+      source_action: 'archive_only' as const,
+      target_issue_status: 'confirmed' as const,
+    };
+
+    expect(sourceActionForSubmission('review', baseSuggestion)).toBe('prepress_addition');
+    expect(sourceActionForSubmission('review', archiveSuggestion)).toBe('archive_only');
+    expect(sourceActionForSubmission('addition', { ...baseSuggestion, source_action: 'base' })).toBe('prepress_addition');
   });
 });

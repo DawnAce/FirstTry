@@ -500,6 +500,127 @@ def test_pending_cross_issue_source_summary_includes_current_target_statuses(db)
     assert statuses == {2646: "draft", 2649: "confirmed"}
 
 
+def test_pending_other_issue_in_monthly_document_does_not_block_confirmed_current_issue(db, user):
+    issue = _issue_with_entries(db, number=2666)
+    document = _document(db, channel="chengdu", document_type="monthly", suffix="current-confirmed")
+    document.upload_issue_number = issue.issue_number
+    document.extraction_status = "reviewed"
+    db.add_all([
+        ReportSourceItem(
+            document_id=document.id,
+            issue_number=issue.issue_number,
+            item_kind="base",
+            category="chengdu",
+            sub_category="成都杂志铺",
+            source_quantity=363,
+            applied_quantity=363,
+            source_status="confirmed",
+            source_action="base",
+            print_delta=363,
+            effect_status="active",
+        ),
+        ReportSourceItem(
+            document_id=document.id,
+            issue_number=2667,
+            item_kind="base",
+            category="chengdu",
+            sub_category="成都杂志铺",
+            source_quantity=364,
+            applied_quantity=364,
+            source_status="pending_review",
+            source_action="base",
+            print_delta=0,
+            effect_status="active",
+        ),
+    ])
+    db.commit()
+
+    confirm_report(issue.id, db=db, user=user)
+
+    db.refresh(issue)
+    assert issue.status == IssueStatus.confirmed
+    pending_future = db.query(ReportSourceItem).filter_by(
+        document_id=document.id,
+        issue_number=2667,
+    ).one()
+    assert pending_future.source_status == "pending_review"
+
+
+def test_continuing_review_of_same_monthly_document_replaces_its_own_mappings(db, user):
+    current = _issue_with_entries(db, number=2666)
+    future = _issue_with_entries(db, number=2667)
+    document = _document(db, channel="chengdu", document_type="monthly", suffix="continue-review")
+    document.upload_issue_number = current.issue_number
+    db.commit()
+
+    first_review = report_source_service.confirm_document(
+        db,
+        document=document,
+        user=user,
+        data=ReportSourceConfirmIn(items=[
+            ReportSourceItemConfirmIn(
+                issue_number=current.issue_number,
+                category="chengdu",
+                sub_category="成都杂志铺",
+                source_quantity=363,
+                applied_quantity=363,
+                source_status="confirmed",
+            ),
+            ReportSourceItemConfirmIn(
+                issue_number=future.issue_number,
+                category="chengdu",
+                sub_category="成都杂志铺",
+                source_quantity=364,
+                applied_quantity=364,
+                source_status="pending_review",
+            ),
+        ]),
+    )
+    assert first_review.extraction_status == "reviewed"
+
+    completed_review = report_source_service.confirm_document(
+        db,
+        document=first_review,
+        user=user,
+        data=ReportSourceConfirmIn(items=[
+            ReportSourceItemConfirmIn(
+                issue_number=current.issue_number,
+                category="chengdu",
+                sub_category="成都杂志铺",
+                source_quantity=363,
+                applied_quantity=363,
+                source_status="confirmed",
+                source_action="base",
+            ),
+            ReportSourceItemConfirmIn(
+                issue_number=future.issue_number,
+                category="chengdu",
+                sub_category="成都杂志铺",
+                source_quantity=364,
+                applied_quantity=364,
+                source_status="confirmed",
+                source_action="base",
+            ),
+        ]),
+    )
+
+    assert completed_review.extraction_status == "confirmed"
+    assert all(item.source_status == "confirmed" for item in completed_review.items)
+    assert db.query(ReportEntry).filter_by(issue_id=current.id, category="chengdu").one().value == 363
+    assert db.query(ReportEntry).filter_by(issue_id=future.id, category="chengdu").one().value == 364
+
+
+def test_distinct_document_still_cannot_create_a_second_base_source(db, user):
+    issue = _issue_with_entries(db, number=2666)
+    _confirm_chengdu_source(db, user, issue, quantity=363, suffix="existing-base")
+
+    with pytest.raises(HTTPException) as exc_info:
+        _confirm_chengdu_source(db, user, issue, quantity=364, suffix="other-base")
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "该项目已有基础来源，请选择“追加”或定向“重新上传”"
+
+
 def test_exported_issue_source_is_archived_without_changing_print(db, user):
     issue = _issue_with_entries(db, number=2650, status=IssueStatus.exported)
     locked_value = db.query(ReportEntry).filter_by(issue_id=issue.id, category="chengdu").one().value

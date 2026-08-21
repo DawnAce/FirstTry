@@ -674,6 +674,10 @@ def confirm_document(
                         ReportSourceItem.source_action == "base",
                         ReportSourceItem.source_status == "confirmed",
                         ReportSourceItem.effect_status == "active",
+                        # Continuing review replaces every mapping owned by the
+                        # current document below, so those rows are not a second
+                        # independent base source.
+                        ReportSourceItem.document_id != document.id,
                     )
                     .first()
                 )

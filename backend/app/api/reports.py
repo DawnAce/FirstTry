@@ -362,14 +362,15 @@ def confirm_report(
         )
         .all()
     )
-    pending_source_documents = (
+    # A cross-issue document can stay globally "reviewed" while the current
+    # issue is already confirmed. Only an upload anchored here with no mapping
+    # for this issue is still an unresolved document-level blocker.
+    unmapped_source_documents = (
         db.query(ReportSourceDocument)
         .filter(
             ReportSourceDocument.extraction_status != "confirmed",
-            or_(
-                ReportSourceDocument.upload_issue_number == issue.issue_number,
-                ReportSourceDocument.items.any(ReportSourceItem.issue_number == issue.issue_number),
-            ),
+            ReportSourceDocument.upload_issue_number == issue.issue_number,
+            ~ReportSourceDocument.items.any(ReportSourceItem.issue_number == issue.issue_number),
         )
         .all()
     )
@@ -377,10 +378,7 @@ def confirm_report(
         label = source.source_label or f"{source.category}/{source.sub_category}"
         message = "渠道数据仍待确认" if source.source_status == "channel_pending" else "来源识别仍待核对"
         errors.append({"field": label, "message": message, "level": "error"})
-    pending_document_ids = {source.document_id for source in pending_sources}
-    for document in pending_source_documents:
-        if document.id in pending_document_ids:
-            continue
+    for document in unmapped_source_documents:
         errors.append({
             "field": document.display_name,
             "message": "来源文件尚未识别或关联刊期",
