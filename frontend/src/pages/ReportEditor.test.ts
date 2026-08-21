@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sortVisibleSocialUseEntries } from './reportOrder';
+import { calculateSocialDistributionTotal } from './reportTotals';
 import { formatIssueReportTitle } from './reportTitle';
 
 describe('formatIssueReportTitle', () => {
@@ -52,6 +53,38 @@ describe('formatIssueReportTitle', () => {
         '成都站用',
         '西安站用',
       ]);
+    });
+  });
+
+  describe('calculateSocialDistributionTotal', () => {
+    it('matches the self-distribution sheet total and excludes unrelated social-use items', () => {
+      const includedValues = [39, 3, 45, 4, 13, 25, 10, 5, 7, 2, 71, 1, 10];
+      const includedNames = [
+        '营报传媒_收发室', '中经传媒智库', '新闻中心', '行政', '财经中心', '产经中心',
+        '出版中心', '品牌中心', '经营网', '法务', '社科院、工经所', '财务', '库房',
+      ];
+      const entries = includedNames.map((sub_category, index) => ({
+        category: 'social_use',
+        sub_category,
+        value: includedValues[index],
+      }));
+      entries.push(
+        { category: 'social_use', sub_category: '营报传媒_读者', value: 46 },
+        { category: 'social_use', sub_category: '营报传媒_备用报', value: 72 },
+        { category: 'social_use', sub_category: '上海站用', value: 10 },
+        { category: 'binding', sub_category: '合订本（印厂留存）', value: 15 },
+      );
+
+      expect(calculateSocialDistributionTotal(entries, 0)).toBe(235);
+    });
+
+    it('uses the live temporary self-distribution value', () => {
+      const entries = [
+        { category: 'social_use', sub_category: '营报传媒_收发室', value: 39 },
+        { category: 'social_use', sub_category: '临时加印_自留', value: 2 },
+      ];
+
+      expect(calculateSocialDistributionTotal(entries, 6)).toBe(45);
     });
   });
 

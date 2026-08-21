@@ -60,6 +60,7 @@ import type {
   ReportSourceUpload,
 } from '../api/reportSources';
 import { sortVisibleSocialUseEntries } from './reportOrder';
+import { calculateSocialDistributionTotal, SOCIAL_DISTRIBUTION_ITEMS } from './reportTotals';
 import { formatIssueReportTitle } from './reportTitle';
 import {
   compareReportEntriesToSources,
@@ -842,6 +843,17 @@ export default function ReportEditor() {
     (count, group) => count + group.items.filter(name => entries.some(entry => entry.sub_category === name)).length,
     mainSocialEntries.length + bindingEntries.length,
   );
+  const socialDistributionTotal = calculateSocialDistributionTotal(entries, tempSelfValue);
+  const socialDistributionRemainder = socialDistributionTotal % 5;
+  const socialDistributionRoundUp = socialDistributionRemainder === 0 ? 0 : 5 - socialDistributionRemainder;
+  const socialDistributionBundleCount = socialDistributionTotal / 50;
+  const socialDistributionBreakdown = [
+    ...SOCIAL_DISTRIBUTION_ITEMS.map(item => ({
+      label: item.label,
+      value: socialEntries.find(entry => entry.sub_category === item.subCategory)?.value ?? 0,
+    })),
+    { label: '临时加印（报社内存）', value: tempSelfValue },
+  ];
   const sourceChannelSummaries = Object.fromEntries(
     (sourceSummary?.channels ?? []).map(channel => [channel.channel, channel]),
   );
@@ -1207,6 +1219,41 @@ export default function ReportEditor() {
                         <b>{formatCount(socialTotal)} 份</b>
                       </summary>
                       <div className="report-editor-channel-body is-social">
+                        <div className="report-editor-distribution-summary" aria-live="polite">
+                          <div className="report-editor-distribution-copy">
+                            <div>
+                              <strong>收发室自留分发表合计</strong>
+                              <span className="report-editor-pill">只读实时</span>
+                            </div>
+                            <small>取自现有录入项，不产生第二套数据</small>
+                          </div>
+                          <div className="report-editor-distribution-metrics">
+                            <div className="report-editor-distribution-total">
+                              <strong>{formatCount(socialDistributionTotal)}</strong><span>份</span>
+                            </div>
+                            <div className="report-editor-distribution-status">
+                              <span className={socialDistributionRemainder === 0 ? 'is-ready' : 'needs-rounding'}>
+                                {socialDistributionRemainder === 0
+                                  ? '✓ 已是 5 的倍数'
+                                  : `再加 ${socialDistributionRoundUp} 份可凑到 ${formatCount(socialDistributionTotal + socialDistributionRoundUp)}`}
+                              </span>
+                              <small>约 {socialDistributionBundleCount.toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 捆 · 50份/捆</small>
+                            </div>
+                          </div>
+                        </div>
+                        <details className="report-editor-distribution-details">
+                          <summary>
+                            <span className="report-editor-chevron">⌄</span>
+                            <strong>计算明细（只读）</strong>
+                            <small>如需修改，请在下方对应项目中调整</small>
+                            <b>{socialDistributionBreakdown.length} 项</b>
+                          </summary>
+                          <ul>
+                            {socialDistributionBreakdown.map(item => (
+                              <li key={item.label}><span>{item.label}</span><b>{formatCount(item.value)} 份</b></li>
+                            ))}
+                          </ul>
+                        </details>
                         {renderCompositeGroup(COMPOSITE_GROUPS[0])}
                         {mainSocialEntries.length > 0 && (
                           <div className="report-editor-social-group">
