@@ -27,6 +27,7 @@ ACTION_LABELS: dict[str, str] = {
     "upload_source": "上传报数来源文件",
     "delete_source": "撤销报数来源文件",
     "confirm_source": "确认来源识别与映射",
+    "correct_source": "更正来源核对数字",
     "import_waybills": "导入运单",
     "review_waybill": "核对并修改运单信息",
     "repair_waybill_parse": "修复运单解析",

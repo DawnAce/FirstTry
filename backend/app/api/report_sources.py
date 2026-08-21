@@ -20,6 +20,7 @@ from app.services import attachment_service
 from app.services.report_source_service import (
     _document_out,
     confirm_document,
+    correct_source_document,
     create_source_document,
     delete_source_document,
     get_document,
@@ -74,6 +75,18 @@ def confirm_report_source(
 ):
     document = get_document(db, document_id)
     return _document_out(confirm_document(db, document=document, data=data, user=user))
+
+
+@router.post("/{document_id}/correction", response_model=ReportSourceDocumentOut)
+def correct_report_source(
+    document_id: int,
+    data: ReportSourceConfirmIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create a new manual-review version without asking for the same file again."""
+    document = get_document(db, document_id)
+    return _document_out(correct_source_document(db, document=document, data=data, user=user))
 
 
 @router.get("/issues/{issue_id}", response_model=IssueSourceSummaryOut)
