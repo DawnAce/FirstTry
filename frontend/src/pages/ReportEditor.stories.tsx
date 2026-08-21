@@ -159,6 +159,9 @@ export const Draft: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText('2026年《中国经营报》第2654期（第二十期）')).toBeVisible()
     await expect(canvas.getByText('完整 22 项')).toBeVisible()
+    await expect(canvas.getByText('收发室自留分发表合计')).toBeVisible()
+    await expect(canvas.getByText('再加 1 份可凑到 245')).toBeVisible()
+    await expect(canvas.getByText('计算明细（只读）')).toBeVisible()
     await expect(canvas.getByText('数据来源与调整')).toBeVisible()
     await expect(await canvas.findByText('后续 +4')).toBeVisible()
     await expect(canvas.getByText('202606_成都杂志铺_月度报数.jpg')).toBeVisible()
