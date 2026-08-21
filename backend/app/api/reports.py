@@ -81,12 +81,19 @@ def _copy_previous_shipping_details_for_confirm(
     issue: Issue,
     user: User,
 ) -> int:
+    reusable_plan_source = or_(
+        ShippingDetail.source_type.is_(None),
+        ShippingDetail.source_type.notin_((
+            ShippingDetailSourceType.complaint_makeup,
+            ShippingDetailSourceType.recurring_generated,
+        )),
+    )
     db.query(Issue.id).filter(Issue.id == issue.id).with_for_update().first()
     locked_existing_ids = (
         db.query(ShippingDetail.id)
         .filter(
             ShippingDetail.issue_number == issue.issue_number,
-            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+            reusable_plan_source,
         )
         .with_for_update()
         .all()
@@ -107,7 +114,7 @@ def _copy_previous_shipping_details_for_confirm(
         db.query(ShippingDetail)
         .filter(
             ShippingDetail.issue_number == previous_issue.issue_number,
-            ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
+            reusable_plan_source,
         )
         .order_by(ShippingDetail.id)
         .all()
@@ -251,10 +258,15 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         )
         attributed_adjustment_quantity = max(int(attributed_adjustment_quantity or 0), 0)
         unattributed_adjustment_quantity = max(int(unattributed_adjustment_quantity or 0), 0)
-        raw_plan_shortage = max(confirmed_shipping_total - current_shipping_total, 0)
+        # The confirmed report is the business baseline for the plan. The
+        # shipping snapshot remains an immutable audit record, but a plan that
+        # is uploaded after confirmation is current and reconciled once it
+        # matches the confirmed report (plus any attributed stop-shipment
+        # adjustments).
+        raw_plan_shortage = max(confirmed_report_total - current_shipping_total, 0)
         plan_attributed_quantity = min(attributed_adjustment_quantity, raw_plan_shortage)
         plan_unexplained_delta = (
-            current_shipping_total + plan_attributed_quantity - confirmed_shipping_total
+            current_shipping_total + plan_attributed_quantity - confirmed_report_total
         )
         current_delta = confirmed_report_total - current_shipping_total
         confirmation_summary = ConfirmationSummary(
@@ -266,8 +278,8 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
             current_delta=current_delta,
             current_is_match=current_delta == 0,
             has_shipping_drift=current_shipping_total != confirmed_shipping_total,
-            plan_delta=current_shipping_total - confirmed_shipping_total,
-            plan_is_match=current_shipping_total == confirmed_shipping_total,
+            plan_delta=current_shipping_total - confirmed_report_total,
+            plan_is_match=current_shipping_total == confirmed_report_total,
             plan_attributed_quantity=plan_attributed_quantity,
             plan_unexplained_delta=plan_unexplained_delta,
             plan_is_reconciled=plan_unexplained_delta == 0,

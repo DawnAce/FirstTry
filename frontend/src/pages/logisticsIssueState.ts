@@ -49,7 +49,7 @@ export function resolvePlanReconciliationState(input: PlanReconciliationInput): 
       kind: 'match',
       tone: 'is-match',
       label: '计划已对平',
-      description: '确认时计划与当前计划及已归因变更已经对平。',
+      description: '确认报数与当前计划及已归因停发已经对平。',
     };
   }
   if (input.isMatch === false) {
@@ -57,7 +57,7 @@ export function resolvePlanReconciliationState(input: PlanReconciliationInput): 
       kind: 'mismatch',
       tone: 'is-mismatch',
       label: '计划明细不一致',
-      description: '确认报数与当前发货明细计划存在差异。',
+      description: '确认报数与当前计划仍存在未归因差异。',
     };
   }
   return {

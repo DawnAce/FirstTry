@@ -636,7 +636,7 @@ export default function LogisticsIssueDetail() {
   });
   const planMetricsReady = allDetailsLoaded && !allDetailsIsError && !!report && !reportIsError;
   const displayedReportTotal = planMetricsReady
-    ? confirmationSummary?.confirmed_shipping_total ?? null
+    ? confirmationSummary?.confirmed_report_total ?? check?.report_zt_total ?? null
     : null;
   const displayedShippingTotal = planMetricsReady
     ? check?.shipping_total ?? confirmationSummary?.current_shipping_total ?? allShippingTotal
@@ -814,7 +814,7 @@ export default function LogisticsIssueDetail() {
             </div>
           </div>
           <div className="zto-reconcile-metric">
-            <span>确认时计划</span>
+            <span>确认报数</span>
             <strong>{displayedReportTotal == null ? '—' : displayedReportTotal.toLocaleString()}</strong>
             <small>{displayedReportTotal == null ? '暂无数据' : '份'}</small>
           </div>
@@ -833,7 +833,7 @@ export default function LogisticsIssueDetail() {
           <div className="zto-reconcile-metric">
             <span>未解释差异</span>
             <strong className={planMetricsReady ? (currentIsMatch === false ? 'is-danger' : currentIsMatch === true ? 'is-success' : '') : ''}>
-              {displayedDelta == null ? '—' : displayedDelta.toLocaleString()}
+              {displayedDelta == null ? '—' : Math.abs(displayedDelta).toLocaleString()}
             </strong>
             <small>{displayedDelta == null ? '暂无数据' : '份'}</small>
           </div>
@@ -842,10 +842,10 @@ export default function LogisticsIssueDetail() {
           <div className="zto-change-strip">
             <span className="zto-change-icon">!</span>
             <div className="zto-change-copy">
-              <strong>{confirmationSummary.plan_is_reconciled ? '确认后变更已归因' : '确认后明细有变更'}</strong>
+              <strong>确认后明细有变更</strong>
               <span>
                 {confirmationSummary.plan_is_reconciled
-                  ? `${confirmationSummary.confirmed_shipping_total.toLocaleString()} = 当前计划 ${confirmationSummary.current_shipping_total.toLocaleString()} + 已归因停发 ${confirmationSummary.plan_attributed_quantity.toLocaleString()}`
+                  ? '当前计划已与确认报数对平，以下保留确认时快照差异。'
                   : `仍有 ${Math.abs(confirmationSummary.plan_unexplained_delta).toLocaleString()} 份差异未解释。`}
               </span>
             </div>

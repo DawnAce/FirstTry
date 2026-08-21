@@ -2243,7 +2243,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - 类型安全（TypeScript）
 - 组件库（Ant Design）
 - 页面组件通过 `React.lazy` 按路由拆包；TanStack Query 默认数据新鲜期为 60 秒、缓存回收期为 10 分钟，减少短时间往返页面时的重复读取
-- ZTO-MF 单期页通过 `logisticsIssueState.ts` 显式区分 Query 的 loading / error / success-empty 状态：请求失败不得回退为 `[]` 后渲染业务空态。计划区使用「发货计划对账」，实际区独立展示物理发货与核销；取得核销摘要后可区分「待录入运单 / 部分已发货 / 已完成发货核销 / 核销已完成 · 部分发货」。运单操作优先展示后端 `detail`，500 错误提示检查数据库迁移状态。
+- ZTO-MF 单期页通过 `logisticsIssueState.ts` 显式区分 Query 的 loading / error / success-empty 状态：请求失败不得回退为 `[]` 后渲染业务空态。计划区使用「发货计划对账」，以确认报数中通合计为业务基准，按“确认报数 = 当前计划 + 已归因停发”计算未解释差异；`IssueAuditSnapshot.shipping_total` 继续作为不可变的确认时发货明细快照，只用于橙色漂移审计。确认流程仅在当前期不存在非固定计划时复制上一期明细，复制查询排除 `complaint_makeup` 和 `recurring_generated`，因此固定政府明细既不阻断初始化也不会跨期重复。实际区独立展示物理发货与核销；取得核销摘要后可区分「待录入运单 / 部分已发货 / 已完成发货核销 / 核销已完成 · 部分发货」。运单操作优先展示后端 `detail`，500 错误提示检查数据库迁移状态。
 - 发行履约在 `AppLayout` 中使用统一的展开式树形导航：「邮局管理」直接展开投递明细、待续投、订报转投、邮局工单，「快递管理」直接展开发货计划、实际发货。两个父项共用同一段菜单生成逻辑与交互，不再为邮局替换整套侧栏；旧入口 `/business/fulfilment/postal` 保留并重定向至 `/post-delivery/deliveries`。选中态由 `findPostalFunction` / `findCourierFunction` 按深层路由映射，面包屑统一为“业务首页 / 发行履约 / 模块 / 子功能”。
 - 快递管理的列表入口拆为 `/logistics/plans` 与 `/logistics/shipments`；列表页不再用内容区标签卡模拟导航。两页共用期数总览接口，但分别采用计划状态与履约状态筛选。列表 Query 同样显式区分 error 与 success-empty，接口失败不得显示为 0 期。
 - 迁移 `f0a2c4e6b8d9` 为 `shipping_details` 增加 `actual_name / actual_phone / actual_address / actual_adjustment_reason / actual_adjusted_at`。这些字段只保存实际发货阶段的临时收件调整，空值表示沿用计划字段；实际调整不反向覆盖计划，清空或替换计划时必须保护已有实际历史。部署本版本必须执行 `alembic upgrade head`。

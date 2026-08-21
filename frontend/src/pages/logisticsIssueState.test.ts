@@ -32,6 +32,13 @@ describe('resolvePlanReconciliationState', () => {
     const state = resolvePlanReconciliationState(planBase);
     expect(state.kind).toBe('match');
     expect(state.label).toBe('计划已对平');
+    expect(state.description).toContain('确认报数');
+  });
+
+  it('describes a mismatch as an unattributed current-plan difference', () => {
+    const state = resolvePlanReconciliationState({ ...planBase, isMatch: false });
+    expect(state.kind).toBe('mismatch');
+    expect(state.description).toContain('未归因差异');
   });
 });
 
