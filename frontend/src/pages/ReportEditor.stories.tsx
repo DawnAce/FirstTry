@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect } from 'storybook/test'
+import { expect, screen, userEvent } from 'storybook/test'
 import { http, HttpResponse } from 'msw'
 import { reactRouterParameters, withRouter } from 'storybook-addon-remix-react-router'
 import ReportEditor from './ReportEditor'
@@ -74,19 +74,29 @@ const sourceSummary = {
       source_date: '2026-05-17',
       upload_issue_number: 2654,
       file_available: true,
-      extraction_status: 'confirmed',
+      extraction_status: 'reviewed',
       extraction_json: null,
       uploaded_by: 'admin',
       created_at: '2026-05-17T10:30:00',
       updated_at: '2026-05-17T10:35:00',
-      items: [{
-        id: 51, document_id: 31, issue_number: 2654, item_kind: 'base', category: 'chengdu',
-        sub_category: '成都杂志铺', source_label: '2026年6月第1期', source_quantity: 366,
-        applied_quantity: 366, source_status: 'confirmed', source_action: 'base', applied_phase: 'pre_confirmation',
-        print_delta: 366, effect_status: 'active', supersedes_item_id: null, adjustment_kind: null, settlement_delta: 0,
-        shipping_delta: 0, shipped_quantity: 0, tracking_no: null, shipped_at: null, notes: null,
-        confirmed_at: '2026-05-17T10:35:00', created_at: '2026-05-17T10:30:00',
-      }],
+      items: [
+        {
+          id: 51, document_id: 31, issue_number: 2654, item_kind: 'base', category: 'chengdu',
+          sub_category: '成都杂志铺', source_label: '2026年6月第1期', source_quantity: 366,
+          applied_quantity: 366, source_status: 'confirmed', source_action: 'base', applied_phase: 'pre_confirmation',
+          print_delta: 366, effect_status: 'active', supersedes_item_id: null, adjustment_kind: null, settlement_delta: 0,
+          shipping_delta: 0, shipped_quantity: 0, tracking_no: null, shipped_at: null, notes: null,
+          confirmed_at: '2026-05-17T10:35:00', created_at: '2026-05-17T10:30:00', target_issue_status: 'draft',
+        },
+        {
+          id: 53, document_id: 31, issue_number: 2655, item_kind: 'base', category: 'chengdu',
+          sub_category: '成都杂志铺', source_label: '2026年6月第2期', source_quantity: 366,
+          applied_quantity: 366, source_status: 'pending_review', source_action: 'base', applied_phase: 'pre_confirmation',
+          print_delta: 0, effect_status: 'active', supersedes_item_id: null, adjustment_kind: null, settlement_delta: 0,
+          shipping_delta: 0, shipped_quantity: 0, tracking_no: null, shipped_at: null, notes: null,
+          confirmed_at: null, created_at: '2026-05-17T10:30:00', target_issue_status: 'scheduled',
+        },
+      ],
     },
     {
       id: 32,
@@ -116,10 +126,10 @@ const sourceSummary = {
     },
   ],
   channels: [
-    { channel: 'postal', document_count: 0, base_quantity: 6815, settlement_delta: 0, settlement_total: 6815, shipping_delta: 0, shipped_quantity: 0, pending_shipping: 0, pending_count: 0 },
-    { channel: 'retail', document_count: 0, base_quantity: 1052, settlement_delta: 0, settlement_total: 1052, shipping_delta: 0, shipped_quantity: 0, pending_shipping: 0, pending_count: 0 },
-    { channel: 'guangzhou', document_count: 0, base_quantity: 531, settlement_delta: 0, settlement_total: 531, shipping_delta: 0, shipped_quantity: 0, pending_shipping: 0, pending_count: 0 },
-    { channel: 'chengdu', document_count: 2, base_quantity: 366, settlement_delta: 4, settlement_total: 370, shipping_delta: 4, shipped_quantity: 1, pending_shipping: 3, pending_count: 0 },
+    { channel: 'postal', document_count: 0, base_quantity: 6815, source_total: 0, source_difference: -6815, active_source_count: 0, settlement_delta: 0, settlement_total: 6815, shipping_delta: 0, shipped_quantity: 0, pending_shipping: 0, pending_count: 0 },
+    { channel: 'retail', document_count: 0, base_quantity: 1052, source_total: 0, source_difference: -1052, active_source_count: 0, settlement_delta: 0, settlement_total: 1052, shipping_delta: 0, shipped_quantity: 0, pending_shipping: 0, pending_count: 0 },
+    { channel: 'guangzhou', document_count: 0, base_quantity: 531, source_total: 0, source_difference: -531, active_source_count: 0, settlement_delta: 0, settlement_total: 531, shipping_delta: 0, shipped_quantity: 0, pending_shipping: 0, pending_count: 0 },
+    { channel: 'chengdu', document_count: 2, base_quantity: 366, source_total: 366, source_difference: 0, active_source_count: 1, settlement_delta: 4, settlement_total: 370, shipping_delta: 4, shipped_quantity: 1, pending_shipping: 3, pending_count: 0 },
   ],
 }
 
@@ -142,7 +152,7 @@ const meta = {
   component: ReportEditor,
   decorators: [withRouter],
   parameters: {
-    auth: { user: { username: 'admin', role: 'admin' }, isAdmin: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} },
+    auth: { user: { username: 'admin', role: 'admin' }, isAdmin: true, canMutate: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} },
     reactRouter: reactRouterParameters({
       routing: { path: '/report/:issueId' },
       location: { pathParams: { issueId: '1' } },
@@ -165,7 +175,13 @@ export const Draft: Story = {
     await expect(canvas.getByText('数据来源与调整')).toBeVisible()
     await expect(await canvas.findByText('后续 +4')).toBeVisible()
     await expect(canvas.getByText('202606_成都杂志铺_月度报数.jpg')).toBeVisible()
+    await expect(canvas.getByText('文件另有 1 条跨期待处理明细')).toBeVisible()
     await expect(canvas.getByText('20260717_成都杂志铺_补发调整_3期共6份.jpg')).toBeVisible()
     await expect(canvas.getByText('追加订数')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '继续核对' }))
+    await expect(await screen.findByText('继续核对已有来源')).toBeVisible()
+    await expect(screen.getByText(/已确认明细保持原有用途/)).toBeVisible()
+    await expect(screen.getByText(/本文件贡献：366 → 366 份；来源合计：366 → 366 份/)).toBeVisible()
+    await expect(screen.queryByText('上传原始文件')).not.toBeInTheDocument()
   },
 }

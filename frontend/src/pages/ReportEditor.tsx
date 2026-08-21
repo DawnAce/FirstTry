@@ -64,6 +64,7 @@ import { calculateSocialDistributionTotal, SOCIAL_DISTRIBUTION_ITEMS } from './r
 import { formatIssueReportTitle } from './reportTitle';
 import {
   compareReportEntriesToSources,
+  sourceActionForSubmission,
   sourceCorrectionSuggestions,
   sourceAdjustmentDescription,
   sourceCardStatus,
@@ -73,6 +74,7 @@ import {
   sourcePurposeLabel,
   sourceQuantityLabel,
   sourceTargetTreatment,
+  type SourceOperation,
 } from './reportSourceDisplay';
 import './ReportEditor.css';
 
@@ -118,8 +120,6 @@ const adjustmentKindOptions: { label: string; value: ReportSourceAdjustmentKind 
   { label: '补损重发（只补发）', value: 'replacement' },
   { label: '冲减（减少结算）', value: 'reduction' },
 ];
-
-type SourceOperation = 'initial' | 'addition' | 'replacement' | 'correction' | 'postpress';
 
 // Items hidden from social_use display (shown separately or managed by temp print details)
 const EXTRA_ITEMS = ['临时加印', '临时加印_自留', '营报传媒加印', '财经中心加印', '中经未来', '产经中心加印'];
@@ -543,17 +543,7 @@ export default function ReportEditor() {
     resetSourceDrawer();
     setSourceChannel(document.channel);
     setSourceDocumentType(document.document_type);
-    const hasConfirmedPrintSource = (sourceSummary?.documents ?? []).some(candidate => (
-      candidate.channel === document.channel
-      && candidate.id !== document.id
-      && candidate.items.some(item => (
-        item.issue_number === issue?.issue_number
-        && item.item_kind === 'base'
-        && item.source_status === 'confirmed'
-        && item.effect_status === 'active'
-      ))
-    ));
-    setSourceOperation(document.document_type === 'adjustment' ? 'postpress' : hasConfirmedPrintSource ? 'addition' : 'initial');
+    setSourceOperation('review');
     const suggestions: ReportSourceSuggestion[] = document.items.map(item => ({
       issue_number: item.issue_number,
       source_period: null,
@@ -716,16 +706,15 @@ export default function ReportEditor() {
         applied_quantity: suggestion.item_kind === 'base' ? suggestion.applied_quantity : null,
         source_status: suggestion.source_status,
         adjustment_kind: suggestion.item_kind === 'adjustment' ? suggestion.adjustment_kind : null,
-        source_action: suggestion.item_kind === 'adjustment'
-          ? 'postpress_addition'
-          : sourceOperation === 'addition' ? 'prepress_addition'
-          : sourceOperation === 'replacement' || sourceOperation === 'correction'
-            ? (replacementItems.find(item => (
-                item.issue_number === suggestion.issue_number
-                && item.category === suggestion.category
-                && item.sub_category === suggestion.sub_category
-              ))?.source_action ?? 'base')
-            : 'base',
+        source_action: sourceActionForSubmission(
+          sourceOperation,
+          suggestion,
+          replacementItems.find(item => (
+            item.issue_number === suggestion.issue_number
+            && item.category === suggestion.category
+            && item.sub_category === suggestion.sub_category
+          ))?.source_action,
+        ),
         supersedes_item_id: sourceOperation === 'correction'
           ? suggestion.supersedes_item_id
           : sourceOperation === 'replacement'
@@ -734,7 +723,9 @@ export default function ReportEditor() {
               && item.category === suggestion.category
               && item.sub_category === suggestion.sub_category
             ))?.id ?? null
-            : null,
+            : sourceOperation === 'review'
+              ? suggestion.supersedes_item_id
+              : null,
         notes: suggestion.notes,
       }));
       if (sourceOperation === 'correction') {
@@ -899,6 +890,7 @@ export default function ReportEditor() {
     replacement: '定向替换原来源',
     correction: '更正已确认的核对数字',
     postpress: '上传确认后凭证',
+    review: '继续核对已有来源',
   };
   const previewChannelSummary = sourceChannelSummaries[sourceChannel];
   const replacementCurrentItems = sourceReplacementTarget?.items.filter(item => (
@@ -911,12 +903,24 @@ export default function ReportEditor() {
     .filter(item => item.issue_number === issue.issue_number && item.item_kind === 'base' && item.source_status === 'confirmed')
     .reduce((sum, item) => sum + (item.applied_quantity ?? 0), 0);
   const replacedContribution = replacementCurrentItems.reduce((sum, item) => sum + item.print_delta, 0);
+  const reviewedContribution = sourceOperation === 'review'
+    ? (sourcePreview?.items ?? [])
+      .filter(item => (
+        item.issue_number === issue.issue_number
+        && item.item_kind === 'base'
+        && item.source_status === 'confirmed'
+        && item.effect_status === 'active'
+      ))
+      .reduce((sum, item) => sum + item.print_delta, 0)
+    : 0;
   const currentSourceTotal = previewChannelSummary?.source_total ?? 0;
   const previewSourceTotal = sourceOperation === 'replacement' || sourceOperation === 'correction'
     ? currentSourceTotal - replacedContribution + previewContribution
-    : sourceOperation === 'addition'
-      ? currentSourceTotal + previewContribution
-      : previewContribution;
+    : sourceOperation === 'review'
+      ? currentSourceTotal - reviewedContribution + previewContribution
+      : sourceOperation === 'addition'
+        ? currentSourceTotal + previewContribution
+        : previewContribution;
 
   const renderEntryControl = (entry: ReportEntry) => isConfirmed || !canMutate ? (
     <span className="report-editor-static-count">{formatCount(entry.value)}</span>
@@ -1630,6 +1634,8 @@ export default function ReportEditor() {
               ? `只替换“${sourceReplacementTarget?.display_name ?? '所选文件'}”的有效贡献，其他追加来源保持不变。`
               : sourceOperation === 'addition'
                 ? '新文件确认后会与现有有效来源相加，不会覆盖之前的数字。'
+                : sourceOperation === 'review'
+                  ? '继续核对同一份跨期文件；已确认明细保持原有用途，只处理尚待核对的刊期，不需要重新上传。'
                 : sourceOperation === 'postpress'
                   ? '当前印数已经锁定；如本次只补充来源证明，请选择“仅归档凭证”，不会改变印数、结算或补发数据。'
                   : '首份确认来源将作为该渠道的基础贡献。'}
@@ -1666,7 +1672,7 @@ export default function ReportEditor() {
             </div>
           </section>}
 
-          {sourceOperation !== 'correction' && <section className="report-source-panel">
+          {sourceOperation !== 'correction' && sourceOperation !== 'review' && <section className="report-source-panel">
             <h3><span aria-hidden>②</span>上传原始文件</h3>
             <Upload.Dragger
               className="report-source-dragger"
@@ -1735,9 +1741,13 @@ export default function ReportEditor() {
                 <Alert
                   type="info"
                   showIcon
-                  title={sourceOperation === 'correction' ? '更正后的印数变化' : '确认后的印数变化'}
+                  title={sourceOperation === 'correction'
+                    ? '更正后的印数变化'
+                    : sourceOperation === 'review' ? '继续核对后的印数变化' : '确认后的印数变化'}
                   description={sourceOperation === 'replacement' || sourceOperation === 'correction'
                     ? `替换贡献：${formatCount(replacedContribution)} → ${formatCount(previewContribution)} 份；来源合计：${formatCount(currentSourceTotal)} → ${formatCount(previewSourceTotal)} 份。`
+                    : sourceOperation === 'review'
+                      ? `本文件贡献：${formatCount(reviewedContribution)} → ${formatCount(previewContribution)} 份；来源合计：${formatCount(currentSourceTotal)} → ${formatCount(previewSourceTotal)} 份。`
                     : sourceOperation === 'addition'
                       ? `本次追加 +${formatCount(previewContribution)} 份；来源合计：${formatCount(currentSourceTotal)} → ${formatCount(previewSourceTotal)} 份。`
                       : `本次基础贡献 ${formatCount(previewContribution)} 份；来源合计将变为 ${formatCount(previewSourceTotal)} 份。`}
