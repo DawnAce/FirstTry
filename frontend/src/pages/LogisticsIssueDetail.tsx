@@ -804,7 +804,7 @@ export default function LogisticsIssueDetail() {
                       ? <LargeStatusIcon variant="inbox" />
                       : <LargeStatusIcon variant="reload" />}
             </div>
-            <div>
+            <div className="zto-reconcile-copy">
               <span>发货计划对账</span>
               <strong>{planState.label}</strong>
               <small>{planState.description}</small>
@@ -872,7 +872,7 @@ export default function LogisticsIssueDetail() {
                     ? <LargeStatusIcon variant="reload" />
                     : <LargeStatusIcon variant="inbox" />}
             </div>
-            <div>
+            <div className="zto-reconcile-copy">
               <span>实际发货与核销</span>
               <strong>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '核销已完成 · 部分发货' : fulfillmentPanelState.label}</strong>
               <small>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '无需发货或转库留存份数已明确归因，实际寄出的份数少于计划应发。' : fulfillmentPanelState.description}</small>
