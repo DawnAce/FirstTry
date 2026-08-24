@@ -2680,12 +2680,12 @@ body {
   background: var(--color-warning-soft);
 }
 
-.zto-fulfillment-warning strong,
-.zto-fulfillment-warning span {
+.zto-fulfillment-warning > div > strong,
+.zto-fulfillment-warning > div > span {
   display: block;
 }
 
-.zto-fulfillment-warning span {
+.zto-fulfillment-warning > div > span {
   margin-top: 2px;
   color: #826434;
   font-size: 12px;
@@ -2737,13 +2737,13 @@ body {
   background: var(--color-warning);
 }
 
-.zto-reconcile-result span,
-.zto-reconcile-result small {
+.zto-reconcile-copy > span,
+.zto-reconcile-copy > small {
   display: block;
   color: var(--color-text-secondary);
 }
 
-.zto-reconcile-result span {
+.zto-reconcile-copy > span {
   margin-bottom: 3px;
   font-size: 12px;
 }
@@ -2767,7 +2767,7 @@ body {
   color: var(--color-warning-text);
 }
 
-.zto-reconcile-result small {
+.zto-reconcile-copy > small {
   margin-top: 5px;
   font-size: 12px;
 }
@@ -4073,12 +4073,12 @@ body {
   backdrop-filter: blur(12px);
 }
 
-.waybill-confirm-bar b,
-.waybill-confirm-bar span {
+.waybill-confirm-copy > b,
+.waybill-confirm-copy > span {
   display: block;
 }
 
-.waybill-confirm-bar span {
+.waybill-confirm-copy > span {
   margin-top: 2px;
   color: var(--color-text-secondary);
   font-size: 12px;
@@ -4680,8 +4680,8 @@ body {
   font-size: 16px;
 }
 
-.zto-reconcile-result span,
-.zto-reconcile-result small,
+.zto-reconcile-copy > span,
+.zto-reconcile-copy > small,
 .zto-reconcile-metric > span {
   font-size: 11px;
 }

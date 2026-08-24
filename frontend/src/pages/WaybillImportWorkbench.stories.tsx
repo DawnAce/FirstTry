@@ -217,6 +217,9 @@ export const Unresolved: Story = {
     const linkButton = await canvas.findByRole('button', { name: /关联这 4 个运单/ });
     await expect(linkButton).toBeVisible();
     await expect(getComputedStyle(linkButton).color).toBe('rgb(255, 255, 255)');
+    const confirmButton = await canvas.findByRole('button', { name: /导入已核销的 955 份/ });
+    await expect(confirmButton).toBeVisible();
+    await expect(getComputedStyle(confirmButton.lastElementChild!).color).toBe('rgb(255, 255, 255)');
   },
 };
 

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent } from 'storybook/test'
 import { http, HttpResponse } from 'msw'
 import { reactRouterParameters, withRouter } from 'storybook-addon-remix-react-router'
 import type { ShippingDetail } from '../api/shippingDetails'
@@ -189,6 +189,15 @@ export const ConfirmedWithChanges: Story = {
   },
 }
 
+export const ActualWithPending: Story = {
+  name: '实际发货仍有待处理',
+  play: async ({ canvas }) => {
+    await userEvent.click(await canvas.findByRole('tab', { name: /实际发货/ }))
+    const continueButton = await canvas.findByRole('button', { name: '继续处理' })
+    await expect(getComputedStyle(continueButton.lastElementChild!).color).toBe('rgb(29, 29, 31)')
+  },
+}
+
 export const LoadFailure: Story = {
   name: '接口失败（不得显示为空数据）',
   parameters: {
@@ -207,5 +216,10 @@ export const LoadFailure: Story = {
         )),
       ],
     },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(await canvas.findByRole('tab', { name: /实际发货/ }))
+    const retryButton = await canvas.findByRole('button', { name: /重新加载/ })
+    await expect(getComputedStyle(retryButton.lastElementChild!).color).toBe('rgb(29, 29, 31)')
   },
 }

@@ -1072,7 +1072,7 @@ export default function WaybillImportWorkbench() {
       </Card>
 
       <div className="waybill-confirm-bar">
-        <div>
+        <div className="waybill-confirm-copy">
           <b>{batch.status === 'confirmed' ? `已核销 ${displayedHandledQuantity.toLocaleString()} 份` : `准备核销 ${batch.matched_quantity.toLocaleString()} 份`}</b>
           <span>{batch.status === 'confirmed' ? `仍有 ${currentPendingQuantity.toLocaleString()} 份未实际寄出，其中 ${deferredQuantity.toLocaleString()} 份待合寄。` : `确认后保留 ${displayedPendingQuantity.toLocaleString()} 份待处理；未解决行仍可继续关联。`}</span>
         </div>
