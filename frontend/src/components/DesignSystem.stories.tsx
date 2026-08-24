@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect } from 'storybook/test'
 import { Alert, Button, Card, Input, Select, Space, Statistic, Table, Tag, Typography } from 'antd'
 import { DeleteOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
 import { designTokens } from '../theme'
@@ -96,20 +97,46 @@ export const ThemeWorkbench: Story = {
 export const Buttons: Story = {
   name: '按钮',
   render: () => (
-    <Space size={16} wrap>
-      <Button type="primary" icon={<ReloadOutlined />}>
-        重新生成
-      </Button>
-      <Button icon={<DownloadOutlined />}>导出</Button>
-      <Button danger icon={<DeleteOutlined />}>
-        删除
-      </Button>
-      <Button type="primary" loading>
-        提交中
-      </Button>
-      <Button disabled>不可用</Button>
+    <Space orientation="vertical" size={16}>
+      <Space size={16} wrap>
+        <Button type="primary" icon={<ReloadOutlined />}>
+          重新生成
+        </Button>
+        <Button icon={<DownloadOutlined />}>导出</Button>
+        <Button danger icon={<DeleteOutlined />}>
+          删除
+        </Button>
+        <Button type="primary" loading>
+          提交中
+        </Button>
+        <Button type="primary" disabled>标记每月两次合寄</Button>
+        <Button disabled>不可用</Button>
+      </Space>
+      <div className="ant-modal" style={{ position: 'static', width: 'fit-content', paddingBottom: 0 }}>
+        <div className="ant-modal-footer">
+          <Button type="primary" disabled>弹窗确认</Button>
+        </div>
+      </div>
     </Space>
   ),
+  play: async ({ canvas, globals }) => {
+    const disabledPrimaryButton = await canvas.findByRole('button', { name: '标记每月两次合寄' })
+    await expect(disabledPrimaryButton).toBeDisabled()
+    await expect(getComputedStyle(disabledPrimaryButton).backgroundColor).not.toBe('rgb(0, 113, 227)')
+    const disabledModalButton = await canvas.findByRole('button', { name: '弹窗确认' })
+    await expect(disabledModalButton).toBeDisabled()
+    await expect(getComputedStyle(disabledModalButton).backgroundImage).toBe('none')
+    if (globals.theme === 'dark') {
+      await expect(getComputedStyle(disabledModalButton.closest('.ant-modal-footer')!).backgroundColor)
+        .not.toBe('rgb(255, 255, 255)')
+    }
+  },
+}
+
+export const ButtonsDark: Story = {
+  ...Buttons,
+  name: '按钮（暗色）',
+  globals: { theme: 'dark' },
 }
 
 // 状态标签：发货明细里按收件人类型着色
