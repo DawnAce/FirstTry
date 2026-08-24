@@ -234,7 +234,9 @@ export default function WaybillImportWorkbench() {
     [batch, details],
   );
   const detailsPlanQuantity = useMemo(
-    () => details.filter((detail) => detail.source_type !== 'complaint_makeup')
+    () => details.filter((detail) => (
+      detail.source_type !== 'complaint_makeup' && detail.status !== '停发'
+    ))
       .reduce((sum, detail) => sum + detail.quantity, 0),
     [details],
   );
@@ -882,7 +884,7 @@ export default function WaybillImportWorkbench() {
             <span className="waybill-status-icon"><FileExcelOutlined /></span>
             <div><small>实际发货与核销</small><b>{fulfillmentQuery.data?.status === 'shipped' && fulfillmentQuery.data.shipment_status === 'partial' ? '核销已完成 · 部分发货' : displayedPendingQuantity ? '部分已发货' : '全部已发货'}</b></div>
           </div>
-          <div className="waybill-status-metric"><span>计划应发</span><b>{batch.expected_quantity.toLocaleString()}</b><small>份 · 核销基准</small></div>
+          <div className="waybill-status-metric"><span>计划总数</span><b>{batch.expected_quantity.toLocaleString()}</b><small>份 · 核销基准</small></div>
           <div className="waybill-status-metric"><span>实际发出</span><b>{(fulfillmentQuery.data?.actual_shipped_quantity ?? batch.matched_quantity).toLocaleString()}</b><small>份</small></div>
           <div className="waybill-status-metric"><span>无需发货</span><b>{noShipmentQuantity.toLocaleString()}</b><small>份</small></div>
           <div className="waybill-status-metric is-success"><span>转库留存</span><b>{warehouseStockInQuantity.toLocaleString()}</b><small>份 · 库存入库</small></div>
@@ -1185,7 +1187,7 @@ export default function WaybillImportWorkbench() {
         type="info"
         title={adjustmentType === 'warehouse_stock_in'
           ? '马飞—库房留存固定使用此核销类型'
-          : '该记录用于解释计划应发中没有出现在运单源文件里的份数'}
+          : '该记录用于解释计划总数中没有出现在运单源文件里的份数'}
         description={adjustmentType === 'warehouse_stock_in'
           ? '确认后计入当期库存入库，不计为实际寄出，也不会生成运单号。'
           : '确认后会计入实际发货核销，但不会生成虚假的运单号。'}

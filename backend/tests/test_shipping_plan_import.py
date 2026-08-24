@@ -16,6 +16,7 @@ from app.models import (
     OperationLog,
     ReportEntry,
     ShippingDetail,
+    ShippingFulfillmentAdjustment,
     ShippingDetailSourceType,
     ShippingPackage,
     ShippingWaybillImportBatch,
@@ -65,6 +66,14 @@ def shipping_file_with_adjustment(issue_number: int) -> bytes:
     sheet = workbook["发货明细"]
     sheet["C2"] = "20260122新增"
     sheet["L2"] = "送前联系"
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def shipping_file_with_stopped_row(issue_number: int) -> bytes:
+    workbook = load_workbook(io.BytesIO(shipping_file(issue_number, quantities=(1, 10))))
+    workbook["发货明细"]["F2"] = "停发"
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -165,6 +174,68 @@ def test_preview_allows_refill_after_issue_was_cleared(db):
     assert preview.resulting_quantity == 10
     assert preview.confirmed_shipping_total == 11
     assert any("不会修改已确认印数" in warning for warning in preview.warnings)
+
+
+def test_preview_discards_every_zero_quantity_shipping_row(db):
+    issue = add_issue(db)
+
+    preview = preview_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        filename="2638中通明细.xlsx",
+        content=shipping_file(2638, quantities=(6, 0, 4)),
+    )
+
+    assert preview.can_commit is True
+    assert preview.imported_row_count == 2
+    assert preview.imported_quantity == 10
+    assert all(row.quantity > 0 for row in preview.sample_rows)
+    assert any("已忽略 1 条0份发货明细" in warning for warning in preview.warnings)
+
+
+def test_commit_links_stopped_row_and_allows_safe_reupload(db):
+    issue = add_issue(db)
+    content = shipping_file_with_stopped_row(issue.issue_number)
+
+    first_preview = preview_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        filename="2638中通明细.xlsx",
+        content=content,
+    )
+    first_result = commit_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        import_session_id=first_preview.import_session_id,
+        reason="首次导入停发计划",
+        user=admin(),
+    )
+
+    assert first_result.created_count == 2
+    adjustment = db.query(ShippingFulfillmentAdjustment).one()
+    assert adjustment.source == "plan_status"
+    assert adjustment.quantity == 1
+    assert adjustment.shipping_detail.status == "停发"
+
+    second_preview = preview_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        filename="2638中通明细.xlsx",
+        content=content,
+    )
+    assert second_preview.can_commit is True
+    commit_shipping_plan_import(
+        db,
+        issue_id=issue.id,
+        import_session_id=second_preview.import_session_id,
+        reason="复核后重新上传停发计划",
+        user=admin(),
+    )
+
+    assert db.query(ShippingFulfillmentAdjustment).count() == 1
+    replacement = db.query(ShippingFulfillmentAdjustment).one()
+    assert replacement.shipping_detail is not None
+    assert replacement.shipping_detail.status == "停发"
 
 
 def test_preview_returns_each_automatic_adjustment_for_confirmation(db):

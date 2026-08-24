@@ -33,6 +33,11 @@ from app.services.shipping_plan_import_service import (
     commit_shipping_plan_import,
     preview_shipping_plan_import,
 )
+from app.services.shipping_suspension_service import (
+    PLAN_STATUS_ADJUSTMENT_SOURCE,
+    delete_plan_status_adjustments,
+    sync_plan_status_adjustment,
+)
 from app.upload import read_upload
 
 router = APIRouter(prefix="/api/shipping-details", tags=["shipping-details"])
@@ -149,14 +154,15 @@ def _copy_shipping_details_from_previous(
     )
     for detail in previous_details:
         data = {field: getattr(detail, field) for field in _COPY_FIELDS}
-        db.add(
-            ShippingDetail(
-                **data,
-                issue_number=issue_number,
-                confirmation=None,
-                shipped_at=None,
-            )
+        copied_detail = ShippingDetail(
+            **data,
+            issue_number=issue_number,
+            confirmation=None,
+            shipped_at=None,
         )
+        db.add(copied_detail)
+        db.flush()
+        sync_plan_status_adjustment(db, detail=copied_detail, user=user)
 
     copied = len(previous_details)
     record_operation(
@@ -193,7 +199,10 @@ def _has_fulfillment_history(detail: ShippingDetail) -> bool:
         or detail.shipped_quantity is not None
         or detail.tracking_no
         or detail.packages
-        or detail.fulfillment_adjustments
+        or any(
+            adjustment.source != PLAN_STATUS_ADJUSTMENT_SOURCE
+            for adjustment in detail.fulfillment_adjustments
+        )
         or detail.deferrals
         or detail.package_allocations
     )
@@ -300,6 +309,7 @@ def create_shipping_detail(
     detail = ShippingDetail(**dump)
     db.add(detail)
     db.flush()  # get the id before commit
+    sync_plan_status_adjustment(db, detail=detail, user=user)
     record_operation(
         db,
         user=user,
@@ -381,6 +391,7 @@ def batch_update_shipping_details(
             new_snapshot = _snapshot(detail)
             changes = _diff(old_snapshot, new_snapshot)
         if changes:
+            sync_plan_status_adjustment(db, detail=detail, user=user)
             affected_count += 1
             record_operation(
                 db,
@@ -437,6 +448,7 @@ def update_shipping_detail(
         new_snapshot = _snapshot(detail)
         changes = _diff(old_snapshot, new_snapshot)
     if changes:
+        sync_plan_status_adjustment(db, detail=detail, user=user)
         record_operation(
             db,
             user=user,
@@ -629,6 +641,7 @@ def batch_delete_shipping_details(
             channel=detail.channel,
             changes=_snapshot(detail),
         )
+        delete_plan_status_adjustments(db, detail=detail, user=user)
         db.delete(detail)
 
     db.commit()
@@ -672,6 +685,7 @@ def clear_shipping_details_by_issue(
         },
     )
     for detail in details:
+        delete_plan_status_adjustments(db, detail=detail, user=_user)
         db.delete(detail)
 
     db.commit()
@@ -703,6 +717,7 @@ def delete_shipping_detail(
         channel=detail.channel,
         changes=_snapshot(detail),
     )
+    delete_plan_status_adjustments(db, detail=detail, user=user)
     db.delete(detail)
     db.commit()
     return {"message": "Deleted"}

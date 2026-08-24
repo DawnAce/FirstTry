@@ -191,6 +191,7 @@ class FulfillmentAdjustmentOut(BaseModel):
     issue_number: int
     shipping_detail_id: Optional[int]
     adjustment_type: str
+    source: str = "manual"
     quantity: int
     reason: str
     detail_name_snapshot: Optional[str]

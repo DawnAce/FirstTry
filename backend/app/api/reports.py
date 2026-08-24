@@ -33,6 +33,7 @@ from app.services.report_destination_service import DESTINATION_ZTO, resolve_rep
 from app.services.operation_log_service import record_operation
 from app.services.report_source_service import get_report_source_mismatches
 from app.services.report_source_ocr import CHANNEL_LABELS
+from app.services.shipping_suspension_service import sync_plan_status_adjustment
 from app.cache import invalidate_overview_cache
 
 router = APIRouter(prefix="/api/issues/{issue_id}/report", tags=["reports"])
@@ -121,14 +122,15 @@ def _copy_previous_shipping_details_for_confirm(
     )
     for detail in previous_details:
         data = {field: getattr(detail, field) for field in _SHIPPING_DETAIL_COPY_FIELDS}
-        db.add(
-            ShippingDetail(
-                **data,
-                issue_number=issue.issue_number,
-                confirmation=None,
-                shipped_at=None,
-            )
+        copied_detail = ShippingDetail(
+            **data,
+            issue_number=issue.issue_number,
+            confirmation=None,
+            shipped_at=None,
         )
+        db.add(copied_detail)
+        db.flush()
+        sync_plan_status_adjustment(db, detail=copied_detail, user=user)
 
     copied = len(previous_details)
     record_operation(
@@ -162,7 +164,7 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         .correlate(Issue)
         .scalar_subquery()
     )
-    current_shipping_total_expr = (
+    gross_shipping_total_expr = (
         select(func.coalesce(func.sum(ShippingDetail.quantity), 0))
         .where(
             ShippingDetail.issue_number == Issue.issue_number,
@@ -178,7 +180,7 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
             latest_snapshot.shipping_total,
             latest_snapshot.delta,
             latest_snapshot.is_match,
-            current_shipping_total_expr.label("current_shipping_total"),
+            gross_shipping_total_expr.label("gross_shipping_total"),
         )
         .outerjoin(latest_snapshot, latest_snapshot.id == latest_snapshot_id)
         .filter(Issue.id == issue_id)
@@ -192,7 +194,7 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         confirmed_shipping_total,
         confirmed_delta,
         confirmed_is_match,
-        current_shipping_total,
+        gross_shipping_total,
     ) = issue_row
 
     entries = (
@@ -211,7 +213,66 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
         destination = resolve_report_destination(e.category, e.sub_category, e.destination)
         destination_totals[destination] = destination_totals.get(destination, 0) + e.value
 
-    current_shipping_total = int(current_shipping_total or 0)
+    attributed_condition = or_(
+        ShippingFulfillmentAdjustment.shipping_detail_id.isnot(None),
+        ShippingFulfillmentAdjustment.detail_name_snapshot.isnot(None),
+    )
+    positive_quantity = case(
+        (
+            ShippingFulfillmentAdjustment.quantity > 0,
+            ShippingFulfillmentAdjustment.quantity,
+        ),
+        else_=0,
+    )
+    attributed_adjustment_quantity, unattributed_adjustment_quantity = (
+        db.query(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (attributed_condition, positive_quantity),
+                        else_=0,
+                    )
+                ),
+                0,
+            ),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (attributed_condition, 0),
+                        else_=positive_quantity,
+                    )
+                ),
+                0,
+            ),
+        )
+        .filter(
+            ShippingFulfillmentAdjustment.issue_id == issue.id,
+            ShippingFulfillmentAdjustment.adjustment_type == "no_shipment_required",
+        )
+        .one()
+    )
+    attributed_adjustment_quantity = max(int(attributed_adjustment_quantity or 0), 0)
+    unattributed_adjustment_quantity = max(int(unattributed_adjustment_quantity or 0), 0)
+    included_stopped_quantity = int(
+        db.query(func.coalesce(func.sum(positive_quantity), 0))
+        .join(
+            ShippingDetail,
+            ShippingDetail.id == ShippingFulfillmentAdjustment.shipping_detail_id,
+        )
+        .filter(
+            ShippingFulfillmentAdjustment.issue_id == issue.id,
+            ShippingFulfillmentAdjustment.adjustment_type == "no_shipment_required",
+            ShippingDetail.status == "停发",
+            ShippingDetail.shipping_requirement == "tracking_required",
+        )
+        .scalar()
+        or 0
+    )
+    gross_shipping_total = int(gross_shipping_total or 0)
+    # “当前计划”是仍需寄出的计划数量。仍保留在明细里的停发行从
+    # 原始计划总数中扣除；历史上已经删掉停发行、仅留下归因记录的
+    # 期次不再重复扣减。
+    current_shipping_total = max(gross_shipping_total - included_stopped_quantity, 0)
     report_zt_total = destination_totals.get(DESTINATION_ZTO, 0)
     shipping_check = ShippingCheck(
         report_zt_total=report_zt_total,
@@ -221,43 +282,6 @@ def get_report(issue_id: int, db: Session = Depends(get_db)):
     )
     confirmation_summary = None
     if confirmed_report_total is not None:
-        attributed_condition = or_(
-            ShippingFulfillmentAdjustment.shipping_detail_id.isnot(None),
-            ShippingFulfillmentAdjustment.detail_name_snapshot.isnot(None),
-        )
-        positive_quantity = case(
-            (
-                ShippingFulfillmentAdjustment.quantity > 0,
-                ShippingFulfillmentAdjustment.quantity,
-            ),
-            else_=0,
-        )
-        attributed_adjustment_quantity, unattributed_adjustment_quantity = (
-            db.query(
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (attributed_condition, positive_quantity),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (attributed_condition, 0),
-                            else_=positive_quantity,
-                        )
-                    ),
-                    0,
-                ),
-            )
-            .filter(ShippingFulfillmentAdjustment.issue_id == issue.id)
-            .one()
-        )
-        attributed_adjustment_quantity = max(int(attributed_adjustment_quantity or 0), 0)
-        unattributed_adjustment_quantity = max(int(unattributed_adjustment_quantity or 0), 0)
         # The confirmed report is the business baseline for the plan. The
         # shipping snapshot remains an immutable audit record, but a plan that
         # is uploaded after confirmation is current and reconciled once it

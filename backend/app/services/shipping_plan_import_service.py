@@ -34,6 +34,7 @@ from app.services.history_import_service import (
 )
 from app.services.operation_log_service import record_operation
 from app.services.original_zto_shipping_import_service import (
+    exclude_zero_quantity_shipping_rows,
     is_original_zto_shipping_workbook,
     normalize_shipping_sub_channels_with_adjustments,
     read_original_zto_shipping_basic_info,
@@ -46,6 +47,11 @@ from app.services.recurring_shipping_detail_service import (
     recurring_shipping_invariant_errors,
 )
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
+from app.services.shipping_suspension_service import (
+    PLAN_STATUS_ADJUSTMENT_SOURCE,
+    delete_plan_status_adjustments,
+    sync_plan_status_adjustment,
+)
 from app.services.workbook_loader import load_uploaded_workbook
 
 
@@ -92,20 +98,28 @@ def _parse_shipping_file(
     workbook = load_uploaded_workbook(content, file_label="中通发货文件")
     if _is_template_shipping_workbook(workbook):
         issue_number = _parse_issue_number(_read_basic_info(workbook).get("期号"))
+        rows, zero_quantity_warnings = exclude_zero_quantity_shipping_rows(
+            _read_shipping_rows(workbook)
+        )
         rows, recurring_warnings = exclude_recurring_shipping_import_rows(
-            _read_shipping_rows(workbook), year=recurring_year
+            rows, year=recurring_year
         )
         rows, warnings, adjustments = normalize_shipping_sub_channels_with_adjustments(
             rows
         )
+        warnings[:0] = zero_quantity_warnings
         warnings.extend(recurring_warnings)
         return issue_number, rows, warnings, adjustments
     if is_original_zto_shipping_workbook(workbook):
         issue_number = _parse_issue_number(read_original_zto_shipping_basic_info(workbook).get("期号"))
+        rows, zero_quantity_warnings = exclude_zero_quantity_shipping_rows(
+            read_original_zto_shipping_rows_raw(workbook)
+        )
         rows, recurring_warnings = exclude_recurring_shipping_import_rows(
-            read_original_zto_shipping_rows_raw(workbook), year=recurring_year
+            rows, year=recurring_year
         )
         rows, warnings, adjustments = normalize_shipping_sub_channels_with_adjustments(rows)
+        warnings[:0] = zero_quantity_warnings
         warnings.extend(recurring_warnings)
         return issue_number, rows, warnings, adjustments
     raise HTTPException(
@@ -144,7 +158,10 @@ def _has_fulfillment_history(detail: ShippingDetail) -> bool:
         or detail.shipped_quantity is not None
         or detail.tracking_no
         or detail.packages
-        or detail.fulfillment_adjustments
+        or any(
+            adjustment.source != PLAN_STATUS_ADJUSTMENT_SOURCE
+            for adjustment in detail.fulfillment_adjustments
+        )
         or detail.deferrals
         or detail.package_allocations
     )
@@ -320,6 +337,8 @@ def commit_shipping_plan_import(
         raise HTTPException(status_code=409, detail="本期系统固定明细已发生变化，请重新预览")
 
     rows = [ShippingImportRow(**row) for row in payload.get("rows", [])]
+    if any(row.quantity <= 0 for row in rows):
+        raise HTTPException(status_code=409, detail="导入会话中仍包含0份或负数明细，请重新预览")
     filtered_rows, _warnings = exclude_recurring_shipping_import_rows(
         rows,
         year=issue.publish_date.year,
@@ -329,10 +348,14 @@ def commit_shipping_plan_import(
     old_quantity = sum(detail.quantity or 0 for detail in replaceable)
     old_ids = [detail.id for detail in replaceable]
     for detail in replaceable:
+        delete_plan_status_adjustments(db, detail=detail, user=user)
         db.delete(detail)
     db.flush()
+    imported_details: list[ShippingDetail] = []
     for row in rows:
-        db.add(_detail_from_row(issue.issue_number, row))
+        detail = _detail_from_row(issue.issue_number, row)
+        db.add(detail)
+        imported_details.append(detail)
     db.flush()
     recurring_errors = recurring_shipping_invariant_errors(
         db,
@@ -349,6 +372,8 @@ def commit_shipping_plan_import(
     from app.services.shipping_waybill_service import restore_orphaned_confirmed_waybills
 
     restore_result = restore_orphaned_confirmed_waybills(db, issue=issue)
+    for detail in imported_details:
+        sync_plan_status_adjustment(db, detail=detail, user=user)
 
     preserved_count = (
         db.query(ShippingDetail)

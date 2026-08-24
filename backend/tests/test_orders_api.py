@@ -1140,6 +1140,7 @@ def test_delete_order_with_shipping_details_is_rejected_409(client):
             sheet_name="测试",
             channel="渠道订阅",
             name="测试明细",
+            quantity=1,
             order_id=oid,
         )
     )

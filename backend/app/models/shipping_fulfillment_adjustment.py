@@ -22,6 +22,7 @@ class ShippingFulfillmentAdjustment(Base):
     adjustment_type = Column(
         String(32), nullable=False, default="no_shipment_required", server_default="no_shipment_required"
     )
+    source = Column(String(32), nullable=False, default="manual", server_default="manual", index=True)
     quantity = Column(Integer, nullable=False)
     reason = Column(String(255), nullable=False)
     detail_name_snapshot = Column(String(100), nullable=True)

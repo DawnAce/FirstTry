@@ -428,11 +428,11 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | sub_channel | VARCHAR(255) | 子渠道（如赠阅下的"监管"/"政府"） |
 | transport | VARCHAR(50) | 运输方式 |
 | frequency | VARCHAR(50) | 发送频率 |
-| status | VARCHAR(50) | 状态：正常/停发 |
+| status | VARCHAR(50) | 状态：正常/停发；停发由服务层同步无需发货归因 |
 | name | VARCHAR(100) | 收件人/联系人 |
 | address | TEXT | 收件地址 |
 | phone | VARCHAR(50) | 联系电话（支持多号码） |
-| quantity | INT | 份数 |
+| quantity | INT | 份数，非空且必须大于0（`ck_shipping_details_quantity_positive`） |
 | deadline | VARCHAR(50) | 截止日期（支持"长期"等文本） |
 | notes | TEXT | 备注 |
 | extra_info | TEXT | 附加信息 |
@@ -487,15 +487,15 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | `shipping_waybill_import_batches` | 一次 Excel 预览/确认批次，保存文件哈希、确认印数、解析/匹配/待补/超额份数与告警统计；同一期同一文件哈希唯一 |
 | `shipping_waybill_import_rows` | 文件中的逐行解析结果，保留来源 sheet/行号、原始单元格 JSON、承运商、运单号、收件信息、份数、人工核对标记、匹配状态与对应 `shipping_detail_id` |
 | `shipping_packages` | 已确认或人工补录的实际包裹；一条发货明细可对应多个包裹，`(carrier, tracking_no)` 全局唯一 |
-| `shipping_fulfillment_adjustments` | 期级非运单核销项；`no_shipment_required` 保存停刊、取消寄送等最终不发货原因，`warehouse_stock_in` 保存马飞库房留存的库存入库；不得用于月底延期合寄 |
+| `shipping_fulfillment_adjustments` | 期级非运单核销项；`no_shipment_required` 保存停刊、取消寄送等最终不发货原因，`warehouse_stock_in` 保存马飞库房留存的库存入库；`source=manual/plan_status` 区分人工登记与计划停发自动联动，不得用于月底延期合寄 |
 | `shipping_deferrals` | 合寄待办，区分 `twice_monthly_consolidation` / `month_end_consolidation`，保存来源刊期、目标刊期/日期/批次、具体发货明细、份数、收件信息快照、说明及 pending/fulfilled 状态 |
 | `shipping_package_allocations` | 一个物理包裹对多个历史刊期发货明细的份数分摊；同一待合寄记录只能核销一次 |
 
-发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。`actual_shipped = tracked + no_tracking`，`handled = actual_shipped + no_shipment_required + warehouse_stock_in`；库存入库单列统计且不计入实际寄出。两种合寄在真正关联包裹前均不计入实际发出或 handled，只从 `pending_quantity` 中合计为 `deferred_quantity`，并分别返回 `twice_monthly_deferred_quantity` / `month_end_deferred_quantity`；`unexplained_pending_quantity = max(pending_quantity - deferred_quantity, 0)`。每月两次合寄按自然月刊期表确定前两期批次和剩余期次的月底批次，月底合寄则统一指向最后一期。工作台按 `shipping_detail_id` 比较计划份数与最新来源文件匹配份数，展示逐明细差额；前端的“计划缺口待归因”直接求和 `gap_details[].remaining_quantity`，不得再从文件差额重复扣除调整或合寄数量。“马飞—库房留存”由前后端固定为 `warehouse_stock_in`，接口同时拒绝其普通运单、无需运单、无需发货和合寄操作。计划纠错以净额转移完成，转出和转入同一事务提交，因此确认总计划不漂移。合寄包裹通过 allocation 分摊到多个历史明细，物理发货份数按 allocation 计入对应刊期。
+发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。`actual_shipped = tracked + no_tracking`，`handled = actual_shipped + no_shipment_required + warehouse_stock_in`；库存入库单列统计且不计入实际寄出，也不进入“已归因停发”。计划状态切换由 `shipping_suspension_service` 原子同步 `source=plan_status` 的无需发货记录，并保存收件快照；重复保存幂等，份数或收件信息变化时同步更新，恢复正常或删除计划时只清理自动记录。停发状态优先于“无需运单”，联动时会将该标记恢复为需核销，避免同一份同时计入实际寄出和无需发货。当前计划对账从计划总数中扣除仍保留在明细里的停发核销，再按“确认报数 = 当前计划 + 已归因停发”计算；已删除停发行、仅留下历史归因的旧期次不会重复扣减。两种合寄在真正关联包裹前均不计入实际发出或 handled，只从 `pending_quantity` 中合计为 `deferred_quantity`，并分别返回 `twice_monthly_deferred_quantity` / `month_end_deferred_quantity`；`unexplained_pending_quantity = max(pending_quantity - deferred_quantity, 0)`。每月两次合寄按自然月刊期表确定前两期批次和剩余期次的月底批次，月底合寄则统一指向最后一期。工作台按 `shipping_detail_id` 比较计划份数与最新来源文件匹配份数，展示逐明细差额；前端的“计划缺口待归因”直接求和 `gap_details[].remaining_quantity`，不得再从文件差额重复扣除调整或合寄数量。“马飞—库房留存”由前后端固定为 `warehouse_stock_in`，接口同时拒绝其普通运单、无需运单、无需发货和合寄操作。计划纠错以净额转移完成，转出和转入同一事务提交，因此确认总计划不漂移。合寄包裹通过 allocation 分摊到多个历史明细，物理发货份数按 allocation 计入对应刊期。
 
 重新上传发货计划提交后会检查已确认批次中因历史清空操作而失去 `shipping_detail_id`/包裹的匹配行：先按收件人、电话、地址唯一匹配并重建 `shipping_packages`；剩余拆分包裹仅在标准化姓名唯一且行合计份数等于计划剩余份数时恢复。恢复过程沿用原批次确认时间，并重新计算批次与期级核销统计；无法唯一判断的行不猜测，保留为待人工关联。明细的单删、批量删除和整期清空在检测到运单、实发、核销、延期或分摊历史时返回 `409`，防止级联删除实际包裹。
 
-运单核销相关迁移包括 `f8c0e2a4b6d9`（期级无需发货核销）→ `f9d1e3a5c7b9`（无需发货归属与快照）→ `a0c2e4f6b8d1`（合寄与跨刊期包裹分摊）→ `b2d4f6a8c0e3`（“马飞—库房留存”已有核销初次分类为 `warehouse_stock_in`）→ `c3e5a7b9d1f4`（两种合寄类型与目标批次）→ `d5f7a9c1e3b6`（幂等补齐马飞库房完整计划数量、清理旧无需运单导入归因并重算批次差异）。
+运单核销相关迁移包括 `f8c0e2a4b6d9`（期级无需发货核销）→ `f9d1e3a5c7b9`（无需发货归属与快照）→ `a0c2e4f6b8d1`（合寄与跨刊期包裹分摊）→ `b2d4f6a8c0e3`（“马飞—库房留存”已有核销初次分类为 `warehouse_stock_in`）→ `c3e5a7b9d1f4`（两种合寄类型与目标批次）→ `d5f7a9c1e3b6`（幂等补齐马飞库房完整计划数量、清理旧无需运单导入归因并重算批次差异）→ `e6a8c0d2f4b7`（清理无履约关联的0份占位、增加正数约束、回填停发自动归因及来源字段）。
 
 ### 3.13 issue_audit_snapshots（确认/导出快照）
 记录当期报数与ZTO-MF之间的关键校验快照，用于追溯确认时和导出时采用的数量状态。

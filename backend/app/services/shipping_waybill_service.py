@@ -47,6 +47,11 @@ from app.schemas.shipping_waybill import (
 )
 from app.services.operation_log_service import record_operation
 from app.services.original_zto_shipping_import_service import is_original_zto_shipping_workbook
+from app.services.shipping_suspension_service import (
+    MANUAL_ADJUSTMENT_SOURCE,
+    PLAN_STATUS_ADJUSTMENT_SOURCE,
+    sync_plan_status_adjustment,
+)
 
 
 WAREHOUSE_STOCK_IN = "warehouse_stock_in"
@@ -1582,7 +1587,14 @@ def fulfillment_summary(db: Session, issue_id: int) -> FulfillmentSummaryOut:
             *(package.id for detail in details for package in detail.packages),
             *(allocation.shipping_package_id for detail in details for allocation in detail.package_allocations),
         }),
-        pending_detail_count=sum(1 for detail in details if detail.fulfillment_status in {"pending", "partial"}),
+        pending_detail_count=sum(
+            1
+            for detail in details
+            if min(
+                detail.physical_shipped_quantity + adjustment_by_detail.get(detail.id, 0),
+                detail.quantity or 0,
+            ) < (detail.quantity or 0)
+        ),
         status=status,
         shipment_status=shipment_status,
         latest_import=latest,
@@ -1651,10 +1663,22 @@ def create_fulfillment_adjustment(
             status_code=400,
             detail="“转库留存/库存入库”仅适用于马飞—库房留存",
         )
+    automatic_stop_exists = bool(
+        db.query(ShippingFulfillmentAdjustment.id)
+        .filter(ShippingFulfillmentAdjustment.shipping_detail_id == detail.id)
+        .filter(ShippingFulfillmentAdjustment.source == PLAN_STATUS_ADJUSTMENT_SOURCE)
+        .first()
+    )
+    if automatic_stop_exists:
+        raise HTTPException(
+            status_code=400,
+            detail="该明细已由计划停发自动核销，不能重复登记",
+        )
     adjustment = ShippingFulfillmentAdjustment(
         issue_id=issue.id,
         issue_number=issue.issue_number,
         adjustment_type=body.adjustment_type,
+        source=MANUAL_ADJUSTMENT_SOURCE,
         quantity=body.quantity,
         reason=reason,
         created_by=getattr(user, "id", None),
@@ -1863,6 +1887,8 @@ def attribute_fulfillment_adjustment(
     ).first()
     if not adjustment:
         raise HTTPException(status_code=404, detail="无需发货核销记录不存在")
+    if adjustment.source == PLAN_STATUS_ADJUSTMENT_SOURCE:
+        raise HTTPException(status_code=409, detail="计划停发自动归因不能改绑，请在发货计划中调整停发状态")
     issue = db.query(Issue).filter(Issue.id == adjustment.issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="刊期不存在")
@@ -1882,6 +1908,7 @@ def attribute_fulfillment_adjustment(
     previous_detail_id = adjustment.shipping_detail_id
     _attribute_adjustment(adjustment, detail)
     db.flush()
+    sync_plan_status_adjustment(db, detail=detail, user=user)
     record_operation(
         db,
         user=user,
@@ -1910,14 +1937,21 @@ def delete_fulfillment_adjustment(
     ).first()
     if not adjustment:
         raise HTTPException(status_code=404, detail="无需发货核销记录不存在")
+    if adjustment.source == PLAN_STATUS_ADJUSTMENT_SOURCE:
+        raise HTTPException(status_code=409, detail="计划停发自动归因不能单独撤销，请先恢复该发货计划")
     issue_id = adjustment.issue_id
     issue_number = adjustment.issue_number
+    detail = adjustment.shipping_detail
     changes = {
         "adjustment_type": adjustment.adjustment_type,
+        "source": adjustment.source,
         "quantity": adjustment.quantity,
         "reason": adjustment.reason,
     }
     db.delete(adjustment)
+    db.flush()
+    if detail is not None:
+        sync_plan_status_adjustment(db, detail=detail, user=user)
     record_operation(
         db,
         user=user,

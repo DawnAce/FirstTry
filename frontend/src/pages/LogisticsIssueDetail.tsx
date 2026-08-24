@@ -640,6 +640,10 @@ export default function LogisticsIssueDetail() {
 
   const confirmationSummary = report?.confirmation_summary;
   const allShippingTotal = allDetails.filter((detail) => detail.source_type !== 'complaint_makeup').reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const allStoppedTotal = allDetails
+    .filter((detail) => detail.source_type !== 'complaint_makeup' && detail.status === '停发')
+    .reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const allExpectedShippingTotal = allShippingTotal - allStoppedTotal;
   const check = report?.shipping_check;
   const advancedFilterCount = [shippingFilters.frequency, shippingFilters.transport, shippingFilters.sub_channel].filter(Boolean).length;
   const currentIsMatch = confirmationSummary?.plan_is_reconciled ?? confirmationSummary?.plan_is_match ?? null;
@@ -688,6 +692,10 @@ export default function LogisticsIssueDetail() {
   const visibleShippingTotal = visibleDetails
     .filter((detail) => detail.source_type !== 'complaint_makeup')
     .reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const visibleStoppedTotal = visibleDetails
+    .filter((detail) => detail.source_type !== 'complaint_makeup' && detail.status === '停发')
+    .reduce((sum, detail) => sum + (detail.quantity ?? 0), 0);
+  const visibleExpectedShippingTotal = visibleShippingTotal - visibleStoppedTotal;
   const visibleActualTotal = visibleDetails
     .filter((detail) => detail.source_type !== 'complaint_makeup')
     .reduce((sum, detail) => sum + detail.physical_shipped_quantity, 0);
@@ -906,16 +914,16 @@ export default function LogisticsIssueDetail() {
             <div className="zto-reconcile-copy">
               <span>实际发货与核销</span>
               <strong>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '核销已完成 · 部分发货' : fulfillmentPanelState.label}</strong>
-              <small>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '无需发货或转库留存份数已明确归因，实际寄出的份数少于计划应发。' : fulfillmentPanelState.description}</small>
+              <small>{fulfillment?.status === 'shipped' && fulfillment.shipment_status === 'partial' ? '无需发货或转库留存份数已明确归因，实际寄出的份数少于计划总数。' : fulfillmentPanelState.description}</small>
               {fulfillmentPanelState.kind === 'error' && (
                 <Button className="zto-inline-retry" size="small" icon={<ReloadOutlined />} onClick={retryFulfillmentData}>重新加载</Button>
               )}
             </div>
           </div>
           <div className="zto-reconcile-metric">
-            <span>计划应发</span>
+            <span>计划总数</span>
             <strong>{fulfillment?.planned_quantity?.toLocaleString() ?? '—'}</strong>
-            <small>份 · 当前计划</small>
+            <small>份 · 含停发归因</small>
           </div>
           <div className="zto-reconcile-metric">
             <span>实际发出</span>
@@ -992,7 +1000,9 @@ export default function LogisticsIssueDetail() {
             <div className="zto-list-head-actions">
               <span>
                 <b>{allDetails.length.toLocaleString()}</b> 条 ·{' '}
-                {activeSection === 'plan' ? '计划' : '实际寄出'} <b>{activeSection === 'plan' ? allShippingTotal.toLocaleString() : (fulfillment?.actual_shipped_quantity ?? 0).toLocaleString()}</b> 份
+                {activeSection === 'plan' ? <>
+                  计划总数 <b>{allShippingTotal.toLocaleString()}</b> 份 · 应发 <b>{allExpectedShippingTotal.toLocaleString()}</b> 份 · 停发 <b>{allStoppedTotal.toLocaleString()}</b> 份
+                </> : <>实际寄出 <b>{(fulfillment?.actual_shipped_quantity ?? 0).toLocaleString()}</b> 份</>}
               </span>
               {activeSection === 'actual' && !!fulfillment?.latest_import?.unmatched_rows && (
                 <Button
@@ -1080,7 +1090,9 @@ export default function LogisticsIssueDetail() {
             <div className="zto-toolbar-tail">
               <Button type="link" disabled={!hasShippingFilters} onClick={() => setShippingFilters({})}>清除筛选</Button>
               <span className="zto-toolbar-count">
-                共 <b>{detailsIsError ? '—' : visibleDetails.length}</b> 条 · {activeSection === 'plan' ? '计划' : '实际寄出'} <b>{detailsIsError ? '—' : (activeSection === 'plan' ? visibleShippingTotal : visibleActualTotal).toLocaleString()}</b> 份
+                共 <b>{detailsIsError ? '—' : visibleDetails.length}</b> 条 · {activeSection === 'plan' ? <>
+                  应发 <b>{detailsIsError ? '—' : visibleExpectedShippingTotal.toLocaleString()}</b> 份 · 停发 <b>{detailsIsError ? '—' : visibleStoppedTotal.toLocaleString()}</b> 份
+                </> : <>实际寄出 <b>{detailsIsError ? '—' : visibleActualTotal.toLocaleString()}</b> 份</>}
               </span>
             </div>
           </div>
@@ -1453,6 +1465,7 @@ export default function LogisticsIssueDetail() {
                   { title: '收件人', dataIndex: 'detail_name_snapshot', render: (value: string | null) => value || <Tag color="orange">待补充归属</Tag> },
                   { title: '渠道', dataIndex: 'detail_channel_snapshot', render: (value: string | null) => value || '—' },
                   { title: '核销类型', dataIndex: 'adjustment_type', render: (value: string) => value === 'warehouse_stock_in' ? <Tag color="cyan">转库留存/库存入库</Tag> : <Tag color="green">无需发货</Tag> },
+                  { title: '来源', dataIndex: 'source', width: 120, render: (value: string) => value === 'plan_status' ? <Tag color="blue">计划停发联动</Tag> : '人工登记' },
                   { title: '原因', dataIndex: 'reason' },
                   { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
                   { title: '状态', key: 'state', width: 110, render: (_: unknown, item) => item.is_attributed

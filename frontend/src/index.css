@@ -142,11 +142,21 @@ body {
 .ant-btn-primary:not(:disabled):not(.ant-btn-disabled) {
   background: var(--color-accent) !important;
   border-color: var(--color-accent) !important;
+  color: var(--color-on-accent) !important;
 }
 
 .ant-btn-primary:not(:disabled):not(.ant-btn-disabled):hover {
   background: var(--color-accent-hover) !important;
   border-color: var(--color-accent-hover) !important;
+  color: var(--color-on-accent) !important;
+}
+
+.ant-btn-primary:disabled,
+.ant-btn-primary.ant-btn-disabled {
+  border-color: var(--color-border) !important;
+  background: var(--color-bg-muted) !important;
+  color: var(--color-text-secondary) !important;
+  box-shadow: none !important;
 }
 
 .ant-btn-default {
