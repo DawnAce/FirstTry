@@ -117,6 +117,28 @@ def _high_speed_rail_workbook_bytes() -> bytes:
     return out.getvalue()
 
 
+def _compact_high_speed_rail_workbook_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "已出高铁110"
+    ws.append([None, None, None, None, "联系电话", "收货地址", "联系人", "投放数量", "站名", "站厅名称"])
+    ws.append([
+        "中国经营报8-24日",
+        "测试客户5",
+        "73708644153510",
+        "测试客户5",
+        "13800000000",
+        "北京市测试地址",
+        "测试客户",
+        5,
+        "北京站",
+        "商务候车厅",
+    ])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
 def _postal_30_workbook_bytes(*, compact: bool) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -263,6 +285,18 @@ def test_parser_recognizes_high_speed_rail_sheet_columns():
     assert rows[0].recipient_name == "赵叶"
     assert rows[0].phone == "15810698235"
     assert rows[0].address == "北京市东城区北京站广场西侧商务专用通道 赵叶 15810698235"
+    assert rows[0].quantity == 5
+    assert rows[0].parse_reason is None
+
+
+def test_parser_recognizes_compact_high_speed_rail_sheet_columns():
+    rows = parse_waybill_workbook(_compact_high_speed_rail_workbook_bytes())
+    assert len(rows) == 1
+    assert rows[0].source_sheet == "已出高铁110"
+    assert rows[0].tracking_no == "73708644153510"
+    assert rows[0].recipient_name == "测试客户"
+    assert rows[0].phone == "13800000000"
+    assert rows[0].address == "北京市测试地址"
     assert rows[0].quantity == 5
     assert rows[0].parse_reason is None
 

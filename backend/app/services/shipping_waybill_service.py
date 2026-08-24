@@ -173,6 +173,37 @@ def _parse_postal_30_fields(
     )
 
 
+def _parse_high_speed_rail_fields(
+    row: tuple[Any, ...] | list[Any],
+) -> tuple[str, str, str, int, str]:
+    """Read both layouts used by high-speed-rail actual-waybill sheets.
+
+    Some carrier workbooks use G/H for recipient/quantity.  Another variant
+    inserts a display-name column at G and uses H/I for recipient/quantity.
+    The positive quantity cell identifies the variant without treating a
+    station/display label as the recipient.
+    """
+    compact_quantity = _quantity(_row_value(row, 7))
+    display_name_quantity = _quantity(_row_value(row, 8))
+    phone = _text(_row_value(row, 4))
+    address = _text(_row_value(row, 5))
+    if display_name_quantity > 0:
+        return (
+            _text(_row_value(row, 7)),
+            phone,
+            address,
+            display_name_quantity,
+            "display_name_ghi",
+        )
+    return (
+        _text(_row_value(row, 6)),
+        phone,
+        address,
+        compact_quantity,
+        "compact_gh",
+    )
+
+
 def _parse_standard_sheet(ws) -> list[ParsedWaybillRow] | None:
     aliases = {
         "detail_id": {"发货明细id", "明细id", "shippingdetailid"},
@@ -266,8 +297,7 @@ def _parse_known_sheet(ws) -> list[ParsedWaybillRow]:
             name, phone, address, qty, _layout = _parse_postal_30_fields(row)
             carrier, tracking = "邮政", tracking_c
         elif "高铁" in title and tracking_c:
-            # 高铁运单表在地址后多一列展示名称：G=展示名称、H=姓名、I=份数。
-            name, phone, address, qty = _text(row[7]), _text(row[4]), _text(row[5]), _quantity(row[8])
+            name, phone, address, qty, _layout = _parse_high_speed_rail_fields(row)
             carrier, tracking = _carrier_for_tracking(tracking_c), tracking_c
         elif ("挂号" in title or "整月" in title) and tracking_c:
             name, phone, address, qty = _text(row[6] or row[3]), _text(row[4]), _text(row[5]), _quantity(row[9])
