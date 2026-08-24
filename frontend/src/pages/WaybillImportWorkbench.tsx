@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -44,7 +44,6 @@ import {
   addWaybillImportRow,
   addFulfillmentAdjustment,
   addShippingDeferrals,
-  addConsolidatedPackage,
   attributeFulfillmentAdjustment,
   bulkMatchWaybillImportRows,
   confirmWaybillImport,
@@ -71,9 +70,12 @@ import {
   filterWaybillRows,
   isRecoverableWaybillDraft,
   isSupportedWaybillFilename,
+  remainingPlanGapQuantity,
   recommendedMonthEndGapIds,
 } from './waybillImportUtils';
 import type { RowFilter } from './waybillImportUtils';
+import ShippingDeferralModal from './ShippingDeferralModal';
+import { deferralsForTargetIssue, summarizeShippingDeferrals } from './shippingDeferralUtils';
 
 const statusMeta: Record<WaybillImportRow['match_status'], { label: string; color: string }> = {
   matched: { label: '已匹配', color: 'green' },
@@ -98,14 +100,9 @@ const monthEndConsolidationReason = '月底合寄 · 本期报纸随月底最后
 const warehouseStockInReason = '转库留存 · 当期报纸入马飞中通库房备货';
 type AdjustmentType = FulfillmentAdjustment['adjustment_type'];
 type DeferralType = ShippingDeferral['deferral_type'];
-type ConsolidatedFilter = 'due' | 'twice_monthly' | 'month_end' | 'all';
 
 function adjustmentReasonLabel(reason: string): string {
   return reason === '双周停刊' ? legacySuspendedConsolidationReason : reason;
-}
-
-function deferralTypeLabel(type: DeferralType): string {
-  return type === 'twice_monthly_consolidation' ? '每月两次合寄' : '月底合寄';
 }
 
 interface RowFormValues {
@@ -132,10 +129,12 @@ export default function WaybillImportWorkbench() {
   const { id } = useParams<{ id: string }>();
   const issueId = Number(id);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const forceReparseRef = useRef(false);
   const dragDepthRef = useRef(0);
+  const initialFilterBatchIdRef = useRef<number | null>(null);
   const [batchOverride, setBatch] = useState<WaybillImportBatch | null | undefined>(undefined);
   const [filter, setFilter] = useState<RowFilter>('unresolved');
   const [parsing, setParsing] = useState(false);
@@ -165,12 +164,9 @@ export default function WaybillImportWorkbench() {
   const [transferAddress, setTransferAddress] = useState('');
   const [transferReason, setTransferReason] = useState('计划份数归属纠错');
   const [savingTransfer, setSavingTransfer] = useState(false);
-  const [consolidatedOpen, setConsolidatedOpen] = useState(false);
-  const [consolidatedFilter, setConsolidatedFilter] = useState<ConsolidatedFilter>('due');
-  const [selectedDeferralIds, setSelectedDeferralIds] = useState<number[]>([]);
-  const [consolidatedCarrier, setConsolidatedCarrier] = useState('中通');
-  const [consolidatedTracking, setConsolidatedTracking] = useState('');
-  const [savingConsolidated, setSavingConsolidated] = useState(false);
+  const [consolidatedOpen, setConsolidatedOpen] = useState(
+    () => searchParams.get('action') === 'consolidations',
+  );
   const [rowForm] = Form.useForm<RowFormValues>();
 
   const issueQuery = useQuery({
@@ -207,17 +203,15 @@ export default function WaybillImportWorkbench() {
     () => pendingDeferralsQuery.data ?? [],
     [pendingDeferralsQuery.data],
   );
-  const dueDeferrals = useMemo(() => pendingDeferrals.filter((item) => (
-    !item.target_publish_date
-    || !issueQuery.data?.publish_date
-    || !dayjs(item.target_publish_date).isAfter(dayjs(issueQuery.data.publish_date), 'day')
-  )), [issueQuery.data, pendingDeferrals]);
-  const visibleDeferrals = useMemo(() => pendingDeferrals.filter((item) => {
-    if (consolidatedFilter === 'due') return dueDeferrals.some((due) => due.id === item.id);
-    if (consolidatedFilter === 'twice_monthly') return item.deferral_type === 'twice_monthly_consolidation';
-    if (consolidatedFilter === 'month_end') return item.deferral_type === 'month_end_consolidation';
-    return true;
-  }), [consolidatedFilter, dueDeferrals, pendingDeferrals]);
+  const targetDeferrals = useMemo(() => deferralsForTargetIssue(
+    pendingDeferrals,
+    issueQuery.data?.issue_number,
+    issueQuery.data?.publish_date,
+  ), [issueQuery.data?.issue_number, issueQuery.data?.publish_date, pendingDeferrals]);
+  const targetDeferralSummary = useMemo(
+    () => summarizeShippingDeferrals(targetDeferrals),
+    [targetDeferrals],
+  );
 
   const batch = batchOverride === undefined ? draftQuery.data ?? null : batchOverride;
   const details = useMemo(() => detailsQuery.data ?? [], [detailsQuery.data]);
@@ -259,8 +253,8 @@ export default function WaybillImportWorkbench() {
   const deferredQuantity = fulfillmentQuery.data?.deferred_quantity ?? 0;
   const twiceMonthlyDeferredQuantity = fulfillmentQuery.data?.twice_monthly_deferred_quantity ?? 0;
   const monthEndDeferredQuantity = fulfillmentQuery.data?.month_end_deferred_quantity ?? deferredQuantity;
-  const fileGapQuantity = batch?.file_gap_quantity ?? Math.max((batch?.expected_quantity ?? 0) - (batch?.parsed_quantity ?? 0), 0);
-  const remainingFileGap = Math.max(fileGapQuantity - adjustmentQuantity - deferredQuantity, 0);
+  const gapDetails = fulfillmentQuery.data?.gap_details ?? [];
+  const remainingFileGap = remainingPlanGapQuantity(gapDetails);
   const displayedHandledQuantity = (batch?.matched_quantity ?? 0) + adjustmentQuantity;
   const displayedPendingQuantity = Math.max((batch?.expected_quantity ?? 0) - displayedHandledQuantity, 0);
   const currentPendingQuantity = batch?.status === 'previewed'
@@ -270,7 +264,6 @@ export default function WaybillImportWorkbench() {
     ? Math.max(displayedPendingQuantity - deferredQuantity, 0)
     : fulfillmentQuery.data?.unexplained_pending_quantity
       ?? Math.max(displayedPendingQuantity - deferredQuantity, 0);
-  const gapDetails = fulfillmentQuery.data?.gap_details ?? [];
   const adjustmentSelectedQuantity = gapDetails.find(
     (item) => item.shipping_detail_id === adjustmentDetailId,
   )?.remaining_quantity ?? 0;
@@ -301,6 +294,12 @@ export default function WaybillImportWorkbench() {
     return candidates.length === 1 ? candidates[0] : undefined;
   }, [details, remainingFileGap]);
 
+  useEffect(() => {
+    if (!batch || !fulfillmentQuery.isSuccess || fulfillmentQuery.isFetching || initialFilterBatchIdRef.current === batch.id) return;
+    initialFilterBatchIdRef.current = batch.id;
+    setFilter(batch.unmatched_rows > 0 ? 'unresolved' : remainingFileGap > 0 ? 'gap' : 'all');
+  }, [batch, fulfillmentQuery.isFetching, fulfillmentQuery.isSuccess, remainingFileGap]);
+
   const openFilePicker = (forceReparse: boolean) => {
     forceReparseRef.current = forceReparse;
     fileInputRef.current?.click();
@@ -313,7 +312,7 @@ export default function WaybillImportWorkbench() {
     try {
       const response = await previewWaybillImport(issueId, file, forceReparseRef.current);
       setBatch(response.data);
-      setFilter(response.data.unmatched_rows > 0 ? 'unresolved' : response.data.file_gap_quantity > 0 ? 'gap' : 'all');
+      setFilter(response.data.unmatched_rows > 0 ? 'unresolved' : response.data.pending_quantity > 0 ? 'gap' : 'all');
       queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
       await queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] });
       message.success(response.data.status === 'confirmed' ? '该文件已经确认导入，未重复创建运单' : '运单文件已解析，草稿会自动保留');
@@ -323,7 +322,7 @@ export default function WaybillImportWorkbench() {
           const recovered = (await getWaybillImportDraft(issueId)).data;
           if (isRecoverableWaybillDraft(recovered, file.name, previousBatchId, wasForceReparse)) {
             setBatch(recovered);
-            setFilter(recovered.unmatched_rows > 0 ? 'unresolved' : recovered.file_gap_quantity > 0 ? 'gap' : 'all');
+            setFilter(recovered.unmatched_rows > 0 ? 'unresolved' : recovered.pending_quantity > 0 ? 'gap' : 'all');
             queryClient.setQueryData(['waybillImportDraft', issueId], recovered);
             message.warning('上传响应中断，但后台已完成解析，已自动恢复最新草稿');
             return;
@@ -494,6 +493,7 @@ export default function WaybillImportWorkbench() {
         queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
         queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] }),
       ]);
+      if (response.data.unmatched_rows === 0 && response.data.pending_quantity > 0) setFilter('gap');
       if (editingRow?.id === row.id) closeEditor();
       message.success('已改为转库留存/库存入库，原导入行已保留为忽略凭证');
     } catch (error) {
@@ -592,32 +592,6 @@ export default function WaybillImportWorkbench() {
       message.error(logisticsApiErrorMessage(error, '计划纠错失败'));
     } finally {
       setSavingTransfer(false);
-    }
-  };
-
-  const handleConsolidatedPackage = async () => {
-    if (!selectedDeferralIds.length || !consolidatedTracking.trim()) return;
-    setSavingConsolidated(true);
-    try {
-      const response = await addConsolidatedPackage(
-        consolidatedCarrier,
-        consolidatedTracking.trim(),
-        selectedDeferralIds,
-      );
-      setConsolidatedOpen(false);
-      setSelectedDeferralIds([]);
-      setConsolidatedTracking('');
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['shippingDeferrals', 'pending'] }),
-        queryClient.invalidateQueries({ queryKey: ['shippingFulfillment'] }),
-        queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
-        queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
-      ]);
-      message.success(`合寄运单已核销 ${response.data.quantity} 份`);
-    } catch (error) {
-      message.error(logisticsApiErrorMessage(error, '合寄核销失败'));
-    } finally {
-      setSavingConsolidated(false);
     }
   };
 
@@ -856,9 +830,9 @@ export default function WaybillImportWorkbench() {
         </p>
       </div>
       <div className="waybill-head-actions">
-        <Button icon={<LinkOutlined />} onClick={() => setConsolidatedOpen(true)}>
-          合寄待办 {pendingDeferralsQuery.data?.length ?? 0}
-        </Button>
+        {targetDeferralSummary.recordCount > 0 && <Button icon={<LinkOutlined />} onClick={() => setConsolidatedOpen(true)}>
+          本期待完成合寄 {targetDeferralSummary.recordCount}条 / {targetDeferralSummary.quantity.toLocaleString()}份
+        </Button>}
         {batch && <Button icon={<PlusOutlined />} onClick={openAdd}>手工补充一行</Button>}
         {batch?.status !== 'confirmed' && <>
           <Button icon={<ReloadOutlined />} loading={parsing} onClick={() => openFilePicker(true)}>重新上传并解析</Button>
@@ -1024,13 +998,13 @@ export default function WaybillImportWorkbench() {
               { title: '计划', dataIndex: 'planned_quantity', width: 72, align: 'right' },
               { title: '文件', dataIndex: 'source_quantity', width: 72, align: 'right' },
               {
-                title: '处理状态', key: 'state', width: 150,
+                title: '处理状态', key: 'state', width: 190,
                 render: (_, row) => row.twice_monthly_deferred_quantity
-                  ? <Tag color="purple">每月两次合寄 {row.twice_monthly_deferred_quantity}份</Tag>
+                  ? <><Tag color="purple">每月两次合寄</Tag><Tag>已登记 · {row.twice_monthly_deferred_quantity}份</Tag></>
                   : row.month_end_deferred_quantity
-                    ? <Tag color="blue">待月底合寄 {row.month_end_deferred_quantity}份</Tag>
+                    ? <><Tag color="blue">月底合寄</Tag><Tag>已登记 · {row.month_end_deferred_quantity}份</Tag></>
                   : row.required_adjustment_type === 'warehouse_stock_in' ? <Tag color="cyan">固定：库存入库</Tag>
-                  : row.suggested_month_end ? <Tag color="gold">建议月底合寄</Tag> : <Tag color="red">待核对</Tag>,
+                  : row.suggested_month_end ? <><Tag color="gold">待确认</Tag><Tag color="blue">月底合寄</Tag></> : <Tag color="red">待核对</Tag>,
               },
               {
                 title: '剩余差额', dataIndex: 'remaining_quantity', width: 88, align: 'right',
@@ -1337,76 +1311,13 @@ export default function WaybillImportWorkbench() {
       />
     </Modal>
 
-    <Modal
-      rootClassName="zto-compact-modal"
-      title="合寄待办"
+    <ShippingDeferralModal
       open={consolidatedOpen}
-      width={980}
-      okText="登记运单并完成核销"
-      okButtonProps={{
-        loading: savingConsolidated,
-        disabled: !selectedDeferralIds.length || !consolidatedTracking.trim(),
-      }}
-      onOk={() => void handleConsolidatedPackage()}
-      onCancel={() => setConsolidatedOpen(false)}
-    >
-      <Alert
-        showIcon
-        type="info"
-        title="同一张运单可以核销同一收件人的多个历史刊期"
-        description="请只勾选同一收件人的记录；系统会把包裹份数分别归入对应刊期。"
-      />
-      <Segmented<ConsolidatedFilter>
-        className="waybill-reason-input"
-        value={consolidatedFilter}
-        options={[
-          { label: `本期应寄 ${dueDeferrals.length}`, value: 'due' },
-          { label: `每月两次 ${pendingDeferrals.filter((item) => item.deferral_type === 'twice_monthly_consolidation').length}`, value: 'twice_monthly' },
-          { label: `月底合寄 ${pendingDeferrals.filter((item) => item.deferral_type === 'month_end_consolidation').length}`, value: 'month_end' },
-          { label: `全部 ${pendingDeferrals.length}`, value: 'all' },
-        ]}
-        onChange={(value) => {
-          setConsolidatedFilter(value);
-          setSelectedDeferralIds([]);
-        }}
-      />
-      <div className="waybill-consolidated-fields">
-        <Select
-          value={consolidatedCarrier}
-          options={['中通', '顺丰', '邮政', '邮政挂号'].map((value) => ({ value, label: value }))}
-          onChange={setConsolidatedCarrier}
-        />
-        <Input value={consolidatedTracking} placeholder="输入实际合寄运单号" onChange={(event) => setConsolidatedTracking(event.target.value)} />
-      </div>
-      <Table
-        rowKey="id"
-        size="small"
-        pagination={{ pageSize: 8, showSizeChanger: false }}
-        loading={pendingDeferralsQuery.isLoading}
-        dataSource={visibleDeferrals}
-        rowSelection={{
-          selectedRowKeys: selectedDeferralIds,
-          onChange: (keys) => setSelectedDeferralIds(keys.map(Number)),
-        }}
-        columns={[
-          { title: '刊期', dataIndex: 'issue_number', width: 90 },
-          {
-            title: '合寄方式', dataIndex: 'deferral_type', width: 130,
-            render: (value: DeferralType) => <Tag color={value === 'twice_monthly_consolidation' ? 'purple' : 'blue'}>{deferralTypeLabel(value)}</Tag>,
-          },
-          {
-            title: '目标批次', key: 'target', width: 145,
-            render: (_, row: ShippingDeferral) => row.target_issue_number
-              ? `第 ${row.target_issue_number} 期${row.target_publish_date ? ` · ${dayjs(row.target_publish_date).format('MM-DD')}` : ''}`
-              : row.target_publish_date ? dayjs(row.target_publish_date).format('YYYY-MM-DD') : '历史待办',
-          },
-          { title: '收件人', dataIndex: 'detail_name_snapshot', width: 130 },
-          { title: '电话', dataIndex: 'detail_phone_snapshot', width: 130 },
-          { title: '地址', dataIndex: 'detail_address_snapshot', ellipsis: true },
-          { title: '份数', dataIndex: 'quantity', width: 70, align: 'right' },
-        ]}
-        locale={{ emptyText: <Empty description="当前没有待合寄记录" /> }}
-      />
-    </Modal>
+      title="本期待完成合寄"
+      items={targetDeferrals}
+      loading={pendingDeferralsQuery.isLoading}
+      scope="issue"
+      onClose={() => setConsolidatedOpen(false)}
+    />
   </div>;
 }

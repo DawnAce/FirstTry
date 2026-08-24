@@ -90,3 +90,9 @@ export function recommendedMonthEndGapIds(
     .filter((gap) => gap.suggested_month_end && gap.remaining_quantity > 0)
     .map((gap) => gap.shipping_detail_id);
 }
+
+export function remainingPlanGapQuantity(
+  gaps: Array<Pick<ShippingGapDetail, 'remaining_quantity'>>,
+): number {
+  return gaps.reduce((sum, gap) => sum + Math.max(gap.remaining_quantity, 0), 0);
+}

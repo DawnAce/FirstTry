@@ -37,6 +37,7 @@ import {
   UploadOutlined,
   InboxOutlined,
   FileExcelOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
@@ -75,6 +76,7 @@ import {
   addManualPackage,
   deleteShippingPackage,
   getFulfillmentSummary,
+  getPendingShippingDeferrals,
   setNoTrackingRequired,
 } from '../api/shippingWaybills';
 import {
@@ -83,6 +85,7 @@ import {
   resolvePlanReconciliationState,
 } from './logisticsIssueState';
 import ShippingDetailCardList from './ShippingDetailCardList';
+import { deferralsForTargetIssue, summarizeShippingDeferrals } from './shippingDeferralUtils';
 
 const CHANNEL_OPTIONS = ['渠道订阅', '对公订阅', '个人订阅', '记者站', '赠阅', '自用', '库房留存', '报社留存'] as const;
 const SUB_CHANNEL_OPTIONS_BY_CHANNEL: Record<string, readonly string[]> = {
@@ -301,6 +304,21 @@ export default function LogisticsIssueDetail() {
     queryFn: async () => (await getFulfillmentSummary(issueId)).data,
     enabled: Number.isFinite(issueId),
   });
+
+  const { data: pendingDeferrals = [] } = useQuery({
+    queryKey: ['shippingDeferrals', 'pending'],
+    queryFn: async () => (await getPendingShippingDeferrals()).data,
+    enabled: activeSection === 'actual' && currentIssue != null,
+  });
+  const targetDeferrals = useMemo(() => deferralsForTargetIssue(
+    pendingDeferrals,
+    currentIssue?.issue_number,
+    currentIssue?.publish_date,
+  ), [currentIssue?.issue_number, currentIssue?.publish_date, pendingDeferrals]);
+  const targetDeferralSummary = useMemo(
+    () => summarizeShippingDeferrals(targetDeferrals),
+    [targetDeferrals],
+  );
 
   const { data: operationLogs = [], isLoading: logsLoading } = useQuery({
     queryKey: ['operationLogs', logRecordId],
@@ -859,6 +877,19 @@ export default function LogisticsIssueDetail() {
           </div>
         )}
       </Card>}
+
+      {activeSection === 'actual' && targetDeferralSummary.recordCount > 0 && <Alert
+        type="warning"
+        showIcon
+        title={`本期待完成合寄 ${targetDeferralSummary.recordCount}条 / ${targetDeferralSummary.quantity.toLocaleString()}份`}
+        description={`每月两次合寄 ${targetDeferralSummary.twiceMonthlyCount} 条，月底合寄 ${targetDeferralSummary.monthEndCount} 条。请登记本批实际使用的合寄运单号。`}
+        action={canMutate ? <Button
+          type="primary"
+          icon={<LinkOutlined />}
+          onClick={() => navigate(`/logistics/issues/${issueId}/waybills/import?action=consolidations`)}
+        >处理合寄发货</Button> : undefined}
+        style={{ marginBottom: 16 }}
+      />}
 
       {activeSection === 'actual' && <Card className="zto-fulfillment-card" styles={{ body: { padding: 0 } }}>
         <div className="zto-reconcile-main has-five-metrics">

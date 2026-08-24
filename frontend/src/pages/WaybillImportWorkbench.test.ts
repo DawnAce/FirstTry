@@ -6,6 +6,7 @@ import {
   filterWaybillRows,
   isRecoverableWaybillDraft,
   isSupportedWaybillFilename,
+  remainingPlanGapQuantity,
   recommendedMonthEndGapIds,
 } from './waybillImportUtils';
 
@@ -116,5 +117,16 @@ describe('recommendedMonthEndGapIds', () => {
       { shipping_detail_id: 2, suggested_month_end: true, remaining_quantity: 0 },
       { shipping_detail_id: 3, suggested_month_end: false, remaining_quantity: 1 },
     ])).toEqual([1]);
+  });
+});
+
+describe('remainingPlanGapQuantity', () => {
+  it('uses the detail-level remaining quantities without deducting stock-in twice', () => {
+    expect(remainingPlanGapQuantity([
+      { remaining_quantity: 4 },
+      { remaining_quantity: 3 },
+      ...Array.from({ length: 17 }, () => ({ remaining_quantity: 1 })),
+      { remaining_quantity: 0 },
+    ])).toBe(24);
   });
 });
