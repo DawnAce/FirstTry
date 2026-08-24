@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Card, Row, Col, Button, Tag, Table, Empty } from 'antd';
@@ -7,6 +8,7 @@ import {
   SendOutlined,
   RightOutlined,
   FileTextOutlined,
+  LinkOutlined,
   UnorderedListOutlined,
   BarChartOutlined,
 } from '@ant-design/icons';
@@ -17,7 +19,10 @@ import { getWorkbenchOverview } from '../api/logisticsOverview';
 import type { PeriodRow, PlanStatus, WaybillStatus } from '../api/logisticsOverview';
 import { getRecentOperationLogs } from '../api/operationLogs';
 import type { OperationLog } from '../api/operationLogs';
+import { getPendingShippingDeferrals } from '../api/shippingWaybills';
 import { MetricCard, PageHeader } from '../components/UiPrimitives';
+import ShippingDeferralModal from './ShippingDeferralModal';
+import { summarizeShippingDeferrals } from './shippingDeferralUtils';
 
 const planStatusColor: Record<PlanStatus, string> = {
   未创建: 'default', 草稿: 'orange', 待导入: 'gold', 有差异: 'red', 有变更: 'orange', 已就绪: 'green',
@@ -28,6 +33,7 @@ const waybillStatusColor: Record<WaybillStatus, string> = {
 
 export default function LogisticsOverview() {
   const navigate = useNavigate();
+  const [deferralModalOpen, setDeferralModalOpen] = useState(false);
 
   const { data, isLoading: loading } = useQuery({
     queryKey: ['logistics-overview', 'workbench'],
@@ -38,6 +44,15 @@ export default function LogisticsOverview() {
     queryKey: ['operationLogs', 'recent-workbench'],
     queryFn: async () => (await getRecentOperationLogs({ limit: 6 })).data,
   });
+
+  const { data: pendingDeferrals = [], isLoading: pendingDeferralsLoading } = useQuery({
+    queryKey: ['shippingDeferrals', 'pending'],
+    queryFn: async () => (await getPendingShippingDeferrals()).data,
+  });
+  const deferralSummary = useMemo(
+    () => summarizeShippingDeferrals(pendingDeferrals, dayjs().format('YYYY-MM-DD')),
+    [pendingDeferrals],
+  );
 
   const kpi = data?.kpi ?? { total: 0, uploaded: 0, pending: 0, uncreated: 0, exception: 0, draft: 0 };
   const extras = data?.extras ?? null;
@@ -197,6 +212,29 @@ export default function LogisticsOverview() {
         <Col xs={24} lg={7}>
           <Card size="small" className="dashboard-sidebar-card" style={{ marginBottom: 16 }}>
             <div className="dashboard-sidebar-header">
+              <span className="dashboard-sidebar-title"><LinkOutlined /> 合寄待办</span>
+            </div>
+            <button
+              type="button"
+              className="dashboard-pending-item"
+              style={{ width: '100%', border: 0, background: 'transparent', textAlign: 'left' }}
+              onClick={() => setDeferralModalOpen(true)}
+            >
+              <div className="dashboard-pending-dot" style={{ background: 'var(--color-warning)' }} />
+              <div className="dashboard-pending-content">
+                <div className="dashboard-pending-name">
+                  全部未完成 {pendingDeferralsLoading ? '—' : `${deferralSummary.recordCount}条 / ${deferralSummary.quantity.toLocaleString()}份`}
+                </div>
+                <div className="dashboard-pending-desc">
+                  逾期 {deferralSummary.overdueCount} · 每月两次 {deferralSummary.twiceMonthlyCount} · 月底 {deferralSummary.monthEndCount} · 历史未分批 {deferralSummary.legacyCount}
+                </div>
+              </div>
+              <RightOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 12, marginLeft: 8 }} />
+            </button>
+          </Card>
+
+          <Card size="small" className="dashboard-sidebar-card" style={{ marginBottom: 16 }}>
+            <div className="dashboard-sidebar-header">
               <span className="dashboard-sidebar-title">⚙️ 待处理提醒</span>
             </div>
             <div className="dashboard-pending-list">
@@ -263,6 +301,14 @@ export default function LogisticsOverview() {
           </Card>
         </Col>
       </Row>
+      <ShippingDeferralModal
+        open={deferralModalOpen}
+        title="全部未完成合寄待办"
+        items={pendingDeferrals}
+        loading={pendingDeferralsLoading}
+        scope="global"
+        onClose={() => setDeferralModalOpen(false)}
+      />
     </div>
   );
 }

@@ -491,7 +491,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | `shipping_deferrals` | 合寄待办，区分 `twice_monthly_consolidation` / `month_end_consolidation`，保存来源刊期、目标刊期/日期/批次、具体发货明细、份数、收件信息快照、说明及 pending/fulfilled 状态 |
 | `shipping_package_allocations` | 一个物理包裹对多个历史刊期发货明细的份数分摊；同一待合寄记录只能核销一次 |
 
-发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。`actual_shipped = tracked + no_tracking`，`handled = actual_shipped + no_shipment_required + warehouse_stock_in`；库存入库单列统计且不计入实际寄出。两种合寄在真正关联包裹前均不计入实际发出或 handled，只从 `pending_quantity` 中合计为 `deferred_quantity`，并分别返回 `twice_monthly_deferred_quantity` / `month_end_deferred_quantity`；`unexplained_pending_quantity = max(pending_quantity - deferred_quantity, 0)`。每月两次合寄按自然月刊期表确定前两期批次和剩余期次的月底批次，月底合寄则统一指向最后一期。工作台按 `shipping_detail_id` 比较计划份数与最新来源文件匹配份数，展示逐明细差额。“马飞—库房留存”由前后端固定为 `warehouse_stock_in`，接口同时拒绝其普通运单、无需运单、无需发货和合寄操作。计划纠错以净额转移完成，转出和转入同一事务提交，因此确认总计划不漂移。合寄包裹通过 allocation 分摊到多个历史明细，物理发货份数按 allocation 计入对应刊期。
+发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。`actual_shipped = tracked + no_tracking`，`handled = actual_shipped + no_shipment_required + warehouse_stock_in`；库存入库单列统计且不计入实际寄出。两种合寄在真正关联包裹前均不计入实际发出或 handled，只从 `pending_quantity` 中合计为 `deferred_quantity`，并分别返回 `twice_monthly_deferred_quantity` / `month_end_deferred_quantity`；`unexplained_pending_quantity = max(pending_quantity - deferred_quantity, 0)`。每月两次合寄按自然月刊期表确定前两期批次和剩余期次的月底批次，月底合寄则统一指向最后一期。工作台按 `shipping_detail_id` 比较计划份数与最新来源文件匹配份数，展示逐明细差额；前端的“计划缺口待归因”直接求和 `gap_details[].remaining_quantity`，不得再从文件差额重复扣除调整或合寄数量。“马飞—库房留存”由前后端固定为 `warehouse_stock_in`，接口同时拒绝其普通运单、无需运单、无需发货和合寄操作。计划纠错以净额转移完成，转出和转入同一事务提交，因此确认总计划不漂移。合寄包裹通过 allocation 分摊到多个历史明细，物理发货份数按 allocation 计入对应刊期。
 
 重新上传发货计划提交后会检查已确认批次中因历史清空操作而失去 `shipping_detail_id`/包裹的匹配行：先按收件人、电话、地址唯一匹配并重建 `shipping_packages`；剩余拆分包裹仅在标准化姓名唯一且行合计份数等于计划剩余份数时恢复。恢复过程沿用原批次确认时间，并重新计算批次与期级核销统计；无法唯一判断的行不猜测，保留为待人工关联。明细的单删、批量删除和整期清空在检测到运单、实发、核销、延期或分摊历史时返回 `409`，防止级联删除实际包裹。
 
@@ -1586,7 +1586,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 | `GET` | `/issues/{issue_id}/summary` | 返回确认印数、计划、实际寄出、归属/未归属无需发货、累计已处理、待补/超额、物理发货状态和核销状态 |
 | `POST` | `/issues/{issue_id}/adjustments` | 登记无需发货份数、原因和必填的本期发货明细归属，并保存收件信息快照 |
 | `POST` | `/issues/{issue_id}/deferrals` | 按具体发货明细批量登记每月两次或月底合寄份数，并固化目标批次 |
-| `GET` | `/deferrals/pending` | 读取全部刊期待合寄记录 |
+| `GET` | `/deferrals/pending` | 读取全系统所有刊期累计、当前仍未完成的合寄记录；接口结果不是单期或单月统计 |
 | `DELETE` | `/deferrals/{deferral_id}` | 撤销尚未完成的待合寄记录 |
 | `POST` | `/packages/consolidated` | 为同一收件人的多个历史刊期登记一张合寄运单并完成分摊核销 |
 | `POST` | `/issues/{issue_id}/plan-transfer` | 在两条明细间净额转移计划份数，或转入新建收件明细；本期计划总数保持不变 |
@@ -1604,7 +1604,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 重新解析会用集合删除语句清理旧草稿，并以一次批量写入保存全部解析行，避免远程 MySQL 按行往返。若上传连接在后台提交后中断，前端会读取本期最新草稿并在批次 ID 已更新时自动恢复；超时提示不得再等同于“后端服务不可用”。
 
-前端路由 `/logistics/issues/:id/waybills/import` 对应 `WaybillImportWorkbench.tsx`。页面读取期级草稿或待处理确认批次、确认快照、核销摘要和全部本期发货明细。筛选明确标注“导入行待处理（行）”与“计划缺口待归因（份）”，实际发货状态分别展示待每月两次合寄、待月底合寄和未解释待补。计划缺口工作台可登记两种合寄、执行计划纠错、转库留存或从标准原因下拉登记真正无需发货。误标为无需运单的“马飞—库房留存”行会在表格操作区和核对弹窗同时提供库存入库转换入口。页头“合寄待办”按类型和目标批次展示，并允许选择同一收件人的多个历史刊期登记一张实际运单。历史原因为“每月两次合寄 · 暂停寄送”或“双周停刊”的无需发货记录只提示人工复核，不自动改账；管理员可逐条确认撤销，撤销后份数重新进入计划缺口，再明确登记为每月两次合寄。
+前端路由 `/logistics/issues/:id/waybills/import` 对应 `WaybillImportWorkbench.tsx`。页面读取期级草稿或待处理确认批次、确认快照、核销摘要和全部本期发货明细。筛选明确标注“导入行待处理（行）”与“计划缺口待归因（份）”，实际发货状态分别展示待每月两次合寄、待月底合寄和未解释待补。计划缺口工作台可登记两种合寄、执行计划纠错、转库留存或从标准原因下拉登记真正无需发货。误标为无需运单的“马飞—库房留存”行会在表格操作区和核对弹窗同时提供库存入库转换入口。全局 `GET /deferrals/pending` 的条数与份数只在 `LogisticsOverview.tsx` 的快递管理总览展示；`LogisticsIssueDetail.tsx` 和运单工作台以 `target_issue_number === currentIssue.issue_number` 精确筛选本期批次，仅在目标期显示“本期待完成合寄”。旧数据只有目标日期时可按与本期出版日期完全相等回退匹配；目标期号和目标日期都为空的记录归入“历史未分批”，不得按逾期逻辑混入后续每一期。共享 `ShippingDeferralModal.tsx` 继续复用手工登记承运公司和合寄运单号的既有流程。历史原因为“每月两次合寄 · 暂停寄送”或“双周停刊”的无需发货记录只提示人工复核，不自动改账；管理员可逐条确认撤销，撤销后份数重新进入计划缺口，再明确登记为每月两次合寄。
 
 ### 4.12 操作日志
 

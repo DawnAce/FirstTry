@@ -149,6 +149,35 @@ const handlers = [
     deferrals: [],
     gap_details: [],
   })),
+  http.get('/api/shipping-waybills/deferrals/pending', () => HttpResponse.json([
+    {
+      id: 11, issue_id: 2, issue_number: 2651, shipping_detail_id: 21,
+      deferral_type: 'twice_monthly_consolidation', target_issue_number: 2653,
+      target_publish_date: '2026-05-25', consolidation_batch: 'second_half', quantity: 2,
+      reason: '每月两次合寄', status: 'pending', fulfilled_package_id: null,
+      detail_name_snapshot: '测试收件人A', detail_phone_snapshot: '13800000001',
+      detail_address_snapshot: '北京市示例地址A', detail_channel_snapshot: '个人订阅',
+      created_by: 1, created_at: '2026-05-11T09:00:00', fulfilled_at: null,
+    },
+    {
+      id: 12, issue_id: 3, issue_number: 2652, shipping_detail_id: 22,
+      deferral_type: 'month_end_consolidation', target_issue_number: 2653,
+      target_publish_date: '2026-05-25', consolidation_batch: 'month_end', quantity: 3,
+      reason: '月底合寄', status: 'pending', fulfilled_package_id: null,
+      detail_name_snapshot: '测试收件人B', detail_phone_snapshot: '13800000002',
+      detail_address_snapshot: '北京市示例地址B', detail_channel_snapshot: '个人订阅',
+      created_by: 1, created_at: '2026-05-18T09:00:00', fulfilled_at: null,
+    },
+    {
+      id: 13, issue_id: 1, issue_number: 2600, shipping_detail_id: null,
+      deferral_type: 'month_end_consolidation', target_issue_number: null,
+      target_publish_date: null, consolidation_batch: null, quantity: 5,
+      reason: '历史待办', status: 'pending', fulfilled_package_id: null,
+      detail_name_snapshot: '历史收件人', detail_phone_snapshot: null,
+      detail_address_snapshot: null, detail_channel_snapshot: '个人订阅',
+      created_by: 1, created_at: '2025-12-01T09:00:00', fulfilled_at: null,
+    },
+  ])),
   http.get('/api/shipping-details', ({ request }) => {
     const params = new URL(request.url).searchParams
     const search = params.get('search')?.toLowerCase()
@@ -193,6 +222,8 @@ export const ActualWithPending: Story = {
   name: '实际发货仍有待处理',
   play: async ({ canvas }) => {
     await userEvent.click(await canvas.findByRole('tab', { name: /实际发货/ }))
+    await expect(await canvas.findByText('本期待完成合寄 2条 / 5份')).toBeVisible()
+    await expect(await canvas.findByRole('button', { name: /处理合寄发货/ })).toBeVisible()
     const continueButton = await canvas.findByRole('button', { name: '继续处理' })
     await expect(getComputedStyle(continueButton.lastElementChild!).color).toBe('rgb(29, 29, 31)')
   },
@@ -214,6 +245,7 @@ export const LoadFailure: Story = {
           { detail: '数据库结构未更新，请管理员执行 alembic upgrade head' },
           { status: 503 },
         )),
+        handlers[4],
       ],
     },
   },

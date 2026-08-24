@@ -3,7 +3,7 @@ import { expect } from 'storybook/test';
 import { HttpResponse, http } from 'msw';
 import { reactRouterParameters, withRouter } from 'storybook-addon-remix-react-router';
 import WaybillImportWorkbench from './WaybillImportWorkbench';
-import type { WaybillImportBatch, WaybillImportRow } from '../api/shippingWaybills';
+import type { ShippingGapDetail, WaybillImportBatch, WaybillImportRow } from '../api/shippingWaybills';
 
 const issue = {
   id: 18,
@@ -79,6 +79,38 @@ const confirmedBatch: WaybillImportBatch = {
   status: 'confirmed',
   confirmed_at: '2026-01-26T16:00:00',
 };
+
+const gapRegressionBatch: WaybillImportBatch = {
+  ...batch,
+  id: 2,
+  expected_quantity: 1421,
+  parsed_quantity: 1325,
+  matched_quantity: 1325,
+  pending_quantity: 96,
+  matched_rows: 55,
+  unmatched_rows: 0,
+  unresolved_quantity: 0,
+  file_gap_quantity: 96,
+  rows: matchedRows,
+};
+
+const gapRegressionDetails: ShippingGapDetail[] = Array.from({ length: 19 }, (_, index) => ({
+  shipping_detail_id: 300 + index,
+  name: `月底收件人 ${index + 1}`,
+  phone: `1380001${String(index).padStart(4, '0')}`,
+  address: `北京市示例地址 ${index + 1} 号`,
+  channel: '个人订阅',
+  sheet_name: '月底-整月',
+  frequency: '月',
+  planned_quantity: index === 0 ? 4 : index === 1 ? 3 : 1,
+  source_quantity: 0,
+  deferred_quantity: 0,
+  twice_monthly_deferred_quantity: 0,
+  month_end_deferred_quantity: 0,
+  remaining_quantity: index === 0 ? 4 : index === 1 ? 3 : 1,
+  suggested_month_end: true,
+  required_adjustment_type: null,
+}));
 
 const details = [
   { id: 1, name: '收件人 1', phone: '13800000001', address: '北京市朝阳区示例路 1 号', quantity: 10 },
@@ -239,6 +271,53 @@ export const ConfirmedWithPending: Story = {
     await expect(returnButton).toBeVisible();
     await expect(getComputedStyle(returnButton).color).toBe('rgb(255, 255, 255)');
     await expect(getComputedStyle(returnButton).backgroundColor).toBe('rgb(0, 113, 227)');
+  },
+};
+
+export const StockInAndPlanGap: Story = {
+  name: '转库留存后仍显示 24 份计划缺口',
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/shipping-waybills/issues/18/draft', () => HttpResponse.json(gapRegressionBatch)),
+        http.get('/api/shipping-waybills/issues/18/summary', () => HttpResponse.json({
+          issue_id: 18,
+          issue_number: 2638,
+          expected_quantity: 1421,
+          planned_quantity: 1421,
+          handled_quantity: 1397,
+          tracked_quantity: 1325,
+          no_tracking_quantity: 0,
+          actual_shipped_quantity: 1325,
+          adjustment_quantity: 72,
+          no_shipment_quantity: 0,
+          warehouse_stock_in_quantity: 72,
+          deferred_quantity: 0,
+          twice_monthly_deferred_quantity: 0,
+          month_end_deferred_quantity: 0,
+          unexplained_pending_quantity: 24,
+          attributed_adjustment_quantity: 72,
+          unattributed_adjustment_quantity: 0,
+          pending_quantity: 24,
+          extra_quantity: 0,
+          package_count: 55,
+          pending_detail_count: 19,
+          status: 'partial',
+          shipment_status: 'partial',
+          latest_import: gapRegressionBatch,
+          adjustments: [],
+          deferrals: [],
+          gap_details: gapRegressionDetails,
+        })),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('计划缺口待归因 24份')).toBeVisible();
+    await expect(await canvas.findByText(/计划缺口 24 份/)).toBeVisible();
+    await expect((await canvas.findAllByText('待确认'))[0]).toBeVisible();
+    await expect((await canvas.findAllByText('月底合寄'))[0]).toBeVisible();
   },
 };
 
