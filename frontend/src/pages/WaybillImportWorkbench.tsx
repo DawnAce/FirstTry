@@ -48,6 +48,7 @@ import {
   attributeFulfillmentAdjustment,
   bulkMatchWaybillImportRows,
   confirmWaybillImport,
+  convertWaybillImportRowToWarehouseStockIn,
   deleteFulfillmentAdjustment,
   getFulfillmentSummary,
   getPendingShippingDeferrals,
@@ -123,6 +124,10 @@ function detailLabel(detail: ShippingDetail): string {
   return `${detail.name} · ${detail.quantity}份${contact ? ` · ${contact}` : ''}`;
 }
 
+function isMafeiWarehouseRetention(detail: ShippingDetail | undefined): boolean {
+  return detail?.name.trim() === '马飞' && detail.channel.trim() === '库房留存';
+}
+
 export default function WaybillImportWorkbench() {
   const { id } = useParams<{ id: string }>();
   const issueId = Number(id);
@@ -140,6 +145,7 @@ export default function WaybillImportWorkbench() {
   const [addingRow, setAddingRow] = useState(false);
   const [savingRow, setSavingRow] = useState(false);
   const [bulkMatching, setBulkMatching] = useState(false);
+  const [convertingStockRowId, setConvertingStockRowId] = useState<number | null>(null);
   const [ignoreRow, setIgnoreRow] = useState<WaybillImportRow | null>(null);
   const [ignoreReason, setIgnoreReason] = useState('');
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
@@ -216,6 +222,9 @@ export default function WaybillImportWorkbench() {
   const batch = batchOverride === undefined ? draftQuery.data ?? null : batchOverride;
   const details = useMemo(() => detailsQuery.data ?? [], [detailsQuery.data]);
   const detailsById = useMemo(() => new Map(details.map((detail) => [detail.id, detail])), [details]);
+  const editingMafeiDetail = editingRow?.shipping_detail_id
+    ? detailsById.get(editingRow.shipping_detail_id)
+    : undefined;
   const visibleRows = useMemo(() => filterWaybillRows(batch?.rows ?? [], filter), [batch, filter]);
   const missingTrackingRows = useMemo(
     () => (batch?.rows ?? []).filter((row) => (
@@ -473,6 +482,27 @@ export default function WaybillImportWorkbench() {
     }
   };
 
+  const handleConvertToWarehouseStockIn = async (row: WaybillImportRow) => {
+    if (!batch) return;
+    setConvertingStockRowId(row.id);
+    try {
+      const response = await convertWaybillImportRowToWarehouseStockIn(batch.id, row.id);
+      setBatch(response.data);
+      queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['shippingDetails'] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
+        queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] }),
+      ]);
+      if (editingRow?.id === row.id) closeEditor();
+      message.success('已改为转库留存/库存入库，原导入行已保留为忽略凭证');
+    } catch (error) {
+      message.error(logisticsApiErrorMessage(error, '改为转库留存/库存入库失败'));
+    } finally {
+      setConvertingStockRowId(null);
+    }
+  };
+
   const handleBulkMatch = async (rowIds: number[], shippingDetailId: number) => {
     if (!batch) return;
     setBulkMatching(true);
@@ -727,17 +757,32 @@ export default function WaybillImportWorkbench() {
       },
     },
     {
-      title: '操作', key: 'actions', width: 120, fixed: 'right',
-      render: (_, row) => (
-        batch?.status === 'confirmed' && row.match_status === 'matched'
-          ? <span className="waybill-muted">已生成运单</span>
-          : <div className="waybill-row-actions">
-            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>核对</Button>
-            <Button type="link" size="small" danger={row.match_status !== 'ignored'} onClick={() => void toggleIgnored(row)}>
-              {row.match_status === 'ignored' ? '恢复' : '忽略'}
-            </Button>
-          </div>
-      ),
+      title: '操作', key: 'actions', width: 190, fixed: 'right',
+      render: (_, row) => {
+        const linkedDetail = row.shipping_detail_id ? detailsById.get(row.shipping_detail_id) : undefined;
+        const canConvertStockIn = row.match_status !== 'ignored'
+          && row.no_tracking_required
+          && !row.tracking_no
+          && isMafeiWarehouseRetention(linkedDetail);
+        if (batch?.status === 'confirmed' && row.match_status === 'matched' && !canConvertStockIn) {
+          return <span className="waybill-muted">已生成运单</span>;
+        }
+        return <div className="waybill-row-actions">
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>核对</Button>
+          {canConvertStockIn && <Popconfirm
+            title="改为转库留存/库存入库？"
+            description={`将按马飞当期完整计划 ${linkedDetail?.quantity ?? row.quantity} 份登记库存入库，原文件行保留为已忽略凭证。`}
+            okText="确认转换"
+            cancelText="取消"
+            onConfirm={() => void handleConvertToWarehouseStockIn(row)}
+          >
+            <Button type="link" size="small" icon={<DatabaseOutlined />} loading={convertingStockRowId === row.id}>转库入库</Button>
+          </Popconfirm>}
+          <Button type="link" size="small" danger={row.match_status !== 'ignored'} onClick={() => void toggleIgnored(row)}>
+            {row.match_status === 'ignored' ? '恢复' : '忽略'}
+          </Button>
+        </div>;
+      },
     },
   ];
 
@@ -1068,6 +1113,28 @@ export default function WaybillImportWorkbench() {
         title="这里只核对运单与已有发货明细的关系"
         description="选择的明细必须来自本期确认版发货计划；不会在这里新建或改动发货计划份数。"
       />
+      {editingRow
+        && editingRow.match_status !== 'ignored'
+        && editingRow.no_tracking_required
+        && !editingRow.tracking_no
+        && isMafeiWarehouseRetention(editingMafeiDetail) && <Alert
+        className="waybill-editor-note"
+        showIcon
+        type="warning"
+        title="马飞—库房留存不能按“无需运单/无需发货”核销"
+        description="请改为转库留存/库存入库；系统会保留原始导入行作为审计凭证。"
+        action={<Popconfirm
+          title="改为转库留存/库存入库？"
+          description={`将按当期完整计划 ${editingMafeiDetail?.quantity ?? editingRow.quantity} 份登记。`}
+          okText="确认转换"
+          cancelText="取消"
+          onConfirm={() => void handleConvertToWarehouseStockIn(editingRow)}
+        >
+          <Button type="primary" icon={<DatabaseOutlined />} loading={convertingStockRowId === editingRow.id}>
+            改为转库留存/库存入库
+          </Button>
+        </Popconfirm>}
+      />}
       <Form form={rowForm} layout="vertical">
         <div className="waybill-form-grid">
           <Form.Item name="recipient_name" label="收件人" rules={[{ required: true, message: '请输入收件人' }]}>
