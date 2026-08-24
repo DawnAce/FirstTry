@@ -51,6 +51,7 @@ from app.services.original_zto_shipping_import_service import is_original_zto_sh
 
 WAREHOUSE_STOCK_IN = "warehouse_stock_in"
 WAREHOUSE_STOCK_IN_REASON = "转库留存 · 当期报纸入马飞中通库房备货"
+WAREHOUSE_STOCK_IN_IMPORT_REASON = "已转换：马飞—库房留存改按转库留存/库存入库核销"
 TWICE_MONTHLY_CONSOLIDATION = "twice_monthly_consolidation"
 MONTH_END_CONSOLIDATION = "month_end_consolidation"
 
@@ -553,7 +554,10 @@ def preview_import(
                     candidates = name_address.get((name, address), [])
             if len(candidates) == 1:
                 match = candidates[0]
-                if row.no_tracking_required and match.packages:
+                if match.is_mafei_warehouse_retention:
+                    status = WaybillMatchStatus.invalid.value
+                    reason = "马飞—库房留存请改为“转库留存/库存入库”核销"
+                elif row.no_tracking_required and match.packages:
                     match = None
                     status, reason = WaybillMatchStatus.invalid.value, "该明细已有运单，不能改为无需运单"
                 else:
@@ -1675,6 +1679,177 @@ def create_fulfillment_adjustment(
     )
     db.commit()
     return fulfillment_summary(db, issue_id)
+
+
+def convert_import_row_to_warehouse_stock_in(
+    db: Session,
+    batch_id: int,
+    row_id: int,
+    user: User | None = None,
+    *,
+    username: str | None = None,
+) -> ShippingWaybillImportBatch:
+    """Atomically convert a Mafei no-tracking import row to stock-in.
+
+    The source row remains as an ignored audit record, while the full planned
+    quantity is classified as warehouse stock-in.  Any legacy no-shipment
+    adjustment already attributed to the same detail is reclassified instead
+    of double-counted.
+    """
+    batch = db.query(ShippingWaybillImportBatch).filter(
+        ShippingWaybillImportBatch.id == batch_id
+    ).with_for_update().first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="运单导入批次不存在")
+    row = db.query(ShippingWaybillImportRow).filter(
+        ShippingWaybillImportRow.id == row_id,
+        ShippingWaybillImportRow.batch_id == batch.id,
+    ).with_for_update().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="运单导入行不存在")
+    if row.shipping_detail_id is None:
+        raise HTTPException(status_code=400, detail="请先关联马飞—库房留存发货明细")
+
+    detail = db.query(ShippingDetail).filter(
+        ShippingDetail.id == row.shipping_detail_id,
+        ShippingDetail.issue_number == batch.issue_number,
+    ).with_for_update().first()
+    if not detail or not detail.is_mafei_warehouse_retention:
+        raise HTTPException(status_code=400, detail="“转库留存/库存入库”仅适用于马飞—库房留存")
+
+    linked_rows = db.query(ShippingWaybillImportRow).filter(
+        ShippingWaybillImportRow.shipping_detail_id == detail.id,
+        ShippingWaybillImportRow.match_status != WaybillMatchStatus.ignored.value,
+    ).with_for_update().all()
+    tracked_rows = [
+        candidate for candidate in linked_rows
+        if candidate.tracking_no or not candidate.no_tracking_required
+    ]
+    direct_packages = db.query(ShippingPackage.id).filter(
+        ShippingPackage.shipping_detail_id == detail.id
+    ).count()
+    allocations = db.query(ShippingPackageAllocation.id).filter(
+        ShippingPackageAllocation.shipping_detail_id == detail.id
+    ).count()
+    active_deferrals = db.query(ShippingDeferral.id).filter(
+        ShippingDeferral.shipping_detail_id == detail.id,
+        ShippingDeferral.status != "cancelled",
+    ).count()
+    has_legacy_physical_shipment = any(
+        value is not None
+        for value in (detail.shipped_at, detail.shipped_quantity, detail.tracking_no)
+    )
+    if tracked_rows or direct_packages or allocations or active_deferrals or has_legacy_physical_shipment:
+        raise HTTPException(
+            status_code=409,
+            detail="马飞—库房留存已有真实运单、实发或合寄记录，不能自动改为库存入库",
+        )
+
+    planned_quantity = max(detail.quantity or 0, 0)
+    if planned_quantity <= 0:
+        raise HTTPException(status_code=400, detail="马飞—库房留存计划份数必须大于0")
+    adjustments = db.query(ShippingFulfillmentAdjustment).filter(
+        ShippingFulfillmentAdjustment.shipping_detail_id == detail.id
+    ).with_for_update().all()
+    adjustment_total = sum(max(adjustment.quantity or 0, 0) for adjustment in adjustments)
+    if adjustment_total > planned_quantity:
+        raise HTTPException(
+            status_code=409,
+            detail=f"马飞库房已核销 {adjustment_total} 份，超过当前计划 {planned_quantity} 份，请先人工核对",
+        )
+
+    audit_username = username or (None if user is not None else "系统修复")
+    for adjustment in adjustments:
+        previous_type = adjustment.adjustment_type
+        previous_reason = adjustment.reason
+        adjustment.adjustment_type = WAREHOUSE_STOCK_IN
+        adjustment.reason = WAREHOUSE_STOCK_IN_REASON
+        _attribute_adjustment(adjustment, detail)
+        if previous_type != WAREHOUSE_STOCK_IN or previous_reason != WAREHOUSE_STOCK_IN_REASON:
+            record_operation(
+                db,
+                user=user,
+                username=audit_username,
+                table_name="shipping_fulfillment_adjustments",
+                record_id=adjustment.id,
+                record_name=WAREHOUSE_STOCK_IN_REASON,
+                action="update",
+                issue_number=batch.issue_number,
+                channel=detail.channel,
+                changes={
+                    "old_adjustment_type": previous_type,
+                    "adjustment_type": WAREHOUSE_STOCK_IN,
+                    "old_reason": previous_reason,
+                    "reason": WAREHOUSE_STOCK_IN_REASON,
+                    "shipping_detail_id": detail.id,
+                },
+            )
+
+    missing_quantity = planned_quantity - adjustment_total
+    if missing_quantity:
+        adjustment = ShippingFulfillmentAdjustment(
+            issue_id=batch.issue_id,
+            issue_number=batch.issue_number,
+            adjustment_type=WAREHOUSE_STOCK_IN,
+            quantity=missing_quantity,
+            reason=WAREHOUSE_STOCK_IN_REASON,
+            created_by=getattr(user, "id", None),
+        )
+        _attribute_adjustment(adjustment, detail)
+        db.add(adjustment)
+        db.flush()
+        record_operation(
+            db,
+            user=user,
+            username=audit_username,
+            table_name="shipping_fulfillment_adjustments",
+            record_id=adjustment.id,
+            record_name=WAREHOUSE_STOCK_IN_REASON,
+            action="create",
+            issue_number=batch.issue_number,
+            channel=detail.channel,
+            changes={
+                "adjustment_type": WAREHOUSE_STOCK_IN,
+                "quantity": missing_quantity,
+                "reason": WAREHOUSE_STOCK_IN_REASON,
+                "shipping_detail_id": detail.id,
+                "source_import_row_id": row.id,
+            },
+        )
+
+    affected_batches: dict[int, ShippingWaybillImportBatch] = {batch.id: batch}
+    for linked_row in linked_rows:
+        affected_batches[linked_row.batch.id] = linked_row.batch
+        linked_row.match_status = WaybillMatchStatus.ignored.value
+        linked_row.match_reason = WAREHOUSE_STOCK_IN_IMPORT_REASON
+        linked_row.manual_reviewed = True
+        record_operation(
+            db,
+            user=user,
+            username=audit_username,
+            table_name="shipping_waybill_import_rows",
+            record_id=linked_row.id,
+            record_name=f"{linked_row.source_sheet} 第{linked_row.source_row}行",
+            action="review_waybill",
+            issue_number=batch.issue_number,
+            changes={
+                "match_status": WaybillMatchStatus.ignored.value,
+                "shipping_detail_id": detail.id,
+                "quantity": linked_row.quantity,
+                "conversion": WAREHOUSE_STOCK_IN,
+            },
+        )
+
+    detail.shipping_requirement = "tracking_required"
+    detail.shipped_at = None
+    detail.shipped_quantity = None
+    detail.tracking_no = None
+    db.flush()
+    db.expire(detail, ["fulfillment_adjustments"])
+    for affected_batch in affected_batches.values():
+        _recalculate_batch(db, affected_batch)
+    db.commit()
+    return _get_import_batch(db, batch.id)
 
 
 def attribute_fulfillment_adjustment(

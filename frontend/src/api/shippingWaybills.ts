@@ -167,6 +167,12 @@ export const updateWaybillImportRow = (
 ): Promise<AxiosResponse<WaybillImportBatch>> =>
   api.patch<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}/rows/${rowId}`, data);
 
+export const convertWaybillImportRowToWarehouseStockIn = (
+  batchId: number,
+  rowId: number,
+): Promise<AxiosResponse<WaybillImportBatch>> =>
+  api.post<WaybillImportBatch>(`/shipping-waybills/imports/${batchId}/rows/${rowId}/warehouse-stock-in`);
+
 export const addWaybillImportRow = (
   batchId: number,
   data: WaybillImportRowInput,

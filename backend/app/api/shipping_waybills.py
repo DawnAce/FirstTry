@@ -43,6 +43,7 @@ from app.services.shipping_waybill_service import (
     refresh_detail_shipping_fields,
     add_import_row,
     bulk_match_import_rows,
+    convert_import_row_to_warehouse_stock_in,
     update_import_row,
 )
 from app.upload import read_upload
@@ -89,6 +90,19 @@ def patch_waybill_import_row(
     user: User = Depends(get_current_user),
 ):
     return update_import_row(db, batch_id, row_id, body, user)
+
+
+@router.post(
+    "/imports/{batch_id}/rows/{row_id}/warehouse-stock-in",
+    response_model=WaybillImportBatchOut,
+)
+def convert_waybill_import_row_to_warehouse_stock_in(
+    batch_id: int,
+    row_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return convert_import_row_to_warehouse_stock_in(db, batch_id, row_id, user)
 
 
 @router.post("/imports/{batch_id}/rows", response_model=WaybillImportBatchOut)

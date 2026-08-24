@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 
 from openpyxl import Workbook
@@ -43,6 +43,7 @@ from app.services.shipping_waybill_service import (
     attribute_fulfillment_adjustment,
     bulk_match_import_rows,
     confirm_import,
+    convert_import_row_to_warehouse_stock_in,
     create_fulfillment_adjustment,
     create_shipping_deferrals,
     create_consolidated_package,
@@ -67,6 +68,17 @@ def _workbook_bytes() -> bytes:
     internal = wb.create_sheet("299（备用74+社用225）")
     internal.append(["姓名", "地址", "电话", "份数", "刊物", "备注"])
     internal.append(["库房", "中通库房", "13900000000", 2, "中国经营报", "备用报"])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _mafei_warehouse_workbook_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "306（备用71+社用235）"
+    ws.append(["姓名", "地址", "电话", "份数", "刊物", "备注"])
+    ws.append(["马飞", "中通库房", "13800000000", 71, "中国经营报", "库房留存"])
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
@@ -1195,6 +1207,127 @@ def test_mafei_warehouse_retention_requires_stock_in_adjustment():
     assert stored.warehouse_stock_in_quantity == 72
     assert stored.no_shipment_quantity == 0
     assert stored.fulfillment_status == "warehouse_stock_in"
+
+
+def test_mafei_no_tracking_import_can_be_converted_to_stock_in_atomically():
+    db = _db()
+    user = User(username="warehouse_import", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=5204, publish_date=date(2026, 6, 8), status=IssueStatus.confirmed)
+    reserve = ShippingDetail(
+        issue_number=5204,
+        sheet_name="库房留存",
+        channel="库房留存",
+        transport="库房留存",
+        frequency="周",
+        status="正常",
+        name="马飞",
+        phone="13800000000",
+        address="中通库房",
+        quantity=71,
+    )
+    db.add_all([user, issue, reserve])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=issue.id,
+        snapshot_type="confirm",
+        report_total=71,
+        shipping_total=71,
+        delta=0,
+        is_match=True,
+    ))
+    db.commit()
+
+    batch = preview_import(db, issue.id, "单号.xlsx", _mafei_warehouse_workbook_bytes(), user)
+    row = batch.rows[0]
+    assert row.shipping_detail_id == reserve.id
+    assert row.match_status == WaybillMatchStatus.invalid.value
+    assert "转库留存/库存入库" in (row.match_reason or "")
+    assert batch.matched_quantity == 0
+
+    db.add(ShippingFulfillmentAdjustment(
+        issue_id=issue.id,
+        issue_number=issue.issue_number,
+        shipping_detail_id=reserve.id,
+        adjustment_type="no_shipment_required",
+        quantity=10,
+        reason="历史误标无需发货",
+    ))
+    db.commit()
+
+    converted = convert_import_row_to_warehouse_stock_in(db, batch.id, row.id, user)
+    converted_row = next(item for item in converted.rows if item.id == row.id)
+    assert converted_row.match_status == WaybillMatchStatus.ignored.value
+    assert converted_row.shipping_detail_id == reserve.id
+    assert converted_row.manual_reviewed is True
+    assert converted.matched_quantity == 0
+    assert converted.pending_quantity == 0
+
+    db.expire_all()
+    adjustments = db.query(ShippingFulfillmentAdjustment).filter(
+        ShippingFulfillmentAdjustment.shipping_detail_id == reserve.id
+    ).all()
+    assert sum(item.quantity for item in adjustments) == 71
+    assert {item.adjustment_type for item in adjustments} == {"warehouse_stock_in"}
+    assert {item.reason for item in adjustments} == {
+        "转库留存 · 当期报纸入马飞中通库房备货"
+    }
+    stored_detail = db.query(ShippingDetail).filter(ShippingDetail.id == reserve.id).one()
+    assert stored_detail.shipping_requirement == "tracking_required"
+
+    confirmed = confirm_import(db, batch.id, user)
+    assert confirmed.status == WaybillImportStatus.confirmed.value
+    summary = fulfillment_summary(db, issue.id)
+    assert summary.warehouse_stock_in_quantity == 71
+    assert summary.actual_shipped_quantity == 0
+    assert summary.pending_quantity == 0
+
+
+def test_mafei_import_stock_in_conversion_rejects_existing_physical_shipment():
+    db = _db()
+    user = User(username="warehouse_conflict", password_hash="x", role=UserRole.admin)
+    issue = Issue(issue_number=5205, publish_date=date(2026, 6, 15), status=IssueStatus.confirmed)
+    reserve = ShippingDetail(
+        issue_number=5205,
+        sheet_name="库房留存",
+        channel="库房留存",
+        transport="库房留存",
+        frequency="周",
+        status="正常",
+        name="马飞",
+        phone="13800000000",
+        address="中通库房",
+        quantity=71,
+    )
+    db.add_all([user, issue, reserve])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=issue.id,
+        snapshot_type="confirm",
+        report_total=71,
+        shipping_total=71,
+        delta=0,
+        is_match=True,
+    ))
+    db.commit()
+
+    batch = preview_import(db, issue.id, "单号.xlsx", _mafei_warehouse_workbook_bytes(), user)
+    row = batch.rows[0]
+    reserve.shipped_at = datetime(2026, 6, 15, 12, 0)
+    reserve.shipped_quantity = 71
+    reserve.tracking_no = "TEST-MAFEI-CONFLICT"
+    db.commit()
+
+    try:
+        convert_import_row_to_warehouse_stock_in(db, batch.id, row.id, user)
+        assert False, "physical shipment history must block stock-in conversion"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 409
+
+    assert db.query(ShippingFulfillmentAdjustment).filter(
+        ShippingFulfillmentAdjustment.shipping_detail_id == reserve.id
+    ).count() == 0
+    db.refresh(row)
+    assert row.match_status == WaybillMatchStatus.invalid.value
 
 
 def test_stock_in_adjustment_is_rejected_for_non_mafei_detail():
