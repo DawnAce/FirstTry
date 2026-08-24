@@ -117,6 +117,7 @@ export interface FulfillmentAdjustment {
   issue_number: number;
   shipping_detail_id: number | null;
   adjustment_type: 'no_shipment_required' | 'warehouse_stock_in';
+  source: 'manual' | 'plan_status';
   quantity: number;
   reason: string;
   detail_name_snapshot: string | null;

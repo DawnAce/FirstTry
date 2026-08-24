@@ -327,15 +327,7 @@ def _parse_monthly(ws) -> list[ShippingImportRow]:
 
 
 def _parse_weekly_corporate(ws) -> list[ShippingImportRow]:
-    rows = _parse_table_sheet(ws, "每周（对公）", 3, 13)
-    return [
-        row for row in rows
-        if not (
-            row.quantity == 0
-            and row.name == "(未填写)"
-            and "加印" in row.notes
-        )
-    ]
+    return _parse_table_sheet(ws, "每周（对公）", 3, 13)
 
 
 def _parse_shangyou(ws) -> list[ShippingImportRow]:
@@ -394,6 +386,19 @@ def normalize_shipping_sub_channels_with_adjustments(
     return normalized, [warning], adjustments
 
 
+def exclude_zero_quantity_shipping_rows(
+    rows: list[ShippingImportRow],
+) -> tuple[list[ShippingImportRow], list[str]]:
+    """Discard zero-copy placeholders from every supported shipping source."""
+    zero_quantity_count = sum(1 for row in rows if row.quantity == 0)
+    filtered = [row for row in rows if row.quantity != 0]
+    if not zero_quantity_count:
+        return filtered, []
+    return filtered, [
+        f"已忽略 {zero_quantity_count} 条0份发货明细；0份记录不生成发货计划。"
+    ]
+
+
 def normalize_shipping_sub_channels(
     rows: list[ShippingImportRow],
 ) -> tuple[list[ShippingImportRow], list[str]]:
@@ -404,9 +409,11 @@ def normalize_shipping_sub_channels(
 def read_original_zto_shipping_rows_with_adjustments(
     wb,
 ) -> tuple[list[ShippingImportRow], list[str], list[ShippingImportAdjustment]]:
-    return normalize_shipping_sub_channels_with_adjustments(
+    rows, zero_quantity_warnings = exclude_zero_quantity_shipping_rows(
         read_original_zto_shipping_rows_raw(wb)
     )
+    normalized, warnings, adjustments = normalize_shipping_sub_channels_with_adjustments(rows)
+    return normalized, [*zero_quantity_warnings, *warnings], adjustments
 
 
 def read_original_zto_shipping_rows_raw(wb) -> list[ShippingImportRow]:

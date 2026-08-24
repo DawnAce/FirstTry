@@ -26,7 +26,7 @@ class ShippingDetailCreate(BaseModel):
     status: str = "正常"
     address: Optional[str] = None
     phone: Optional[str] = None
-    quantity: int = 0
+    quantity: int = Field(gt=0)
     deadline: Optional[str] = None
     notes: Optional[str] = None
     extra_info: Optional[str] = None
@@ -49,7 +49,7 @@ class ShippingDetailUpdate(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
-    quantity: Optional[int] = None
+    quantity: Optional[int] = Field(default=None, gt=0)
     deadline: Optional[str] = None
     notes: Optional[str] = None
     extra_info: Optional[str] = None

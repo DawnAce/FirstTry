@@ -18,6 +18,7 @@ from app.models import (
     TempPrintDetail,
 )
 from app.services.original_zto_shipping_import_service import (
+    exclude_zero_quantity_shipping_rows,
     is_original_zto_shipping_workbook,
     normalize_shipping_sub_channels,
     read_original_zto_shipping_basic_info,
@@ -31,6 +32,7 @@ from app.services.recurring_shipping_detail_service import (
     recurring_shipping_invariant_errors,
 )
 from app.services.report_destination_service import DESTINATION_ZTO, resolve_report_destination
+from app.services.shipping_suspension_service import sync_plan_status_adjustment
 from app.services.workbook_loader import load_uploaded_workbook
 from app.schemas.history_import import (
     CommitReadiness,
@@ -483,15 +485,22 @@ def preview_history_import(
     shipping_import_warnings: list[str] = []
     shipping_year = datetime.date.fromisoformat(publish_date).year
     if uses_template_shipping:
+        shipping_rows, zero_quantity_warnings = exclude_zero_quantity_shipping_rows(
+            _read_shipping_rows(shipping_wb)
+        )
         shipping_rows, recurring_warnings = exclude_recurring_shipping_import_rows(
-            _read_shipping_rows(shipping_wb), year=shipping_year
+            shipping_rows, year=shipping_year
         )
         shipping_rows, shipping_import_warnings = normalize_shipping_sub_channels(shipping_rows)
     else:
+        shipping_rows, zero_quantity_warnings = exclude_zero_quantity_shipping_rows(
+            read_original_zto_shipping_rows_raw(shipping_wb)
+        )
         shipping_rows, recurring_warnings = exclude_recurring_shipping_import_rows(
-            read_original_zto_shipping_rows_raw(shipping_wb), year=shipping_year
+            shipping_rows, year=shipping_year
         )
         shipping_rows, shipping_import_warnings = normalize_shipping_sub_channels(shipping_rows)
+    shipping_import_warnings[:0] = zero_quantity_warnings
     shipping_import_warnings.extend(recurring_warnings)
     recurring_rows = recurring_shipping_details_for_issue(
         db,
@@ -701,6 +710,8 @@ def _apply_manual_report_mappings(
             detail=f"归类后总数 {mapped_total} 份，与原表总印数 {source_total} 份不一致",
         )
     shipping_rows = [ShippingImportRow(**row) for row in payload.get("shipping_rows", [])]
+    if any(row.quantity <= 0 for row in shipping_rows):
+        raise HTTPException(status_code=409, detail="导入会话中仍包含0份或负数明细，请重新预览")
     zto_errors = _zto_total_validation_errors(
         [HistoryImportRow(**row) for row in rows],
         shipping_rows,
@@ -809,8 +820,9 @@ def commit_history_import(
             self_quantity=row.get("self_quantity", 0),
         ))
 
+    imported_shipping_details: list[ShippingDetail] = []
     for row in payload.get("shipping_rows", []):
-        db.add(ShippingDetail(
+        detail = ShippingDetail(
             issue_number=issue_number,
             sheet_name=row.get("sheet_name", ""),
             channel=row.get("channel", ""),
@@ -833,9 +845,14 @@ def commit_history_import(
             confirmation=row.get("confirmation", ""),
             company=row.get("company", ""),
             source_type=ShippingDetailSourceType.historical_import,
-        ))
+        )
+        db.add(detail)
+        imported_shipping_details.append(detail)
 
     db.flush()
+    for detail in imported_shipping_details:
+        sync_plan_status_adjustment(db, detail=detail, user=None)
+
     recurring_errors = recurring_shipping_invariant_errors(
         db,
         issue_number=issue_number,

@@ -20,9 +20,11 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base
 from app.models import (
     Issue,
+    IssueAuditSnapshot,
     IssueStatus,
     OperationLog,
     ShippingDetail,
+    ShippingFulfillmentAdjustment,
     ShippingDetailSourceType,
     ShippingDetailSyncStatus,
     User,
@@ -45,6 +47,8 @@ with patch.dict("sys.modules", {"cpca": _fake_cpca}):
         update_actual_shipping_recipient,
         update_shipping_detail,
     )
+    from app.api.reports import get_report
+from app.services.shipping_waybill_service import create_fulfillment_adjustment, fulfillment_summary
 from app.schemas.shipping_detail import (
     ShippingDetailBatchUpdate,
     ShippingActualRecipientUpdate,
@@ -52,6 +56,7 @@ from app.schemas.shipping_detail import (
     ShippingDetailOut,
     ShippingDetailUpdate,
 )
+from app.schemas.shipping_waybill import FulfillmentAdjustmentIn
 
 
 class ClearShippingDetailsByIssueTests(unittest.TestCase):
@@ -146,6 +151,18 @@ class ShippingDetailsCityRemovalTests(unittest.TestCase):
         )
 
         self.assertNotIn("city", _snapshot(detail))
+
+    def test_shipping_detail_schemas_reject_zero_quantity(self):
+        with self.assertRaises(ValueError):
+            ShippingDetailCreate(
+                issue_number=2652,
+                sheet_name="每周（读者）",
+                channel="个人订阅",
+                name="零份占位",
+                quantity=0,
+            )
+        with self.assertRaises(ValueError):
+            ShippingDetailUpdate(quantity=0)
 
 
 class ShippingDetailsSyncMetadataTests(unittest.TestCase):
@@ -325,6 +342,98 @@ class ShippingDetailsSyncMetadataTests(unittest.TestCase):
             ShippingDetailSyncStatus.synced,
         )
         self.assertEqual(db.query(OperationLog).count(), 0)
+        db.close()
+
+    def test_stopped_plan_auto_links_no_shipment_and_reconciles_report(self):
+        db = self.SessionLocal()
+        user = User(id=1, username="admin", role=UserRole.admin, password_hash="x")
+        issue = Issue(
+            issue_number=2654,
+            publish_date=date(2026, 6, 1),
+            status=IssueStatus.confirmed,
+        )
+        normal = ShippingDetail(
+            issue_number=2654,
+            sheet_name="每周（读者）",
+            channel="个人订阅",
+            name="其他收件人",
+            status="正常",
+            quantity=1413,
+        )
+        stopped = ShippingDetail(
+            issue_number=2654,
+            sheet_name="停发-双周（读者）",
+            channel="个人订阅",
+            name="停发收件人",
+            status="正常",
+            quantity=1,
+            shipping_requirement="no_tracking_required",
+        )
+        db.add_all([issue, normal, stopped])
+        db.flush()
+        db.add(IssueAuditSnapshot(
+            issue_id=issue.id,
+            snapshot_type="confirm",
+            report_total=1414,
+            shipping_total=1414,
+            delta=0,
+            is_match=True,
+        ))
+        db.commit()
+
+        updated = update_shipping_detail(
+            stopped.id,
+            ShippingDetailUpdate(status="停发"),
+            db=db,
+            user=user,
+        )
+
+        adjustment = db.query(ShippingFulfillmentAdjustment).one()
+        self.assertEqual(updated.status, "停发")
+        self.assertEqual(adjustment.shipping_detail_id, stopped.id)
+        self.assertEqual(adjustment.quantity, 1)
+        self.assertEqual(adjustment.source, "plan_status")
+        self.assertEqual(adjustment.reason, "客户要求暂停本期发货")
+        self.assertEqual(updated.shipping_requirement, "tracking_required")
+
+        report = get_report(issue.id, db=db)
+        self.assertEqual(report.confirmation_summary.current_shipping_total, 1413)
+        self.assertEqual(report.confirmation_summary.plan_attributed_quantity, 1)
+        self.assertEqual(report.confirmation_summary.plan_unexplained_delta, 0)
+        self.assertTrue(report.confirmation_summary.plan_is_reconciled)
+
+        fulfillment = fulfillment_summary(db, issue.id)
+        self.assertEqual(fulfillment.planned_quantity, 1414)
+        self.assertEqual(fulfillment.actual_shipped_quantity, 0)
+        self.assertEqual(fulfillment.no_shipment_quantity, 1)
+        self.assertEqual(fulfillment.pending_quantity, 1413)
+
+        with self.assertRaises(HTTPException) as duplicate_context:
+            create_fulfillment_adjustment(
+                db,
+                issue.id,
+                FulfillmentAdjustmentIn(
+                    quantity=1,
+                    reason="重复登记",
+                    shipping_detail_id=stopped.id,
+                ),
+                user,
+            )
+        self.assertEqual(duplicate_context.exception.status_code, 400)
+        self.assertIn("不能重复登记", duplicate_context.exception.detail)
+        self.assertEqual(db.query(ShippingFulfillmentAdjustment).count(), 1)
+
+        update_shipping_detail(
+            stopped.id,
+            ShippingDetailUpdate(status="正常"),
+            db=db,
+            user=user,
+        )
+        self.assertEqual(db.query(ShippingFulfillmentAdjustment).count(), 0)
+        restored_report = get_report(issue.id, db=db)
+        self.assertEqual(restored_report.confirmation_summary.current_shipping_total, 1414)
+        self.assertEqual(restored_report.confirmation_summary.plan_attributed_quantity, 0)
+        self.assertTrue(restored_report.confirmation_summary.plan_is_reconciled)
         db.close()
 
     def test_copy_from_previous_skips_order_generated_details(self):

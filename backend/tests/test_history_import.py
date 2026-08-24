@@ -1201,23 +1201,23 @@ class HistoryImportPreviewTests(unittest.TestCase):
         db = self.SessionLocal()
         self._seed_upload_templates(db)
 
+        workbook = load_workbook(io.BytesIO(build_original_zto_shipping_upload()))
+        workbook["停发-双周（读者）"].append([
+            "", "", "", 2648, 0, "中国经营报", "长期", "客户要求停发",
+        ])
+
         result = preview_history_import(
             db,
             build_report_upload(),
-            build_original_zto_shipping_upload(),
+            _wb_to_bytes(workbook),
         )
 
         self.assertTrue(result.can_commit)
         payload = get_history_import_session(result.import_session_id)
         self.assertIsNotNone(payload)
         rows = payload["shipping_rows"]
-        self.assertFalse(any(
-            row["sheet_name"] == "每周（对公）"
-            and row["name"] == "(未填写)"
-            and row["quantity"] == 0
-            and "加印" in row["notes"]
-            for row in rows
-        ))
+        self.assertTrue(all(row["quantity"] > 0 for row in rows))
+        self.assertTrue(any("已忽略 2 条0份发货明细" in warning for warning in result.warnings))
         db.close()
 
     def test_original_zto_parser_omits_city_from_rows(self):

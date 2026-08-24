@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Column, DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -49,7 +49,7 @@ class ShippingDetail(Base):
     name = Column(String(100), nullable=False)
     address = Column(Text)
     phone = Column(String(50))
-    quantity = Column(Integer, default=0)
+    quantity = Column(Integer, nullable=False)
     # 实际发货可以修正收件信息，但不能覆盖作为依据的计划值。
     # 空值表示实际发货沿用计划字段 name/address/phone。
     actual_name = Column(String(100), nullable=True)
@@ -249,6 +249,7 @@ class ShippingDetail(Base):
         return self.complaint_makeup_item.task.postal_delivery_id if self.complaint_makeup_item else None
 
     __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_shipping_details_quantity_positive"),
         Index(
             "uq_shipping_detail_order_target_issue",
             "issue_number",

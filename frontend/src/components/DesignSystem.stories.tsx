@@ -120,9 +120,13 @@ export const Buttons: Story = {
     </Space>
   ),
   play: async ({ canvas, globals }) => {
+    const enabledPrimaryButton = await canvas.findByRole('button', { name: /重新生成/ })
+    await expect(getComputedStyle(enabledPrimaryButton).color).toBe('rgb(255, 255, 255)')
     const disabledPrimaryButton = await canvas.findByRole('button', { name: '标记每月两次合寄' })
     await expect(disabledPrimaryButton).toBeDisabled()
     await expect(getComputedStyle(disabledPrimaryButton).backgroundColor).not.toBe('rgb(0, 113, 227)')
+    await expect(getComputedStyle(disabledPrimaryButton).color)
+      .not.toBe(getComputedStyle(disabledPrimaryButton).backgroundColor)
     const disabledModalButton = await canvas.findByRole('button', { name: '弹窗确认' })
     await expect(disabledModalButton).toBeDisabled()
     await expect(getComputedStyle(disabledModalButton).backgroundImage).toBe('none')

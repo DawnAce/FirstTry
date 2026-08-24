@@ -767,7 +767,7 @@ def test_confirmed_unmatched_split_packages_can_be_bulk_linked_then_close_file_g
         assert getattr(exc, "status_code", None) == 400
 
 
-def test_historical_unassigned_adjustment_can_be_attributed_without_changing_physical_shipment():
+def test_historical_unassigned_adjustment_does_not_double_count_stopped_no_tracking_plan():
     db = _db()
     user = User(username="historian", password_hash="x", role=UserRole.admin)
     issue = Issue(issue_number=4001, publish_date=date(2026, 1, 26), status=IssueStatus.confirmed)
@@ -822,18 +822,20 @@ def test_historical_unassigned_adjustment_can_be_attributed_without_changing_phy
     )
     assert after.attributed_adjustment_quantity == 1
     assert after.unattributed_adjustment_quantity == 0
-    assert after.actual_shipped_quantity == 1
-    assert after.pending_quantity == 0
+    assert after.actual_shipped_quantity == 0
+    assert after.pending_quantity == 1
     assert after.adjustments[0].detail_name_snapshot == "暂停寄送客户"
 
     after_report = get_report(issue.id, db=db)
     assert after_report.confirmation_summary.plan_attributed_quantity == 1
-    assert after_report.confirmation_summary.plan_unexplained_delta == 0
-    assert after_report.confirmation_summary.plan_is_reconciled is True
+    assert after_report.confirmation_summary.current_shipping_total == 0
+    assert after_report.confirmation_summary.plan_unexplained_delta == -1
+    assert after_report.confirmation_summary.plan_is_reconciled is False
     assert after_report.confirmation_summary.unattributed_adjustment_quantity == 0
 
     db.refresh(detail)
-    assert detail.fulfillment_status == "no_tracking_required"
+    assert detail.shipping_requirement == "tracking_required"
+    assert detail.fulfillment_status == "no_shipment_required"
     assert detail.handled_quantity == 1
 
 
@@ -1201,6 +1203,12 @@ def test_mafei_warehouse_retention_requires_stock_in_adjustment():
     assert completed.actual_shipped_quantity == 0
     assert completed.handled_quantity == 72
     assert completed.pending_quantity == 0
+
+    report = get_report(issue.id, db=db)
+    assert report.confirmation_summary.current_shipping_total == 72
+    assert report.confirmation_summary.plan_attributed_quantity == 0
+    assert report.confirmation_summary.plan_unexplained_delta == 0
+    assert report.confirmation_summary.plan_is_reconciled is True
 
     db.expire_all()
     stored = db.query(ShippingDetail).filter(ShippingDetail.id == reserve.id).one()

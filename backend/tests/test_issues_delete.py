@@ -52,6 +52,7 @@ class DeleteIssueTests(unittest.TestCase):
                     sheet_name="测试",
                     channel="渠道订阅",
                     name="测试明细",
+                    quantity=1,
                 ),
             ]
         )

@@ -20,6 +20,7 @@ from app.models import (
     PublicationSchedule,
     ReportEntry,
     ShippingDetail,
+    ShippingFulfillmentAdjustment,
     ShippingDetailSourceType,
     TempPrintDetail,
     User,
@@ -184,6 +185,7 @@ class ReportShippingChainTests(unittest.TestCase):
                 channel="渠道订阅",
                 name="普通计划乙",
                 quantity=510,
+                status="停发",
                 source_type=ShippingDetailSourceType.manual,
             ),
             ShippingDetail(
@@ -214,6 +216,15 @@ class ReportShippingChainTests(unittest.TestCase):
             3,
         )
         self.assertNotIn("不应复制的补发", {row.name for row in current_rows})
+        copied_stop = db.query(ShippingDetail).filter_by(
+            issue_number=2666,
+            name="普通计划乙",
+        ).one()
+        stop_adjustment = db.query(ShippingFulfillmentAdjustment).filter_by(
+            shipping_detail_id=copied_stop.id,
+        ).one()
+        self.assertEqual(stop_adjustment.source, "plan_status")
+        self.assertEqual(stop_adjustment.quantity, copied_stop.quantity)
         snapshot = db.query(IssueAuditSnapshot).filter_by(
             issue_id=current_issue.id,
             snapshot_type="confirm",
