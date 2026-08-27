@@ -66,10 +66,12 @@ import type {
 } from '../api/shippingWaybills';
 import { logisticsApiErrorMessage } from './logisticsIssueState';
 import {
+  buildWaybillConfirmationNotice,
   buildWaybillGroupSuggestions,
   filterWaybillRows,
   isRecoverableWaybillDraft,
   isSupportedWaybillFilename,
+  isWarehouseStockInImportRow,
   remainingPlanGapQuantity,
   recommendedMonthEndGapIds,
 } from './waybillImportUtils';
@@ -220,9 +222,19 @@ export default function WaybillImportWorkbench() {
     ? detailsById.get(editingRow.shipping_detail_id)
     : undefined;
   const visibleRows = useMemo(() => filterWaybillRows(batch?.rows ?? [], filter), [batch, filter]);
+  const warehouseStockInRowCount = useMemo(
+    () => filterWaybillRows(batch?.rows ?? [], 'warehouse_stock_in').length,
+    [batch],
+  );
+  const ignoredRowCount = useMemo(
+    () => filterWaybillRows(batch?.rows ?? [], 'ignored').length,
+    [batch],
+  );
   const missingTrackingRows = useMemo(
     () => (batch?.rows ?? []).filter((row) => (
-      !row.no_tracking_required
+      !isWarehouseStockInImportRow(row)
+      && row.match_status !== 'ignored'
+      && !row.no_tracking_required
       && !row.tracking_no
       && Boolean(row.recipient_name.trim())
       && row.quantity > 0
@@ -259,13 +271,23 @@ export default function WaybillImportWorkbench() {
   const remainingFileGap = remainingPlanGapQuantity(gapDetails);
   const displayedHandledQuantity = (batch?.matched_quantity ?? 0) + adjustmentQuantity;
   const displayedPendingQuantity = Math.max((batch?.expected_quantity ?? 0) - displayedHandledQuantity, 0);
-  const currentPendingQuantity = batch?.status === 'previewed'
-    ? displayedPendingQuantity
-    : fulfillmentQuery.data?.pending_quantity ?? displayedPendingQuantity;
   const unexplainedPendingQuantity = batch?.status === 'previewed'
     ? Math.max(displayedPendingQuantity - deferredQuantity, 0)
     : fulfillmentQuery.data?.unexplained_pending_quantity
       ?? Math.max(displayedPendingQuantity - deferredQuantity, 0);
+  const confirmationNotice = buildWaybillConfirmationNotice({
+    twiceMonthlyDeferredQuantity,
+    monthEndDeferredQuantity,
+    unexplainedPendingQuantity,
+    unresolvedRows: batch?.unmatched_rows ?? 0,
+  });
+  const confirmedNotice = buildWaybillConfirmationNotice({
+    twiceMonthlyDeferredQuantity,
+    monthEndDeferredQuantity,
+    unexplainedPendingQuantity,
+    unresolvedRows: batch?.unmatched_rows ?? 0,
+    confirmed: true,
+  });
   const adjustmentSelectedQuantity = gapDetails.find(
     (item) => item.shipping_detail_id === adjustmentDetailId,
   )?.remaining_quantity ?? 0;
@@ -444,6 +466,7 @@ export default function WaybillImportWorkbench() {
 
   const toggleIgnored = async (row: WaybillImportRow) => {
     if (!batch) return;
+    if (isWarehouseStockInImportRow(row)) return;
     if (row.match_status !== 'ignored') {
       setIgnoreRow(row);
       setIgnoreReason('');
@@ -497,7 +520,7 @@ export default function WaybillImportWorkbench() {
       ]);
       if (response.data.unmatched_rows === 0 && response.data.pending_quantity > 0) setFilter('gap');
       if (editingRow?.id === row.id) closeEditor();
-      message.success('已改为转库留存/库存入库，原导入行已保留为忽略凭证');
+      message.success('已转库留存并完成库存入库，原导入行已保留为转库凭证');
     } catch (error) {
       message.error(logisticsApiErrorMessage(error, '改为转库留存/库存入库失败'));
     } finally {
@@ -680,7 +703,7 @@ export default function WaybillImportWorkbench() {
         queryClient.invalidateQueries({ queryKey: ['shippingDetailsAll'] }),
         queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] }),
       ]);
-      message.success(`已核销 ${response.data.matched_quantity.toLocaleString()} 份，保留 ${response.data.pending_quantity.toLocaleString()} 份待处理`);
+      message.success(`已核销 ${response.data.matched_quantity.toLocaleString()} 份。${confirmedNotice}`);
     } catch (error) {
       message.error(logisticsApiErrorMessage(error, '确认导入失败'));
     } finally {
@@ -716,7 +739,9 @@ export default function WaybillImportWorkbench() {
     },
     {
       title: '承运 / 运单', key: 'tracking', width: 180,
-      render: (_, row) => row.no_tracking_required
+      render: (_, row) => isWarehouseStockInImportRow(row)
+        ? <Tag color="cyan">库存入库</Tag>
+        : row.no_tracking_required
         ? <Tag color="blue">无需运单</Tag>
         : <div className="waybill-tracking"><b>{row.carrier || '—'}</b><span>{row.tracking_no || '缺少运单号'}</span></div>,
     },
@@ -724,6 +749,12 @@ export default function WaybillImportWorkbench() {
     {
       title: '核对结果', key: 'status', width: 170,
       render: (_, row) => {
+        if (isWarehouseStockInImportRow(row)) {
+          return <div className="waybill-status-cell">
+            <Tag color="cyan">已转库留存</Tag>
+            <span>已入中通库房，本期不生成运单</span>
+          </div>;
+        }
         const missingTracking = row.match_reason === '缺少运单号';
         const meta = missingTracking ? { label: '缺少运单号', color: 'gold' } : statusMeta[row.match_status];
         return <div className="waybill-status-cell">
@@ -735,6 +766,9 @@ export default function WaybillImportWorkbench() {
     {
       title: '操作', key: 'actions', width: 190, fixed: 'right',
       render: (_, row) => {
+        if (isWarehouseStockInImportRow(row)) {
+          return <span className="waybill-muted">已入库</span>;
+        }
         const linkedDetail = row.shipping_detail_id ? detailsById.get(row.shipping_detail_id) : undefined;
         const canConvertStockIn = row.match_status !== 'ignored'
           && row.no_tracking_required
@@ -747,7 +781,7 @@ export default function WaybillImportWorkbench() {
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>核对</Button>
           {canConvertStockIn && <Popconfirm
             title="改为转库留存/库存入库？"
-            description={`将按马飞当期完整计划 ${linkedDetail?.quantity ?? row.quantity} 份登记库存入库，原文件行保留为已忽略凭证。`}
+            description={`将按马飞当期完整计划 ${linkedDetail?.quantity ?? row.quantity} 份登记库存入库，原文件行保留为转库凭证。`}
             okText="确认转换"
             cancelText="取消"
             onConfirm={() => void handleConvertToWarehouseStockIn(row)}
@@ -801,7 +835,8 @@ export default function WaybillImportWorkbench() {
     { label: '缺单 / 未识别 / 无效', value: 'invalid' },
     { label: '重复运单', value: 'duplicate' },
     { label: '无需运单', value: 'no_tracking' },
-    { label: '已忽略', value: 'ignored' },
+    { label: `转库留存 ${warehouseStockInRowCount}行`, value: 'warehouse_stock_in' },
+    { label: `已忽略 ${ignoredRowCount}行`, value: 'ignored' },
   ] : [];
 
   if (draftQuery.isLoading || issueQuery.isLoading) {
@@ -1050,17 +1085,17 @@ export default function WaybillImportWorkbench() {
       <div className="waybill-confirm-bar">
         <div className="waybill-confirm-copy">
           <b>{batch.status === 'confirmed' ? `已核销 ${displayedHandledQuantity.toLocaleString()} 份` : `准备核销 ${batch.matched_quantity.toLocaleString()} 份`}</b>
-          <span>{batch.status === 'confirmed' ? `仍有 ${currentPendingQuantity.toLocaleString()} 份未实际寄出，其中 ${deferredQuantity.toLocaleString()} 份待合寄。` : `确认后保留 ${displayedPendingQuantity.toLocaleString()} 份待处理；未解决行仍可继续关联。`}</span>
+          <span>{batch.status === 'confirmed' ? confirmedNotice : confirmationNotice}</span>
         </div>
         {batch.status === 'previewed' ? <Popconfirm
-          title={`确认导入已核销的 ${batch.matched_quantity.toLocaleString()} 份？`}
-          description={`将保留 ${displayedPendingQuantity.toLocaleString()} 份待处理，未匹配行确认后仍可继续关联。`}
+          title={`确认导入并核销 ${batch.matched_quantity.toLocaleString()} 份？`}
+          description={confirmationNotice}
           okText="确认导入"
           cancelText="继续核对"
           onConfirm={() => void handleConfirm()}
         >
           <Button type="primary" size="large" icon={<CheckCircleOutlined />} loading={confirming} disabled={batch.matched_rows === 0}>
-            导入已核销的 {batch.matched_quantity.toLocaleString()} 份，保留 {displayedPendingQuantity.toLocaleString()} 份待处理
+            确认导入并核销 {batch.matched_quantity.toLocaleString()} 份
           </Button>
         </Popconfirm> : <Button
           type="primary"

@@ -4,6 +4,7 @@ import { HttpResponse, http } from 'msw';
 import { reactRouterParameters, withRouter } from 'storybook-addon-remix-react-router';
 import WaybillImportWorkbench from './WaybillImportWorkbench';
 import type { ShippingGapDetail, WaybillImportBatch, WaybillImportRow } from '../api/shippingWaybills';
+import { warehouseStockInImportReason } from './waybillImportUtils';
 
 const issue = {
   id: 18,
@@ -92,6 +93,33 @@ const gapRegressionBatch: WaybillImportBatch = {
   unresolved_quantity: 0,
   file_gap_quantity: 96,
   rows: matchedRows,
+};
+
+const warehouseStockInRow = makeRow(201, 'ignored', 70, {
+  carrier: '无需运单',
+  tracking_no: null,
+  recipient_name: '中通库房',
+  phone: null,
+  address: '库房暂存',
+  no_tracking_required: true,
+  manual_reviewed: true,
+  match_reason: warehouseStockInImportReason,
+  shipping_detail_id: 201,
+});
+
+const warehouseStockInBatch: WaybillImportBatch = {
+  ...batch,
+  id: 3,
+  expected_quantity: 1025,
+  parsed_quantity: 1025,
+  matched_quantity: 955,
+  pending_quantity: 0,
+  matched_rows: 55,
+  unmatched_rows: 0,
+  warning_count: 0,
+  unresolved_quantity: 0,
+  file_gap_quantity: 0,
+  rows: [...matchedRows, warehouseStockInRow],
 };
 
 const gapRegressionDetails: ShippingGapDetail[] = Array.from({ length: 19 }, (_, index) => ({
@@ -249,7 +277,7 @@ export const Unresolved: Story = {
     const linkButton = await canvas.findByRole('button', { name: /关联这 4 个运单/ });
     await expect(linkButton).toBeVisible();
     await expect(getComputedStyle(linkButton).color).toBe('rgb(255, 255, 255)');
-    const confirmButton = await canvas.findByRole('button', { name: /导入已核销的 955 份/ });
+    const confirmButton = await canvas.findByRole('button', { name: /确认导入并核销 955 份/ });
     await expect(confirmButton).toBeVisible();
     await expect(getComputedStyle(confirmButton.lastElementChild!).color).toBe('rgb(255, 255, 255)');
   },
@@ -318,6 +346,55 @@ export const StockInAndPlanGap: Story = {
     await expect(await canvas.findByText(/计划缺口 24 份/)).toBeVisible();
     await expect((await canvas.findAllByText('待确认'))[0]).toBeVisible();
     await expect((await canvas.findAllByText('月底合寄'))[0]).toBeVisible();
+  },
+};
+
+export const WarehouseStockInClassification: Story = {
+  name: '转库留存与人工忽略分开显示',
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/shipping-waybills/issues/18/draft', () => HttpResponse.json(warehouseStockInBatch)),
+        http.get('/api/shipping-waybills/issues/18/summary', () => HttpResponse.json({
+          issue_id: 18,
+          issue_number: 2638,
+          expected_quantity: 1025,
+          planned_quantity: 1025,
+          handled_quantity: 1025,
+          tracked_quantity: 955,
+          no_tracking_quantity: 0,
+          actual_shipped_quantity: 955,
+          adjustment_quantity: 70,
+          no_shipment_quantity: 0,
+          warehouse_stock_in_quantity: 70,
+          deferred_quantity: 0,
+          twice_monthly_deferred_quantity: 0,
+          month_end_deferred_quantity: 0,
+          unexplained_pending_quantity: 0,
+          attributed_adjustment_quantity: 70,
+          unattributed_adjustment_quantity: 0,
+          pending_quantity: 0,
+          extra_quantity: 0,
+          package_count: 55,
+          pending_detail_count: 0,
+          status: 'shipped',
+          shipment_status: 'partial',
+          latest_import: warehouseStockInBatch,
+          adjustments: [],
+          deferrals: [],
+          gap_details: [],
+        })),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('转库留存 1行')).toBeVisible();
+    await expect(await canvas.findByText('已忽略 0行')).toBeVisible();
+    await expect(await canvas.findByText('已转库留存')).toBeVisible();
+    await expect(await canvas.findByText('已入中通库房，本期不生成运单')).toBeVisible();
+    await expect(await canvas.findByText('已入库')).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: '恢复' })).not.toBeInTheDocument();
   },
 };
 

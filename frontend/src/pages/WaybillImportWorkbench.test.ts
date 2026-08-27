@@ -2,13 +2,57 @@ import { describe, expect, it } from 'vitest';
 import type { WaybillImportRow } from '../api/shippingWaybills';
 import type { ShippingDetail } from '../api/shippingDetails';
 import {
+  buildWaybillConfirmationNotice,
   buildWaybillGroupSuggestions,
   filterWaybillRows,
+  historicalWarehouseStockInImportReason,
   isRecoverableWaybillDraft,
   isSupportedWaybillFilename,
+  isWarehouseStockInImportRow,
   remainingPlanGapQuantity,
   recommendedMonthEndGapIds,
+  warehouseStockInImportReason,
 } from './waybillImportUtils';
+
+describe('buildWaybillConfirmationNotice', () => {
+  it('describes registered month-end deferrals separately from unresolved import rows', () => {
+    expect(buildWaybillConfirmationNotice({
+      twiceMonthlyDeferredQuantity: 0,
+      monthEndDeferredQuantity: 21,
+      unexplainedPendingQuantity: 0,
+      unresolvedRows: 1,
+    })).toBe('21 份已登记为月底合寄，本次不核销，将在目标刊期发出；1 条导入行待核对，确认后仍可继续处理。');
+  });
+
+  it('keeps unexplained plan quantities distinct from both deferral types', () => {
+    expect(buildWaybillConfirmationNotice({
+      twiceMonthlyDeferredQuantity: 2,
+      monthEndDeferredQuantity: 3,
+      unexplainedPendingQuantity: 4,
+      unresolvedRows: 0,
+    })).toBe('5 份已登记合寄（每月两次 2 份、月底 3 份），本次不核销，将在目标刊期发出；4 份计划缺口尚未归因。');
+  });
+
+  it('uses post-confirmation wording after the matched rows are materialized', () => {
+    expect(buildWaybillConfirmationNotice({
+      twiceMonthlyDeferredQuantity: 0,
+      monthEndDeferredQuantity: 21,
+      unexplainedPendingQuantity: 0,
+      unresolvedRows: 0,
+      confirmed: true,
+    })).toBe('21 份已登记为月底合寄，待目标刊期发出。');
+  });
+
+  it('uses a completed fallback when nothing remains after confirmation', () => {
+    expect(buildWaybillConfirmationNotice({
+      twiceMonthlyDeferredQuantity: 0,
+      monthEndDeferredQuantity: 0,
+      unexplainedPendingQuantity: 0,
+      unresolvedRows: 0,
+      confirmed: true,
+    })).toBe('本批已匹配行均已写入实际发货记录。');
+  });
+});
 
 const row = (
   id: number,
@@ -41,6 +85,16 @@ describe('filterWaybillRows', () => {
     row(4, 'duplicate', 50),
     row(5, 'ignored', 8),
     row(6, 'matched', 299, true),
+    {
+      ...row(7, 'ignored', 70, true),
+      match_reason: warehouseStockInImportReason,
+      shipping_detail_id: 7,
+    },
+    {
+      ...row(8, 'ignored', 72, true),
+      match_reason: historicalWarehouseStockInImportReason,
+      shipping_detail_id: 8,
+    },
   ];
 
   it('focuses unresolved rows and sorts by affected quantity', () => {
@@ -49,6 +103,12 @@ describe('filterWaybillRows', () => {
 
   it('keeps ignored rows out of unresolved work', () => {
     expect(filterWaybillRows(rows, 'ignored').map((item) => item.id)).toEqual([5]);
+  });
+
+  it('classifies converted warehouse rows as stock-in rather than ignored', () => {
+    expect(filterWaybillRows(rows, 'warehouse_stock_in').map((item) => item.id)).toEqual([8, 7]);
+    expect(isWarehouseStockInImportRow(rows[6])).toBe(true);
+    expect(isWarehouseStockInImportRow(rows[7])).toBe(true);
   });
 
   it('can isolate no-tracking rows independently of match status', () => {

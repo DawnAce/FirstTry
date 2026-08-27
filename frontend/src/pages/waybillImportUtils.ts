@@ -1,7 +1,61 @@
 import type { ShippingGapDetail, WaybillImportBatch, WaybillImportRow } from '../api/shippingWaybills';
 import type { ShippingDetail } from '../api/shippingDetails';
 
-export type RowFilter = 'unresolved' | 'gap' | 'all' | 'matched' | 'manual' | 'invalid' | 'duplicate' | 'no_tracking' | 'ignored';
+export type RowFilter = 'unresolved' | 'gap' | 'all' | 'matched' | 'manual' | 'invalid' | 'duplicate' | 'no_tracking' | 'warehouse_stock_in' | 'ignored';
+
+export const warehouseStockInImportReason = '已转换：马飞—库房留存改按转库留存/库存入库核销';
+export const historicalWarehouseStockInImportReason = '历史转换：马飞—库房留存已改为转库留存/库存入库';
+
+const warehouseStockInImportReasons = new Set([
+  warehouseStockInImportReason,
+  historicalWarehouseStockInImportReason,
+]);
+
+export function isWarehouseStockInImportRow(row: WaybillImportRow): boolean {
+  return row.match_status === 'ignored'
+    && row.match_reason !== null
+    && warehouseStockInImportReasons.has(row.match_reason);
+}
+
+interface WaybillConfirmationNoticeInput {
+  twiceMonthlyDeferredQuantity: number;
+  monthEndDeferredQuantity: number;
+  unexplainedPendingQuantity: number;
+  unresolvedRows: number;
+  confirmed?: boolean;
+}
+
+export function buildWaybillConfirmationNotice({
+  twiceMonthlyDeferredQuantity,
+  monthEndDeferredQuantity,
+  unexplainedPendingQuantity,
+  unresolvedRows,
+  confirmed = false,
+}: WaybillConfirmationNoticeInput): string {
+  const sentences: string[] = [];
+  const deferredQuantity = twiceMonthlyDeferredQuantity + monthEndDeferredQuantity;
+  const deferredAction = confirmed ? '待目标刊期发出' : '本次不核销，将在目标刊期发出';
+
+  if (twiceMonthlyDeferredQuantity > 0 && monthEndDeferredQuantity > 0) {
+    sentences.push(
+      `${deferredQuantity.toLocaleString()} 份已登记合寄（每月两次 ${twiceMonthlyDeferredQuantity.toLocaleString()} 份、月底 ${monthEndDeferredQuantity.toLocaleString()} 份），${deferredAction}`,
+    );
+  } else if (twiceMonthlyDeferredQuantity > 0) {
+    sentences.push(`${twiceMonthlyDeferredQuantity.toLocaleString()} 份已登记为每月两次合寄，${deferredAction}`);
+  } else if (monthEndDeferredQuantity > 0) {
+    sentences.push(`${monthEndDeferredQuantity.toLocaleString()} 份已登记为月底合寄，${deferredAction}`);
+  }
+
+  if (unexplainedPendingQuantity > 0) {
+    sentences.push(`${unexplainedPendingQuantity.toLocaleString()} 份计划缺口${confirmed ? '仍未归因' : '尚未归因'}`);
+  }
+  if (unresolvedRows > 0) {
+    sentences.push(`${unresolvedRows.toLocaleString()} 条导入行待核对${confirmed ? '，可继续处理' : '，确认后仍可继续处理'}`);
+  }
+
+  if (sentences.length) return `${sentences.join('；')}。`;
+  return confirmed ? '本批已匹配行均已写入实际发货记录。' : '已匹配行将写入实际发货记录。';
+}
 
 export const unresolvedStatuses = new Set<WaybillImportRow['match_status']>([
   'unmatched', 'ambiguous', 'duplicate', 'invalid',
@@ -33,8 +87,9 @@ export function filterWaybillRows(rows: WaybillImportRow[], filter: RowFilter): 
     if (filter === 'manual') return row.match_status === 'unmatched' || row.match_status === 'ambiguous';
     if (filter === 'invalid') return row.match_status === 'invalid';
     if (filter === 'duplicate') return row.match_status === 'duplicate';
-    if (filter === 'no_tracking') return row.no_tracking_required;
-    return row.match_status === 'ignored';
+    if (filter === 'no_tracking') return row.no_tracking_required && !isWarehouseStockInImportRow(row);
+    if (filter === 'warehouse_stock_in') return isWarehouseStockInImportRow(row);
+    return row.match_status === 'ignored' && !isWarehouseStockInImportRow(row);
   });
   return [...filtered].sort((a, b) => {
     const aAttention = unresolvedStatuses.has(a.match_status) ? 0 : 1;
