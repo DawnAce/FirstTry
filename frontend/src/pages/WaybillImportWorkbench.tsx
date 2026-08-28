@@ -12,7 +12,6 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
-  Segmented,
   Select,
   Spin,
   Table,
@@ -21,10 +20,12 @@ import {
 } from 'antd';
 import type { TableColumnsType } from 'antd';
 import {
+  CheckOutlined,
   CheckCircleOutlined,
   DatabaseOutlined,
   EditOutlined,
   FileExcelOutlined,
+  FilterOutlined,
   LeftOutlined,
   LinkOutlined,
   PlusOutlined,
@@ -74,6 +75,7 @@ import {
   isWarehouseStockInImportRow,
   remainingPlanGapQuantity,
   recommendedMonthEndGapIds,
+  summarizeWaybillRowFilters,
 } from './waybillImportUtils';
 import type { RowFilter } from './waybillImportUtils';
 import ShippingDeferralModal from './ShippingDeferralModal';
@@ -102,6 +104,47 @@ const monthEndConsolidationReason = '月底合寄 · 本期报纸随月底最后
 const warehouseStockInReason = '转库留存 · 当期报纸入马飞中通库房备货';
 type AdjustmentType = FulfillmentAdjustment['adjustment_type'];
 type DeferralType = ShippingDeferral['deferral_type'];
+type ImportPrimaryFilter = 'all' | 'unresolved' | 'matched' | 'warehouse_stock_in' | 'ignored';
+
+interface WaybillFilterChoiceProps {
+  active: boolean;
+  count: number;
+  description: string;
+  label: string;
+  onClick: () => void;
+  unit?: '行' | '份';
+}
+
+function WaybillFilterChoice({
+  active,
+  count,
+  description,
+  label,
+  onClick,
+  unit = '行',
+}: WaybillFilterChoiceProps) {
+  return <button
+    type="button"
+    className={`waybill-filter-choice${active ? ' is-active' : ''}`}
+    aria-pressed={active}
+    onClick={onClick}
+  >
+    <span className="waybill-filter-check" aria-hidden="true">{active && <CheckOutlined />}</span>
+    <span className="waybill-filter-choice-copy">
+      <span className="waybill-filter-choice-title">
+        {label}<b>{count.toLocaleString()}{unit}</b>
+      </span>
+      <span>{description}</span>
+    </span>
+  </button>;
+}
+
+function primaryImportFilter(filter: RowFilter): ImportPrimaryFilter {
+  if (filter === 'manual' || filter === 'invalid' || filter === 'duplicate') return 'unresolved';
+  if (filter === 'tracked' || filter === 'no_tracking') return 'matched';
+  if (filter === 'gap') return 'all';
+  return filter;
+}
 
 function adjustmentReasonLabel(reason: string): string {
   return reason === '双周停刊' ? legacySuspendedConsolidationReason : reason;
@@ -137,6 +180,7 @@ export default function WaybillImportWorkbench() {
   const forceReparseRef = useRef(false);
   const dragDepthRef = useRef(0);
   const initialFilterBatchIdRef = useRef<number | null>(null);
+  const lastImportFilterRef = useRef<RowFilter>('unresolved');
   const [batchOverride, setBatch] = useState<WaybillImportBatch | null | undefined>(undefined);
   const [filter, setFilter] = useState<RowFilter>('unresolved');
   const [parsing, setParsing] = useState(false);
@@ -222,14 +266,7 @@ export default function WaybillImportWorkbench() {
     ? detailsById.get(editingRow.shipping_detail_id)
     : undefined;
   const visibleRows = useMemo(() => filterWaybillRows(batch?.rows ?? [], filter), [batch, filter]);
-  const warehouseStockInRowCount = useMemo(
-    () => filterWaybillRows(batch?.rows ?? [], 'warehouse_stock_in').length,
-    [batch],
-  );
-  const ignoredRowCount = useMemo(
-    () => filterWaybillRows(batch?.rows ?? [], 'ignored').length,
-    [batch],
-  );
+  const rowFilterCounts = useMemo(() => summarizeWaybillRowFilters(batch?.rows ?? []), [batch]);
   const missingTrackingRows = useMemo(
     () => (batch?.rows ?? []).filter((row) => (
       !isWarehouseStockInImportRow(row)
@@ -300,9 +337,6 @@ export default function WaybillImportWorkbench() {
     item.adjustment_type === 'no_shipment_required'
     && (item.reason === legacySuspendedConsolidationReason || item.reason === '双周停刊')
   )) ?? [];
-  const manualMatchCount = (batch?.rows ?? []).filter((row) => (
-    row.match_status === 'unmatched' || row.match_status === 'ambiguous'
-  )).length;
   const resolvedAdjustmentReason = adjustmentType === 'warehouse_stock_in'
     ? warehouseStockInReason
     : adjustmentReason === otherNoShipmentReason
@@ -321,7 +355,9 @@ export default function WaybillImportWorkbench() {
   useEffect(() => {
     if (!batch || !fulfillmentQuery.isSuccess || fulfillmentQuery.isFetching || initialFilterBatchIdRef.current === batch.id) return;
     initialFilterBatchIdRef.current = batch.id;
-    setFilter(batch.unmatched_rows > 0 ? 'unresolved' : remainingFileGap > 0 ? 'gap' : 'all');
+    const nextFilter: RowFilter = batch.unmatched_rows > 0 ? 'unresolved' : remainingFileGap > 0 ? 'gap' : 'all';
+    lastImportFilterRef.current = nextFilter === 'gap' ? 'all' : nextFilter;
+    setFilter(nextFilter);
   }, [batch, fulfillmentQuery.isFetching, fulfillmentQuery.isSuccess, remainingFileGap]);
 
   const openFilePicker = (forceReparse: boolean) => {
@@ -336,7 +372,9 @@ export default function WaybillImportWorkbench() {
     try {
       const response = await previewWaybillImport(issueId, file, forceReparseRef.current);
       setBatch(response.data);
-      setFilter(response.data.unmatched_rows > 0 ? 'unresolved' : response.data.pending_quantity > 0 ? 'gap' : 'all');
+      const nextFilter: RowFilter = response.data.unmatched_rows > 0 ? 'unresolved' : response.data.pending_quantity > 0 ? 'gap' : 'all';
+      lastImportFilterRef.current = nextFilter === 'gap' ? 'all' : nextFilter;
+      setFilter(nextFilter);
       queryClient.setQueryData(['waybillImportDraft', issueId], response.data);
       await queryClient.invalidateQueries({ queryKey: ['shippingFulfillment', issueId] });
       message.success(response.data.status === 'confirmed' ? '该文件已经确认导入，未重复创建运单' : '运单文件已解析，草稿会自动保留');
@@ -346,7 +384,9 @@ export default function WaybillImportWorkbench() {
           const recovered = (await getWaybillImportDraft(issueId)).data;
           if (isRecoverableWaybillDraft(recovered, file.name, previousBatchId, wasForceReparse)) {
             setBatch(recovered);
-            setFilter(recovered.unmatched_rows > 0 ? 'unresolved' : recovered.pending_quantity > 0 ? 'gap' : 'all');
+            const nextFilter: RowFilter = recovered.unmatched_rows > 0 ? 'unresolved' : recovered.pending_quantity > 0 ? 'gap' : 'all';
+            lastImportFilterRef.current = nextFilter === 'gap' ? 'all' : nextFilter;
+            setFilter(nextFilter);
             queryClient.setQueryData(['waybillImportDraft', issueId], recovered);
             message.warning('上传响应中断，但后台已完成解析，已自动恢复最新草稿');
             return;
@@ -826,18 +866,24 @@ export default function WaybillImportWorkbench() {
     </div>;
   };
 
-  const filterOptions: Array<{ label: string; value: RowFilter }> = batch ? [
-    { label: `导入行待处理 ${batch.unmatched_rows}行`, value: 'unresolved' },
-    { label: `计划缺口待归因 ${remainingFileGap}份`, value: 'gap' },
-    { label: `全部导入 ${batch.rows.length}行`, value: 'all' },
-    { label: `已匹配 ${batch.matched_rows}行`, value: 'matched' },
-    { label: `待人工匹配 ${manualMatchCount}行`, value: 'manual' },
-    { label: '缺单 / 未识别 / 无效', value: 'invalid' },
-    { label: '重复运单', value: 'duplicate' },
-    { label: '无需运单', value: 'no_tracking' },
-    { label: `转库留存 ${warehouseStockInRowCount}行`, value: 'warehouse_stock_in' },
-    { label: `已忽略 ${ignoredRowCount}行`, value: 'ignored' },
-  ] : [];
+  const activeView = filter === 'gap' ? 'gap' : 'imports';
+  const activePrimaryFilter = primaryImportFilter(filter);
+  const selectFilter = (nextFilter: RowFilter) => {
+    if (nextFilter !== 'gap') lastImportFilterRef.current = nextFilter;
+    setFilter(nextFilter);
+  };
+  const primaryFilterOptions: Array<{
+    value: ImportPrimaryFilter;
+    label: string;
+    count: number;
+    description: string;
+  }> = [
+    { value: 'all', label: '全部导入', count: rowFilterCounts.all, description: '查看所有导入记录' },
+    { value: 'matched', label: '已匹配', count: rowFilterCounts.matched, description: '已找到本期发货计划' },
+    { value: 'unresolved', label: '待核对', count: rowFilterCounts.unresolved, description: '仍需人工判断的异常行' },
+    { value: 'warehouse_stock_in', label: '转库留存', count: rowFilterCounts.warehouseStockIn, description: '本期不寄，已进入库存' },
+    { value: 'ignored', label: '已忽略', count: rowFilterCounts.ignored, description: '人工排除，保留可恢复' },
+  ];
 
   if (draftQuery.isLoading || issueQuery.isLoading) {
     return <div className="waybill-page-loading"><Spin size="large" description="正在读取运单草稿" /></div>;
@@ -955,9 +1001,130 @@ export default function WaybillImportWorkbench() {
       />}
 
       <Card className="waybill-table-card" styles={{ body: { padding: 0 } }}>
-        <div className="waybill-table-toolbar">
-          <Segmented<RowFilter> value={filter} options={filterOptions} onChange={setFilter} />
-          <span>{filter === 'gap' ? '这里核对计划中尚未被运单覆盖的份数，不是导入文件行' : `当前显示 ${visibleRows.length} 行，按影响份数从高到低排列`}</span>
+        <div className="waybill-filter-panel">
+          <section className="waybill-filter-section">
+            <h2><span className="waybill-filter-section-icon"><FilterOutlined /></span>查看对象</h2>
+            <div className="waybill-filter-grid is-view">
+              <WaybillFilterChoice
+                active={activeView === 'imports'}
+                count={rowFilterCounts.all}
+                description="按导入文件的记录行统计"
+                label="导入明细"
+                onClick={() => selectFilter(lastImportFilterRef.current)}
+              />
+              <WaybillFilterChoice
+                active={activeView === 'gap'}
+                count={remainingFileGap}
+                description="按发货计划缺少的份数统计"
+                label="计划缺口"
+                unit="份"
+                onClick={() => selectFilter('gap')}
+              />
+            </div>
+            <div className="waybill-filter-tip"><CheckOutlined />两类数据单位不同，分别查看、分别计算，不相加</div>
+          </section>
+
+          {activeView === 'imports' && <>
+            <section className="waybill-filter-section">
+              <h2><span className="waybill-filter-section-icon"><FileExcelOutlined /></span>导入行处理状态</h2>
+              <div className="waybill-filter-grid is-status">
+                {primaryFilterOptions.map((option) => <WaybillFilterChoice
+                  key={option.value}
+                  active={activePrimaryFilter === option.value}
+                  count={option.count}
+                  description={option.description}
+                  label={option.label}
+                  onClick={() => selectFilter(option.value)}
+                />)}
+              </div>
+              <div className="waybill-filter-tip">
+                <CheckOutlined />
+                {rowFilterCounts.all.toLocaleString()}行 = 已匹配{rowFilterCounts.matched.toLocaleString()}行 + 待核对{rowFilterCounts.unresolved.toLocaleString()}行 + 转库留存{rowFilterCounts.warehouseStockIn.toLocaleString()}行 + 已忽略{rowFilterCounts.ignored.toLocaleString()}行
+              </div>
+            </section>
+
+            <section className="waybill-filter-section is-detail">
+              <h2><span className="waybill-filter-section-icon"><CheckCircleOutlined /></span>{activePrimaryFilter === 'matched'
+                ? '已匹配 · 匹配方式'
+                : activePrimaryFilter === 'unresolved'
+                  ? '待核对 · 问题类型'
+                  : '状态说明'}</h2>
+              {activePrimaryFilter === 'matched' ? <>
+                <div className="waybill-filter-grid is-detail">
+                  <WaybillFilterChoice
+                    active={filter === 'matched'}
+                    count={rowFilterCounts.matched}
+                    description="查看全部已匹配记录"
+                    label="全部已匹配"
+                    onClick={() => selectFilter('matched')}
+                  />
+                  <WaybillFilterChoice
+                    active={filter === 'tracked'}
+                    count={rowFilterCounts.tracked}
+                    description="正常生成或导入运单号"
+                    label="有运单"
+                    onClick={() => selectFilter('tracked')}
+                  />
+                  <WaybillFilterChoice
+                    active={filter === 'no_tracking'}
+                    count={rowFilterCounts.noTracking}
+                    description="属于已匹配行的发货方式"
+                    label="无需运单"
+                    onClick={() => selectFilter('no_tracking')}
+                  />
+                </div>
+                <div className="waybill-filter-tip"><CheckOutlined />有运单和无需运单均包含在“已匹配”内，不再与一级状态相加</div>
+              </> : activePrimaryFilter === 'unresolved' ? <>
+                <div className="waybill-filter-grid is-detail">
+                  <WaybillFilterChoice
+                    active={filter === 'unresolved'}
+                    count={rowFilterCounts.unresolved}
+                    description="查看全部待核对记录"
+                    label="全部待核对"
+                    onClick={() => selectFilter('unresolved')}
+                  />
+                  <WaybillFilterChoice
+                    active={filter === 'manual'}
+                    count={rowFilterCounts.manual}
+                    description="未匹配或匹配不唯一"
+                    label="待人工匹配"
+                    onClick={() => selectFilter('manual')}
+                  />
+                  <WaybillFilterChoice
+                    active={filter === 'invalid'}
+                    count={rowFilterCounts.invalid}
+                    description="缺单、未识别或无效"
+                    label="缺单／未识别／无效"
+                    onClick={() => selectFilter('invalid')}
+                  />
+                  <WaybillFilterChoice
+                    active={filter === 'duplicate'}
+                    count={rowFilterCounts.duplicate}
+                    description="运单号在本批或历史重复"
+                    label="重复运单"
+                    onClick={() => selectFilter('duplicate')}
+                  />
+                </div>
+                <div className="waybill-filter-tip"><CheckOutlined />以上选项只细分“待核对”记录，不与一级状态重复计数</div>
+              </> : <div className="waybill-filter-summary">
+                <b>{activePrimaryFilter === 'all'
+                  ? `全部导入 ${rowFilterCounts.all.toLocaleString()}行`
+                  : activePrimaryFilter === 'warehouse_stock_in'
+                    ? `转库留存 ${rowFilterCounts.warehouseStockIn.toLocaleString()}行`
+                    : `已忽略 ${rowFilterCounts.ignored.toLocaleString()}行`}</b>
+                <span>{activePrimaryFilter === 'all'
+                  ? '每一行只归入一个一级状态，因此一级状态相加始终等于全部导入。'
+                  : activePrimaryFilter === 'warehouse_stock_in'
+                    ? '本期不寄给最终收件人、不生成运单；货物进入中通库房库存，日后订单、补发或赠送时再出库。'
+                    : '仅用于当前明确排除、不参与自动处理的数据；原始行和原因保留，可恢复后重新核对。'}</span>
+              </div>}
+            </section>
+          </>}
+
+          <div className="waybill-filter-footer">
+            <span><CheckOutlined />{activeView === 'imports' ? '一级状态互斥；二级选项只用于细分筛选' : '计划缺口按“份”统计，不计入导入明细行数'}</span>
+            <b>{activeView === 'imports' ? `当前显示 ${visibleRows.length.toLocaleString()} 行` : `待归因 ${remainingFileGap.toLocaleString()} 份`}</b>
+          </div>
         </div>
         {filter === 'unresolved' && groupSuggestions[0] && <div className="waybill-match-suggestion">
           <div>
