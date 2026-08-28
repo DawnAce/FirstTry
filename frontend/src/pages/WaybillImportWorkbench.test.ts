@@ -11,6 +11,7 @@ import {
   isWarehouseStockInImportRow,
   remainingPlanGapQuantity,
   recommendedMonthEndGapIds,
+  summarizeWaybillRowFilters,
   warehouseStockInImportReason,
 } from './waybillImportUtils';
 
@@ -111,8 +112,28 @@ describe('filterWaybillRows', () => {
     expect(isWarehouseStockInImportRow(rows[7])).toBe(true);
   });
 
-  it('can isolate no-tracking rows independently of match status', () => {
+  it('keeps tracking-mode filters inside matched rows', () => {
     expect(filterWaybillRows(rows, 'no_tracking').map((item) => item.id)).toEqual([6]);
+    expect(filterWaybillRows(rows, 'tracked').map((item) => item.id)).toEqual([1]);
+    expect(filterWaybillRows([
+      ...rows,
+      { ...row(9, 'invalid', 1, true), match_reason: '缺少运单号' },
+    ], 'no_tracking').map((item) => item.id)).toEqual([6]);
+  });
+
+  it('keeps primary statuses mutually exclusive and child filters inside their parent', () => {
+    expect(summarizeWaybillRowFilters(rows)).toEqual({
+      all: 8,
+      matched: 2,
+      tracked: 1,
+      noTracking: 1,
+      unresolved: 3,
+      manual: 1,
+      invalid: 1,
+      duplicate: 1,
+      warehouseStockIn: 2,
+      ignored: 1,
+    });
   });
 
   it('groups split packages when one plan detail has the same recipient and remaining quantity', () => {

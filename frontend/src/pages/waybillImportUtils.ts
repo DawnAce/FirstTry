@@ -1,7 +1,7 @@
 import type { ShippingGapDetail, WaybillImportBatch, WaybillImportRow } from '../api/shippingWaybills';
 import type { ShippingDetail } from '../api/shippingDetails';
 
-export type RowFilter = 'unresolved' | 'gap' | 'all' | 'matched' | 'manual' | 'invalid' | 'duplicate' | 'no_tracking' | 'warehouse_stock_in' | 'ignored';
+export type RowFilter = 'unresolved' | 'gap' | 'all' | 'matched' | 'tracked' | 'manual' | 'invalid' | 'duplicate' | 'no_tracking' | 'warehouse_stock_in' | 'ignored';
 
 export const warehouseStockInImportReason = '已转换：马飞—库房留存改按转库留存/库存入库核销';
 export const historicalWarehouseStockInImportReason = '历史转换：马飞—库房留存已改为转库留存/库存入库';
@@ -61,6 +61,59 @@ export const unresolvedStatuses = new Set<WaybillImportRow['match_status']>([
   'unmatched', 'ambiguous', 'duplicate', 'invalid',
 ]);
 
+export interface WaybillRowFilterCounts {
+  all: number;
+  matched: number;
+  tracked: number;
+  noTracking: number;
+  unresolved: number;
+  manual: number;
+  invalid: number;
+  duplicate: number;
+  warehouseStockIn: number;
+  ignored: number;
+}
+
+export function summarizeWaybillRowFilters(rows: WaybillImportRow[]): WaybillRowFilterCounts {
+  const counts: WaybillRowFilterCounts = {
+    all: rows.length,
+    matched: 0,
+    tracked: 0,
+    noTracking: 0,
+    unresolved: 0,
+    manual: 0,
+    invalid: 0,
+    duplicate: 0,
+    warehouseStockIn: 0,
+    ignored: 0,
+  };
+
+  rows.forEach((row) => {
+    if (isWarehouseStockInImportRow(row)) {
+      counts.warehouseStockIn += 1;
+      return;
+    }
+    if (row.match_status === 'ignored') {
+      counts.ignored += 1;
+      return;
+    }
+    if (row.match_status === 'matched') {
+      counts.matched += 1;
+      if (row.no_tracking_required) counts.noTracking += 1;
+      else counts.tracked += 1;
+      return;
+    }
+    if (unresolvedStatuses.has(row.match_status)) {
+      counts.unresolved += 1;
+      if (row.match_status === 'unmatched' || row.match_status === 'ambiguous') counts.manual += 1;
+      if (row.match_status === 'invalid') counts.invalid += 1;
+      if (row.match_status === 'duplicate') counts.duplicate += 1;
+    }
+  });
+
+  return counts;
+}
+
 export function isSupportedWaybillFilename(filename: string): boolean {
   return /\.(xlsx|xlsm)$/i.test(filename.trim());
 }
@@ -84,10 +137,11 @@ export function filterWaybillRows(rows: WaybillImportRow[], filter: RowFilter): 
     if (filter === 'all') return true;
     if (filter === 'unresolved') return unresolvedStatuses.has(row.match_status);
     if (filter === 'matched') return row.match_status === 'matched';
+    if (filter === 'tracked') return row.match_status === 'matched' && !row.no_tracking_required;
     if (filter === 'manual') return row.match_status === 'unmatched' || row.match_status === 'ambiguous';
     if (filter === 'invalid') return row.match_status === 'invalid';
     if (filter === 'duplicate') return row.match_status === 'duplicate';
-    if (filter === 'no_tracking') return row.no_tracking_required && !isWarehouseStockInImportRow(row);
+    if (filter === 'no_tracking') return row.match_status === 'matched' && row.no_tracking_required;
     if (filter === 'warehouse_stock_in') return isWarehouseStockInImportRow(row);
     return row.match_status === 'ignored' && !isWarehouseStockInImportRow(row);
   });

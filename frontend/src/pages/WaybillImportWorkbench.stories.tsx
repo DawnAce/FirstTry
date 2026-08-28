@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect } from 'storybook/test';
+import { expect, userEvent } from 'storybook/test';
 import { HttpResponse, http } from 'msw';
 import { reactRouterParameters, withRouter } from 'storybook-addon-remix-react-router';
 import WaybillImportWorkbench from './WaybillImportWorkbench';
@@ -274,9 +274,14 @@ export const Unresolved: Story = {
     await expect(await canvas.findByText('运单核对工作台')).toBeVisible();
     await expect(await canvas.findByText('发货计划对账')).toBeVisible();
     await expect(await canvas.findByText('未解释待补')).toBeVisible();
+    await expect(await canvas.findByRole('button', { name: /^待核对\s*4行/ })).toHaveAttribute('aria-pressed', 'true');
+    await expect(await canvas.findByRole('button', { name: /待人工匹配\s*4行/ })).toBeVisible();
     const linkButton = await canvas.findByRole('button', { name: /关联这 4 个运单/ });
     await expect(linkButton).toBeVisible();
     await expect(getComputedStyle(linkButton).color).toBe('rgb(255, 255, 255)');
+    await userEvent.click(await canvas.findByRole('button', { name: /已匹配\s*55行/ }));
+    await expect(await canvas.findByRole('button', { name: /有运单\s*55行/ })).toBeVisible();
+    await expect(await canvas.findByRole('button', { name: /无需运单\s*0行/ })).toBeVisible();
     const confirmButton = await canvas.findByRole('button', { name: /确认导入并核销 955 份/ });
     await expect(confirmButton).toBeVisible();
     await expect(getComputedStyle(confirmButton.lastElementChild!).color).toBe('rgb(255, 255, 255)');
@@ -342,7 +347,7 @@ export const StockInAndPlanGap: Story = {
     },
   },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByText('计划缺口待归因 24份')).toBeVisible();
+    await expect(await canvas.findByRole('button', { name: /计划缺口\s*24份/ })).toHaveAttribute('aria-pressed', 'true');
     await expect(await canvas.findByText(/计划缺口 24 份/)).toBeVisible();
     await expect((await canvas.findAllByText('待确认'))[0]).toBeVisible();
     await expect((await canvas.findAllByText('月底合寄'))[0]).toBeVisible();
@@ -389,8 +394,12 @@ export const WarehouseStockInClassification: Story = {
     },
   },
   play: async ({ canvas }) => {
+    const stockInFilter = await canvas.findByRole('button', { name: /转库留存\s*1行/ });
+    await expect(stockInFilter).toBeVisible();
+    await expect(await canvas.findByRole('button', { name: /已忽略\s*0行/ })).toBeVisible();
+    await userEvent.click(stockInFilter);
     await expect(await canvas.findByText('转库留存 1行')).toBeVisible();
-    await expect(await canvas.findByText('已忽略 0行')).toBeVisible();
+    await expect(await canvas.findByText(/本期不寄给最终收件人/)).toBeVisible();
     await expect(await canvas.findByText('已转库留存')).toBeVisible();
     await expect(await canvas.findByText('已入中通库房，本期不生成运单')).toBeVisible();
     await expect(await canvas.findByText('已入库')).toBeVisible();
