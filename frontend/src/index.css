@@ -3263,6 +3263,24 @@ body {
   white-space: nowrap;
 }
 
+.zto-drawer-package-documents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.zto-drawer-package-documents .ant-tag {
+  display: inline-flex;
+  margin: 0;
+  font-size: 11px;
+}
+
+.waybill-document-list {
+  display: grid;
+  gap: 8px;
+}
+
 .zto-detail-drawer-footer {
   justify-content: flex-end;
   flex-wrap: wrap;

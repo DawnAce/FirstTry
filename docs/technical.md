@@ -480,22 +480,23 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 - 清理后 2026 年 49 个非休刊期固定明细为 147 条、1470 份，来源全部为 `recurring_generated`，固定姓名重复数为 0；上述 11 期发货计划合计均与报数中通合计一致，2645 期为 1569 份。
 - `python -m scripts.cleanup_duplicate_shangyou_shipping_2026` 默认仅预演；`--apply --expected-count N` 会先复核候选、只锁定受影响期、生成 `backups/` 本地 JSON 备份，再原子删除并写入 `delete_duplicate` 操作日志。身份字段不完全一致或存在任何履约关联的行一律跳过。
 
-### 3.12A 运单导入、延期合寄与逐包裹核销（6 张表）
+### 3.12A 运单导入、延期合寄与逐包裹核销（7 张表）
 
 | 表 | 说明 |
 |----|------|
 | `shipping_waybill_import_batches` | 一次 Excel 预览/确认批次，保存文件哈希、确认印数、解析/匹配/待补/超额份数与告警统计；同一期同一文件哈希唯一 |
-| `shipping_waybill_import_rows` | 文件中的逐行解析结果，保留来源 sheet/行号、原始单元格 JSON、承运商、运单号、收件信息、份数、人工核对标记、匹配状态与对应 `shipping_detail_id` |
+| `shipping_waybill_import_rows` | 文件中的逐行解析结果，保留来源 sheet/行号、原始单元格 JSON、承运商、运单号、收件信息、份数、人工核对标记、匹配状态与对应 `shipping_detail_id`；月底候选另存待合寄 ID、覆盖期号和实物包裹总份数 |
+| `shipping_waybill_import_documents` | 运单工作簿内的随件凭证；保存凭证类型、来源 sheet、关联导入行/确认后包裹、结构化提取值、校验错误、解析版本与 `missing / pending_review / verified / mismatch` 状态 |
 | `shipping_packages` | 已确认或人工补录的实际包裹；一条发货明细可对应多个包裹，`(carrier, tracking_no)` 全局唯一 |
 | `shipping_fulfillment_adjustments` | 期级非运单核销项；`no_shipment_required` 保存停刊、取消寄送等最终不发货原因，`warehouse_stock_in` 保存马飞库房留存的库存入库；`source=manual/plan_status` 区分人工登记与计划停发自动联动，不得用于月底延期合寄 |
 | `shipping_deferrals` | 合寄待办，区分 `twice_monthly_consolidation` / `month_end_consolidation`，保存来源刊期、目标刊期/日期/批次、具体发货明细、份数、收件信息快照、说明及 pending/fulfilled 状态 |
 | `shipping_package_allocations` | 一个物理包裹对多个历史刊期发货明细的份数分摊；同一待合寄记录只能核销一次 |
 
-发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。`actual_shipped = tracked + no_tracking`，`handled = actual_shipped + no_shipment_required + warehouse_stock_in`；库存入库单列统计且不计入实际寄出，也不进入“已归因停发”。计划状态切换由 `shipping_suspension_service` 原子同步 `source=plan_status` 的无需发货记录，并保存收件快照；重复保存幂等，份数或收件信息变化时同步更新，恢复正常或删除计划时只清理自动记录。停发状态优先于“无需运单”，联动时会将该标记恢复为需核销，避免同一份同时计入实际寄出和无需发货。当前计划对账从计划总数中扣除仍保留在明细里的停发核销，再按“确认报数 = 当前计划 + 已归因停发”计算；已删除停发行、仅留下历史归因的旧期次不会重复扣减。两种合寄在真正关联包裹前均不计入实际发出或 handled，只从 `pending_quantity` 中合计为 `deferred_quantity`，并分别返回 `twice_monthly_deferred_quantity` / `month_end_deferred_quantity`；`unexplained_pending_quantity = max(pending_quantity - deferred_quantity, 0)`。每月两次合寄按自然月刊期表确定前两期批次和剩余期次的月底批次，月底合寄则统一指向最后一期。工作台按 `shipping_detail_id` 比较计划份数与最新来源文件匹配份数，展示逐明细差额；前端的“计划缺口待归因”直接求和 `gap_details[].remaining_quantity`，不得再从文件差额重复扣除调整或合寄数量。“马飞—库房留存”由前后端固定为 `warehouse_stock_in`，接口同时拒绝其普通运单、无需运单、无需发货和合寄操作。计划纠错以净额转移完成，转出和转入同一事务提交，因此确认总计划不漂移。合寄包裹通过 allocation 分摊到多个历史明细，物理发货份数按 allocation 计入对应刊期。
+发货核销以最新 `confirm` 类型 `issue_audit_snapshots.report_total` 为不可变基准；没有确认快照时才回退到当期非投诉补发的发货明细计划合计。`actual_shipped = tracked + no_tracking`，`handled = actual_shipped + no_shipment_required + warehouse_stock_in`；库存入库单列统计且不计入实际寄出，也不进入“已归因停发”。计划状态切换由 `shipping_suspension_service` 原子同步 `source=plan_status` 的无需发货记录，并保存收件快照；重复保存幂等，份数或收件信息变化时同步更新，恢复正常或删除计划时只清理自动记录。停发状态优先于“无需运单”，联动时会将该标记恢复为需核销，避免同一份同时计入实际寄出和无需发货。当前计划对账从计划总数中扣除仍保留在明细里的停发核销，再按“确认报数 = 当前计划 + 已归因停发”计算；已删除停发行、仅留下历史归因的旧期次不会重复扣减。两种合寄在真正关联包裹前均不计入实际发出或 handled，只从 `pending_quantity` 中合计为 `deferred_quantity`，并分别返回 `twice_monthly_deferred_quantity` / `month_end_deferred_quantity`；`unexplained_pending_quantity = max(pending_quantity - deferred_quantity, 0)`。每月两次合寄按自然月刊期表确定前两期批次和剩余期次的月底批次，月底合寄则统一指向最后一期。工作台按 `shipping_detail_id` 比较计划份数与最新来源文件匹配份数，展示逐明细差额；前端的“计划缺口待归因”直接求和 `gap_details[].remaining_quantity`，不得再从文件差额重复扣除调整或合寄数量。“马飞—库房留存”由前后端固定为 `warehouse_stock_in`，接口同时拒绝其普通运单、无需运单、无需发货和合寄操作。计划纠错以净额转移完成，转出和转入同一事务提交，因此确认总计划不漂移。合寄包裹通过 allocation 分摊到多个历史明细，物理发货份数按 allocation 计入对应刊期。最后一期的月底运单预览会按目标刊期、批次和标准化收件信息关联待合寄记录，确认前重新锁定并核验状态、份数和覆盖期号；一张物理运单只建一个 `shipping_packages`，本期和历史份数均通过 allocation 记入各期。随件清单校验使用 `publication_schedule`、导入行和待合寄分摊计算当月覆盖期次与总份数，不信任月底表中的手填期数列。
 
 重新上传发货计划提交后会检查已确认批次中因历史清空操作而失去 `shipping_detail_id`/包裹的匹配行：先按收件人、电话、地址唯一匹配并重建 `shipping_packages`；剩余拆分包裹仅在标准化姓名唯一且行合计份数等于计划剩余份数时恢复。恢复过程沿用原批次确认时间，并重新计算批次与期级核销统计；无法唯一判断的行不猜测，保留为待人工关联。明细的单删、批量删除和整期清空在检测到运单、实发、核销、延期或分摊历史时返回 `409`，防止级联删除实际包裹。
 
-运单核销相关迁移包括 `f8c0e2a4b6d9`（期级无需发货核销）→ `f9d1e3a5c7b9`（无需发货归属与快照）→ `a0c2e4f6b8d1`（合寄与跨刊期包裹分摊）→ `b2d4f6a8c0e3`（“马飞—库房留存”已有核销初次分类为 `warehouse_stock_in`）→ `c3e5a7b9d1f4`（两种合寄类型与目标批次）→ `d5f7a9c1e3b6`（幂等补齐马飞库房完整计划数量、清理旧无需运单导入归因并重算批次差异）→ `e6a8c0d2f4b7`（清理无履约关联的0份占位、增加正数约束、回填停发自动归因及来源字段）。
+运单核销相关迁移包括 `f8c0e2a4b6d9`（期级无需发货核销）→ `f9d1e3a5c7b9`（无需发货归属与快照）→ `a0c2e4f6b8d1`（合寄与跨刊期包裹分摊）→ `b2d4f6a8c0e3`（“马飞—库房留存”已有核销初次分类为 `warehouse_stock_in`）→ `c3e5a7b9d1f4`（两种合寄类型与目标批次）→ `d5f7a9c1e3b6`（幂等补齐马飞库房完整计划数量、清理旧无需运单导入归因并重算批次差异）→ `e6a8c0d2f4b7`（清理无履约关联的0份占位、增加正数约束、回填停发自动归因及来源字段）→ `e7b9c1d3f5a8`（月底合寄预览字段与随件凭证表）。
 
 ### 3.13 issue_audit_snapshots（确认/导出快照）
 记录当期报数与ZTO-MF之间的关键校验快照，用于追溯确认时和导出时采用的数量状态。
@@ -1598,7 +1599,7 @@ MySQL 对 `SUM(shipping_details.quantity)` 返回的 `Decimal` 会在报数读�
 
 匹配状态为 `matched / unmatched / ambiguous / duplicate / invalid / ignored`。`ignored` 必须携带人工原因，不计入未解决行，但原始行和原因永久保留。预览按当前累计已处理量计算导入后的 `pending_quantity`；同一承运商+运单号在当前批次或数据库中重复时不会再次建包裹。预览唯一匹配到“马飞—库房留存”时不再计为普通 `matched`，而是返回 `invalid` 并要求改按库存入库；转换接口会锁定批次、导入行和计划明细，确认没有真实运单、实发或合寄记录后，将同一明细的活动导入行在内部改为 `ignored` 以排除运单生成、纠正已有错误无需发货核销并补足完整计划数量。前端同时识别实时转换与历史迁移的两种原因，将这些内部排除行统一显示为“转库留存/已入库”，不计入用户可见的“已忽略”。确认后的已匹配行不可改写，未匹配行仍可编辑或批量关联，避免已入库包裹被反向篡改。
 
-旧版非标准运单表按工作表标题和固定列布局兼容解析。标题含“高铁”且运单号位于 C 列时，解析器同时兼容两种列布局：紧凑布局使用 C/E/F/G/H 作为运单号、电话、地址、实际收件人和份数；带展示名称的布局使用 C/E/F/H/I，G 列“展示名称”仅作原始数据保留。解析器依据 H/I 列中的有效份数自动判断布局，解析成功后继续使用统一的姓名、电话、地址匹配逻辑。
+旧版非标准运单表按工作表标题和逐行列特征兼容解析。标题含“高铁”且运单号位于 C 列时，解析器同时兼容两种列布局：紧凑布局使用 C/E/F/G/H 作为运单号、电话、地址、实际收件人和份数；带展示名称的布局使用 C/E/F/H/I，G 列“展示名称”仅作原始数据保留。解析器依据 H/I 列中的有效份数自动判断布局。月底/整月表额外识别 D/F/G/H/J 的邮政挂号版式：D 必须为 `SC` 开头的有效单号、F/G 必须有地址和姓名、J 必须为正数；判断逐行执行，不依赖第 15 行或任何固定起始行，普通 C 列版式可与其混排。标题含“样报缴送清单”的工作表在解析运单行前排除，转入独立凭证解析。
 
 若上传的是含“每周（对公）/每周（读者）/高铁展示/上犹/停发-双周（读者）/月底-整月”的原始中通发货计划，而非带运单号的回执，解析器保留各明细页的来源行、姓名、电话、地址和份数，并排除“每周合计”和样报缴送清单等辅助页。有效收件行统一标记为 `invalid / 缺少运单号`，补录运单或人工确认无需运单前不进入 `matched_quantity`，不得计为实际发货。
 

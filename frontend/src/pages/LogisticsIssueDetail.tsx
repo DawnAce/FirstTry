@@ -1588,7 +1588,22 @@ export default function LogisticsIssueDetail() {
                 <div className="zto-drawer-packages">
                   {detailDrawerRecord.packages.map((item) => (
                     <div className="zto-drawer-package" key={item.id}>
-                      <div><strong>{item.carrier} · {item.tracking_no}</strong><span>{dayjs(item.shipped_at).format('YYYY-MM-DD')} 发出</span></div>
+                      <div>
+                        <strong>{item.carrier} · {item.tracking_no}</strong>
+                        <span>{dayjs(item.shipped_at).format('YYYY-MM-DD')} 发出</span>
+                        {!!item.documents?.length && <div className="zto-drawer-package-documents">
+                          {item.documents.map((document) => <Tag
+                            key={document.id}
+                            color={document.status === 'verified' ? 'green' : document.status === 'mismatch' ? 'gold' : 'blue'}
+                          >
+                            随件清单：{document.status === 'verified'
+                              ? '已检测 · 内容一致'
+                              : document.status === 'mismatch'
+                                ? '已检测 · 内容需核对'
+                                : '待确认'}
+                          </Tag>)}
+                        </div>}
+                      </div>
                       <div className="zto-drawer-package-quantity">{item.quantity.toLocaleString()} 份</div>
                       {canMutate && (
                         <Popconfirm title="确认删除这个运单？" onConfirm={() => handleDeletePackage(item.id)}>

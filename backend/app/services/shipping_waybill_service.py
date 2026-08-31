@@ -26,6 +26,7 @@ from app.models import (
     ShippingPackage,
     ShippingPackageAllocation,
     ShippingWaybillImportBatch,
+    ShippingWaybillImportDocument,
     ShippingWaybillImportRow,
     WaybillImportStatus,
     WaybillMatchStatus,
@@ -78,6 +79,20 @@ class ParsedWaybillRow:
 
 
 @dataclass
+class ParsedImportDocument:
+    source_sheet: str
+    document_type: str
+    associated_name: str
+    extracted_data: dict[str, Any]
+
+
+@dataclass
+class ParsedWaybillWorkbook:
+    rows: list[ParsedWaybillRow]
+    documents: list[ParsedImportDocument]
+
+
+@dataclass
 class OrphanedWaybillRestoreResult:
     restored_rows: int = 0
     restored_quantity: int = 0
@@ -117,6 +132,10 @@ def _tracking(value: Any) -> str:
 def _looks_like_tracking(value: Any) -> bool:
     value = _tracking(value)
     return bool(re.fullmatch(r"(?:[A-Z]{1,4})?\d{10,24}", value))
+
+
+def _looks_like_registered_tracking(value: Any) -> bool:
+    return bool(re.fullmatch(r"SC\d{10,24}", _tracking(value)))
 
 
 def _carrier_for_tracking(tracking_no: str, fallback: str = "中通") -> str:
@@ -279,6 +298,8 @@ def _parse_standard_sheet(ws) -> list[ParsedWaybillRow] | None:
 def _parse_known_sheet(ws) -> list[ParsedWaybillRow]:
     rows: list[ParsedWaybillRow] = []
     title = ws.title
+    if "样报缴送清单" in title:
+        return rows
     if "备用" in title or "社用" in title:
         for row_number, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
             row = tuple(row)
@@ -298,8 +319,28 @@ def _parse_known_sheet(ws) -> list[ParsedWaybillRow]:
     for row_number, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         row = tuple(row)
         tracking_c = _tracking(row[2]) if len(row) > 2 and _looks_like_tracking(row[2]) else ""
+        tracking_d = (
+            _tracking(row[3])
+            if len(row) > 3 and _looks_like_registered_tracking(row[3])
+            else ""
+        )
         tracking_e = _tracking(row[4]) if len(row) > 4 and _looks_like_tracking(row[4]) else ""
-        if "邮政30" in title and tracking_c:
+        registered_name = _text(_row_value(row, 6))
+        registered_address = _text(_row_value(row, 5))
+        registered_quantity = _quantity(_row_value(row, 9))
+        if (
+            ("月底" in title or "整月" in title or "挂号" in title)
+            and tracking_d
+            and registered_name
+            and registered_address
+            and registered_quantity > 0
+        ):
+            name = registered_name
+            phone = _text(_row_value(row, 7))
+            address = registered_address
+            qty = registered_quantity
+            carrier, tracking = "邮政挂号", tracking_d
+        elif "邮政30" in title and tracking_c:
             name, phone, address, qty, _layout = _parse_postal_30_fields(row)
             carrier, tracking = "邮政", tracking_c
         elif "高铁" in title and tracking_c:
@@ -406,22 +447,109 @@ def _parse_original_zto_detail_workbook(workbook) -> list[ParsedWaybillRow]:
     return parsed
 
 
-def parse_waybill_workbook(content: bytes) -> list[ParsedWaybillRow]:
+def _value_after_label(value: Any) -> str:
+    text = _text(value)
+    parts = re.split(r"[:：]", text, maxsplit=1)
+    return parts[1].strip() if len(parts) == 2 else text
+
+
+def _formatted_number(value: Any, suffix: str) -> int | None:
+    match = re.search(rf"(\d+)\s*{re.escape(suffix)}", _text(value))
+    if match:
+        return int(match.group(1))
+    number = _quantity(value)
+    return number if number > 0 else None
+
+
+def _parse_sample_submission_list(ws) -> ParsedImportDocument:
+    associated_match = re.search(r"关联\s*(.+)$", ws.title)
+    associated_name = associated_match.group(1).strip() if associated_match else ""
+    extracted: dict[str, Any] = {"associated_name": associated_name}
+    header: dict[str, int] = {}
+    aliases = {
+        "publication_name": {"报纸题名", "报刊名称", "报纸名称"},
+        "cn_number": {"cn号", "国内统一连续出版物号"},
+        "year": {"年份", "年度"},
+        "month": {"期次/月", "期次/月份", "月份"},
+        "quantity": {"散报总份数", "缴送份数", "份数"},
+        "unit_price": {"每份定价/元", "定价/元", "定价"},
+    }
+    rows = list(ws.iter_rows(values_only=True))
+    for row in rows:
+        for value in row:
+            text = _text(value)
+            if text.startswith("接收单位"):
+                extracted["receiving_unit"] = _value_after_label(text)
+            elif text.startswith("缴送单位"):
+                extracted["sender"] = _value_after_label(text)
+            sequence_match = re.search(r"(\d{4})\s*年第\s*(\d+)\s*次寄送", text)
+            if sequence_match:
+                extracted["submission_year"] = int(sequence_match.group(1))
+                extracted["submission_sequence"] = int(sequence_match.group(2))
+        normalized = [_text(value).lower().replace(" ", "") for value in row]
+        candidate: dict[str, int] = {}
+        for key, names in aliases.items():
+            for index, value in enumerate(normalized):
+                if value in names:
+                    candidate[key] = index
+                    break
+        if {"publication_name", "cn_number", "year", "month", "quantity"}.issubset(candidate):
+            header = candidate
+            continue
+        if not header:
+            continue
+        publication = _text(_row_value(row, header["publication_name"]))
+        if not publication:
+            continue
+        extracted["publication_name"] = publication
+        extracted["cn_number"] = _text(_row_value(row, header["cn_number"]))
+        extracted["year"] = _quantity(_row_value(row, header["year"])) or None
+        month_value = _text(_row_value(row, header["month"]))
+        month_match = re.search(r"(\d{1,2})", month_value)
+        extracted["month"] = int(month_match.group(1)) if month_match else None
+        extracted["quantity"] = _formatted_number(
+            _row_value(row, header["quantity"]), "份"
+        )
+        if "unit_price" in header:
+            extracted["unit_price"] = _formatted_number(
+                _row_value(row, header["unit_price"]), "元"
+            )
+        break
+    return ParsedImportDocument(
+        source_sheet=ws.title,
+        document_type="sample_submission_list",
+        associated_name=associated_name,
+        extracted_data=extracted,
+    )
+
+
+def _parse_waybill_workbook_payload(content: bytes) -> ParsedWaybillWorkbook:
     try:
         workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="无法读取运单Excel文件") from exc
+    documents = [
+        _parse_sample_submission_list(ws)
+        for ws in workbook.worksheets
+        if "样报缴送清单" in ws.title
+    ]
     if is_original_zto_shipping_workbook(workbook):
-        parsed = _parse_original_zto_detail_workbook(workbook)
-        if parsed:
-            return parsed
+        original_rows = _parse_original_zto_detail_workbook(workbook)
+        if original_rows:
+            return ParsedWaybillWorkbook(rows=original_rows, documents=documents)
     parsed: list[ParsedWaybillRow] = []
     for ws in workbook.worksheets:
+        if "样报缴送清单" in ws.title:
+            continue
         standard = _parse_standard_sheet(ws)
         parsed.extend(standard if standard is not None else _parse_known_sheet(ws))
     if not parsed:
         raise HTTPException(status_code=400, detail="未在文件中识别到有效运单或无需运单记录")
-    return parsed
+    return ParsedWaybillWorkbook(rows=parsed, documents=documents)
+
+
+def parse_waybill_workbook(content: bytes) -> list[ParsedWaybillRow]:
+    return _parse_waybill_workbook_payload(content).rows
 
 
 def _normalized(value: str) -> str:
@@ -434,6 +562,17 @@ def _phone(value: str) -> str:
 
 def _match_key(name: str, phone: str, address: str) -> tuple[str, str, str]:
     return _normalized(name), _phone(phone), _normalized(address)
+
+
+def _contact_key_matches(
+    left: tuple[str, str, str],
+    right: tuple[str, str, str],
+) -> bool:
+    return (
+        left == right
+        or (left[1] and left[2] and left[1:] == right[1:])
+        or (left[0] and left[2] and (left[0], left[2]) == (right[0], right[2]))
+    )
 
 
 def _expected_quantity(db: Session, issue: Issue) -> int:
@@ -456,6 +595,205 @@ def _details_for_issue(db: Session, issue_number: int) -> list[ShippingDetail]:
         ShippingDetail.issue_number == issue_number,
         ShippingDetail.source_type != ShippingDetailSourceType.complaint_makeup,
     ).order_by(ShippingDetail.id).all()
+
+
+def _is_last_issue_of_month(db: Session, issue: Issue) -> bool:
+    month_start, next_month = _month_bounds(issue.publish_date)
+    last_publish_date = db.query(func.max(PublicationSchedule.publish_date)).filter(
+        PublicationSchedule.publish_date >= month_start,
+        PublicationSchedule.publish_date < next_month,
+        PublicationSchedule.is_suspended.is_(False),
+    ).scalar()
+    return last_publish_date == issue.publish_date
+
+
+def _deferral_targets_issue(deferral: ShippingDeferral, issue: Issue) -> bool:
+    has_target = (
+        deferral.target_issue_number is not None
+        or deferral.target_publish_date is not None
+    )
+    return bool(
+        has_target
+        and (
+            deferral.target_issue_number is None
+            or deferral.target_issue_number == issue.issue_number
+        )
+        and (
+            deferral.target_publish_date is None
+            or deferral.target_publish_date == issue.publish_date
+        )
+    )
+
+
+def _matching_month_end_deferrals(
+    db: Session,
+    *,
+    issue: Issue,
+    row: ParsedWaybillRow,
+    shipping_detail_id: int,
+) -> tuple[list[ShippingDeferral], str | None]:
+    if not (
+        row.tracking_no
+        and ("月底" in row.source_sheet or "整月" in row.source_sheet)
+        and _is_last_issue_of_month(db, issue)
+    ):
+        return [], None
+    candidates = db.query(ShippingDeferral).filter(
+        ShippingDeferral.status == "pending",
+        ShippingDeferral.deferral_type == MONTH_END_CONSOLIDATION,
+        or_(
+            ShippingDeferral.target_issue_number == issue.issue_number,
+            ShippingDeferral.target_publish_date == issue.publish_date,
+        ),
+    ).order_by(ShippingDeferral.issue_number, ShippingDeferral.id).all()
+    candidates = [item for item in candidates if _deferral_targets_issue(item, issue)]
+    row_name, row_phone, row_address = _match_key(row.recipient_name, row.phone, row.address)
+    matched = []
+    for deferral in candidates:
+        name, phone, address = _match_key(
+            deferral.detail_name_snapshot or "",
+            deferral.detail_phone_snapshot or "",
+            deferral.detail_address_snapshot or "",
+        )
+        if _contact_key_matches(
+            (name, phone, address),
+            (row_name, row_phone, row_address),
+        ):
+            matched.append(deferral)
+    if not matched:
+        return [], None
+    batches = {item.consolidation_batch for item in matched}
+    if None in batches or len(batches) != 1:
+        return [], "匹配到的月底待合寄记录批次不唯一，请先人工核对"
+    if any(item.shipping_detail_id is None or item.quantity <= 0 for item in matched):
+        return [], "匹配到的月底待合寄记录缺少明细归属或份数无效"
+    current = [
+        item for item in matched
+        if item.issue_number == issue.issue_number
+        or item.shipping_detail_id == shipping_detail_id
+    ]
+    if len(current) > 1:
+        return [], "本期匹配到多条月底待合寄记录，请先人工核对"
+    if current and (
+        current[0].shipping_detail_id != shipping_detail_id
+        or current[0].quantity != row.quantity
+    ):
+        return [], "本期月底待合寄记录与运单行份数或明细不一致"
+    return matched, None
+
+
+def _validate_sample_submission_document(
+    *,
+    db: Session,
+    issue: Issue,
+    document: ParsedImportDocument,
+    row: ShippingWaybillImportRow,
+) -> tuple[str, dict[str, Any], list[str]]:
+    data = dict(document.extracted_data)
+    expected_quantity = row.consolidation_quantity or row.quantity
+    covered_issues = row.consolidation_issue_numbers or [issue.issue_number]
+    month_start, next_month = _month_bounds(issue.publish_date)
+    scheduled_issues = [
+        issue_number for (issue_number,) in db.query(PublicationSchedule.issue_number).filter(
+            PublicationSchedule.publish_date >= month_start,
+            PublicationSchedule.publish_date < next_month,
+            PublicationSchedule.is_suspended.is_(False),
+            PublicationSchedule.issue_number.isnot(None),
+        ).order_by(PublicationSchedule.publish_date).all()
+    ]
+    data["expected_quantity"] = expected_quantity
+    data["covered_issue_numbers"] = covered_issues
+    data["scheduled_issue_numbers"] = scheduled_issues
+    errors: list[str] = []
+    if _normalized(document.associated_name) != _normalized(row.recipient_name):
+        errors.append("清单关联姓名与运单收件人不一致")
+    if data.get("receiving_unit") != "中国版本图书馆":
+        errors.append("接收单位不是中国版本图书馆")
+    if _normalized(data.get("sender") or "") != _normalized("《中国经营报》社"):
+        errors.append("缴送单位不是《中国经营报》社")
+    if _normalized(data.get("publication_name") or "") != _normalized("中国经营报"):
+        errors.append("报纸题名不是中国经营报")
+    if re.sub(r"\D", "", data.get("cn_number") or "") != "110151":
+        errors.append("CN号不是11-0151")
+    if data.get("year") != issue.publish_date.year or data.get("submission_year") != issue.publish_date.year:
+        errors.append("清单年份与当前刊期不一致")
+    if data.get("month") != issue.publish_date.month:
+        errors.append("清单月份与当前刊期不一致")
+    if data.get("submission_sequence") != issue.publish_date.month:
+        errors.append("当年寄送次序与当前月份不一致")
+    if data.get("quantity") != expected_quantity:
+        errors.append(f"清单散报总份数应为{expected_quantity}份")
+    if scheduled_issues and sorted(covered_issues) != sorted(scheduled_issues):
+        errors.append("月底合寄记录尚未覆盖当月全部出版期次")
+    if data.get("unit_price") != 5:
+        errors.append("每份定价不是5元")
+    return ("verified" if not errors else "mismatch"), data, errors
+
+
+def _store_import_documents(
+    db: Session,
+    *,
+    batch: ShippingWaybillImportBatch,
+    issue: Issue,
+    parsed_documents: list[ParsedImportDocument],
+) -> None:
+    rows = db.query(ShippingWaybillImportRow).filter(
+        ShippingWaybillImportRow.batch_id == batch.id
+    ).order_by(ShippingWaybillImportRow.id).all()
+    linked_row_ids: set[int] = set()
+    for document in parsed_documents:
+        candidates = [
+            row for row in rows
+            if _normalized(row.recipient_name) == _normalized(document.associated_name)
+        ]
+        linked_row = candidates[0] if len(candidates) == 1 else None
+        if linked_row:
+            status, extracted_data, errors = _validate_sample_submission_document(
+                db=db,
+                issue=issue,
+                document=document,
+                row=linked_row,
+            )
+            linked_row_ids.add(linked_row.id)
+        else:
+            status = "pending_review"
+            extracted_data = document.extracted_data
+            errors = [
+                "清单关联姓名未能唯一对应运单行"
+                if document.associated_name
+                else "清单工作表名称缺少“关联姓名”"
+            ]
+        db.add(ShippingWaybillImportDocument(
+            batch_id=batch.id,
+            linked_import_row_id=linked_row.id if linked_row else None,
+            document_type=document.document_type,
+            source_sheet=document.source_sheet,
+            status=status,
+            extracted_data=extracted_data,
+            validation_errors=errors,
+            parser_version="1",
+            checked_at=datetime.now(),
+        ))
+        if status != "verified":
+            batch.warning_count += 1
+
+    for row in rows:
+        mentions_checklist = any(
+            "样报缴送清单" in _text(value) for value in (row.raw_values or [])
+        )
+        if mentions_checklist and row.id not in linked_row_ids:
+            db.add(ShippingWaybillImportDocument(
+                batch_id=batch.id,
+                linked_import_row_id=row.id,
+                document_type="sample_submission_list",
+                source_sheet="未检测到工作表",
+                status="missing",
+                extracted_data={"associated_name": row.recipient_name},
+                validation_errors=["文件中未检测到对应的样报缴送清单工作表"],
+                parser_version="1",
+                checked_at=datetime.now(),
+            ))
+            batch.warning_count += 1
 
 
 def preview_import(
@@ -502,7 +840,8 @@ def preview_import(
         if active_draft_id:
             raise HTTPException(status_code=409, detail="本期已有运单核对草稿，请先继续处理或选择重新解析")
 
-    parsed = parse_waybill_workbook(content)
+    payload = _parse_waybill_workbook_payload(content)
+    parsed = payload.rows
     details = _details_for_issue(db, issue.issue_number)
     by_id = {detail.id: detail for detail in details}
     full: dict[tuple[str, str, str], list[ShippingDetail]] = defaultdict(list)
@@ -525,7 +864,9 @@ def preview_import(
         for carrier, tracking_no in db.query(ShippingPackage.carrier, ShippingPackage.tracking_no).all()
     }
     seen_tracking: set[tuple[str, str]] = set()
-    row_results: list[tuple[ParsedWaybillRow, str, str | None, int | None]] = []
+    row_results: list[
+        tuple[ParsedWaybillRow, str, str | None, int | None, list[int], list[int], int]
+    ] = []
     quantities_by_detail: dict[int, int] = defaultdict(int)
 
     for row in parsed:
@@ -572,13 +913,51 @@ def preview_import(
                 status, reason = WaybillMatchStatus.ambiguous.value, "匹配到多条发货明细"
             elif reason is None:
                 reason = "未找到对应发货明细"
-        row_results.append((row, status, reason, match.id if match else None))
+        deferral_ids: list[int] = []
+        issue_numbers: list[int] = []
+        consolidation_quantity = 0
+        if status == WaybillMatchStatus.matched.value and match is not None:
+            deferrals, consolidation_error = _matching_month_end_deferrals(
+                db,
+                issue=issue,
+                row=row,
+                shipping_detail_id=match.id,
+            )
+            if consolidation_error:
+                status = WaybillMatchStatus.ambiguous.value
+                reason = consolidation_error
+                quantities_by_detail[match.id] -= row.quantity
+                match = None
+            elif deferrals:
+                deferral_ids = [item.id for item in deferrals]
+                issue_numbers = sorted({item.issue_number for item in deferrals} | {issue.issue_number})
+                has_current_deferral = any(
+                    item.shipping_detail_id == match.id for item in deferrals
+                )
+                consolidation_quantity = sum(item.quantity for item in deferrals)
+                if not has_current_deferral:
+                    consolidation_quantity += row.quantity
+        row_results.append((
+            row,
+            status,
+            reason,
+            match.id if match else None,
+            deferral_ids,
+            issue_numbers,
+            consolidation_quantity,
+        ))
 
     expected = _expected_quantity(db, issue)
-    matched_quantity = sum(row.quantity for row, status, _, _ in row_results if status == WaybillMatchStatus.matched.value)
+    matched_quantity = sum(
+        row.quantity for row, status, *_ in row_results
+        if status == WaybillMatchStatus.matched.value
+    )
     current_handled = sum(detail.handled_quantity for detail in details)
     projected_handled = current_handled + matched_quantity
-    warning_count = sum(1 for _, status, _, _ in row_results if status != WaybillMatchStatus.matched.value)
+    warning_count = sum(
+        1 for _, status, *_ in row_results
+        if status != WaybillMatchStatus.matched.value
+    )
     for detail_id, imported_quantity in quantities_by_detail.items():
         detail = by_id[detail_id]
         if detail.handled_quantity + imported_quantity != (detail.quantity or 0):
@@ -595,8 +974,14 @@ def preview_import(
         matched_quantity=matched_quantity,
         pending_quantity=max(expected - projected_handled, 0),
         extra_quantity=max(projected_handled - expected, 0),
-        matched_rows=sum(1 for _, status, _, _ in row_results if status == WaybillMatchStatus.matched.value),
-        unmatched_rows=sum(1 for _, status, _, _ in row_results if status != WaybillMatchStatus.matched.value),
+        matched_rows=sum(
+            1 for _, status, *_ in row_results
+            if status == WaybillMatchStatus.matched.value
+        ),
+        unmatched_rows=sum(
+            1 for _, status, *_ in row_results
+            if status != WaybillMatchStatus.matched.value
+        ),
         warning_count=warning_count,
         created_by=getattr(user, "id", None),
     )
@@ -619,9 +1004,26 @@ def preview_import(
             "match_status": status,
             "match_reason": reason,
             "shipping_detail_id": detail_id,
+            "consolidation_deferral_ids": deferral_ids or None,
+            "consolidation_issue_numbers": issue_numbers or None,
+            "consolidation_quantity": consolidation_quantity,
         }
-        for row, status, reason, detail_id in row_results
+        for (
+            row,
+            status,
+            reason,
+            detail_id,
+            deferral_ids,
+            issue_numbers,
+            consolidation_quantity,
+        ) in row_results
     ])
+    _store_import_documents(
+        db,
+        batch=batch,
+        issue=issue,
+        parsed_documents=payload.documents,
+    )
     batch_id = batch.id
     db.commit()
     return _get_import_batch(db, batch_id)
@@ -705,12 +1107,84 @@ def _candidate_details(details: list[ShippingDetail], row: ShippingWaybillImport
     )
 
 
+def _refresh_draft_row_consolidation(
+    db: Session,
+    *,
+    batch: ShippingWaybillImportBatch,
+    row: ShippingWaybillImportRow,
+) -> None:
+    row.consolidation_deferral_ids = None
+    row.consolidation_issue_numbers = None
+    row.consolidation_quantity = 0
+    if row.match_status != WaybillMatchStatus.matched.value or row.shipping_detail_id is None:
+        return
+    issue = db.query(Issue).filter(Issue.id == batch.issue_id).first()
+    if issue is None:
+        return
+    parsed = ParsedWaybillRow(
+        source_sheet=row.source_sheet,
+        source_row=row.source_row,
+        carrier=row.carrier,
+        tracking_no=row.tracking_no,
+        recipient_name=row.recipient_name,
+        phone=row.phone or "",
+        address=row.address or "",
+        quantity=row.quantity,
+        no_tracking_required=row.no_tracking_required,
+        raw_values=row.raw_values,
+    )
+    deferrals, error = _matching_month_end_deferrals(
+        db,
+        issue=issue,
+        row=parsed,
+        shipping_detail_id=row.shipping_detail_id,
+    )
+    if error:
+        row.match_status = WaybillMatchStatus.ambiguous.value
+        row.match_reason = error
+        row.shipping_detail_id = None
+        return
+    if deferrals:
+        row.consolidation_deferral_ids = [item.id for item in deferrals]
+        row.consolidation_issue_numbers = sorted(
+            {item.issue_number for item in deferrals} | {batch.issue_number}
+        )
+        row.consolidation_quantity = sum(item.quantity for item in deferrals)
+        if not any(item.shipping_detail_id == row.shipping_detail_id for item in deferrals):
+            row.consolidation_quantity += row.quantity
+    for document in row.documents:
+        if document.document_type != "sample_submission_list":
+            continue
+        extracted = dict(document.extracted_data or {})
+        extracted.pop("expected_quantity", None)
+        extracted.pop("covered_issue_numbers", None)
+        parsed_document = ParsedImportDocument(
+            source_sheet=document.source_sheet,
+            document_type=document.document_type,
+            associated_name=extracted.get("associated_name") or "",
+            extracted_data=extracted,
+        )
+        status, extracted, errors = _validate_sample_submission_document(
+            db=db,
+            issue=issue,
+            document=parsed_document,
+            row=row,
+        )
+        document.status = status
+        document.extracted_data = extracted
+        document.validation_errors = errors
+        document.checked_at = datetime.now()
+
+
 def _match_draft_row(
     db: Session,
     batch: ShippingWaybillImportBatch,
     row: ShippingWaybillImportRow,
     preferred_detail_id: int | None = None,
 ) -> None:
+    row.consolidation_deferral_ids = None
+    row.consolidation_issue_numbers = None
+    row.consolidation_quantity = 0
     if row.match_status == WaybillMatchStatus.ignored.value:
         return
     details = _details_for_issue(db, batch.issue_number)
@@ -759,6 +1233,7 @@ def _match_draft_row(
             row.match_reason = "该明细已有运单，不能改为无需运单"
             return
         row.match_status = WaybillMatchStatus.matched.value
+        _refresh_draft_row_consolidation(db, batch=batch, row=row)
         return
     row.shipping_detail_id = None
     if len(candidates) > 1:
@@ -809,7 +1284,10 @@ def _recalculate_batch(db: Session, batch: ShippingWaybillImportBatch) -> None:
             if detail_id in by_id
             and by_id[detail_id].handled_quantity + imported != (by_id[detail_id].quantity or 0)
         )
-    batch.warning_count = len(unresolved) + detail_warnings
+    document_warnings = sum(
+        1 for document in batch.documents if document.status != "verified"
+    )
+    batch.warning_count = len(unresolved) + detail_warnings + document_warnings
 
 
 def repair_postal_30_preview_rows(
@@ -950,7 +1428,7 @@ def update_import_row(
         batch.status == WaybillImportStatus.confirmed.value
         and row.match_status == WaybillMatchStatus.matched.value
     ):
-        _materialize_matched_row(db, row)
+        _materialize_import_row(db, batch=batch, row=row)
         db.flush()
     _recalculate_batch(db, batch)
     record_operation(
@@ -1006,7 +1484,7 @@ def add_import_row(
         batch.status == WaybillImportStatus.confirmed.value
         and row.match_status == WaybillMatchStatus.matched.value
     ):
-        _materialize_matched_row(db, row)
+        _materialize_import_row(db, batch=batch, row=row)
         db.flush()
     _recalculate_batch(db, batch)
     record_operation(
@@ -1093,6 +1571,129 @@ def _materialize_matched_row(
     db.flush()
     _refresh_legacy_shipping_fields(detail)
     return detail
+
+
+def _validated_consolidation_deferrals(
+    db: Session,
+    *,
+    batch: ShippingWaybillImportBatch,
+    row: ShippingWaybillImportRow,
+) -> list[ShippingDeferral]:
+    ids = list(dict.fromkeys(row.consolidation_deferral_ids or []))
+    if len(ids) != len(row.consolidation_deferral_ids or []):
+        raise HTTPException(status_code=409, detail="月底合寄预览包含重复的待合寄记录，请重新解析")
+    deferrals = db.query(ShippingDeferral).filter(
+        ShippingDeferral.id.in_(ids)
+    ).with_for_update().order_by(ShippingDeferral.issue_number, ShippingDeferral.id).all()
+    issue = db.query(Issue).filter(Issue.id == batch.issue_id).first()
+    if issue is None:
+        raise HTTPException(status_code=409, detail="运单批次对应的刊期不存在")
+    if len(deferrals) != len(ids) or any(item.status != "pending" for item in deferrals):
+        raise HTTPException(status_code=409, detail="月底待合寄记录已经变化，请重新解析运单文件")
+    if any(
+            item.deferral_type != MONTH_END_CONSOLIDATION
+            or item.shipping_detail_id is None
+            or not _deferral_targets_issue(item, issue)
+        for item in deferrals
+    ):
+        raise HTTPException(status_code=409, detail="月底待合寄记录的目标刊期或明细归属已经变化")
+    if len({item.consolidation_batch for item in deferrals}) != 1:
+        raise HTTPException(status_code=409, detail="月底待合寄记录不属于同一个合寄批次")
+    row_key = _match_key(row.recipient_name, row.phone or "", row.address or "")
+    if any(not _contact_key_matches(
+        _match_key(
+            item.detail_name_snapshot or "",
+            item.detail_phone_snapshot or "",
+            item.detail_address_snapshot or "",
+        ),
+        row_key,
+    ) for item in deferrals):
+        raise HTTPException(status_code=409, detail="月底待合寄记录的收件信息已经变化，请重新核对")
+    current = [item for item in deferrals if item.shipping_detail_id == row.shipping_detail_id]
+    if len(current) > 1 or (current and current[0].quantity != row.quantity):
+        raise HTTPException(status_code=409, detail="本期月底待合寄记录与运单行份数不一致")
+    expected_quantity = sum(item.quantity for item in deferrals)
+    if not current:
+        expected_quantity += row.quantity
+    expected_issues = sorted({item.issue_number for item in deferrals} | {batch.issue_number})
+    if (
+        expected_quantity != row.consolidation_quantity
+        or expected_issues != sorted(row.consolidation_issue_numbers or [])
+    ):
+        raise HTTPException(status_code=409, detail="月底合寄范围或总份数已经变化，请重新解析")
+    return deferrals
+
+
+def _materialize_consolidated_row(
+    db: Session,
+    *,
+    row: ShippingWaybillImportRow,
+    deferrals: list[ShippingDeferral],
+    shipped_at: datetime,
+) -> ShippingDetail:
+    detail = row.shipping_detail
+    if detail is None or row.shipping_detail_id is None or not row.tracking_no:
+        raise HTTPException(status_code=400, detail="月底合寄运单缺少本期发货明细或运单号")
+    duplicate = db.query(ShippingPackage.id).filter(
+        ShippingPackage.carrier == row.carrier,
+        ShippingPackage.tracking_no == row.tracking_no,
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="该月底合寄运单号已经生成实际发货记录")
+    package = ShippingPackage(
+        shipping_detail=detail,
+        import_row=row,
+        carrier=row.carrier,
+        tracking_no=row.tracking_no,
+        quantity=row.consolidation_quantity,
+        shipped_at=shipped_at,
+    )
+    db.add(package)
+    current_has_deferral = False
+    touched_details: set[ShippingDetail] = {detail}
+    for deferral in deferrals:
+        allocation = ShippingPackageAllocation(
+            package=package,
+            shipping_detail=deferral.shipping_detail,
+            deferral=deferral,
+            quantity=deferral.quantity,
+        )
+        db.add(allocation)
+        current_has_deferral = current_has_deferral or deferral.shipping_detail_id == detail.id
+        touched_details.add(deferral.shipping_detail)
+        deferral.status = "fulfilled"
+        deferral.fulfilled_package = package
+        deferral.fulfilled_at = shipped_at
+    if not current_has_deferral:
+        db.add(ShippingPackageAllocation(
+            package=package,
+            shipping_detail=detail,
+            quantity=row.quantity,
+        ))
+    for document in row.documents:
+        document.shipping_package = package
+    db.flush()
+    for touched_detail in touched_details:
+        _refresh_legacy_shipping_fields(touched_detail)
+    return detail
+
+
+def _materialize_import_row(
+    db: Session,
+    *,
+    batch: ShippingWaybillImportBatch,
+    row: ShippingWaybillImportRow,
+    shipped_at: datetime | None = None,
+) -> ShippingDetail:
+    if row.consolidation_candidate:
+        deferrals = _validated_consolidation_deferrals(db, batch=batch, row=row)
+        return _materialize_consolidated_row(
+            db,
+            row=row,
+            deferrals=deferrals,
+            shipped_at=shipped_at or datetime.now(),
+        )
+    return _materialize_matched_row(db, row, shipped_at=shipped_at)
 
 
 def restore_orphaned_confirmed_waybills(
@@ -1336,7 +1937,7 @@ def bulk_match_import_rows(
     db.flush()
     if batch.status == WaybillImportStatus.confirmed.value:
         for row in rows:
-            _materialize_matched_row(db, row)
+            _materialize_import_row(db, batch=batch, row=row)
         db.flush()
     _recalculate_batch(db, batch)
     record_operation(
@@ -1367,11 +1968,32 @@ def confirm_import(db: Session, batch_id: int, user: User) -> ShippingWaybillImp
     if batch.status == WaybillImportStatus.confirmed.value:
         return batch
 
+    consolidation_by_row: dict[int, list[ShippingDeferral]] = {}
+    for row in batch.rows:
+        if (
+            row.match_status == WaybillMatchStatus.matched.value
+            and row.shipping_detail_id is not None
+            and row.consolidation_candidate
+        ):
+            consolidation_by_row[row.id] = _validated_consolidation_deferrals(
+                db,
+                batch=batch,
+                row=row,
+            )
+
     now = datetime.now()
     for row in batch.rows:
         if row.match_status != WaybillMatchStatus.matched.value or row.shipping_detail_id is None:
             continue
-        _materialize_matched_row(db, row, shipped_at=now)
+        if row.id in consolidation_by_row:
+            _materialize_consolidated_row(
+                db,
+                row=row,
+                deferrals=consolidation_by_row[row.id],
+                shipped_at=now,
+            )
+        else:
+            _materialize_matched_row(db, row, shipped_at=now)
 
     batch.status = WaybillImportStatus.confirmed.value
     batch.confirmed_at = now

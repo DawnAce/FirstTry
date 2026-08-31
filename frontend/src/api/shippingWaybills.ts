@@ -18,6 +18,23 @@ export interface WaybillImportRow {
   match_status: 'matched' | 'unmatched' | 'ambiguous' | 'duplicate' | 'invalid' | 'ignored';
   match_reason: string | null;
   shipping_detail_id: number | null;
+  consolidation_deferral_ids: number[] | null;
+  consolidation_issue_numbers: number[] | null;
+  consolidation_quantity: number;
+  consolidation_candidate: boolean;
+}
+
+export interface WaybillImportDocument {
+  id: number;
+  linked_import_row_id: number | null;
+  shipping_package_id: number | null;
+  document_type: 'sample_submission_list';
+  source_sheet: string;
+  status: 'missing' | 'pending_review' | 'verified' | 'mismatch' | 'not_required';
+  extracted_data: Record<string, unknown> | null;
+  validation_errors: string[] | null;
+  parser_version: string;
+  checked_at: string | null;
 }
 
 export interface WaybillImportBatch {
@@ -39,6 +56,7 @@ export interface WaybillImportBatch {
   created_at: string;
   confirmed_at: string | null;
   rows: WaybillImportRow[];
+  documents: WaybillImportDocument[];
 }
 
 export interface FulfillmentSummary {

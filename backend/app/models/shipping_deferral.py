@@ -78,7 +78,7 @@ class ShippingPackageAllocation(Base):
     quantity = Column(Integer, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
-    package = relationship("ShippingPackage", back_populates="allocations")
+    package = relationship("ShippingPackage", back_populates="allocations", lazy="joined")
     shipping_detail = relationship("ShippingDetail", back_populates="package_allocations")
     deferral = relationship("ShippingDeferral")
 
