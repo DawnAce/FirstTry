@@ -50,6 +50,14 @@ class ShippingWaybillImportBatch(Base):
         lazy="selectin",
         order_by="ShippingWaybillImportRow.id",
     )
+    documents = relationship(
+        "ShippingWaybillImportDocument",
+        back_populates="batch",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
+        order_by="ShippingWaybillImportDocument.id",
+    )
 
     __table_args__ = (
         Index("uq_waybill_import_issue_hash", "issue_number", "file_hash", unique=True),
@@ -85,11 +93,19 @@ class ShippingWaybillImportRow(Base):
         nullable=True,
         index=True,
     )
+    consolidation_deferral_ids = Column(JSON, nullable=True)
+    consolidation_issue_numbers = Column(JSON, nullable=True)
+    consolidation_quantity = Column(Integer, nullable=False, default=0, server_default="0")
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     batch = relationship("ShippingWaybillImportBatch", back_populates="rows")
     shipping_detail = relationship("ShippingDetail")
     package = relationship("ShippingPackage", back_populates="import_row", uselist=False)
+    documents = relationship("ShippingWaybillImportDocument", back_populates="linked_import_row")
+
+    @property
+    def consolidation_candidate(self) -> bool:
+        return bool(self.consolidation_deferral_ids)
 
 
 class ShippingPackage(Base):
@@ -124,7 +140,51 @@ class ShippingPackage(Base):
         lazy="selectin",
         order_by="ShippingPackageAllocation.id",
     )
+    documents = relationship(
+        "ShippingWaybillImportDocument",
+        back_populates="shipping_package",
+        lazy="selectin",
+        order_by="ShippingWaybillImportDocument.id",
+    )
 
     __table_args__ = (
         Index("uq_shipping_package_carrier_tracking", "carrier", "tracking_no", unique=True),
     )
+
+
+class ShippingWaybillImportDocument(Base):
+    """A supporting document detected inside an actual-waybill workbook."""
+
+    __tablename__ = "shipping_waybill_import_documents"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(
+        Integer,
+        ForeignKey("shipping_waybill_import_batches.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    linked_import_row_id = Column(
+        Integer,
+        ForeignKey("shipping_waybill_import_rows.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    shipping_package_id = Column(
+        Integer,
+        ForeignKey("shipping_packages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    document_type = Column(String(50), nullable=False, index=True)
+    source_sheet = Column(String(100), nullable=False)
+    status = Column(String(20), nullable=False, index=True)
+    extracted_data = Column(JSON, nullable=True)
+    validation_errors = Column(JSON, nullable=True)
+    parser_version = Column(String(32), nullable=False, default="1", server_default="1")
+    checked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    batch = relationship("ShippingWaybillImportBatch", back_populates="documents")
+    linked_import_row = relationship("ShippingWaybillImportRow", back_populates="documents")
+    shipping_package = relationship("ShippingPackage", back_populates="documents")

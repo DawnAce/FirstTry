@@ -221,6 +221,14 @@ class ShippingDetail(Base):
         })
 
     @property
+    def fulfillment_packages(self) -> list:
+        """Physical packages visible for this detail, including cross-issue allocations."""
+        return list(dict.fromkeys([
+            *self.packages,
+            *(allocation.package for allocation in self.package_allocations),
+        ]))
+
+    @property
     def fulfillment_status(self) -> str:
         if self.shipping_requirement == "no_tracking_required":
             return "no_tracking_required"

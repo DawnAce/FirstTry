@@ -59,6 +59,7 @@ import {
 } from '../api/shippingWaybills';
 import type {
   WaybillImportBatch,
+  WaybillImportDocument,
   FulfillmentAdjustment,
   ShippingDeferral,
   ShippingGapDetail,
@@ -88,6 +89,17 @@ const statusMeta: Record<WaybillImportRow['match_status'], { label: string; colo
   duplicate: { label: '重复运单', color: 'red' },
   invalid: { label: '未识别 / 无效', color: 'volcano' },
   ignored: { label: '已忽略', color: 'default' },
+};
+
+const documentStatusMeta: Record<WaybillImportDocument['status'], {
+  label: string;
+  alertType: 'success' | 'warning' | 'error' | 'info';
+}> = {
+  verified: { label: '已检测 · 内容一致', alertType: 'success' },
+  mismatch: { label: '已检测 · 内容需核对', alertType: 'warning' },
+  missing: { label: '未检测到清单', alertType: 'warning' },
+  pending_review: { label: '已检测 · 待确认关联', alertType: 'info' },
+  not_required: { label: '无需清单', alertType: 'info' },
 };
 
 const legacySuspendedConsolidationReason = '每月两次合寄 · 暂停寄送';
@@ -266,6 +278,14 @@ export default function WaybillImportWorkbench() {
     ? detailsById.get(editingRow.shipping_detail_id)
     : undefined;
   const visibleRows = useMemo(() => filterWaybillRows(batch?.rows ?? [], filter), [batch, filter]);
+  const consolidationRows = useMemo(
+    () => (batch?.rows ?? []).filter((row) => row.consolidation_candidate),
+    [batch],
+  );
+  const consolidationPackageQuantity = consolidationRows.reduce(
+    (sum, row) => sum + row.consolidation_quantity,
+    0,
+  );
   const rowFilterCounts = useMemo(() => summarizeWaybillRowFilters(batch?.rows ?? []), [batch]);
   const missingTrackingRows = useMemo(
     () => (batch?.rows ?? []).filter((row) => (
@@ -800,6 +820,9 @@ export default function WaybillImportWorkbench() {
         return <div className="waybill-status-cell">
           <Tag color={meta.color}>{meta.label}</Tag>
           <span>{missingTracking ? '收件信息已识别，尚未计入发货' : row.match_reason || (row.manual_reviewed ? '已人工确认' : '自动匹配')}</span>
+          {row.consolidation_candidate && <Tag color="purple">
+            跨期合寄 · {row.consolidation_issue_numbers?.length ?? 0}期 / {row.consolidation_quantity}份
+          </Tag>}
         </div>;
       },
     },
@@ -854,6 +877,15 @@ export default function WaybillImportWorkbench() {
           <small>明细 #{matchedDetail.id} · 已处理 {matchedDetail.handled_quantity} 份 · {matchedDetail.channel}</small>
         </div> : <Alert showIcon type="warning" title="尚未关联发货明细" description="点击“核对”可选择本期确认版发货明细；这里不会新建或修改发货计划。" />}
       </section>
+      {row.consolidation_candidate && <section>
+        <h4>月底跨期合寄范围</h4>
+        <Alert
+          showIcon
+          type="success"
+          title={`同一实物包裹共 ${row.consolidation_quantity.toLocaleString()} 份`}
+          description={`覆盖第 ${(row.consolidation_issue_numbers ?? []).join('、')} 期；本行 ${row.quantity.toLocaleString()} 份计入当前刊期，其余份数核销此前登记的月底待合寄记录。`}
+        />
+      </section>}
       <section>
         <h4>可能对应的其他明细</h4>
         {alternatives.length ? <div className="waybill-alternatives">
@@ -974,6 +1006,30 @@ export default function WaybillImportWorkbench() {
           <div className={`waybill-status-metric${unexplainedPendingQuantity ? ' is-danger' : ''}`}><span>未解释待补</span><b>{unexplainedPendingQuantity.toLocaleString()}</b><small>份</small></div>
         </div>
       </Card>
+
+      {!!consolidationRows.length && <Alert
+        showIcon
+        type="success"
+        title={`已识别 ${consolidationRows.length} 张月底跨期合寄运单，共 ${consolidationPackageQuantity.toLocaleString()} 份`}
+        description="确认后每个运单号只生成一个实物包裹，并按期次分别核销本期明细与此前已登记的月底待合寄记录。"
+      />}
+
+      {!!batch.documents.length && <div className="waybill-document-list">
+        {batch.documents.map((document) => {
+          const meta = documentStatusMeta[document.status];
+          const extractedQuantity = document.extracted_data?.quantity;
+          const expectedQuantity = document.extracted_data?.expected_quantity;
+          return <Alert
+            key={document.id}
+            showIcon
+            type={meta.alertType}
+            title={`随件清单：${meta.label}`}
+            description={document.validation_errors?.length
+              ? document.validation_errors.join('；')
+              : `${document.source_sheet} · 清单 ${String(extractedQuantity ?? '—')} 份，系统核对 ${String(expectedQuantity ?? '—')} 份`}
+          />;
+        })}
+      </div>}
 
       {!!missingTrackingRows.length && <Alert
         showIcon

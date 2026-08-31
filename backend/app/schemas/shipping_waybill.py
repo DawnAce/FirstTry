@@ -20,6 +20,25 @@ class WaybillImportRowOut(BaseModel):
     match_status: str
     match_reason: Optional[str]
     shipping_detail_id: Optional[int]
+    consolidation_deferral_ids: Optional[list[int]] = None
+    consolidation_issue_numbers: Optional[list[int]] = None
+    consolidation_quantity: int = 0
+    consolidation_candidate: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class WaybillImportDocumentOut(BaseModel):
+    id: int
+    linked_import_row_id: Optional[int]
+    shipping_package_id: Optional[int]
+    document_type: str
+    source_sheet: str
+    status: str
+    extracted_data: Optional[dict[str, Any]] = None
+    validation_errors: Optional[list[str]] = None
+    parser_version: str
+    checked_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
 
@@ -41,6 +60,7 @@ class WaybillImportBatchOut(BaseModel):
     created_at: datetime
     confirmed_at: Optional[datetime]
     rows: list[WaybillImportRowOut] = []
+    documents: list[WaybillImportDocumentOut] = []
 
     @computed_field
     @property

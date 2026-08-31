@@ -2,6 +2,7 @@ from datetime import date, datetime
 from io import BytesIO
 
 from openpyxl import Workbook
+import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -16,7 +17,9 @@ from app.models import (
     ShippingDetail,
     ShippingDeferral,
     ShippingFulfillmentAdjustment,
+    ShippingPackage,
     ShippingPackageAllocation,
+    ShippingWaybillImportDocument,
     ShippingWaybillImportBatch,
     ShippingWaybillImportRow,
     WaybillImportStatus,
@@ -226,6 +229,69 @@ def _single_waybill_bytes(name: str, phone: str, address: str, quantity: int = 1
     return out.getvalue()
 
 
+def _month_end_registered_workbook_bytes(
+    *,
+    row_number: int = 16,
+    name: str = "月底测试客户",
+    phone: str = "13900000888",
+    address: str = "北京市月底测试路8号",
+    quantity: int = 4,
+    checklist_quantity: int | None = None,
+    include_checklist: bool = False,
+    mention_checklist: bool = False,
+    include_c_layout: bool = False,
+) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "已出月底-整月"
+    ws.append(["刊物", "打印名称", "普通单号", "挂号单号", "备用", "地址", "姓名", "电话", "期数", "份数", "备注"])
+    while ws.max_row < row_number - 1:
+        ws.cell(row=ws.max_row + 1, column=1, value=" ")
+    ws.append([
+        "中国经营报",
+        f"{name}{quantity}",
+        None,
+        "SC12345678901",
+        None,
+        address,
+        name,
+        phone,
+        5,
+        quantity,
+        "随附样报缴送清单" if mention_checklist else None,
+    ])
+    if include_c_layout:
+        ws.append([
+            "中国经营报",
+            None,
+            "73592817999991",
+            None,
+            "13800000991",
+            "北京市普通测试路1号",
+            "普通月底客户",
+            None,
+            None,
+            1,
+        ])
+    if include_checklist:
+        checklist = wb.create_sheet(f"样报缴送清单（当月）-关联{name}")
+        checklist.append(["样报缴送清单"])
+        checklist.append(["接收单位：中国版本图书馆"])
+        checklist.append(["缴送单位：《中国经营报》社", None, None, None, None, "2026年第8次寄送"])
+        checklist.append([
+            "序号", "报纸题名", "CN号", "年份", "期次/月份",
+            "散报总份数", "合订份数", "每份定价/元", "备注（是否为合订）",
+        ])
+        checklist.append([
+            1, "中国经营报", "11-0151", 2026, "8月",
+            f"{checklist_quantity if checklist_quantity is not None else quantity}份",
+            None, "5元", None,
+        ])
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
 def _original_zto_shipping_detail_bytes() -> bytes:
     wb = Workbook()
     summary = wb.active
@@ -329,6 +395,52 @@ def test_parser_keeps_spaced_postal_30_columns_compatible():
     assert (rows[0].recipient_name, rows[0].quantity) == ("上犹县政协办", 9)
     assert rows[0].address == "江西省赣州市上犹县县政府大楼232室政协办"
     assert rows[0].tracking_no == "9407632598208"
+
+
+@pytest.mark.parametrize("row_number", [8, 16, 21])
+def test_parser_recognizes_month_end_registered_mail_from_column_d_at_any_row(row_number):
+    rows = parse_waybill_workbook(_month_end_registered_workbook_bytes(row_number=row_number))
+
+    assert len(rows) == 1
+    assert rows[0].source_row == row_number
+    assert rows[0].tracking_no == "SC12345678901"
+    assert rows[0].carrier == "邮政挂号"
+    assert rows[0].recipient_name == "月底测试客户"
+    assert rows[0].phone == "13900000888"
+    assert rows[0].address == "北京市月底测试路8号"
+    assert rows[0].quantity == 4
+    assert rows[0].parse_reason is None
+
+
+def test_parser_supports_mixed_month_end_layouts_and_never_treats_phone_as_tracking():
+    content = _month_end_registered_workbook_bytes(include_c_layout=True)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "已出月底-整月"
+    ws.append(["刊物", "打印名称", "普通单号", "挂号单号", "备用", "地址", "姓名", "电话", "期数", "份数"])
+    ws.append(["中国经营报", None, None, "13900000123", None, "北京市测试路", "电话测试", None, 1, 1])
+    phone_only = BytesIO()
+    wb.save(phone_only)
+
+    rows = parse_waybill_workbook(content)
+    phone_rows = parse_waybill_workbook(phone_only.getvalue())
+
+    assert [(row.tracking_no, row.carrier) for row in rows] == [
+        ("SC12345678901", "邮政挂号"),
+        ("73592817999991", "中通"),
+    ]
+    assert all(row.tracking_no != "13900000123" for row in phone_rows)
+
+
+def test_checklist_sheet_is_supporting_evidence_instead_of_shipping_rows():
+    rows = parse_waybill_workbook(_month_end_registered_workbook_bytes(
+        row_number=16,
+        include_checklist=True,
+        checklist_quantity=4,
+    ))
+
+    assert len(rows) == 1
+    assert rows[0].source_sheet == "已出月底-整月"
 
 
 def test_repair_compact_postal_30_preview_row_relinks_shipping_detail():
@@ -1116,6 +1228,227 @@ def test_one_consolidated_package_fulfills_same_recipient_across_issues():
         assert summary.deferred_quantity == 0
         assert summary.unexplained_pending_quantity == 0
         assert summary.gap_details == []
+
+
+@pytest.mark.parametrize("issue_count", [4, 5])
+def test_month_end_waybill_import_fulfills_prior_deferrals_and_verifies_checklist(issue_count):
+    db = _db()
+    user = User(username=f"month-end-{issue_count}", password_hash="x", role=UserRole.admin)
+    publish_days = [3, 10, 17, 31] if issue_count == 4 else [3, 10, 17, 24, 31]
+    issue_numbers = [6201 + index for index in range(issue_count)]
+    schedules = [
+        PublicationSchedule(
+            year=2026,
+            issue_number=issue_number,
+            publish_date=date(2026, 8, day),
+        )
+        for issue_number, day in zip(issue_numbers, publish_days)
+    ]
+    db.add_all([user, *schedules])
+    final_issue = Issue(
+        issue_number=issue_numbers[-1],
+        publish_date=date(2026, 8, 31),
+        status=IssueStatus.confirmed,
+    )
+    final_detail = ShippingDetail(
+        issue_number=final_issue.issue_number,
+        sheet_name="月底-整月",
+        channel="样报",
+        transport="邮政挂号",
+        frequency="月",
+        status="正常",
+        name="月底测试客户",
+        phone="13900000888",
+        address="北京市月底测试路8号",
+        quantity=4,
+    )
+    db.add_all([final_issue, final_detail])
+    db.flush()
+    db.add(IssueAuditSnapshot(
+        issue_id=final_issue.id,
+        snapshot_type="confirm",
+        report_total=4,
+        shipping_total=4,
+        delta=0,
+        is_match=True,
+    ))
+    deferrals = []
+    prior_issues = []
+    prior_details = []
+    for issue_number, day in zip(issue_numbers[:-1], publish_days[:-1]):
+        issue = Issue(
+            issue_number=issue_number,
+            publish_date=date(2026, 8, day),
+            status=IssueStatus.confirmed,
+        )
+        detail = ShippingDetail(
+            issue_number=issue_number,
+            sheet_name="月底-整月",
+            channel="样报",
+            transport="邮政挂号",
+            frequency="月",
+            status="正常",
+            name="月底测试客户",
+            phone="13900000888",
+            address="北京市月底测试路8号",
+            quantity=4,
+        )
+        db.add_all([issue, detail])
+        db.flush()
+        deferral = ShippingDeferral(
+            issue_id=issue.id,
+            issue_number=issue_number,
+            shipping_detail_id=detail.id,
+            deferral_type="month_end_consolidation",
+            target_issue_number=final_issue.issue_number,
+            target_publish_date=final_issue.publish_date,
+            consolidation_batch="2026-08-month_end",
+            quantity=4,
+            reason="月底统一合寄",
+            status="pending",
+            detail_name_snapshot=detail.name,
+            detail_phone_snapshot=detail.phone,
+            detail_address_snapshot=detail.address,
+            detail_channel_snapshot=detail.channel,
+            created_by=user.id,
+        )
+        db.add(deferral)
+        deferrals.append(deferral)
+        prior_issues.append(issue)
+        prior_details.append(detail)
+    db.commit()
+
+    batch = preview_import(
+        db,
+        final_issue.id,
+        "月底挂号单.xlsx",
+        _month_end_registered_workbook_bytes(
+            row_number=16,
+            include_checklist=True,
+            checklist_quantity=issue_count * 4,
+        ),
+        user,
+    )
+
+    row = batch.rows[0]
+    assert row.match_status == "matched"
+    assert row.consolidation_candidate is True
+    assert row.consolidation_deferral_ids == [item.id for item in deferrals]
+    assert row.consolidation_issue_numbers == issue_numbers
+    assert row.consolidation_quantity == issue_count * 4
+    assert len(batch.documents) == 1
+    assert batch.documents[0].status == "verified"
+    assert batch.documents[0].linked_import_row_id == row.id
+    assert batch.documents[0].extracted_data["expected_quantity"] == issue_count * 4
+
+    confirm_import(db, batch.id, user)
+
+    package = db.query(ShippingPackage).one()
+    assert package.tracking_no == "SC12345678901"
+    assert package.quantity == issue_count * 4
+    assert db.query(ShippingPackageAllocation).count() == issue_count
+    assert db.query(ShippingDeferral).filter(ShippingDeferral.status == "pending").count() == 0
+    document = db.query(ShippingWaybillImportDocument).one()
+    assert document.shipping_package_id == package.id
+    db.refresh(final_detail)
+    output = ShippingDetailOut.model_validate(final_detail)
+    assert output.physical_shipped_quantity == 4
+    assert output.packages[0].documents[0].status == "verified"
+    for prior_issue in prior_issues:
+        assert fulfillment_summary(db, prior_issue.id).pending_quantity == 0
+    for prior_detail in prior_details:
+        prior_output = ShippingDetailOut.model_validate(prior_detail)
+        assert prior_output.packages[0].id == package.id
+        assert prior_output.packages[0].documents[0].status == "verified"
+
+
+def test_checklist_missing_and_mismatched_states_are_preserved_in_preview():
+    def preview_document(*, include_checklist: bool, checklist_quantity: int | None):
+        db = _db()
+        user = User(username="document-review", password_hash="x", role=UserRole.admin)
+        issue = Issue(issue_number=6301, publish_date=date(2026, 8, 31), status=IssueStatus.confirmed)
+        detail = ShippingDetail(
+            issue_number=6301, sheet_name="月底-整月", channel="样报",
+            transport="邮政挂号", frequency="月", status="正常",
+            name="月底测试客户", phone="13900000888", address="北京市月底测试路8号",
+            quantity=4,
+        )
+        db.add_all([
+            user,
+            PublicationSchedule(year=2026, issue_number=6301, publish_date=issue.publish_date),
+            issue,
+            detail,
+        ])
+        db.commit()
+        return preview_import(
+            db,
+            issue.id,
+            "月底挂号单.xlsx",
+            _month_end_registered_workbook_bytes(
+                include_checklist=include_checklist,
+                checklist_quantity=checklist_quantity,
+                mention_checklist=True,
+            ),
+            user,
+        )
+
+    missing = preview_document(include_checklist=False, checklist_quantity=None)
+    mismatch = preview_document(include_checklist=True, checklist_quantity=5)
+
+    assert [(item.status, item.validation_errors) for item in missing.documents] == [
+        ("missing", ["文件中未检测到对应的样报缴送清单工作表"]),
+    ]
+    assert mismatch.documents[0].status == "mismatch"
+    assert "清单散报总份数应为4份" in mismatch.documents[0].validation_errors
+
+
+def test_month_end_confirmation_is_atomic_when_deferral_changes_after_preview():
+    db = _db()
+    user = User(username="month-end-stale", password_hash="x", role=UserRole.admin)
+    prior_issue = Issue(issue_number=6401, publish_date=date(2026, 8, 24), status=IssueStatus.confirmed)
+    final_issue = Issue(issue_number=6402, publish_date=date(2026, 8, 31), status=IssueStatus.confirmed)
+    details = [
+        ShippingDetail(
+            issue_number=issue.issue_number, sheet_name="月底-整月", channel="样报",
+            transport="邮政挂号", frequency="月", status="正常",
+            name="月底测试客户", phone="13900000888", address="北京市月底测试路8号",
+            quantity=4,
+        )
+        for issue in (prior_issue, final_issue)
+    ]
+    db.add_all([
+        user,
+        PublicationSchedule(year=2026, issue_number=6401, publish_date=prior_issue.publish_date),
+        PublicationSchedule(year=2026, issue_number=6402, publish_date=final_issue.publish_date),
+        prior_issue,
+        final_issue,
+        *details,
+    ])
+    db.flush()
+    deferral = ShippingDeferral(
+        issue_id=prior_issue.id, issue_number=prior_issue.issue_number,
+        shipping_detail_id=details[0].id, deferral_type="month_end_consolidation",
+        target_issue_number=final_issue.issue_number, target_publish_date=final_issue.publish_date,
+        consolidation_batch="2026-08-month_end", quantity=4, reason="月底统一合寄",
+        status="pending", detail_name_snapshot=details[0].name,
+        detail_phone_snapshot=details[0].phone, detail_address_snapshot=details[0].address,
+        detail_channel_snapshot=details[0].channel,
+    )
+    db.add(deferral)
+    db.commit()
+    batch = preview_import(
+        db, final_issue.id, "月底挂号单.xlsx",
+        _month_end_registered_workbook_bytes(), user,
+    )
+    deferral.quantity = 5
+    db.commit()
+
+    with pytest.raises(Exception) as exc_info:
+        confirm_import(db, batch.id, user)
+
+    assert getattr(exc_info.value, "status_code", None) == 409
+    assert db.query(ShippingPackage).count() == 0
+    assert db.query(ShippingPackageAllocation).count() == 0
 
 
 def test_plan_quantity_transfer_keeps_issue_total_unchanged():

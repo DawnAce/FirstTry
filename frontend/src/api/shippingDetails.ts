@@ -66,6 +66,16 @@ export interface ShippingPackage {
   tracking_no: string;
   quantity: number;
   shipped_at: string;
+  documents: ShippingPackageDocument[];
+}
+
+export interface ShippingPackageDocument {
+  id: number;
+  document_type: 'sample_submission_list';
+  source_sheet: string;
+  status: 'missing' | 'pending_review' | 'verified' | 'mismatch' | 'not_required';
+  extracted_data: Record<string, unknown> | null;
+  validation_errors: string[] | null;
 }
 
 export interface ShippingDetailCreate {

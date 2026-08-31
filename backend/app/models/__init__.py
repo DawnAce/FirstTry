@@ -16,6 +16,7 @@ from app.models.shipping_detail import (
 from app.models.shipping_waybill import (
     ShippingPackage,
     ShippingWaybillImportBatch,
+    ShippingWaybillImportDocument,
     ShippingWaybillImportRow,
     WaybillImportStatus,
     WaybillMatchStatus,
@@ -118,7 +119,8 @@ __all__ = [
     "ReportRevision",
     "TempPrintDetail",
     "ShippingDetail", "ShippingDetailSourceType", "ShippingDetailSyncStatus",
-    "ShippingPackage", "ShippingWaybillImportBatch", "ShippingWaybillImportRow",
+    "ShippingPackage", "ShippingWaybillImportBatch", "ShippingWaybillImportDocument",
+    "ShippingWaybillImportRow",
     "WaybillImportStatus", "WaybillMatchStatus",
     "ShippingFulfillmentAdjustment",
     "ShippingDeferral", "ShippingPackageAllocation",

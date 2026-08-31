@@ -76,6 +76,10 @@ const row = (
   match_status: matchStatus,
   match_reason: null,
   shipping_detail_id: matchStatus === 'matched' ? id : null,
+  consolidation_deferral_ids: null,
+  consolidation_issue_numbers: null,
+  consolidation_quantity: 0,
+  consolidation_candidate: false,
 });
 
 describe('filterWaybillRows', () => {

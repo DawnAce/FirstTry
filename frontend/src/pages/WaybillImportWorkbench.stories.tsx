@@ -41,6 +41,10 @@ const makeRow = (
   match_status: status,
   match_reason: status === 'matched' ? null : '未找到对应发货明细',
   shipping_detail_id: status === 'matched' ? id : null,
+  consolidation_deferral_ids: null,
+  consolidation_issue_numbers: null,
+  consolidation_quantity: 0,
+  consolidation_candidate: false,
   ...overrides,
 });
 
@@ -73,12 +77,43 @@ const batch: WaybillImportBatch = {
   created_at: '2026-01-26T15:30:00',
   confirmed_at: null,
   rows: [...matchedRows, ...unresolvedRows],
+  documents: [],
 };
 
 const confirmedBatch: WaybillImportBatch = {
   ...batch,
   status: 'confirmed',
   confirmed_at: '2026-01-26T16:00:00',
+};
+
+const monthEndBatch: WaybillImportBatch = {
+  ...batch,
+  id: 4,
+  rows: [makeRow(301, 'matched', 4, {
+    source_sheet: '已出月底-整月',
+    carrier: '邮政挂号',
+    tracking_no: 'SC12345678901',
+    consolidation_deferral_ids: [81, 82, 83, 84],
+    consolidation_issue_numbers: [2663, 2664, 2665, 2666, 2667],
+    consolidation_quantity: 20,
+    consolidation_candidate: true,
+  })],
+  matched_quantity: 4,
+  matched_rows: 1,
+  unmatched_rows: 0,
+  warning_count: 0,
+  documents: [{
+    id: 91,
+    linked_import_row_id: 301,
+    shipping_package_id: null,
+    document_type: 'sample_submission_list',
+    source_sheet: '样报缴送清单（当月）-关联测试客户',
+    status: 'verified',
+    extracted_data: { quantity: 20, expected_quantity: 20 },
+    validation_errors: [],
+    parser_version: '1',
+    checked_at: '2026-08-31T15:30:00',
+  }],
 };
 
 const gapRegressionBatch: WaybillImportBatch = {
@@ -304,6 +339,23 @@ export const ConfirmedWithPending: Story = {
     await expect(returnButton).toBeVisible();
     await expect(getComputedStyle(returnButton).color).toBe('rgb(255, 255, 255)');
     await expect(getComputedStyle(returnButton).backgroundColor).toBe('rgb(0, 113, 227)');
+  },
+};
+
+export const MonthEndConsolidationWithChecklist: Story = {
+  name: '月底跨期合寄与随件清单',
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/shipping-waybills/issues/18/draft', () => HttpResponse.json(monthEndBatch)),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('已识别 1 张月底跨期合寄运单，共 20 份')).toBeVisible();
+    await expect(await canvas.findByText('随件清单：已检测 · 内容一致')).toBeVisible();
+    await expect(await canvas.findByText('跨期合寄 · 5期 / 20份')).toBeVisible();
   },
 };
 

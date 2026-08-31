@@ -179,7 +179,10 @@ class ShippingDetailOut(BaseModel):
     handled_quantity: int
     package_count: int
     fulfillment_status: str
-    packages: list["ShippingPackageOut"] = []
+    packages: list["ShippingPackageOut"] = Field(
+        default_factory=list,
+        validation_alias="fulfillment_packages",
+    )
     order_id: Optional[int]
     order_item_id: Optional[int]
     fulfillment_target_id: Optional[int]
@@ -201,6 +204,18 @@ class ShippingPackageOut(BaseModel):
     tracking_no: str
     quantity: int
     shipped_at: datetime
+    documents: list["ShippingPackageDocumentOut"] = []
+
+    model_config = {"from_attributes": True}
+
+
+class ShippingPackageDocumentOut(BaseModel):
+    id: int
+    document_type: str
+    source_sheet: str
+    status: str
+    extracted_data: Optional[dict] = None
+    validation_errors: Optional[list[str]] = None
 
     model_config = {"from_attributes": True}
 
