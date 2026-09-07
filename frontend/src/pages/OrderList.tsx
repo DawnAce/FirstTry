@@ -31,6 +31,7 @@ import {
   SearchOutlined,
   StopOutlined,
   TruckOutlined,
+  UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableColumnsType, TableProps } from 'antd';
@@ -559,6 +560,15 @@ export default function OrderList() {
           {isAdmin && (
             <Button icon={<DownloadOutlined />} onClick={handleExport} loading={exporting}>
               导出
+            </Button>
+          )}
+          {canMutate && (
+            <Button
+              aria-label="电商导入"
+              icon={<UploadOutlined />}
+              onClick={() => navigate('/orders/import')}
+            >
+              电商导入
             </Button>
           )}
           {canMutate && <Button

@@ -4,6 +4,26 @@ import { http, HttpResponse, delay } from 'msw'
 import { expect } from 'storybook/test'
 import OrderList from './OrderList'
 
+const adminAuth = {
+  user: { id: 1, username: 'admin', role: 'admin' },
+  isAdmin: true,
+  isViewer: false,
+  canMutate: true,
+  isLoggedIn: true,
+  setAuth: () => {},
+  logout: () => {},
+}
+
+const viewerAuth = {
+  user: { id: 2, username: 'viewer', role: 'viewer' },
+  isAdmin: false,
+  isViewer: true,
+  canMutate: false,
+  isLoggedIn: true,
+  setAuth: () => {},
+  logout: () => {},
+}
+
 // listOrders 返回 { rows, total }；一行已生效（带 order_code/漂移），一行草稿（order_code 为空 → 未生成）。
 const rows = [
   { id: 1, order_code: 'CBJ-2026-0001', external_order_no: 'TB-88001', order_date: '2026-05-12', payer_name: '北京某某传媒有限公司', entry_method: 'manual', source_platform: '淘宝', campaign: '2026-618', total_quantity: 20, total_amount: '4800.00', paid_amount: '4800.00', outstanding_amount: '0.00', refunded_amount: '0.00', commercial_status: 'paid', coverage_start_date: '2026-06-01', coverage_end_date: '2027-05-31', status: 'active', has_drift: true, synced_count: 3, fulfilled_count: 3, expected_total: 12 },
@@ -53,11 +73,27 @@ type Story = StoryObj<typeof meta>
 export const Loaded: Story = {
   name: '已加载',
   parameters: {
+    auth: adminAuth,
     msw: { handlers: loadedHandlers },
   },
   play: async ({ canvas }) => {
     // 异步数据到达：spinner 被替换为带订单编号的行
     await expect(await canvas.findByText('CBJ-2026-0001')).toBeVisible()
+    await expect(canvas.getByRole('button', { name: '电商导入' })).toBeVisible()
+  },
+}
+
+// 只读用户：导入和新建都属于写操作，不显示入口。
+export const Viewer: Story = {
+  name: '只读用户',
+  parameters: {
+    auth: viewerAuth,
+    msw: { handlers: loadedHandlers },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('CBJ-2026-0001')).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: '电商导入' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: /新建订单/ })).not.toBeInTheDocument()
   },
 }
 
