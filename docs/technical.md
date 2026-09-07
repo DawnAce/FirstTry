@@ -522,7 +522,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 | table_name | VARCHAR(100) | 操作的表名（如 shipping_details） |
 | record_id | INT | 被操作记录的 ID |
 | record_name | VARCHAR(200) | 被操作记录名称（冗余，便于展示） |
-| action | VARCHAR(20) | 供程序识别的操作类型，如 `create`、`review_waybill`、`bulk_match_waybills` |
+| action | VARCHAR(50) | 供程序识别的操作类型，如 `create`、`review_waybill`、`delete_zero_quantity_placeholder` |
 | changes | JSON | 变更详情（新增：完整数据，编辑：字段差异，删除：被删数据） |
 | user_id | INT | 操作人 ID |
 | username | VARCHAR(50) | 操作人用户名（冗余） |

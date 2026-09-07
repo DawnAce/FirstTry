@@ -23,10 +23,42 @@ _PLAN_STATUS_SOURCE = "plan_status"
 _NO_SHIPMENT_REQUIRED = "no_shipment_required"
 _DEFAULT_REASON = "客户要求暂停本期发货"
 _QUANTITY_CHECK = "ck_shipping_details_quantity_positive"
+_ACTION_LENGTH = 50
 
 
 def _scalar(connection: Connection, statement: str, params: dict[str, object]) -> int:
     return int(connection.execute(sa.text(statement), params).scalar() or 0)
+
+
+def _column_names(connection: Connection, table_name: str) -> set[str]:
+    return {
+        column["name"]
+        for column in sa.inspect(connection).get_columns(table_name)
+    }
+
+
+def _index_names(connection: Connection, table_name: str) -> set[str]:
+    return {
+        index["name"]
+        for index in sa.inspect(connection).get_indexes(table_name)
+    }
+
+
+def _check_constraint_names(connection: Connection, table_name: str) -> set[str]:
+    return {
+        constraint["name"]
+        for constraint in sa.inspect(connection).get_check_constraints(table_name)
+        if constraint.get("name")
+    }
+
+
+def _column_length(connection: Connection, table_name: str, column_name: str) -> int | None:
+    column = next(
+        column
+        for column in sa.inspect(connection).get_columns(table_name)
+        if column["name"] == column_name
+    )
+    return getattr(column["type"], "length", None)
 
 
 def _record_log(
@@ -207,21 +239,38 @@ def _backfill_stopped_details(connection: Connection) -> None:
 
 
 def upgrade() -> None:
-    op.add_column(
-        "shipping_fulfillment_adjustments",
-        sa.Column("source", sa.String(length=32), nullable=False, server_default="manual"),
-    )
-    op.create_index(
-        "ix_shipping_fulfillment_adjustments_source",
-        "shipping_fulfillment_adjustments",
-        ["source"],
-        unique=False,
-    )
     connection = op.get_bind()
+    # MySQL DDL is not transactional.  If a later data preflight stops this
+    # migration, the column/index created before it remain while Alembic keeps
+    # the previous revision.  Make these steps resumable so a subsequent
+    # ``upgrade head`` can finish instead of failing on duplicate DDL.
+    if "source" not in _column_names(connection, "shipping_fulfillment_adjustments"):
+        op.add_column(
+            "shipping_fulfillment_adjustments",
+            sa.Column("source", sa.String(length=32), nullable=False, server_default="manual"),
+        )
+    if "ix_shipping_fulfillment_adjustments_source" not in _index_names(
+        connection, "shipping_fulfillment_adjustments"
+    ):
+        op.create_index(
+            "ix_shipping_fulfillment_adjustments_source",
+            "shipping_fulfillment_adjustments",
+            ["source"],
+            unique=False,
+        )
+    if (_column_length(connection, "operation_logs", "action") or 0) < _ACTION_LENGTH:
+        with op.batch_alter_table("operation_logs") as batch_op:
+            batch_op.alter_column(
+                "action",
+                existing_type=sa.String(length=20),
+                type_=sa.String(length=_ACTION_LENGTH),
+                existing_nullable=False,
+            )
     _remove_invalid_details(connection)
-    with op.batch_alter_table("shipping_details") as batch_op:
-        batch_op.alter_column("quantity", existing_type=sa.Integer(), nullable=False)
-        batch_op.create_check_constraint(_QUANTITY_CHECK, "quantity > 0")
+    if _QUANTITY_CHECK not in _check_constraint_names(connection, "shipping_details"):
+        with op.batch_alter_table("shipping_details") as batch_op:
+            batch_op.alter_column("quantity", existing_type=sa.Integer(), nullable=False)
+            batch_op.create_check_constraint(_QUANTITY_CHECK, "quantity > 0")
     _backfill_stopped_details(connection)
 
 
@@ -230,12 +279,29 @@ def downgrade() -> None:
     connection.execute(sa.text(
         "DELETE FROM shipping_fulfillment_adjustments WHERE source=:source"
     ), {"source": _PLAN_STATUS_SOURCE})
+    constraint_names = _check_constraint_names(connection, "shipping_details")
     with op.batch_alter_table("shipping_details") as batch_op:
-        batch_op.drop_constraint(_QUANTITY_CHECK, type_="check")
+        if _QUANTITY_CHECK in constraint_names:
+            batch_op.drop_constraint(_QUANTITY_CHECK, type_="check")
         batch_op.alter_column("quantity", existing_type=sa.Integer(), nullable=True)
     op.drop_index(
         "ix_shipping_fulfillment_adjustments_source",
         table_name="shipping_fulfillment_adjustments",
     )
     op.drop_column("shipping_fulfillment_adjustments", "source")
+    connection.execute(sa.text("""
+        UPDATE operation_logs SET action='delete'
+        WHERE action='delete_zero_quantity_placeholder'
+    """))
+    connection.execute(sa.text("""
+        UPDATE operation_logs SET action='create'
+        WHERE action='create_plan_stop_adjustment'
+    """))
+    with op.batch_alter_table("operation_logs") as batch_op:
+        batch_op.alter_column(
+            "action",
+            existing_type=sa.String(length=_ACTION_LENGTH),
+            type_=sa.String(length=20),
+            existing_nullable=False,
+        )
     # 0份占位数据按业务定义无意义，降级不会恢复已清理的占位行。

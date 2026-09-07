@@ -3,6 +3,8 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
@@ -24,6 +26,20 @@ def _load_migration():
         / "e6a8c0d2f4b7_link_plan_stops_and_remove_zero_details.py"
     )
     spec = importlib.util.spec_from_file_location("shipping_plan_cleanup", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_action_repair_migration():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "f2c4e6a8b0d3_widen_operation_log_action.py"
+    )
+    spec = importlib.util.spec_from_file_location("operation_log_action_repair", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -82,6 +98,69 @@ def test_migration_removes_zero_placeholder_and_backfills_stopped_detail():
         )).scalars().all())
         assert actions == {"delete_zero_quantity_placeholder", "create_plan_stop_adjustment"}
         assert issue_id is not None
+
+
+def test_upgrade_can_resume_after_mysql_kept_earlier_ddl():
+    """A retry must skip the source column/index left by failed MySQL DDL."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    migration = _load_migration()
+
+    with engine.begin() as connection:
+        migration.op = Operations(MigrationContext.configure(connection))
+        with migration.op.batch_alter_table("operation_logs") as batch_op:
+            batch_op.alter_column(
+                "action",
+                existing_type=migration.sa.String(length=50),
+                type_=migration.sa.String(length=20),
+                existing_nullable=False,
+            )
+        migration.upgrade()
+
+        inspector = migration.sa.inspect(connection)
+        columns = {
+            column["name"]
+            for column in inspector.get_columns("shipping_fulfillment_adjustments")
+        }
+        indexes = {
+            index["name"]
+            for index in inspector.get_indexes("shipping_fulfillment_adjustments")
+        }
+        assert "source" in columns
+        assert "ix_shipping_fulfillment_adjustments_source" in indexes
+        action_column = next(
+            column
+            for column in inspector.get_columns("operation_logs")
+            if column["name"] == "action"
+        )
+        assert action_column["type"].length == 50
+
+
+def test_head_repair_widens_drifted_operation_log_action_idempotently():
+    """A database already stamped at the old head can still have VARCHAR(20)."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    migration = _load_action_repair_migration()
+
+    with engine.begin() as connection:
+        migration.op = Operations(MigrationContext.configure(connection))
+        with migration.op.batch_alter_table("operation_logs") as batch_op:
+            batch_op.alter_column(
+                "action",
+                existing_type=migration.sa.String(length=50),
+                type_=migration.sa.String(length=20),
+                existing_nullable=False,
+            )
+
+        migration.upgrade()
+        migration.upgrade()
+
+        action_column = next(
+            column
+            for column in migration.sa.inspect(connection).get_columns("operation_logs")
+            if column["name"] == "action"
+        )
+        assert action_column["type"].length == 50
 
 
 def test_model_constraint_rejects_new_zero_quantity_detail():

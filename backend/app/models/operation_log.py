@@ -10,7 +10,9 @@ class OperationLog(Base):
     table_name = Column(String(100), nullable=False, index=True)
     record_id = Column(Integer, nullable=False, index=True)
     record_name = Column(String(200), nullable=True)
-    action = Column(String(20), nullable=False, index=True)  # create / update / delete
+    # Some domain audit actions are intentionally descriptive, for example
+    # ``delete_zero_quantity_placeholder``.
+    action = Column(String(50), nullable=False, index=True)
     changes = Column(JSON, nullable=True)
     user_id = Column(Integer, nullable=True)
     username = Column(String(50), nullable=True)
