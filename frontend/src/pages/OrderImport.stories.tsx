@@ -59,6 +59,49 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+const schemaUpgradeMessage = '订单来源交易的数据库升级尚未完成，暂时无法导入。请管理员完成数据库迁移后重新预览。';
+
+export const SchemaUpgradeRequired: Story = {
+  name: '缺少数据库迁移时保留明确提示',
+  parameters: { msw: { handlers: [
+    http.post('/api/order-import/preview', () => HttpResponse.json({ detail: schemaUpgradeMessage }, { status: 503 })),
+  ] } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic.xlsx'));
+    await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
+    await expect(await canvas.findByText('预览未完成')).toBeVisible();
+    await expect(canvas.getByText(schemaUpgradeMessage)).toBeVisible();
+    await expect(canvas.getByText('synthetic.xlsx')).toBeVisible();
+    await expect(canvas.getByRole('button', { name: /预览导入/ })).toBeEnabled();
+    await expect(canvas.queryByRole('button', { name: /确认导入/ })).not.toBeInTheDocument();
+  },
+};
+
+let previewRetryCount = 0;
+export const PreviewFailureRetry: Story = {
+  name: '服务器异常后保留文件并重新预览',
+  beforeEach: () => { previewRetryCount = 0; },
+  parameters: { msw: { handlers: [
+    http.post('/api/order-import/preview', () => {
+      previewRetryCount += 1;
+      if (previewRetryCount === 1) return HttpResponse.text('Internal Server Error', { status: 500 });
+      return HttpResponse.json({ session_id: 'synthetic-retry', counts: { total: 0 }, can_commit: false, rows: [] });
+    }),
+  ] } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic.xlsx'));
+    await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
+    await expect(await canvas.findByText(/服务器处理异常；若系统刚升级，请确认数据库迁移已完成/)).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
+    await expect(await canvas.findByText('当前显示 0 单 / 全部 0 单')).toBeVisible();
+    await expect(canvas.queryByText('预览未完成')).not.toBeInTheDocument();
+    await expect(canvas.getByText('synthetic.xlsx')).toBeVisible();
+    await expect(previewRetryCount).toBe(2);
+  },
+};
+
 export const FillBeforeImport: Story = {
   name: '补订期后保留预览并确认导入',
   play: async ({ canvasElement }) => {

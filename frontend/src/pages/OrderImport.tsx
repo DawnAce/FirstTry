@@ -26,6 +26,7 @@ import { CheckOutlined, InboxOutlined, PlusOutlined, UploadOutlined } from '@ant
 import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { commitOrderImport, previewOrderImport } from '../api/orderImport';
+import { getApiErrorMessage } from '../api/errorMessage';
 import { useAuth } from '../contexts/AuthContext';
 import type { ImportDecision, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
 import { createProduct, productQueryKeys } from '../api/products';
@@ -163,8 +164,7 @@ export default function OrderImport() {
       setIssueOverrides({}); // 新预览：行可能重排，作废旧的补期号
       setLabelOverrides({});
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) =>
-      message.error(err.response?.data?.detail ?? '预览失败'),
+    onError: (err: unknown) => { void message.error(getApiErrorMessage(err, '预览失败')); },
   });
 
   const commitMutation = useMutation({
@@ -186,8 +186,7 @@ export default function OrderImport() {
       setIssueOverrides({});
       setLabelOverrides({});
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) =>
-      message.error(err.response?.data?.detail ?? '导入失败'),
+    onError: (err: unknown) => { void message.error(getApiErrorMessage(err, '导入失败')); },
   });
 
   const quickAddMutation = useMutation({
@@ -244,6 +243,8 @@ export default function OrderImport() {
   const runPreview = () => confirmPreviewReset(() => previewMutation.mutate());
   const updateImportSettings = (update: () => void) => confirmPreviewReset(() => {
     update();
+    previewMutation.reset();
+    commitMutation.reset();
     setPreview(null);
     setPreviewFilter('all');
     setPreviewPage(1);
@@ -451,6 +452,8 @@ export default function OrderImport() {
             <p className="ant-upload-text">点击或拖拽 CBJ 小程序 / 淘宝 导出的 .xlsx 到此处（自动识别平台）</p>
           </Upload.Dragger>
           <Button type="primary" icon={<UploadOutlined />} onClick={handlePreview} loading={previewMutation.isPending} disabled={!file}>预览导入</Button>
+          {previewMutation.isError && <Alert type="error" showIcon title="预览未完成"
+            description={getApiErrorMessage(previewMutation.error, '预览失败')} />}
         </Space>
       </Card>
 
@@ -482,7 +485,7 @@ export default function OrderImport() {
             title="③ 预览（商品关联、订期补录及原始交易留存）"
             extra={
               isAdmin ? (
-                <Space><Button href="/orders/sources">来源交易</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
+                <Space><Button href="/orders/sources">来源交易</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || previewMutation.isPending || previewMutation.isError}>
                   确认导入 {counts.import ?? 0} 单{counts.retain ? `，留存 ${counts.retain} 笔` : ''}{counts.source_update ? `，更新 ${counts.source_update} 笔来源` : ''}
                 </Button></Space>
               ) : (
@@ -490,6 +493,8 @@ export default function OrderImport() {
               )
             }
           >
+            {commitMutation.isError && <Alert type="error" showIcon style={{ marginBottom: 12 }} title="导入未完成"
+              description={getApiErrorMessage(commitMutation.error, '导入失败')} />}
             <Space style={{ marginBottom: 12 }} wrap role="group" aria-label="按识别结果筛选">
               {PREVIEW_FILTERS.map(filter => (
                 <Button key={filter.value} size="small" shape="round" color={filter.color}
