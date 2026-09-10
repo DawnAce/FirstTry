@@ -504,7 +504,7 @@ export default function OrderImport() {
               ))}
               <Text type="secondary" role="status">当前显示 {visibleRows.length} 单 / 全部 {preview.rows.length} 单</Text>
             </Space>
-            <div style={{ marginBottom: 12 }}><Text type="secondary">点击分类可优先核对待确认或重复订单；确认导入仍处理本批全部 {counts.import ?? 0} 单可导入订单。</Text></div>
+            <div style={{ marginBottom: 12 }}><Text type="secondary">分类仅筛选显示；确认时处理整批 {counts.import ?? 0} 单可导入订单、{counts.retain ?? 0} 笔留存和 {counts.source_update ?? 0} 笔来源更新。来源更新须逐笔核对后确认。</Text></div>
             {!!(counts.retain || counts.source_update) && <Alert type="info" showIcon style={{ marginBottom: 12 }}
               title="留存交易不会生成订阅或发货。来源更新需点开逐笔核对；保存后到“来源交易”继续处理。" />}
             <Table<ImportPreviewRow>

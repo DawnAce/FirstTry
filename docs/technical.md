@@ -638,6 +638,8 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 
 **新增接口**：`GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除，返回 204）、`POST /api/products/{id}/deactivate`（软停用）（商品库 CRUD；硬删除安全——`order_items` 是属性快照、不外键引用 `products`）；`POST /api/order-import/preview`（上传 Excel + 批次设置：起投月/截止日 + 活动标签/延长月/赠品刊物+说明）、`POST /api/order-import/commit`（session_id）；`GET /api/orders?campaign=…`（按活动筛）。前端页：`/products`（商品管理，从「营销与交易」门户进入）、`/orders/import`（电商导入，近期 / 历史归档两种模式，含待确认汇总快速新增 + 活动赠品设置）。
 
+**导入分类判定**：`decision` 与 `commercial_status` 分离。`build_import_preview` 先按状态、同平台/店铺范围业务订单、日期和商品得到建单中间结果；`preview_import` 再优先比较已有来源（`source_update`/`duplicate`），将纯运费、旧业务订单补原件及未通过建单校验的退款转为 `retain`，其余保持初步结果。最终六类互斥；`skip_status` 包含状态排除和整单忽略商品，但来源阶段可改变它。警告不自动转 `unresolved`。确认原子写入订单和来源，来源更新须显式确认；`skipped_duplicates` 仅统计确认阶段新增发现的业务订单重复，不含预览重复，`retained_sources` 也不包含来源更新。完整边界见 [order-import-decision-rules.md](order-import-decision-rules.md)。本次只同步说明和回归，不改变分类实现、接口或数据库。
+
 迁移（均已应用到生产）：
 - `b4d6f8a1c3e5`：补 `ordereventtype` 枚举遗漏的 `item_added/removed/modified`（修复 V1.2 在严格模式 MySQL 上的潜在崩溃）
 - `c5e7a9b2d4f6`：`orders.source_type → entry_method`，枚举收敛为 `manual/excel_import/api_sync`（MySQL `CHANGE COLUMN`）
