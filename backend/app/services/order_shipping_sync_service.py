@@ -224,13 +224,14 @@ def _get_issue(db: Session, issue_number: int) -> Issue:
 
 def _get_order(db: Session, order_id: int, *, lock: bool = False) -> Order:
     # 写入时使用当前读；与转投共用父订单锁，避免 MySQL 快照读取旧目标。
-    loader = joinedload if lock else selectinload
-    query = db.query(Order).options(
-        loader(Order.items).joinedload(OrderItem.allocations).joinedload(FulfillmentAllocation.targets)
-        if lock else selectinload(Order.items).selectinload(OrderItem.allocations).selectinload(FulfillmentAllocation.targets),
-        loader(Order.items).joinedload(OrderItem.targets)
-        if lock else selectinload(Order.items).selectinload(OrderItem.targets),
-    ).filter(Order.id == order_id)
+    loaders = [
+        selectinload(Order.items).selectinload(OrderItem.allocations).selectinload(FulfillmentAllocation.targets),
+        selectinload(Order.items).selectinload(OrderItem.targets),
+    ]
+    if lock:
+        # 发货候选只读 allocation.targets，避免两份目标集合 JOIN 形成乘积。
+        loaders = [joinedload(Order.items).joinedload(OrderItem.allocations).joinedload(FulfillmentAllocation.targets)]
+    query = db.query(Order).options(*loaders).filter(Order.id == order_id)
     if lock:
         query = query.populate_existing().with_for_update()
     order = query.first()
