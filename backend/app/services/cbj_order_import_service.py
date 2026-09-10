@@ -5,15 +5,23 @@ a per-order decision and a ready-to-create OrderCreate payload. The preview/comm
 API and session cache wrap this (next slice); commit feeds the importable rows'
 OrderCreate to ``order_service.create_imported_order``.
 
-Per order the decision is one of:
-* ``import``      — resolved cleanly; ``order_create`` is the payload.
-* ``skip_status`` — platform status is not a real sale (待付款 / 已取消).
-* ``duplicate``   — external_order_no already in the system.
-* ``unresolved``  — product not in the catalog, or missing a date → 待确认 queue.
+``build_import_preview`` first checks eligibility to create a business order:
+* ``import``      — eligible to create; warnings / missing coverage may remain.
+* ``skip_status`` — excluded status (待付款 / 已取消), or only ignored products.
+* ``duplicate``   — an existing business order in the same platform/store scope.
+* ``unresolved``  — missing order/payment date, no product lines, or no match.
+
+``preview_import`` then determines the final, mutually exclusive UI decision:
+existing source → ``source_update`` / ``duplicate``; otherwise pure shipping fees,
+legacy business-order duplicates, and unresolved refunds → ``retain``. Remaining
+rows keep their initial decision. Only ``import`` creates business orders;
+``retain`` saves sources and ``source_update`` requires explicit source review.
+Commercial status is separate. See docs/order-import-decision-rules.md.
 
 Coverage is operator-driven per batch: ``BatchSettings`` carries the start month
 (邮局/中通 separately) and a cutoff date (payment after it → next month). Historical
-mode leaves coverage blank. Every row stays editable in the preview UI.
+mode leaves coverage blank. The preview supports filling missing coverage and
+single-issue identity; other corrections use the source or the order detail.
 """
 
 import re
