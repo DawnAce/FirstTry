@@ -88,6 +88,7 @@ import type {
 } from '../api/finance';
 import { contractQueryKeys, listContracts, listPartners, partnerQueryKeys } from '../api/contracts';
 import { useAuth } from '../contexts/AuthContext';
+import OrderSources from './OrderSources';
 import PostalReceiptsPanel from './PostalReceipts';
 import { PageHeader, StatusPill } from '../components/UiPrimitives';
 import './FinanceManagement.css';
@@ -1578,6 +1579,7 @@ export default function FinanceManagement() {
             { key: 'invoices', label: '订单发票', children: <InvoicesPanel isAdmin={isAdmin} /> },
             { key: 'settlements', label: '渠道结算', children: <SettlementsPanel isAdmin={isAdmin} /> },
             { key: 'postal-receipts', label: '邮局收款', children: <PostalReceiptsPanel /> },
+            { key: 'source-fees', label: '运费来源核对', children: <OrderSources financeView /> },
           ]}
         />
       </section>

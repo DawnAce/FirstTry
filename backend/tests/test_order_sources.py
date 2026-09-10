@@ -105,7 +105,7 @@ def test_source_migration_round_trip():
         migration.upgrade()
         for model in (OrderSource, OrderSourceVersion):
             actual = {c["name"] for c in inspect(connection).get_columns(model.__tablename__)}
-            assert actual == set(model.__table__.columns.keys())
+            assert actual == set(model.__table__.columns.keys()) - {"finance_review_required"}
         migration.downgrade()
         assert "order_sources" not in inspect(connection).get_table_names()
         migration.upgrade()

@@ -173,4 +173,4 @@ cd ../backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --p
 
 ### 来源交易留存（2026-09-10）
 
-电商导入支持纯运费和退款原件留存，来源变化逐笔确认，原始版本可检索。入口为订单管理的“来源交易”。部署需执行 Alembic 迁移；关联及投递闭环进度见 [实施文档](docs/order-source-transactions.md)。
+电商导入支持纯运费和退款原件留存、关联订阅、跨原件搜索、独立费用核对及按刊期确认转投。入口为订单管理的“来源交易”，财务工作台也可核对运费。部署需执行迁移 `a7c9e1f3b5d8`、`b8d0f2a4c6e9`；流程和边界见 [实施文档](docs/order-source-transactions.md)。

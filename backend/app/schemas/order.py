@@ -341,6 +341,8 @@ class FulfillmentTargetOut(BaseModel):
     effective_from_issue: Optional[int]
     effective_until_issue: Optional[int]
     status: TargetStatus
+    replaced_by_target_id: int | None = None
+    source_delivery_managed: bool = False
     notes: Optional[str]
 
     model_config = {"from_attributes": True}

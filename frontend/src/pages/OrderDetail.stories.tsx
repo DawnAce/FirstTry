@@ -185,13 +185,14 @@ const meta = {
   decorators: [withRouter],
   parameters: {
     layout: 'fullscreen',
-    auth: { user: { username: 'admin', role: 'admin' }, isAdmin: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} },
+    auth: { user: { username: 'admin', role: 'admin' }, isAdmin: true, canMutate: true, isLoggedIn: true, setAuth: () => {}, logout: () => {} },
     reactRouter: reactRouterParameters({
       routing: { path: '/orders/:id' },
       location: { pathParams: { id: '96' } },
     }),
     msw: {
       handlers: [
+        http.get('/api/order-sources/financial-summary', () => HttpResponse.json({ fee_count: 0 })),
         http.get('/api/orders/96', () => HttpResponse.json(order)),
         http.get('/api/orders/96/events', () => HttpResponse.json(events)),
         http.get('/api/postal/deliveries', () => HttpResponse.json({ rows: [delivery], total: 1, summary: { total_copies: 1, unit_count: 0, missing_unit_count: 1, nearest_expiry_date: null } })),
