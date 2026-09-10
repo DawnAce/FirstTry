@@ -174,3 +174,5 @@ cd ../backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --p
 ### 来源交易留存（2026-09-10）
 
 电商导入支持纯运费和退款原件留存、关联订阅、跨原件搜索、独立费用核对及按刊期确认转投。入口为订单管理的“来源交易”，财务工作台也可核对运费。部署需执行迁移 `a7c9e1f3b5d8`、`b8d0f2a4c6e9`；流程和边界见 [实施文档](docs/order-source-transactions.md)。
+
+若升级后电商订单“预览失败”，且日志提示 `order_sources` / `order_source_links` 缺表，应先确认**后端实际连接的数据库**已执行上述迁移。Vite / Uvicorn 热更新不会自动执行迁移，浏览器的 localhost 地址也不表示使用本地数据库。缺少来源表或列时，导入接口返回 503，页面保留错误原因与文件；完成迁移后重新预览。
