@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import OrderImport from './OrderImport';
 import type { CoverageCandidate, CoverageChange } from '../api/orderCoverage';
+import type { ImportPreviewOut, ImportPreviewRow } from '../api/orderImport';
 
 const candidate: CoverageCandidate = {
   key: 'SYNTHETIC-IMPORT#0', order_id: null, external_order_no: 'SYNTHETIC-IMPORT', order_date: '2026-02-01',
@@ -78,7 +79,7 @@ export const FillBeforeImport: Story = {
     await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
     await userEvent.click(await body.findByRole('button', { name: '保留当前预览' }));
     await expect(parsed).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(body.getByText(/覆盖2026-03-01/)).toBeVisible());
+    await waitFor(() => expect(body.getByText(/订期：2026-03-01 至 2027-02-28/)).toBeVisible());
     await userEvent.click(body.getByRole('button', { name: '确认导入 1 单' }));
     await userEvent.click(await body.findByRole('button', { name: '继续补本次订期' }));
     await expect(await body.findByText('当前筛选 0 单、0 条明细')).toBeVisible();
@@ -147,5 +148,118 @@ export const ViewerCannotLink: Story = {
     const body = await previewSyntheticAliasFile(canvasElement);
     await expect(body.queryByRole('button', { name: '关联已有商品' })).not.toBeInTheDocument();
     await expect(body.queryByRole('button', { name: /新增商品/ })).not.toBeInTheDocument();
+  },
+};
+
+let filterPreviewCount = 0;
+const committedFilteredBatch = fn();
+const filterHandlers = [
+  http.post('/api/order-import/preview', () => {
+    const resolved = filterPreviewCount++ > 0;
+    const rows: ImportPreviewRow[] = Array.from({ length: 56 }, (_, index) => {
+      const decision = index < 51 || (resolved && index >= 54) ? 'import'
+        : index === 51 ? 'skip_status' : index < 54 ? 'duplicate' : 'unresolved';
+      return {
+        external_order_no: `SYNTHETIC-FILTER-${index}`, recipient_name: `合成订户${index}`, paid_amount: '199.00',
+        status_raw: index === 51 ? '已取消' : '卖家已发货', commercial_status: index === 51 ? 'cancelled' : 'shipped',
+        decision, reason: decision === 'unresolved' ? '纯运费单需核对' : decision === 'duplicate' ? '订单号已存在' : decision === 'skip_status' ? '取消订单不导入' : null,
+        status_unknown: false, delivery_overridden_to_zto: false, warnings: [], unresolved_product: null,
+        items: decision === 'import' ? [{
+          publication: index === 1 ? 'business_school' : 'cbj', fulfillment_type: index < 2 ? 'single_issue' : 'subscription',
+          subscription_term: index < 2 ? null : 'one_year', delivery_method: 'post_office', billing_type: 'paid',
+          total_quantity: 1, unit_price: '199.00', subtotal: '199.00', issue_label: null, issue_number: null,
+          coverage_start_date: null, coverage_end_date: null,
+        }] : [],
+      };
+    });
+    return HttpResponse.json({ session_id: 'synthetic-filter-session', rows, can_commit: true,
+      counts: { total: 56, import: resolved ? 53 : 51, skip_status: 1, duplicate: 2, unresolved: resolved ? 0 : 2 },
+    } satisfies ImportPreviewOut);
+  }),
+  http.post('/api/order-import/commit', async ({ request }) => {
+    committedFilteredBatch(await request.json());
+    return HttpResponse.json({ created: 51, order_ids: [], skipped_duplicates: 0 });
+  }),
+];
+
+async function previewFilterFile(canvasElement: HTMLElement) {
+  const body = within(canvasElement.ownerDocument.body);
+  await userEvent.click(body.getByText('历史归档（只补记录）'));
+  await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic-filters.xlsx'));
+  await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
+  await body.findByRole('button', { name: '全部 56' });
+  return body;
+}
+
+export const FilterResults: Story = {
+  name: '跨页筛选并保留补期与整批导入',
+  parameters: { msw: { handlers: filterHandlers } },
+  beforeEach: () => { filterPreviewCount = 0; committedFilteredBatch.mockClear(); },
+  play: async ({ canvasElement }) => {
+    const body = await previewFilterFile(canvasElement);
+    const filters = within(body.getByRole('group', { name: '按识别结果筛选' }));
+    await expect(filters.getByRole('button', { name: '全部 56' })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.type(body.getByRole('spinbutton'), '2677');
+    await userEvent.type(body.getByPlaceholderText('选填，如 2026-06'), '2026-08');
+    await userEvent.click(body.getByTitle('2'));
+    await expect(body.getByText('SYNTHETIC-FILTER-50')).toBeVisible();
+
+    // 问题订单在原列表第二页，筛选必须作用于完整预览并回到第一页。
+    await userEvent.click(filters.getByRole('button', { name: '待确认 2' }));
+    await expect(body.getByText('当前显示 2 单 / 全部 56 单')).toBeVisible();
+    await expect(body.getByText('SYNTHETIC-FILTER-54')).toBeVisible();
+    await expect(body.queryByText('SYNTHETIC-FILTER-50')).not.toBeInTheDocument();
+    await expect(canvasElement.querySelectorAll('tbody tr.ant-table-row')).toHaveLength(2);
+
+    // 原生按钮支持键盘，筛选后整批计数保持不变。
+    filters.getByRole('button', { name: '重复 2' }).focus();
+    await userEvent.keyboard('{Enter}');
+    await expect(filters.getByRole('button', { name: '重复 2' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(body.getByText('SYNTHETIC-FILTER-52')).toBeVisible();
+    await userEvent.click(filters.getByRole('button', { name: '跳过 1' }));
+    await expect(body.getByText('取消订单不导入')).toBeVisible();
+    await userEvent.click(filters.getByRole('button', { name: '导入 51' }));
+    await expect(body.getByRole('spinbutton')).toHaveValue('2677');
+    await expect(body.getByPlaceholderText('选填，如 2026-06')).toHaveValue('2026-08');
+    await expect(body.getByText('当前显示 51 单 / 全部 56 单')).toBeVisible();
+
+    await userEvent.click(filters.getByRole('button', { name: '重复 2' }));
+    await userEvent.click(body.getByRole('button', { name: '确认导入 51 单' }));
+    await waitFor(() => expect(committedFilteredBatch).toHaveBeenCalledWith({
+      session_id: 'synthetic-filter-session', issue_overrides: { 'SYNTHETIC-FILTER-0#0': 2677 },
+      issue_label_overrides: { 'SYNTHETIC-FILTER-1#0': '2026-08' },
+    }));
+    await expect(committedFilteredBatch).toHaveBeenCalledTimes(1);
+  },
+};
+
+export const RefreshFilteredPreview: Story = {
+  name: '重新识别保留分类与空结果',
+  parameters: { msw: { handlers: filterHandlers } },
+  beforeEach: () => { filterPreviewCount = 0; },
+  play: async ({ canvasElement }) => {
+    const body = await previewFilterFile(canvasElement);
+    await userEvent.click(body.getByRole('button', { name: '待确认 2' }));
+    await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
+    await waitFor(() => expect(body.getByText('当前没有“待确认”订单')).toBeVisible());
+    await expect(body.getByRole('button', { name: '待确认 0' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(body.getByRole('button', { name: '确认导入 53 单' })).toBeEnabled();
+    await expect(body.getByText('当前显示 0 单 / 全部 56 单')).toBeVisible();
+    await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['another synthetic'], 'another-synthetic.xlsx'));
+    await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
+    await waitFor(() => expect(body.getByRole('button', { name: '全部 56' })).toHaveAttribute('aria-pressed', 'true'));
+    await expect(body.getByText('SYNTHETIC-FILTER-0')).toBeVisible();
+  },
+};
+
+export const DarkCompactFilters: Story = {
+  name: '暗色紧凑筛选待确认', globals: { theme: 'dark', density: 'compact' },
+  parameters: { msw: { handlers: filterHandlers } },
+  beforeEach: () => { filterPreviewCount = 0; },
+  play: async ({ canvasElement }) => {
+    const body = await previewFilterFile(canvasElement);
+    await userEvent.click(body.getByRole('button', { name: '待确认 2' }));
+    await expect(body.getByRole('button', { name: '待确认 2' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(body.getByText('当前显示 2 单 / 全部 56 单')).toBeVisible();
   },
 };

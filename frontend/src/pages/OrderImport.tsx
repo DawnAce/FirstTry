@@ -21,7 +21,7 @@ import {
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { CheckOutlined, InboxOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { commitOrderImport, previewOrderImport } from '../api/orderImport';
@@ -30,13 +30,22 @@ import type { ImportDecision, ImportPreviewOut, ImportPreviewRow, PreviewSetting
 import { createProduct, productQueryKeys } from '../api/products';
 import { ProductFormFields, PUBLICATION_OPTIONS, buildProductPayload } from './ProductForm';
 import type { ProductFormValues } from './ProductForm';
-import { deliveryMethodLabel, formatCoverage, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
+import { deliveryMethodLabel, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
 import EcommerceRules from './ecommerceRules';
 import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives';
 
 const { Text } = Typography;
 
 type Mode = 'recent' | 'historical';
+type PreviewFilter = 'all' | ImportDecision;
+
+const PREVIEW_FILTERS = [
+  { value: 'all', label: '全部', color: 'primary' },
+  { value: 'unresolved', label: '待确认', color: 'danger' },
+  { value: 'duplicate', label: '重复', color: 'blue' },
+  { value: 'import', label: '导入', color: 'green' },
+  { value: 'skip_status', label: '跳过', color: 'default' },
+] as const;
 
 const DECISION_META: Record<ImportDecision, { label: string; color: string }> = {
   import: { label: '✅ 导入', color: 'green' },
@@ -87,6 +96,11 @@ function suggestCode(): string {
   return 'CBJ-' + Date.now().toString(36).toUpperCase().slice(-6);
 }
 
+function formatSubscriptionPeriod(start: string | null, end: string | null): string {
+  if (!start && !end) return '未填写';
+  return `${start || '未填写'} 至 ${end || '未填写'}`;
+}
+
 export default function OrderImport() {
   const { isAdmin, canMutate } = useAuth();
   const queryClient = useQueryClient();
@@ -105,6 +119,9 @@ export default function OrderImport() {
   const [giftPublication, setGiftPublication] = useState<string | undefined>(undefined);
   const [giftNote, setGiftNote] = useState('');
   const [preview, setPreview] = useState<ImportPreviewOut | null>(null);
+  const [previewFilter, setPreviewFilter] = useState<PreviewFilter>('all');
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPageSize, setPreviewPageSize] = useState(50);
   // 往期单选填补期号：{external_order_no: 期号}。留空=不补，照常导入。
   const [issueOverrides, setIssueOverrides] = useState<Record<string, number>>({});
   // 商学院单期选填补期次标签：{external_order_no: "YYYY-MM" / "YYYY-MM~MM"}。
@@ -132,6 +149,7 @@ export default function OrderImport() {
     },
     onSuccess: (res) => {
       setPreview(res.data);
+      setPreviewPage(1);
       setHasCoverageEdits(false);
       setCoverageOpen(false);
       setImportedOrderIds(null);
@@ -220,6 +238,8 @@ export default function OrderImport() {
   const updateImportSettings = (update: () => void) => confirmPreviewReset(() => {
     update();
     setPreview(null);
+    setPreviewFilter('all');
+    setPreviewPage(1);
     setHasCoverageEdits(false);
   });
   const handlePreview = () => {
@@ -284,7 +304,7 @@ export default function OrderImport() {
                   <Text style={{ fontSize: 12 }}>
                     {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
                     {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
-                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{it.issue_number ? ` · 第${it.issue_number}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal} · 覆盖{formatCoverage(it.coverage_start_date, it.coverage_end_date)}
+                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{it.issue_number ? ` · 第${it.issue_number}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal} · 订期：{formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}
                   </Text>
                   {needNumber && (
                     <Space size={4} style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
@@ -338,6 +358,11 @@ export default function OrderImport() {
   ];
 
   const counts = preview?.counts ?? {};
+  const visibleRows = useMemo(() => {
+    const rows = preview?.rows ?? [];
+    return previewFilter === 'all' ? rows : rows.filter(row => row.decision === previewFilter);
+  }, [preview, previewFilter]);
+  const previewFilterLabel = PREVIEW_FILTERS.find(filter => filter.value === previewFilter)!.label;
 
   return (
     <div>
@@ -458,19 +483,30 @@ export default function OrderImport() {
               )
             }
           >
-            <Space style={{ marginBottom: 12 }} wrap>
-              <Tag color="green">导入 {counts.import ?? 0}</Tag>
-              <Tag color="default">跳过 {counts.skip_status ?? 0}</Tag>
-              <Tag color="blue">重复 {counts.duplicate ?? 0}</Tag>
-              <Tag color="red">待确认 {counts.unresolved ?? 0}</Tag>
-              <Text type="secondary">共 {counts.total ?? 0} 单</Text>
+            <Space style={{ marginBottom: 12 }} wrap role="group" aria-label="按识别结果筛选">
+              {PREVIEW_FILTERS.map(filter => (
+                <Button key={filter.value} size="small" shape="round" color={filter.color}
+                  type={previewFilter === filter.value ? 'primary' : 'default'}
+                  variant={previewFilter === filter.value ? 'solid' : 'filled'}
+                  icon={previewFilter === filter.value ? <CheckOutlined aria-hidden /> : undefined}
+                  aria-pressed={previewFilter === filter.value}
+                  disabled={previewMutation.isPending || commitMutation.isPending}
+                  onClick={() => { setPreviewFilter(filter.value); setPreviewPage(1); }}>
+                  {filter.label} {filter.value === 'all' ? preview.rows.length : counts[filter.value] ?? 0}
+                </Button>
+              ))}
+              <Text type="secondary" role="status">当前显示 {visibleRows.length} 单 / 全部 {preview.rows.length} 单</Text>
             </Space>
+            <div style={{ marginBottom: 12 }}><Text type="secondary">点击分类可优先核对待确认或重复订单；确认导入仍处理本批全部 {counts.import ?? 0} 单可导入订单。</Text></div>
             <Table<ImportPreviewRow>
               rowKey="external_order_no"
               columns={columns}
-              dataSource={preview.rows}
+              dataSource={visibleRows}
+              loading={previewMutation.isPending}
               size="small"
-              pagination={{ pageSize: 50, showTotal: (t) => `共 ${t} 单` }}
+              locale={{ emptyText: previewFilter === 'all' ? '没有可预览的订单' : `当前没有“${previewFilterLabel}”订单` }}
+              pagination={{ current: previewPage, pageSize: previewPageSize, showTotal: (t) => `共 ${t} 单`,
+                onChange: (page, pageSize) => { setPreviewPage(pageSize === previewPageSize ? page : 1); setPreviewPageSize(pageSize); } }}
               scroll={{ x: 1000 }}
               onRow={(row) => ({ onClick: () => handleRowClick(row), style: { cursor: 'pointer' } })}
             />
@@ -536,7 +572,7 @@ export default function OrderImport() {
                   <div key={i} style={{ fontSize: 13 }}>
                     {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
                     {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
-                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{it.issue_number ? ` · 第${it.issue_number}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · 份{it.total_quantity} · ¥{it.subtotal} · 覆盖{formatCoverage(it.coverage_start_date, it.coverage_end_date)}
+                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{it.issue_number ? ` · 第${it.issue_number}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · 份{it.total_quantity} · ¥{it.subtotal} · 订期：{formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}
                   </div>
                 ))}
               </Card>
