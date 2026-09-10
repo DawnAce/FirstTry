@@ -7,7 +7,7 @@ from typing import Iterable
 from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app.models import (
     Issue,
@@ -81,9 +81,11 @@ def preview_order_shipping_sync(
     db: Session,
     order_id: int,
     issue_number: int,
+    *,
+    lock: bool = False,
 ) -> OrderShippingSyncPreview:
     issue = _get_issue(db, issue_number)
-    order = _get_order(db, order_id)
+    order = _get_order(db, order_id, lock=lock)
     if _is_suspended_issue(db, issue):
         return OrderShippingSyncPreview(
             order_id=order_id,
@@ -148,7 +150,7 @@ def apply_order_shipping_sync(
     issue_number: int,
     operator_id: int | None,
 ) -> OrderShippingSyncPreview:
-    preview = preview_order_shipping_sync(db, order_id, issue_number)
+    preview = preview_order_shipping_sync(db, order_id, issue_number, lock=True)
     if preview.summary.conflicts:
         log_event(
             db,
@@ -171,7 +173,7 @@ def apply_order_shipping_sync(
     issue = _get_issue(db, issue_number)
     if _is_suspended_issue(db, issue):
         return preview
-    order = _get_order(db, order_id)
+    order = _get_order(db, order_id, lock=True)
     candidates, _ = _build_candidates(order, issue_number, issue.publish_date)
     created_count = 0
     updated_count = 0
@@ -220,18 +222,18 @@ def _get_issue(db: Session, issue_number: int) -> Issue:
     return issue
 
 
-def _get_order(db: Session, order_id: int) -> Order:
-    order = (
-        db.query(Order)
-        .options(
-            selectinload(Order.items)
-            .selectinload(OrderItem.allocations)
-            .selectinload(FulfillmentAllocation.targets),
-            selectinload(Order.items).selectinload(OrderItem.targets),
-        )
-        .filter(Order.id == order_id)
-        .first()
-    )
+def _get_order(db: Session, order_id: int, *, lock: bool = False) -> Order:
+    # 写入时使用当前读；与转投共用父订单锁，避免 MySQL 快照读取旧目标。
+    loader = joinedload if lock else selectinload
+    query = db.query(Order).options(
+        loader(Order.items).joinedload(OrderItem.allocations).joinedload(FulfillmentAllocation.targets)
+        if lock else selectinload(Order.items).selectinload(OrderItem.allocations).selectinload(FulfillmentAllocation.targets),
+        loader(Order.items).joinedload(OrderItem.targets)
+        if lock else selectinload(Order.items).selectinload(OrderItem.targets),
+    ).filter(Order.id == order_id)
+    if lock:
+        query = query.populate_existing().with_for_update()
+    order = query.first()
     if order is None:
         raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
     if order.status != OrderStatus.active:

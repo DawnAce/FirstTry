@@ -2358,4 +2358,6 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 
 转投在当前 allocation 中保留单目标替换链及前后期号边界，item.delivery_method 保留原商业产品属性。旧 postal 明细可能保留默认 zto 目标值，继续兼容；只有显式转投目标按新渠道决定后续投递。邮局已有记录缩短截止，原值留审计；恢复邮局时新建后续投递段且不重复计订阅金额。中通发货仍走现有同步流程。
 
+转投、更正及发货同步写入共用父订单锁，写入前使用 MySQL 当前读重新读取目标与版本，避免 REPEATABLE READ 的旧快照覆盖其他操作。CI 的临时 MySQL 包含双事务目标变更测试；该测试在本地或非 CI 数据库环境跳过，不连接用户业务库。
+
 `delivery-undo-preview` / `delivery-undo` 只撤回未来、无发货且未被后续修改的安排：新目标 suspended，新增邮局段归档，原记录不删除。普通订单编辑不能覆盖已转投明细的结构；更正走来源入口。有转投的进度批量读取刊期与目标，当期所有有效目标均完成才累计一期，邮局按出刊日、中通按实发；无转投记录继续使用旧口径。邮局待续投限制到目标生效段。

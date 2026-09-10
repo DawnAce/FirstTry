@@ -263,9 +263,9 @@ def validate_links(db: Session, source: OrderSource, data: SourceLinkIn, lock: b
             raise HTTPException(409, "订单已作废或尚未确认，请重新核对")
         if item.fulfillment_type != FulfillmentType.subscription or item.status != OrderItemStatus.active:
             raise HTTPException(409, "只能关联有效订阅明细")
-        latest = db.query(func.max(FulfillmentAllocation.version_no)).filter_by(order_item_id=item.id).scalar()
-        target_allocation = db.get(FulfillmentAllocation, target.allocation_id)
-        if target.status != TargetStatus.active or target.replaced_by_target_id is not None or target_allocation.version_no != latest:
+        latest_query = db.query(FulfillmentAllocation).filter_by(order_item_id=item.id).order_by(FulfillmentAllocation.version_no.desc())
+        latest = (latest_query.with_for_update() if lock else latest_query).populate_existing().first()
+        if target.status != TargetStatus.active or target.replaced_by_target_id is not None or target.allocation_id != latest.id:
             raise HTTPException(409, "收件目标已经更换，请重新选择")
     return {"can_apply": True, "total_amount": total, "allocations": data.allocations,
             "warnings": ["本次只更新来源归属，不改变订阅份数、价格或投递。"]}

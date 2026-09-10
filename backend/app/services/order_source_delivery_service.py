@@ -3,7 +3,7 @@ import hashlib
 import json
 from datetime import date, timedelta
 from fastapi import HTTPException
-from sqlalchemy import or_, func
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.models import (Order, OrderItem, FulfillmentAllocation, FulfillmentTarget,
                         OrderStatus, OrderCommercialStatus, Issue, PublicationSchedule)
@@ -26,23 +26,26 @@ def _digest(value: object) -> str:
 
 def _load(db: Session, source_id: int, link_id: int, version: int | None = None, lock: bool = False) -> tuple[OrderSource, OrderSourceLink, Order, OrderItem, FulfillmentTarget, FulfillmentAllocation]:
     source = get_source(db, source_id, version, lock=lock)
-    link = db.query(OrderSourceLink).filter_by(id=link_id, source_id=source_id, active=1).first()
+    def current(query):
+        return (query.with_for_update() if lock else query).populate_existing()
+    link = current(db.query(OrderSourceLink).filter_by(id=link_id, source_id=source_id, active=1)).first()
     if source.kind != "shipping_fee" or link is None or link.target_id is None:
         raise HTTPException(409, "请先将运费关联到具体订阅收件目标")
     order = db.query(Order).filter_by(id=link.order_id).populate_existing()
     if lock:
         order = order.with_for_update()
     order = order.one()
-    item = db.query(OrderItem).filter_by(id=link.order_item_id).populate_existing().one()
-    target = db.query(FulfillmentTarget).filter_by(id=link.target_id).populate_existing().one()
+    item = current(db.query(OrderItem).filter_by(id=link.order_item_id)).one()
+    target = current(db.query(FulfillmentTarget).filter_by(id=link.target_id)).one()
     seen = set()
     while target.replaced_by_target_id is not None:
         if target.id in seen:
             raise HTTPException(409, "目标历史关系异常，请先核对")
         seen.add(target.id)
-        target = db.query(FulfillmentTarget).filter_by(id=target.replaced_by_target_id).populate_existing().one()
-    allocation = db.get(FulfillmentAllocation, target.allocation_id)
-    latest = db.query(func.max(FulfillmentAllocation.version_no)).filter_by(order_item_id=item.id).scalar()
+        target = current(db.query(FulfillmentTarget).filter_by(id=target.replaced_by_target_id)).one()
+    allocation = current(db.query(FulfillmentAllocation).filter_by(id=target.allocation_id)).one()
+    latest = current(db.query(FulfillmentAllocation).filter_by(order_item_id=item.id).order_by(
+        FulfillmentAllocation.version_no.desc())).first().version_no
     if (order.status != OrderStatus.active or order.is_historical_archive
             or order.commercial_status in {OrderCommercialStatus.refunded, OrderCommercialStatus.cancelled}):
         raise HTTPException(409, "仅可安排有效且非退款、取消、历史归档的订阅投递")
@@ -84,27 +87,30 @@ def _schedule(db: Session, item: OrderItem, issue_number: int, lock: bool = Fals
     if len(schedules) != 1 or schedules[0].is_suspended:
         raise HTTPException(422, "请从正式刊期选择唯一、非休刊的生效期")
     schedule = schedules[0]
-    existing = db.query(Issue).filter_by(issue_number=issue_number).first()
+    issue_query = db.query(Issue).filter_by(issue_number=issue_number).populate_existing()
+    existing = (issue_query.with_for_update() if lock else issue_query).first()
     if existing and existing.publish_date != schedule.publish_date:
         raise HTTPException(409, "刊期日期与正式刊期表冲突，请先核对刊期")
     if schedule.publish_date <= date.today():
         raise HTTPException(409, "已到出刊日的历史不能修改，请选择后续刊期")
     if not item.coverage_start_date <= schedule.publish_date <= item.coverage_end_date:
         raise HTTPException(422, "生效刊期必须在订阅覆盖期内")
-    finalized = db.query(Issue.id).filter(Issue.issue_number >= issue_number,
-        Issue.publish_date <= item.coverage_end_date, Issue.status != IssueStatus.draft).first()
+    finalized_query = db.query(Issue.id).filter(Issue.issue_number >= issue_number,
+        Issue.publish_date <= item.coverage_end_date, Issue.status != IssueStatus.draft)
+    finalized = (finalized_query.with_for_update() if lock else finalized_query).first()
     if finalized:
         raise HTTPException(409, "影响范围内已有确认报数或导出的刊期，请从尚未确认的后续刊期调整")
     return schedule
 
 
-def _guard_shipping(db: Session, item: OrderItem, target: FulfillmentTarget, issue_number: int) -> None:
+def _guard_shipping(db: Session, item: OrderItem, target: FulfillmentTarget, issue_number: int, lock: bool = False) -> None:
     same_reader = (_sql_normalize(ShippingDetail.name) == normalize(target.recipient_name)) & (
         _sql_normalize(ShippingDetail.address) == normalize(target.recipient_address))
-    row = db.query(ShippingDetail.id).filter(ShippingDetail.issue_number >= issue_number,
+    query = db.query(ShippingDetail.id).filter(ShippingDetail.issue_number >= issue_number,
         or_(ShippingDetail.fulfillment_target_id == target.id,
             (ShippingDetail.order_item_id == item.id) & same_reader,
-            ShippingDetail.order_id.is_(None) & same_reader)).first()
+            ShippingDetail.order_id.is_(None) & same_reader))
+    row = (query.with_for_update() if lock else query).first()
     if row:
         raise HTTPException(409, f"生效范围已有发货计划或实发记录 #{row.id}，请先在发货页面核对处理，再重新预览")
 
@@ -152,7 +158,7 @@ def preview(db: Session, source_id: int, data: SourceDeliveryIn, lock: bool = Fa
         raise HTTPException(409, "更正应从当前安排之后的刊期生效；尚未执行的安排可使用撤回")
     if target.effective_until_issue is not None and data.effective_from_issue > target.effective_until_issue:
         raise HTTPException(409, "生效期超出当前收件目标范围")
-    _guard_shipping(db, item, target, data.effective_from_issue)
+    _guard_shipping(db, item, target, data.effective_from_issue, lock)
     postal = _postal_candidates(db, item, target, schedule.publish_date, lock)
     selected = set(data.postal_delivery_ids)
     required = {row.id for row in postal if row.fulfillment_target_id == target.id}
@@ -243,25 +249,27 @@ def apply(db: Session, source_id: int, data: SourceDeliveryIn, operator_id: int 
 
 def undo(db: Session, source_id: int, data: SourceDeliveryUndoIn, operator_id: int | None, *, apply: bool = False) -> dict:
     source = get_source(db, source_id, data.version, lock=apply)
-    change = db.query(OrderSourceDeliveryChange).filter_by(id=data.change_id, source_id=source_id).first()
+    def current(query):
+        return (query.with_for_update() if apply else query).populate_existing()
+    change = current(db.query(OrderSourceDeliveryChange).filter_by(id=data.change_id, source_id=source_id)).first()
     if change is None or change.status != "applied":
         raise HTTPException(409, "该转投已撤回或不存在")
-    link = db.query(OrderSourceLink).filter_by(id=change.link_id, active=1).first()
+    link = current(db.query(OrderSourceLink).filter_by(id=change.link_id, active=1)).first()
     if not link or link.target_id != change.to_target_id:
         raise HTTPException(409, "该关联已有后续更正，不能直接撤回旧安排")
-    order = db.query(Order).filter_by(id=link.order_id).with_for_update().one()
-    item = db.get(OrderItem, link.order_item_id)
-    new = db.get(FulfillmentTarget, change.to_target_id)
-    old = db.get(FulfillmentTarget, change.from_target_id)
+    order = current(db.query(Order).filter_by(id=link.order_id)).one()
+    item = current(db.query(OrderItem).filter_by(id=link.order_item_id)).one()
+    new = current(db.query(FulfillmentTarget).filter_by(id=change.to_target_id)).one()
+    old = current(db.query(FulfillmentTarget).filter_by(id=change.from_target_id)).one()
     _schedule(db, item, change.effective_from_issue, apply)
-    _guard_shipping(db, item, new, change.effective_from_issue)
+    _guard_shipping(db, item, new, change.effective_from_issue, apply)
     if not data.reason.strip():
         raise HTTPException(422, "请填写撤回原因")
     if (target_version(order, item, new) != change.previous_state["after_target"] or new.replaced_by_target_id
             or target_version(order, item, old) != change.previous_state["after_old_target"]):
         raise HTTPException(409, "转投后的订阅或目标已修改，请从后续刊期更正")
-    postal = db.query(PostalDelivery).filter(PostalDelivery.id.in_(
-        [row["id"] for row in change.previous_state["after_postal"]])).all()
+    postal = current(db.query(PostalDelivery).filter(PostalDelivery.id.in_(
+        [row["id"] for row in change.previous_state["after_postal"]]))).all()
     current = json.loads(json.dumps([_postal_state(row) for row in postal], default=str))
     if current != change.previous_state["after_postal"]:
         raise HTTPException(409, "邮局记录已更新，请核对后从后续刊期更正")
