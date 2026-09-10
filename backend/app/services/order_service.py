@@ -796,6 +796,10 @@ def delete_order(
     """
     from app.services.operation_log_service import record_operation
 
+    from app.models.order_source import OrderSourceLink
+    if db.query(OrderSourceLink.id).filter(OrderSourceLink.order_id == order_id).first():
+        raise HTTPException(409, "订单存在原始交易或关联历史，需保留记录；如需停发请使用作废")
+
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
         raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")

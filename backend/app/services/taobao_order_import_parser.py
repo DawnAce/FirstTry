@@ -186,7 +186,7 @@ def parse_taobao_orders(file_bytes: bytes) -> List[ParsedOrder]:
             return row[col] if col is not None and col < len(row) else None
 
         orders: List[ParsedOrder] = []
-        for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        for row_no, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), header_row + 1):
             external = cell(row, "external_order_no")
             if external is None or str(external).strip() == "":
                 continue  # blank / trailing row
@@ -219,6 +219,9 @@ def parse_taobao_orders(file_bytes: bytes) -> List[ParsedOrder]:
                     recipient_address=str(cell(row, "address") or "").strip(),  # masked (hint)
                     recipient_postal_code=None,
                     notes=note,
+                    source_sheet=ws.title,
+                    source_row=row_no,
+                    raw_cells={key: str(cell(row, key)) if cell(row, key) is not None else "" for key in index},
                     product_lines=_build_product_lines(
                         cell(row, "product"),
                         cell(row, "sku"),

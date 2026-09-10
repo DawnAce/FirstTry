@@ -552,6 +552,7 @@ export default function OrderList() {
         title="订单管理"
         description="统一查看订单、履约、收款与售后状态"
         actions={<Space>
+          <Button onClick={() => navigate('/orders/sources')}>来源交易</Button>
           <Button
             icon={<ReloadOutlined />}
             onClick={() => ordersQuery.refetch()}

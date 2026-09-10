@@ -2339,3 +2339,7 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 - [ ] 历史数据对比
 - [ ] 导入 Excel 数据
 - [ ] 操作日志记录
+
+### 订单原始交易（2026-09-10）
+
+迁移 `a7c9e1f3b5d8` 新增 `order_sources`、`order_source_versions`、`order_source_links`、`order_source_events`。revision 对应原件版本，lock_version 控制编辑冲突。`GET /api/order-sources` 支持 search/pending/order_id/skip/limit；`GET /api/order-sources/{id}` 返回原件及版本。导入新增 retain/source_update 决策，通过 confirmed_source_updates 逐笔确认变化；订单与来源同事务写入，成功才消费会话。提交保留旧返回字段，增加 source_ids/retained_sources。

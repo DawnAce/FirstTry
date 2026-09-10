@@ -114,6 +114,7 @@ import {
   targetStatusLabel,
 } from './orderUtils';
 import './OrderManagement.css';
+import OrderSources from './OrderSources';
 
 const { Text } = Typography;
 
@@ -469,6 +470,7 @@ export default function OrderDetail() {
             defaultActiveKey="items"
             tabBarGutter={10}
             items={[
+              { key: 'sources', label: '来源交易', children: <OrderSources orderId={order.id} /> },
               {
                 key: 'items',
                 label: <DetailTabLabel icon={<InboxOutlined />} label="订单内容" />,

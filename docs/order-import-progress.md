@@ -216,3 +216,7 @@
 - `GET /api/analytics/issues?publication&date_from&date_to`（需鉴权）→ 按期统计（刊物/期次/销量/销售额/行数，单期口径）
 - `GET /api/analytics/bs-circulation?year=`（需鉴权）→ 商学院按期发行量（单期 + 覆盖该期的订阅，含合刊去重）
 - `GET/POST/PUT /api/products`、`DELETE /api/products/{id}`（硬删除）、`POST /api/products/{id}/deactivate`（软停用）→ 商品库管理
+
+## 2026-09-10：来源交易留存
+
+新增独立来源及不可变原件版本，纯运费、未能建单的退款交易可留存。重导变化逐笔确认、失败保留预览；来源台账检索历史原文。需执行迁移 `a7c9e1f3b5d8`。完整清单见 [订单来源交易](order-source-transactions.md)。

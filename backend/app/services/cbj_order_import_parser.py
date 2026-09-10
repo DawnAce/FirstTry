@@ -68,6 +68,9 @@ class ParsedOrder:
     recipient_postal_code: Optional[str]
     notes: str
     product_lines: List[ProductLine] = field(default_factory=list)
+    source_sheet: str = ""
+    source_row: Optional[int] = None
+    raw_cells: dict = field(default_factory=dict)
 
 
 def _dec(value) -> Decimal:
@@ -202,7 +205,7 @@ def parse_cbj_orders(file_bytes: bytes) -> List[ParsedOrder]:
         return row[col] if col is not None and col < len(row) else None
 
     orders: List[ParsedOrder] = []
-    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+    for row_no, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), header_row + 1):
         external = cell(row, "external_order_no")
         if external is None or str(external).strip() == "":
             continue  # blank / trailing row
@@ -225,6 +228,9 @@ def parse_cbj_orders(file_bytes: bytes) -> List[ParsedOrder]:
                 recipient_postal_code=postal,
                 notes=str(cell(row, "notes") or "").strip(),
                 product_lines=parse_product_field(cell(row, "product")),
+                source_sheet=ws.title,
+                source_row=row_no,
+                raw_cells={key: str(cell(row, key)) if cell(row, key) is not None else "" for key in index},
             )
         )
     return orders

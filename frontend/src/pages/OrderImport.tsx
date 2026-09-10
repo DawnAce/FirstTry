@@ -6,6 +6,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   DatePicker,
   Drawer,
   Form,
@@ -42,6 +43,8 @@ type PreviewFilter = 'all' | ImportDecision;
 const PREVIEW_FILTERS = [
   { value: 'all', label: '全部', color: 'primary' },
   { value: 'unresolved', label: '待确认', color: 'danger' },
+  { value: 'retain', label: '留存', color: 'cyan' },
+  { value: 'source_update', label: '来源更新', color: 'orange' },
   { value: 'duplicate', label: '重复', color: 'blue' },
   { value: 'import', label: '导入', color: 'green' },
   { value: 'skip_status', label: '跳过', color: 'default' },
@@ -52,6 +55,8 @@ const DECISION_META: Record<ImportDecision, { label: string; color: string }> = 
   skip_status: { label: '⏭ 跳过', color: 'default' },
   duplicate: { label: '♻ 重复', color: 'blue' },
   unresolved: { label: '⚠ 待确认', color: 'red' },
+  retain: { label: '留存待处理', color: 'cyan' },
+  source_update: { label: '来源更新待核对', color: 'orange' },
 };
 
 /** Smart defaults for a quick-add product from its name (fewer fields to fill). */
@@ -119,6 +124,7 @@ export default function OrderImport() {
   const [giftPublication, setGiftPublication] = useState<string | undefined>(undefined);
   const [giftNote, setGiftNote] = useState('');
   const [preview, setPreview] = useState<ImportPreviewOut | null>(null);
+  const [confirmedSourceUpdates, setConfirmedSourceUpdates] = useState<string[]>([]);
   const [previewFilter, setPreviewFilter] = useState<PreviewFilter>('all');
   const [previewPage, setPreviewPage] = useState(1);
   const [previewPageSize, setPreviewPageSize] = useState(50);
@@ -149,6 +155,7 @@ export default function OrderImport() {
     },
     onSuccess: (res) => {
       setPreview(res.data);
+      setConfirmedSourceUpdates([]);
       setPreviewPage(1);
       setHasCoverageEdits(false);
       setCoverageOpen(false);
@@ -167,10 +174,10 @@ export default function OrderImport() {
       for (const [ext, label] of Object.entries(labelOverrides)) {
         if (isValidIssueLabel(label)) validLabels[ext] = label;
       }
-      return commitOrderImport(preview!.session_id, issueOverrides, validLabels);
+      return commitOrderImport(preview!.session_id, issueOverrides, validLabels, confirmedSourceUpdates);
     },
     onSuccess: (res) => {
-      message.success(`成功导入 ${res.data.created} 单（跳过重复 ${res.data.skipped_duplicates}）`);
+      message.success(`成功导入 ${res.data.created} 单，另留存 ${res.data.retained_sources ?? 0} 笔交易（跳过重复 ${res.data.skipped_duplicates}）`);
       setImportedOrderIds(res.data.order_ids);
       void queryClient.invalidateQueries();
       setPreview(null);
@@ -472,11 +479,11 @@ export default function OrderImport() {
 
           <Card
             size="small"
-            title="③ 预览（待确认商品可关联或新增；缺期的单期明细可各自补期号 / 期次，选填、留空也能导入）"
+            title="③ 预览（商品关联、订期补录及原始交易留存）"
             extra={
               isAdmin ? (
-                <Space><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
-                  确认导入 {counts.import ?? 0} 单
+                <Space><Button href="/orders/sources">来源交易</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
+                  确认导入 {counts.import ?? 0} 单{counts.retain ? `，留存 ${counts.retain} 笔` : ''}{counts.source_update ? `，更新 ${counts.source_update} 笔来源` : ''}
                 </Button></Space>
               ) : (
                 <Text type="secondary">确认导入需管理员权限</Text>
@@ -498,6 +505,8 @@ export default function OrderImport() {
               <Text type="secondary" role="status">当前显示 {visibleRows.length} 单 / 全部 {preview.rows.length} 单</Text>
             </Space>
             <div style={{ marginBottom: 12 }}><Text type="secondary">点击分类可优先核对待确认或重复订单；确认导入仍处理本批全部 {counts.import ?? 0} 单可导入订单。</Text></div>
+            {!!(counts.retain || counts.source_update) && <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              title="留存交易不会生成订阅或发货。来源更新需点开逐笔核对；保存后到“来源交易”继续处理。" />}
             <Table<ImportPreviewRow>
               rowKey="external_order_no"
               columns={columns}
@@ -577,7 +586,22 @@ export default function OrderImport() {
                 ))}
               </Card>
             )}
-            <Text type="secondary" style={{ fontSize: 12 }}>导入后如需改起止日期/状态等，可到「订单管理 → 订单列表」对应订单详情页调整。</Text>
+            {detailRow.decision === 'import' && <Text type="secondary" style={{ fontSize: 12 }}>导入后如需改起止日期/状态等，可到「订单管理 → 订单列表」对应订单详情页调整。</Text>}
+            {detailRow.source_snapshot && <div style={{ marginTop: 16 }}>
+              <Text strong>原始来源</Text>
+              <p>{String(detailRow.source_snapshot.filename ?? '')} · {String(detailRow.source_snapshot.source_sheet ?? '')} 第 {String(detailRow.source_snapshot.source_row ?? '')} 行</p>
+              <Table size="small" pagination={false} rowKey="field" columns={[
+                { title: '字段', dataIndex: 'field' },
+                ...(detailRow.previous_snapshot ? [{ title: '已留存', dataIndex: 'before' }] : []),
+                { title: '本次原始值', dataIndex: 'after' },
+              ]} dataSource={Object.entries({ status_raw: '状态', paid_amount: '付款金额', recipient_name: '姓名', recipient_phone: '电话', recipient_address: '地址', notes: '备注', order_date: '下单日期', product_lines: '商品原文' }).map(([key, field]) => ({
+                field, before: JSON.stringify(detailRow.previous_snapshot?.[key] ?? ''), after: JSON.stringify(detailRow.source_snapshot?.[key] ?? ''),
+              }))} />
+              {detailRow.decision === 'source_update' && <Checkbox checked={confirmedSourceUpdates.includes(detailRow.external_order_no)}
+                onChange={e => setConfirmedSourceUpdates(prev => e.target.checked ? [...prev, detailRow.external_order_no] : prev.filter(no => no !== detailRow.external_order_no))}>
+                我已核对原始变化，确认保存新版本（不自动改变主订阅的财务或投递）
+              </Checkbox>}
+            </div>}
             </div>
           </div>
         )}
