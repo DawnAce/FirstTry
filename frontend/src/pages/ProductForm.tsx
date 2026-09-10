@@ -117,7 +117,7 @@ export function ProductFormFields({ editing }: { editing: boolean }) {
       <Form.Item name="code" label="商品编码（唯一）" tooltip="结构化编码，如 CBJ-1Y-POST-WK / BS-1Y-ZTO / BUNDLE-CBJ-BS-1Y。编码不参与导入匹配，可放心规范。" rules={[{ required: true, message: '请填写编码' }]}>
         <Input placeholder="如：CBJ-1Y-POST-WK" disabled={editing} />
       </Form.Item>
-      <Form.Item name="aliases" label="别名（导入匹配用）" tooltip="电商平台导出的原始商品名 / SKU 片段，导入靠这些匹配。如「618」「全年-邮局」「《中国经营报》全年订阅（邮局周投）」">
+      <Form.Item name="aliases" label="别名（导入匹配用）" tooltip="填写电商导出的完整商品名称，按回车追加。同款促销可加别名，例如「《中国经营报》全年订阅-开学季促销」；避免只填「618」等容易误匹配的片段。">
         <Select mode="tags" placeholder="回车添加" />
       </Form.Item>
 

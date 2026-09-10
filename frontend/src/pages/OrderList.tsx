@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import OrderCoverageDrawer from './OrderCoverageDrawer';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -182,6 +183,7 @@ export default function OrderList() {
   const [page, setPage] = useState(1);
   const [sorter, setSorter] = useState<{ field?: SortField; order?: 'asc' | 'desc' }>({});
   const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
+  const [coverageScope, setCoverageScope] = useState<{ orderIds?: number[] } | null>(null);
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidingRow, setVoidingRow] = useState<OrderListRow | null>(null);
   const [voidReason, setVoidReason] = useState('');
@@ -557,6 +559,7 @@ export default function OrderList() {
           >
             刷新
           </Button>
+          {isAdmin && <Button onClick={() => setCoverageScope({})}>待补订期</Button>}
           {isAdmin && (
             <Button icon={<DownloadOutlined />} onClick={handleExport} loading={exporting}>
               导出
@@ -582,6 +585,7 @@ export default function OrderList() {
       />
 
       <div className="order-list-rules"><EcommerceRules /></div>
+      {coverageScope && <OrderCoverageDrawer orderIds={coverageScope.orderIds} onClose={() => setCoverageScope(null)} />}
 
       <section className="order-list-workspace">
         <div className="order-list-views" role="tablist" aria-label="订单状态视图">
@@ -706,6 +710,7 @@ export default function OrderList() {
       {isAdmin && selectedKeys.length > 0 && (
         <div className="order-list-bulk-bar">
           <span>已选择 <strong>{selectedKeys.length}</strong> 笔订单</span>
+          <Button size="small" disabled={selectedKeys.length > 500} onClick={() => setCoverageScope({ orderIds: selectedKeys })}>批量补订期</Button>
           <Button
             size="small"
             icon={<CheckOutlined />}

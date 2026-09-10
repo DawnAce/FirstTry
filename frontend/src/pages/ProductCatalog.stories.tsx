@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
 import { expect, within, waitFor } from 'storybook/test'
+import { withRouter, reactRouterParameters } from 'storybook-addon-remix-react-router'
 import ProductCatalog from './ProductCatalog'
 
 // listProducts 返回 Product[]：一个启用的单品 + 一个停用的套餐（带 components）。
@@ -13,8 +14,11 @@ const meta = {
   title: '页面/营销与交易/商品管理',
   component: ProductCatalog,
   tags: ['ai-generated'],
+  decorators: [withRouter],
   parameters: {
     layout: 'fullscreen',
+    reactRouter: reactRouterParameters({ routing: { path: '/products' } }),
+    auth: { user: { id: 1, username: 'synthetic-admin', role: 'admin' }, isAdmin: true, canMutate: true, isLoggedIn: true },
     docs: {
       description: {
         component: '商品库：单个 GET /api/products 驱动表格，含创建/编辑 Modal。演示 有数据 / 空 / 打开新增弹窗。',

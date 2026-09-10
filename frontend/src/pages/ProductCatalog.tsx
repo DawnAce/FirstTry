@@ -238,7 +238,7 @@ export default function ProductCatalog() {
 
       <Card size="small" style={{ marginBottom: 12 }}>
         <Text type="secondary">
-          商品库把电商的商品名「翻译」成订单信息。新出一个促销 = 加一行，不用改代码；导入时系统照此自动识别（识别不到的会进「待确认」）。
+          商品库把电商的商品名对应到履约信息。同款促销的新名称追加到已有商品的别名；刊物、期限或投递规则不同时再新增商品。导入金额取订单实际成交价。
         </Text>
         <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.9 }}>
           <Text strong>📋 命名规则</Text>

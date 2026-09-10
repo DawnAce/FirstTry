@@ -59,7 +59,7 @@ async def preview(
         gift_note=(gift_note or "").strip() or None,
     )
     try:
-        out, _ = preview_import(db, content, settings)
+        out, _ = preview_import(db, content, settings, owner_id=_user.id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return out
