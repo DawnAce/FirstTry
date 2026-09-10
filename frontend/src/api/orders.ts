@@ -205,9 +205,12 @@ export interface FulfillmentTargetOut {
   recipient_postal_code: string | null;
   quantity: number;
   shipping_channel: ShippingChannel;
+  distribution_unit_id?: number | null;
   effective_from_issue: number | null;
   effective_until_issue: number | null;
   status: TargetStatus;
+  replaced_by_target_id?: number | null;
+  source_delivery_managed?: boolean;
   notes: string | null;
 }
 

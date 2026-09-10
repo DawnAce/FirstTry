@@ -17,6 +17,7 @@ from app.models import (
     PostalDelivery,
 )
 from app.models.fulfillment_target import TargetStatus
+from app.services.order_delivery_progress import postal_target_clause
 from app.models.order import OrderStatus
 from app.models.order_item import (
     DeliveryMethod,
@@ -76,6 +77,7 @@ def _latest_targets_for_item(db: Session, item_id: int) -> list[FulfillmentTarge
             FulfillmentAllocation.order_item_id == item_id,
             FulfillmentAllocation.version_no == latest_version,
             FulfillmentTarget.status == TargetStatus.active,
+            postal_target_clause(),
         )
         .order_by(FulfillmentTarget.id)
         .all()
@@ -211,7 +213,7 @@ def diagnose_exact_delivery_links(
                     latest.c.version_no == FulfillmentAllocation.version_no,
                 ),
             )
-            .filter(FulfillmentTarget.status == TargetStatus.active)
+            .filter(FulfillmentTarget.status == TargetStatus.active, postal_target_clause())
             .order_by(FulfillmentTarget.id)
             .all()
         )
@@ -384,6 +386,7 @@ def _renewal_candidates(
             OrderItem.coverage_start_date <= month_end,
             OrderItem.coverage_end_date >= month_start,
             FulfillmentTarget.status == TargetStatus.active,
+            postal_target_clause(),
         )
         .order_by(Order.id, OrderItem.id, FulfillmentTarget.id)
         .all()
@@ -456,6 +459,25 @@ def list_renewals(db: Session, target_month: str) -> dict:
             .all()
         )
 
+    from app.models import PublicationSchedule
+    from datetime import timedelta
+    schedule = db.query(PublicationSchedule).filter(PublicationSchedule.issue_number.isnot(None)).order_by(PublicationSchedule.issue_number).all()
+    windows = {}
+    for _, item, target in candidates:
+        start, end = _proposed_segment(item, month_start)
+        if target.effective_from_issue is not None:
+            first = next((row for row in schedule if row.issue_number >= target.effective_from_issue), None)
+            if first is None:
+                continue
+            start = max(start, first.publish_date)
+        if target.effective_until_issue is not None:
+            following = next((row for row in schedule if row.issue_number > target.effective_until_issue), None)
+            if following is None:
+                continue
+            end = min(end, following.publish_date - timedelta(days=1))
+        if start <= end and start <= month_end and end >= month_start:
+            windows[target.id] = (start, end)
+    candidates = [row for row in candidates if row[2].id in windows]
     rows = []
     covered = 0
     needs_link = 0
@@ -495,7 +517,7 @@ def list_renewals(db: Session, target_month: str) -> dict:
             delivery for delivery in matches
             if delivery.coverage_end_date and delivery.coverage_end_date < month_start
         ), None)
-        segment_start, segment_end = _proposed_segment(item, month_start)
+        segment_start, segment_end = windows[target.id]
         rows.append({
             "status": status,
             "order_id": order.id,

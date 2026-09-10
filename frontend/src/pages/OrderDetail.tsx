@@ -115,8 +115,14 @@ import {
 } from './orderUtils';
 import './OrderManagement.css';
 import OrderSources from './OrderSources';
+import SourceFinancialSummary from './SourceFinancialSummary';
 
 const { Text } = Typography;
+const isSourceDeliveryTarget = (target: FulfillmentTargetOut) => !!target.source_delivery_managed;
+const targetDeliveryLabel = (item: OrderItemOut, target: FulfillmentTargetOut) => isSourceDeliveryTarget(target)
+  ? target.shipping_channel === 'post_office' ? '邮局投递' : '中通快递' : deliveryMethodLabel(item.delivery_method);
+const onlyPostal = (items: OrderItemOut[]) => items.length > 0 && items.every(item => item.delivery_method === 'post_office'
+  && !item.allocations.some(allocation => allocation.targets.some(target => isSourceDeliveryTarget(target) && target.status === 'active' && target.shipping_channel === 'zto_outsource')));
 
 export default function OrderDetail() {
   const { isAdmin, canMutate } = useAuth();
@@ -463,6 +469,7 @@ export default function OrderDetail() {
         </div>
       </section>
 
+      <SourceFinancialSummary orderId={orderId} />
       <div className="order-detail-main-grid">
         <section className="order-detail-primary">
           <Tabs
@@ -889,7 +896,7 @@ function computeOrderProgress(items: OrderItemOut[]) {
   );
   const synced = items.reduce((sum, item) => sum + item.progress.synced_count, 0);
   const fulfilled = items.reduce((sum, item) => sum + item.progress.shipped_count, 0);
-  const postalOnly = items.length > 0 && items.every((item) => item.delivery_method === 'post_office');
+  const postalOnly = onlyPostal(items);
   const deliveryLabels = [...new Set(items.map((item) => deliveryMethodLabel(item.delivery_method)).filter((label) => label !== '-'))];
   return {
     expected,
@@ -1694,8 +1701,8 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
                         <p>{target.recipient_address || '未记录投递地址'}</p>
                       </div>
                       <div className="order-detail-delivery-config">
-                        <span>{item.delivery_method === 'post_office' ? <MailOutlined /> : <TruckOutlined />}</span>
-                        <div><small>投递方式</small><strong>{deliveryMethodLabel(item.delivery_method)}</strong></div>
+                        <span>{targetDeliveryLabel(item, target) === '邮局投递' ? <MailOutlined /> : <TruckOutlined />}</span>
+                        <div><small>投递方式</small><strong>{targetDeliveryLabel(item, target)}</strong><small>第 {target.effective_from_issue ?? '首'} 期至 {target.effective_until_issue ?? '订阅结束'}</small></div>
                         <i />
                         <div><small>目标份数</small><strong>{target.quantity} 份</strong></div>
                       </div>
@@ -1829,7 +1836,7 @@ function OrderMakeupCards({ makeups }: { makeups: ComplaintMakeupTask[] }) {
 
 function ShippingSyncTab({ orderId, items, makeups, canMutate }: { orderId: number; items: OrderItemOut[]; makeups: ComplaintMakeupTask[]; canMutate: boolean }) {
   const queryClient = useQueryClient();
-  const postalOnly = items.length > 0 && items.every((item) => item.delivery_method === 'post_office');
+  const postalOnly = onlyPostal(items);
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number | null>(null);
   const selectedIssueNumberRef = useRef<number | null>(null);
   const [preview, setPreview] = useState<OrderShippingSyncPreview | null>(null);

@@ -59,6 +59,14 @@ from app.services import order_service
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def without_source_delivery_history(monkeypatch):
+    # 本文件用假 Session 验证既有 CRUD/单一投递算法；转投查询在真实 SQLite 集成测试覆盖。
+    from app.services import order_delivery_progress
+    monkeypatch.setattr(order_delivery_progress, "mixed_progresses", lambda db, items, as_of: {})
+    monkeypatch.setattr(order_delivery_progress, "has_delivery_history", lambda db, item_ids: False)
+
+
 class _FakeQuery:
     """A chainable query stub that returns a preset value on terminal calls."""
 
@@ -66,6 +74,9 @@ class _FakeQuery:
         self._target = target          # row to return from .first()
         self._count_value = count_value
         self._all_value = all_value     # rows to return from .all()
+
+    def with_for_update(self):
+        return self
 
     def options(self, *args, **kwargs):
         return self

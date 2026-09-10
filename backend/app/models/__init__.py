@@ -55,7 +55,7 @@ from app.models.fulfillment_target import (
 )
 from app.models.order_event import OrderEvent, OrderEventType
 from app.models.refund import Refund
-from app.models.order_source import OrderSource, OrderSourceVersion, OrderSourceLink, OrderSourceEvent
+from app.models.order_source import OrderSourceDeliveryChange, OrderSource, OrderSourceVersion, OrderSourceLink, OrderSourceEvent
 from app.models.payment import Payment
 from app.models.product import CoverageRule, Product
 from app.models.bs_issue import BsIssue

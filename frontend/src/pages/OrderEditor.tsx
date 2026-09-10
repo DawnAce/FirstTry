@@ -52,6 +52,7 @@ import type {
   BillingType,
   DeliveryMethod,
   FulfillmentType,
+  FulfillmentTargetOut,
   OrderCreatePayload,
   OrderItemIn,
   OrderItemUpdate,
@@ -178,6 +179,7 @@ const ACTIVE_EDITABLE_FIELDS = new Set<keyof OrderFormValues>([
 ]);
 
 export interface TargetFormValues {
+  delivery_snapshot?: Pick<FulfillmentTargetOut, 'shipping_channel' | 'distribution_unit_id' | 'effective_from_issue' | 'effective_until_issue'>;
   recipient_name: string;
   recipient_phone?: string | null;
   recipient_address: string;
@@ -310,7 +312,10 @@ function detailToFormValues(detail: OrderOut): Partial<OrderFormValues> {
         unit_price: Number(it.unit_price),
         notes: it.notes,
         targets:
-          activeAllocation?.targets.map((t) => ({
+          activeAllocation?.targets.filter(t => t.status === 'active' && !t.replaced_by_target_id).map((t) => ({
+            ...(t.source_delivery_managed ? { delivery_snapshot: { shipping_channel: t.shipping_channel,
+              distribution_unit_id: t.distribution_unit_id, effective_from_issue: t.effective_from_issue,
+              effective_until_issue: t.effective_until_issue } } : {}),
             recipient_name: t.recipient_name,
             recipient_phone: t.recipient_phone,
             recipient_address: t.recipient_address,
@@ -353,6 +358,7 @@ function itemToCreatePayload(item: ItemFormValues): OrderItemIn {
     subtotal: Math.round(totalQty * unitPrice * 100) / 100,
     notes: item.notes ?? null,
     targets: item.targets.map((t) => ({
+      ...t.delivery_snapshot,
       recipient_name: t.recipient_name,
       recipient_phone: t.recipient_phone ?? null,
       recipient_address: t.recipient_address,

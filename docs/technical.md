@@ -2347,3 +2347,17 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 ### 来源关联接口
 
 `GET /api/order-sources/{id}/candidates` 推荐最多100个当前有效订阅目标；`POST /{id}/link-preview` 校验金额和目标签名；`PUT /{id}/links` 管理员显式确认（version 乐观锁 + 写事务）。旧关联 active=0 留存。主单搜索使用原件子查询，在分页前去重；source_count 批量聚合，避免逐行查询。全局搜索新增 order_source 类型与命中 source_id。
+
+### 来源费用及转投实现
+
+迁移 `b8d0f2a4c6e9` 新增 `order_source_delivery_changes`，来源增加 `finance_review_required`，关联增加 `refund_amount`。`GET /api/order-sources/financial-summary` 在 SQL 中按运费来源唯一汇总；传 order_id 时只用该主单的有效分配，退款或分配待核时合计为 null。原订阅来源不重复入账，也不自动创建付款、退款流水或发票。
+
+`POST /{id}/refund-preview` 与 `PUT /{id}/refund` 核对累计退款、日期及精确目标分配；单目标自动归全额，多目标须明确金额。全退须等于付款，部分退款介于0与付款之间；正退款需实际日期。重新导入使原核对失效。所有写接口管理员权限并核对 version，失败回滚。
+
+`GET /{id}/delivery-options?link_id` 读取订期内正式未来刊期。`POST /{id}/delivery-preview` 返回生效日、邮局截止、候选邮局记录及 expected_state；`POST /{id}/delivery` 必须提交状态签名和 postal_confirmed，重新核对来源、目标、刊期及邮局/发货范围后锁定来源和父订单，原子写入。
+
+转投在当前 allocation 中保留单目标替换链及前后期号边界，item.delivery_method 保留原商业产品属性。旧 postal 明细可能保留默认 zto 目标值，继续兼容；只有显式转投目标按新渠道决定后续投递。邮局已有记录缩短截止，原值留审计；恢复邮局时新建后续投递段且不重复计订阅金额。中通发货仍走现有同步流程。
+
+转投、更正及发货同步写入共用父订单锁，写入前使用 MySQL 当前读重新读取目标与版本，避免 REPEATABLE READ 的旧快照覆盖其他操作。CI 的临时 MySQL 包含双事务目标变更测试；该测试在本地或非 CI 数据库环境跳过，不连接用户业务库。
+
+`delivery-undo-preview` / `delivery-undo` 只撤回未来、无发货且未被后续修改的安排：新目标 suspended，新增邮局段归档，原记录不删除。普通订单编辑不能覆盖已转投明细的结构；更正走来源入口。有转投的进度批量读取刊期与目标，当期所有有效目标均完成才累计一期，邮局按出刊日、中通按实发；无转投记录继续使用旧口径。邮局待续投限制到目标生效段。

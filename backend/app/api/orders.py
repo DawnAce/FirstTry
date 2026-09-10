@@ -621,6 +621,11 @@ def _build_order_out(db: Session, order) -> OrderOut:
     )
     invoice_summary = finance_service.summarize_order_invoices(order, invoices)
 
+    from app.models.order_source import OrderSourceDeliveryChange, OrderSourceLink
+    changes = db.query(OrderSourceDeliveryChange).join(OrderSourceLink,
+        OrderSourceLink.id == OrderSourceDeliveryChange.link_id).filter(OrderSourceLink.order_id == order.id).all()
+    managed_targets = {change.to_target_id for change in changes} | {
+        change.from_target_id for change in changes if change.status == "applied"}
     progress_by_item = order_service.compute_fulfillment_progresses(db, order)
     item_outs = []
     for item in order.items:
@@ -628,6 +633,9 @@ def _build_order_out(db: Session, order) -> OrderOut:
         allocations = [
             FulfillmentAllocationOut.model_validate(a) for a in item.allocations
         ]
+        for allocation in allocations:
+            for target in allocation.targets:
+                target.source_delivery_managed = target.id in managed_targets
         item_out = OrderItemOut.model_construct(
             id=item.id,
             publication=item.publication,

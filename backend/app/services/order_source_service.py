@@ -86,6 +86,7 @@ def save_import_source(db: Session, record: dict, order: Order | None, operator_
         # 原始状态更新不等于退款流水确认，也不回写订阅履约或财务。
         source.verified_refund_amount = None
         source.verified_refund_date = None
+        source.finance_review_required = source.kind == "shipping_fee"
     else:
         source = OrderSource(platform=snapshot["platform"], store=snapshot["store"],
                              external_order_no=snapshot["external_order_no"], kind=record["kind"],
@@ -97,6 +98,9 @@ def save_import_source(db: Session, record: dict, order: Order | None, operator_
     source.recipient_address = normalize(snapshot["recipient_address"])
     source.paid_amount = Decimal(snapshot["paid_amount"])
     source.commercial_status = snapshot["commercial_status"]
+    status_mapping = map_commercial_status(snapshot["status_raw"])
+    if source.kind == "shipping_fee" and (status_mapping.unknown or source.commercial_status == "pending_payment"):
+        source.finance_review_required = True
     db.flush()
     db.add(OrderSourceVersion(source_id=source.id, revision=source.revision, fingerprint=digest,
                               snapshot=snapshot, search_text=normalize(json.dumps(snapshot, ensure_ascii=False)),
@@ -146,7 +150,7 @@ def target_version(order: Order, item: OrderItem, target: FulfillmentTarget) -> 
              item.delivery_method, item.total_quantity, target.id, target.allocation_id,
              target.status, target.quantity, target.recipient_name, target.recipient_phone,
              target.recipient_address, target.shipping_channel, target.effective_from_issue,
-             target.effective_until_issue, target.updated_at]
+             target.effective_until_issue, target.replaced_by_target_id, target.distribution_unit_id, target.notes, target.updated_at]
     return hashlib.sha256(json.dumps(state, default=str, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -168,7 +172,7 @@ def candidates(db: Session, source_id: int, search: str | None = None) -> dict:
         latest, and_(latest.c.item_id == OrderItem.id, latest.c.version == FulfillmentAllocation.version_no))
     query = query.join(FulfillmentTarget, FulfillmentTarget.allocation_id == FulfillmentAllocation.id).filter(
         OrderItem.fulfillment_type == FulfillmentType.subscription, OrderItem.status == OrderItemStatus.active,
-        FulfillmentTarget.status == TargetStatus.active, Order.status == OrderStatus.active)
+        FulfillmentTarget.status == TargetStatus.active, FulfillmentTarget.replaced_by_target_id.is_(None), Order.status == OrderStatus.active)
     fields = [("姓名", FulfillmentTarget.recipient_name, source.recipient_name),
               ("电话", FulfillmentTarget.recipient_phone, source.recipient_phone),
               ("地址", FulfillmentTarget.recipient_address, source.recipient_address)]
@@ -233,9 +237,10 @@ def validate_links(db: Session, source: OrderSource, data: SourceLinkIn, lock: b
     if source.kind != "shipping_fee":
         raise HTTPException(409, "此入口用于运费关联，原订阅来源不能改为补费")
     active = db.query(OrderSourceLink).filter_by(source_id=source.id, active=1).all()
-    if any(link.delivery_from_issue is not None for link in active):
-        raise HTTPException(409, "关联已用于投递变更，请先完成投递更正核对，不能直接改挂或解除")
     keys = [(a.order_id, a.order_item_id, a.target_id) for a in data.allocations]
+    if any(link.delivery_from_issue is not None for link in active) and set(keys) != {
+            (link.order_id, link.order_item_id, link.target_id) for link in active}:
+        raise HTTPException(409, "关联已用于投递变更，请先撤回未执行安排或更正回邮局；相同目标仍可重新核对分配金额")
     if len(set(keys)) != len(keys):
         raise HTTPException(422, "同一订阅收件目标不能重复分配")
     total = sum((a.amount for a in data.allocations), Decimal("0"))
@@ -258,9 +263,9 @@ def validate_links(db: Session, source: OrderSource, data: SourceLinkIn, lock: b
             raise HTTPException(409, "订单已作废或尚未确认，请重新核对")
         if item.fulfillment_type != FulfillmentType.subscription or item.status != OrderItemStatus.active:
             raise HTTPException(409, "只能关联有效订阅明细")
-        latest = db.query(func.max(FulfillmentAllocation.version_no)).filter_by(order_item_id=item.id).scalar()
-        target_allocation = db.get(FulfillmentAllocation, target.allocation_id)
-        if target.status != TargetStatus.active or target_allocation.version_no != latest:
+        latest_query = db.query(FulfillmentAllocation).filter_by(order_item_id=item.id).order_by(FulfillmentAllocation.version_no.desc())
+        latest = (latest_query.with_for_update() if lock else latest_query).populate_existing().first()
+        if target.status != TargetStatus.active or target.replaced_by_target_id is not None or target.allocation_id != latest.id:
             raise HTTPException(409, "收件目标已经更换，请重新选择")
     return {"can_apply": True, "total_amount": total, "allocations": data.allocations,
             "warnings": ["本次只更新来源归属，不改变订阅份数、价格或投递。"]}
@@ -271,14 +276,23 @@ def link_source(db: Session, source_id: int, data: SourceLinkIn, operator_id: in
     validate_links(db, source, data, lock=True)
     bump_version(db, source, data.version)
     old_links = db.query(OrderSourceLink).filter_by(source_id=source_id, active=1).all()
-    for link in old_links:
-        link.active = 0
-    for allocation in data.allocations:
-        db.add(OrderSourceLink(source_id=source.id, order_id=allocation.order_id,
-            order_item_id=allocation.order_item_id, target_id=allocation.target_id, amount=allocation.amount,
-            active=1, reason=data.reason.strip(), created_by=operator_id))
+    previous_allocations = [{"link_id": link.id, "order_id": link.order_id, "target_id": link.target_id, "amount": str(link.amount), "refund_amount": str(link.refund_amount)} for link in old_links]
+    financial_only = bool(old_links) and {(link.order_id, link.order_item_id, link.target_id) for link in old_links} == {
+        (row.order_id, row.order_item_id, row.target_id) for row in data.allocations}
+    if financial_only:
+        amounts = {row.target_id: row.amount for row in data.allocations}
+        for link in old_links:
+            link.amount = amounts[link.target_id]
+            link.refund_amount = None
+    else:
+        for link in old_links:
+            link.active = 0
+        for allocation in data.allocations:
+            db.add(OrderSourceLink(source_id=source.id, order_id=allocation.order_id,
+                order_item_id=allocation.order_item_id, target_id=allocation.target_id, amount=allocation.amount,
+                active=1, reason=data.reason.strip(), created_by=operator_id))
     source_event(db, source, "linked" if data.allocations else "unlinked",
-        {"previous_link_ids": [link.id for link in old_links], "reason": data.reason.strip(),
+        {"previous_link_ids": [link.id for link in old_links], "previous_allocations": previous_allocations, "reason": data.reason.strip(),
          "allocations": [a.model_dump(mode="json") for a in data.allocations]}, operator_id)
     db.flush()
     return source

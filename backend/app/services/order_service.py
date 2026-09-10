@@ -55,7 +55,7 @@ from app.models import (
     Refund,
     ShippingDetail,
 )
-from app.models.fulfillment_target import ShippingChannel
+from app.models.fulfillment_target import TargetStatus, ShippingChannel
 from app.models.order_item import (
     DeliveryMethod,
     FulfillmentType,
@@ -164,6 +164,15 @@ def _update_existing_item(
     operator_id: Optional[int],
 ) -> None:
     """Update an existing item's fields and create new allocation if targets changed."""
+    from app.services.order_delivery_progress import has_delivery_history
+    protected = has_delivery_history(db, [item.id])
+    if protected:
+        live_targets = [target for allocation in item.allocations if allocation.effective_until_issue is None
+                        for target in allocation.targets if target.status == TargetStatus.active and target.replaced_by_target_id is None]
+        immutable = ("publication", "publication_format", "fulfillment_type", "delivery_method",
+                     "coverage_start_date", "coverage_end_date", "total_quantity")
+        if _targets_differ(live_targets, item_data.targets) or any(getattr(item, field) != getattr(item_data, field) for field in immutable):
+            raise HTTPException(409, "此订阅有转投历史，请在来源交易中撤回未执行安排或从后续刊期更正投递；不能覆盖原履约范围")
     item_diff: dict = {}
     field_map = {
         "publication": item_data.publication,
@@ -195,7 +204,7 @@ def _update_existing_item(
         key=lambda a: a.version_no,
         default=None,
     )
-    current_targets = current_alloc.targets if current_alloc else []
+    current_targets = live_targets if protected else (current_alloc.targets if current_alloc else [])
 
     targets_changed = _targets_differ(current_targets, item_data.targets)
 
@@ -1126,6 +1135,7 @@ def update_order_items(
             .selectinload(FulfillmentAllocation.targets)
         )
         .filter(Order.id == order_id)
+        .with_for_update()
         .first()
     )
 
@@ -1141,6 +1151,10 @@ def update_order_items(
         item.id: item for item in order.items if item.status == OrderItemStatus.active
     }
     submitted_ids = {it.id for it in data.items if it.id is not None}
+    from app.services.order_delivery_progress import has_delivery_history
+    removed = set(existing_items) - submitted_ids
+    if removed and has_delivery_history(db, list(removed)):
+        raise HTTPException(409, "含转投历史的订阅不能直接移除，请使用订单退款或停发流程")
 
     unknown_ids = submitted_ids - set(existing_items.keys())
     if unknown_ids:
@@ -1252,7 +1266,11 @@ def compute_fulfillment_progress(
     drift = None
     if expected_at_creation is not None and current_expected is not None:
         drift = current_expected - expected_at_creation
-    if order_item.delivery_method == DeliveryMethod.post_office:
+    from app.services.order_delivery_progress import mixed_progresses
+    mixed = mixed_progresses(db, [order_item], as_of or date.today())
+    if order_item.id in mixed:
+        synced_count, shipped_count = mixed[order_item.id]
+    elif order_item.delivery_method == DeliveryMethod.post_office:
         synced_count = 0
         shipped_count = _count_published_postal_issues(
             db,
@@ -1327,12 +1345,14 @@ class _OrderListContext:
         bs_issues: list[BsIssue],
         shipping_counts: dict[int, tuple[int, int]],
         source_counts: dict[int, int] | None = None,
+        mixed_progress: dict[int, tuple[int, int]] | None = None,
     ):
         self.schedule_issue_dates = schedule_issue_dates
         self.schedule_all_dates = schedule_all_dates
         self.bs_issues = bs_issues
         self.shipping_counts = shipping_counts
         self.source_counts = source_counts or {}
+        self.mixed_progress = mixed_progress or {}
 
 
 def _build_order_list_context(db: Session, orders: list[Order]) -> _OrderListContext:
@@ -1400,6 +1420,7 @@ def _build_order_list_context(db: Session, orders: list[Order]) -> _OrderListCon
         }
 
     from app.models.order_source import OrderSourceLink
+    from app.services.order_delivery_progress import mixed_progresses
     source_counts = dict(db.query(OrderSourceLink.order_id, func.count(func.distinct(OrderSourceLink.source_id))).filter(
         OrderSourceLink.active == 1, OrderSourceLink.order_id.in_([o.id for o in orders])).group_by(OrderSourceLink.order_id).all())
     return _OrderListContext(
@@ -1408,6 +1429,7 @@ def _build_order_list_context(db: Session, orders: list[Order]) -> _OrderListCon
         bs_issues=bs_issues,
         shipping_counts=shipping_counts,
         source_counts=source_counts,
+        mixed_progress=mixed_progresses(db, items, date.today()),
     )
 
 
@@ -1480,7 +1502,9 @@ def compute_fulfillment_progresses(
         drift = None
         if item.expected_issues_at_creation is not None and current_expected is not None:
             drift = current_expected - item.expected_issues_at_creation
-        if item.delivery_method == DeliveryMethod.post_office:
+        if item.id in context.mixed_progress:
+            synced_count, shipped_count = context.mixed_progress[item.id]
+        elif item.delivery_method == DeliveryMethod.post_office:
             synced_count = 0
             shipped_count = _published_postal_count_from_context(
                 item, context, as_of=date.today()
@@ -1532,7 +1556,9 @@ def _build_list_row(
             fulfilled_total += progress.shipped_count
         else:
             current = _expected_issues_from_context(item, context)
-            if item.delivery_method == DeliveryMethod.post_office:
+            if item.id in context.mixed_progress:
+                fulfilled_total += context.mixed_progress[item.id][1]
+            elif item.delivery_method == DeliveryMethod.post_office:
                 fulfilled_total += _published_postal_count_from_context(
                     item, context, as_of=date.today()
                 )
