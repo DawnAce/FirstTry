@@ -373,7 +373,7 @@ export default function OrderImport() {
 
   return (
     <div>
-      <PageHeader title="电商订单导入" description="预览、校验并导入各平台订单" />
+      <PageHeader title="电商订单导入" description="预览、校验并导入各平台订单" actions={<Button href="/orders/sources">处理已留存的来源交易</Button>} />
       {modalContext}
       {aliasName && <LinkProductAliasModal alias={aliasName} orderCount={unresolvedSummary.find(row => row.name === aliasName)?.count ?? 0}
         onClose={() => setAliasName(null)} onCreate={() => { openQuickAdd(aliasName); setAliasName(null); }}
@@ -594,7 +594,7 @@ export default function OrderImport() {
                 { title: '字段', dataIndex: 'field' },
                 ...(detailRow.previous_snapshot ? [{ title: '已留存', dataIndex: 'before' }] : []),
                 { title: '本次原始值', dataIndex: 'after' },
-              ]} dataSource={Object.entries({ status_raw: '状态', paid_amount: '付款金额', recipient_name: '姓名', recipient_phone: '电话', recipient_address: '地址', notes: '备注', order_date: '下单日期', product_lines: '商品原文' }).map(([key, field]) => ({
+              ]} dataSource={Object.entries({ status_raw: '状态', paid_amount: '付款金额', recipient_name: '姓名', recipient_phone: '电话', recipient_address: '地址', notes: '备注', order_date: '下单日期', product_lines: '商品原文', payment_time: '支付时间', original_amount: '原价', recipient_postal_code: '邮编', payment_method: '支付方式', invoice: '开票信息', raw_cells: '全部原始字段' }).map(([key, field]) => ({
                 field, before: JSON.stringify(detailRow.previous_snapshot?.[key] ?? ''), after: JSON.stringify(detailRow.source_snapshot?.[key] ?? ''),
               }))} />
               {detailRow.decision === 'source_update' && <Checkbox checked={confirmedSourceUpdates.includes(detailRow.external_order_no)}

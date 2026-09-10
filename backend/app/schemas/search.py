@@ -6,12 +6,13 @@ from pydantic import BaseModel
 
 
 class SearchHit(BaseModel):
-    type: Literal["order", "recipient", "product", "issue"]
+    type: Literal["order", "recipient", "product", "issue", "order_source"]
     id: int
     title: str
     subtitle: Optional[str] = None
     # 精确定位串（外部单号 / 商品编码 / 期号 / 收报人姓名），前端据此跳转/预填。
     ref: Optional[str] = None
+    source_id: Optional[int] = None
 
 
 class GlobalSearchOut(BaseModel):

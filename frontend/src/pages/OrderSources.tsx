@@ -5,7 +5,10 @@ import { Alert, Button, Card, Collapse, Descriptions, Drawer, Empty, Input, Spac
 import { getOrderSource, listOrderSources, sourceQueryKeys } from '../api/orderSources';
 import type { OrderSource, SourceSnapshot } from '../api/orderSources';
 import { PageHeader } from '../components/UiPrimitives';
+import { useAuth } from '../contexts/AuthContext';
+import OrderSourceLinkEditor from './OrderSourceLinkEditor';
 
+const normalizeSearch = (value: string) => value.replace(/[\s，,。；;：:（）()-]+/g, '').toLocaleLowerCase();
 const kindLabel = (kind: string) => ({ shipping_fee: '运费交易', subscription: '订阅来源', record: '留存记录' }[kind] ?? kind);
 
 function Snapshot({ value }: { value: SourceSnapshot }) {
@@ -28,6 +31,8 @@ function Snapshot({ value }: { value: SourceSnapshot }) {
 }
 
 export default function OrderSources({ orderId }: { orderId?: number }) {
+  const { isAdmin } = useAuth();
+  const [linking, setLinking] = useState(false);
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [pending, setPending] = useState(false);
@@ -55,7 +60,7 @@ export default function OrderSources({ orderId }: { orderId?: number }) {
           { title: '原始状态', render: (_, row) => row.snapshot.status_raw },
           { title: '关联', render: (_, row) => row.links.some(link => link.active) ? <Tag color="green">已关联</Tag> : <Tag color="orange">待关联</Tag> },
         ]} />}
-    <Drawer title="来源交易详情" open={selectedId !== null} onClose={() => setSelectedId(null)} size={720}>
+    <Drawer title="来源交易详情" open={selectedId !== null} onClose={() => { setSelectedId(null); setLinking(false); }} size={720}>
       {detail.isLoading ? <Spin /> : detail.isError ? <Alert type="error" title="详情加载失败" action={<Button onClick={() => detail.refetch()}>重试</Button>} /> : source &&
         <Space orientation="vertical" style={{ width: '100%' }}>
           <Typography.Title level={5}>{source.external_order_no} <Tag>{kindLabel(source.kind)}</Tag></Typography.Title>
@@ -65,8 +70,12 @@ export default function OrderSources({ orderId }: { orderId?: number }) {
               <Link to={`/orders/${link.order_id}?source=${source.id}`}>查看关联订单 #{link.order_id}</Link> · ¥{link.amount}
             </div>)}
             {!source.links.some(link => link.active) && <Typography.Text type="secondary">尚未关联订阅，原始记录已保存。</Typography.Text>}
+            {isAdmin && source.kind === 'shipping_fee' && <div style={{ marginTop: 12 }}><Button onClick={() => setLinking(true)}>查找或更正关联订阅</Button></div>}
+            {source.links.some(link => !link.active) && <Collapse items={[{ key: 'old-links', label: '查看历史关联', children: source.links.filter(link => !link.active).map(link => <p key={link.id}>原订单 #{link.order_id} · ¥{link.amount} · {link.reason}</p>) }]} />}
           </Card>
-          <Collapse items={source.versions.map(version => ({ key: version.revision, label: `原始版本 ${version.revision}`, children: <Snapshot value={version.snapshot} /> }))} />
+          <Collapse key={`${source.id}-${search}`} defaultActiveKey={search ? source.versions.filter(version => normalizeSearch(JSON.stringify(version.snapshot)).includes(normalizeSearch(search))).map(version => version.revision) : []}
+            items={source.versions.map(version => ({ key: version.revision, label: `原始版本 ${version.revision}`, children: <Snapshot value={version.snapshot} /> }))} />
+          {linking && <OrderSourceLinkEditor source={source} onClose={() => setLinking(false)} />}
         </Space>}
     </Drawer>
   </Space>;

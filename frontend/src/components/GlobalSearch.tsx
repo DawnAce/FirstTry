@@ -10,17 +10,20 @@ const { Text } = Typography;
 
 const TYPE_META: Record<SearchHitType, { label: string; color: string }> = {
   order: { label: '订单', color: 'blue' },
+  order_source: { label: '待关联交易', color: 'orange' },
   recipient: { label: '收报人', color: 'green' },
   product: { label: '商品', color: 'purple' },
   issue: { label: '期数', color: 'gold' },
 };
-const TYPE_ORDER: SearchHitType[] = ['order', 'product', 'issue'];
+const TYPE_ORDER: SearchHitType[] = ['order', 'order_source', 'product', 'issue'];
 
 /** 一条命中 → 跳转目标；无详情路由的（商品）跳列表页并带上搜索词。 */
 function hitTarget(hit: SearchHit): string {
   switch (hit.type) {
     case 'order':
-      return `/orders/${hit.id}`;
+      return `/orders/${hit.id}${hit.source_id ? `?source=${hit.source_id}` : ''}`;
+    case 'order_source':
+      return `/orders/sources?source=${hit.id}`;
     case 'issue':
       return `/report/${hit.id}`;
     case 'product':

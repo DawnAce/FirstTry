@@ -2343,3 +2343,7 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 ### 订单原始交易（2026-09-10）
 
 迁移 `a7c9e1f3b5d8` 新增 `order_sources`、`order_source_versions`、`order_source_links`、`order_source_events`。revision 对应原件版本，lock_version 控制编辑冲突。`GET /api/order-sources` 支持 search/pending/order_id/skip/limit；`GET /api/order-sources/{id}` 返回原件及版本。导入新增 retain/source_update 决策，通过 confirmed_source_updates 逐笔确认变化；订单与来源同事务写入，成功才消费会话。提交保留旧返回字段，增加 source_ids/retained_sources。
+
+### 来源关联接口
+
+`GET /api/order-sources/{id}/candidates` 推荐最多100个当前有效订阅目标；`POST /{id}/link-preview` 校验金额和目标签名；`PUT /{id}/links` 管理员显式确认（version 乐观锁 + 写事务）。旧关联 active=0 留存。主单搜索使用原件子查询，在分页前去重；source_count 批量聚合，避免逐行查询。全局搜索新增 order_source 类型与命中 source_id。
