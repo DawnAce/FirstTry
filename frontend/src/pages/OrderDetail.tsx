@@ -467,7 +467,7 @@ export default function OrderDetail() {
         <section className="order-detail-primary">
           <Tabs
             className="order-detail-content-tabs"
-            defaultActiveKey="items"
+            defaultActiveKey={new URLSearchParams(location.search).has('source') || new URLSearchParams(location.search).has('search') ? 'sources' : 'items'}
             tabBarGutter={10}
             items={[
               { key: 'sources', label: '来源交易', children: <OrderSources orderId={order.id} /> },

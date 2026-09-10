@@ -1326,11 +1326,13 @@ class _OrderListContext:
         schedule_all_dates: list[date],
         bs_issues: list[BsIssue],
         shipping_counts: dict[int, tuple[int, int]],
+        source_counts: dict[int, int] | None = None,
     ):
         self.schedule_issue_dates = schedule_issue_dates
         self.schedule_all_dates = schedule_all_dates
         self.bs_issues = bs_issues
         self.shipping_counts = shipping_counts
+        self.source_counts = source_counts or {}
 
 
 def _build_order_list_context(db: Session, orders: list[Order]) -> _OrderListContext:
@@ -1397,11 +1399,15 @@ def _build_order_list_context(db: Session, orders: list[Order]) -> _OrderListCon
             for item_id, synced, shipped in rows
         }
 
+    from app.models.order_source import OrderSourceLink
+    source_counts = dict(db.query(OrderSourceLink.order_id, func.count(func.distinct(OrderSourceLink.source_id))).filter(
+        OrderSourceLink.active == 1, OrderSourceLink.order_id.in_([o.id for o in orders])).group_by(OrderSourceLink.order_id).all())
     return _OrderListContext(
         schedule_issue_dates=schedule_issue_dates,
         schedule_all_dates=schedule_all_dates,
         bs_issues=bs_issues,
         shipping_counts=shipping_counts,
+        source_counts=source_counts,
     )
 
 
@@ -1565,6 +1571,7 @@ def _build_list_row(
         synced_count=0,
         fulfilled_count=fulfilled_total,
         expected_total=expected_total if any_expected else None,
+        source_count=context.source_counts.get(order.id, 0) if context else 0,
     )
 
 
@@ -1605,8 +1612,10 @@ def _filtered_order_query(
         q = q.filter(Order.paid_amount >= Order.total_amount)
     if search:
         like = f"%{search.strip()}%"
+        from app.services.order_source_service import source_order_ids
         q = q.filter(
             or_(
+                Order.id.in_(source_order_ids(search)),
                 Order.order_code.ilike(like),
                 Order.external_order_no.ilike(like),
                 Order.payer_name.ilike(like),

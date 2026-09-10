@@ -6,8 +6,9 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import User
 from app.models.order_source import OrderSource, OrderSourceLink, OrderSourceVersion
-from app.schemas.order_source import SourceListOut, SourceOut
+from app.schemas.order_source import SourceListOut, SourceOut, SourceLinkIn, SourceCandidatesOut, SourceLinkPreviewOut
 from app.services.order_source_service import source_search_ids
+from app.services import order_source_service as service
 
 router = APIRouter(prefix="/api/order-sources", tags=["order-sources"])
 
@@ -58,4 +59,32 @@ def get_source(source_id: int, db: Session = Depends(get_db), _user: User = Depe
     source = db.get(OrderSource, source_id)
     if source is None:
         raise HTTPException(404, "来源交易不存在")
+    return serialize_sources(db, [source], history=True)[0]
+
+
+@router.get("/{source_id}/candidates", response_model=SourceCandidatesOut)
+def candidates(source_id: int, search: str | None = None, db: Session = Depends(get_db),
+               _user: User = Depends(get_current_user)):
+    """按收件资料和订期推荐，最多100个候选；不会自动关联。"""
+    return service.candidates(db, source_id, search)
+
+
+@router.post("/{source_id}/link-preview", response_model=SourceLinkPreviewOut)
+def preview_links(source_id: int, body: SourceLinkIn, db: Session = Depends(get_db),
+                  _user: User = Depends(require_admin)):
+    """核对分配金额和订阅版本，不写入。"""
+    source = service.get_source(db, source_id, body.version)
+    return service.validate_links(db, source, body)
+
+
+@router.put("/{source_id}/links", response_model=SourceOut)
+def link_source(source_id: int, body: SourceLinkIn, db: Session = Depends(get_db),
+                user: User = Depends(require_admin)):
+    """原子更新归属，旧关联及操作原因保留。"""
+    try:
+        source = service.link_source(db, source_id, body, user.id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return serialize_sources(db, [source], history=True)[0]

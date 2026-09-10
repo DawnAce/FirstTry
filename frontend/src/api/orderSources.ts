@@ -1,4 +1,5 @@
 import api from './client';
+import type { Publication } from './orders';
 
 export interface SourceSnapshot {
   filename?: string | null;
@@ -54,3 +55,36 @@ export const sourceQueryKeys = {
 export const listOrderSources = (params: { search?: string; pending?: boolean; order_id?: number; skip?: number; limit?: number }) =>
   api.get<{ rows: OrderSource[]; total: number }>('/order-sources', { params });
 export const getOrderSource = (id: number) => api.get<OrderSource>(`/order-sources/${id}`);
+
+export interface SourceCandidate {
+  order_id: number;
+  order_code: string | null;
+  external_order_no: string | null;
+  order_date: string;
+  order_item_id: number;
+  target_id: number;
+  publication: Publication;
+  recipient_name: string;
+  recipient_phone: string | null;
+  recipient_address: string;
+  coverage_start_date: string | null;
+  coverage_end_date: string | null;
+  confidence: 'high' | 'possible';
+  evidence: string[];
+  expected_target_version: string;
+}
+export interface SourceAllocation {
+  order_id: number;
+  order_item_id: number;
+  target_id: number;
+  amount: string;
+  expected_target_version: string;
+}
+export interface SourceLinkPayload {
+  version: number;
+  reason: string;
+  allocations: SourceAllocation[];
+}
+export const getSourceCandidates = (id: number, search?: string) => api.get<{ rows: SourceCandidate[]; truncated: boolean }>(`/order-sources/${id}/candidates`, { params: { search } });
+export const previewSourceLinks = (id: number, body: SourceLinkPayload) => api.post<{ can_apply: boolean; total_amount: string; warnings: string[] }>(`/order-sources/${id}/link-preview`, body);
+export const saveSourceLinks = (id: number, body: SourceLinkPayload) => api.put<OrderSource>(`/order-sources/${id}/links`, body);

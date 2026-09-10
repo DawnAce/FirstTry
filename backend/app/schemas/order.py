@@ -485,6 +485,7 @@ class OrderListRow(BaseModel):
     """
 
     id: int
+    source_count: int = 0
     order_code: Optional[str]
     external_order_no: Optional[str]
     order_date: date

@@ -50,7 +50,8 @@ class SourceAllocationIn(BaseModel):
     order_id: int
     order_item_id: int
     target_id: int
-    amount: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
+    amount: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    expected_target_version: str = Field(min_length=64, max_length=64)
 
 
 class SourceLinkIn(SourceRevisionIn):
@@ -65,3 +66,33 @@ class SourceRefundIn(SourceRevisionIn):
 class SourceDeliveryIn(SourceRevisionIn):
     link_id: int
     effective_from_issue: int = Field(gt=0)
+
+
+class SourceCandidateOut(BaseModel):
+    order_id: int
+    order_code: str | None
+    external_order_no: str | None
+    order_date: date
+    order_item_id: int
+    target_id: int
+    publication: str
+    recipient_name: str
+    recipient_phone: str | None
+    recipient_address: str
+    coverage_start_date: date | None
+    coverage_end_date: date | None
+    confidence: str
+    evidence: list[str]
+    expected_target_version: str
+
+
+class SourceCandidatesOut(BaseModel):
+    rows: list[SourceCandidateOut]
+    truncated: bool
+
+
+class SourceLinkPreviewOut(BaseModel):
+    can_apply: bool
+    total_amount: Decimal
+    allocations: list[SourceAllocationIn]
+    warnings: list[str]

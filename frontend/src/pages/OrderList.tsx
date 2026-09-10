@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
 import OrderCoverageDrawer from './OrderCoverageDrawer';
+import { listOrderSources, sourceQueryKeys } from '../api/orderSources';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Alert,
+  Typography,
   Button,
   DatePicker,
   Drawer,
@@ -177,6 +180,9 @@ export default function OrderList() {
   const { isAdmin, canMutate } = useAuth();
   const [form] = Form.useForm<FilterState>();
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
+  const sourceSearchParams = { search: filters.search, pending: true, limit: 5 };
+  const sourceMatches = useQuery({ queryKey: sourceQueryKeys.list(sourceSearchParams),
+    queryFn: async () => (await listOrderSources(sourceSearchParams)).data, enabled: !!filters.search?.trim() });
   const [view, setView] = useState<OrderView>('all');
   const [filterOpen, setFilterOpen] = useState(false);
   const [quickSearch, setQuickSearch] = useState('');
@@ -466,6 +472,7 @@ export default function OrderList() {
           <div className="order-list-code-line">
             <Button type="link" onClick={() => setPreviewRow(row)}>{row.order_code ?? `草稿 #${row.id}`}</Button>
             <Tag>{row.source_platform ?? '手工订单'}</Tag>
+            {!!row.source_count && <Tag>含 {row.source_count} 笔来源</Tag>}
           </div>
           <div className="order-list-source">来源单号 {row.external_order_no ?? '—'} · {row.order_date} 下单</div>
           <div className="order-list-product">
@@ -552,7 +559,7 @@ export default function OrderList() {
         title="订单管理"
         description="统一查看订单、履约、收款与售后状态"
         actions={<Space>
-          <Button onClick={() => navigate('/orders/sources')}>来源交易</Button>
+          <Button onClick={() => navigate(`/orders/sources${filters.search ? `?search=${encodeURIComponent(filters.search)}` : ''}`)}>来源交易</Button>
           <Button
             icon={<ReloadOutlined />}
             onClick={() => ordersQuery.refetch()}
@@ -662,6 +669,12 @@ export default function OrderList() {
           </div>
         )}
 
+        {!!filters.search && sourceMatches.isError && <Alert type="warning" title="原始交易搜索失败" action={<Button onClick={() => sourceMatches.refetch()}>重试</Button>} />}
+        {!!filters.search && sourceMatches.isFetching && <Typography.Text type="secondary">正在查询原始交易…</Typography.Text>}
+        {!!filters.search && !!sourceMatches.data?.total && <div style={{ marginBottom: 12 }}>
+          搜索同时找到 {sourceMatches.data.total} 笔待关联原始交易：
+          {sourceMatches.data.rows.map(source => <Button key={source.id} type="link" onClick={() => navigate(`/orders/sources?source=${source.id}&search=${encodeURIComponent(filters.search || '')}`)}>{source.external_order_no}</Button>)}
+        </div>}
         {activeFilters.length > 0 && (
           <div className="order-list-active-filters">
             {activeFilters.map((chip) => (
@@ -779,7 +792,7 @@ export default function OrderList() {
         footer={previewRow ? (
           <div className="order-list-preview-footer">
             <Button onClick={() => setPreviewRow(null)}>关闭</Button>
-            <Button type="primary" onClick={() => navigate(`/orders/${previewRow.id}`)}>进入完整详情</Button>
+            <Button type="primary" onClick={() => navigate(`/orders/${previewRow.id}${filters.search ? `?search=${encodeURIComponent(filters.search)}` : ''}`)}>进入完整详情</Button>
           </div>
         ) : null}
       >

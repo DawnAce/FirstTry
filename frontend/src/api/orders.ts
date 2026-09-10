@@ -328,6 +328,7 @@ export interface OrderOut {
 
 export interface OrderListRow {
   id: number;
+  source_count?: number;
   order_code: string | null;
   external_order_no: string | null;
   order_date: string;

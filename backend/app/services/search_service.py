@@ -10,6 +10,8 @@ from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session
 
 from app.models import Issue, Order, Product, Recipient
+from app.models.order_source import OrderSource, OrderSourceLink
+from app.services.order_source_service import source_search_ids, source_order_ids
 
 
 def global_search(db: Session, q: str, per_type: int = 6) -> List[dict]:
@@ -24,6 +26,7 @@ def global_search(db: Session, q: str, per_type: int = 6) -> List[dict]:
         db.query(Order)
         .filter(
             or_(
+                Order.id.in_(source_order_ids(s)),
                 Order.order_code.ilike(like),
                 Order.external_order_no.ilike(like),
                 Order.payer_name.ilike(like),
@@ -34,6 +37,13 @@ def global_search(db: Session, q: str, per_type: int = 6) -> List[dict]:
         .limit(per_type)
         .all()
     )
+    matched = db.query(OrderSourceLink.order_id, OrderSource.id, OrderSource.external_order_no).join(
+        OrderSource, OrderSource.id == OrderSourceLink.source_id).filter(
+            OrderSourceLink.active == 1, OrderSourceLink.order_id.in_([o.id for o in orders]),
+            OrderSource.id.in_(source_search_ids(s))).order_by(OrderSource.id.desc()).all()
+    by_order = {}
+    for order_id, source_id, external_no in matched:
+        by_order.setdefault(order_id, (source_id, external_no))
     for o in orders:
         items.append({
             "type": "order",
@@ -41,6 +51,7 @@ def global_search(db: Session, q: str, per_type: int = 6) -> List[dict]:
             "title": o.order_code or o.external_order_no or f"订单 #{o.id}",
             "subtitle": " · ".join(
                 x for x in [
+                    f"命中原始交易 {by_order[o.id][1]}" if o.id in by_order else None,
                     o.payer_name,
                     f"¥{o.total_amount}" if o.total_amount is not None else None,
                     o.order_date.isoformat() if o.order_date else None,
@@ -48,7 +59,14 @@ def global_search(db: Session, q: str, per_type: int = 6) -> List[dict]:
                 if x
             ),
             "ref": o.external_order_no,
+            "source_id": by_order[o.id][0] if o.id in by_order else None,
         })
+
+    unlinked = db.query(OrderSource).filter(OrderSource.id.in_(source_search_ids(s)),
+        ~OrderSource.id.in_(db.query(OrderSourceLink.source_id).filter(OrderSourceLink.active == 1)))
+    for source in unlinked.order_by(OrderSource.id.desc()).limit(per_type).all():
+        items.append({"type": "order_source", "id": source.id, "title": source.external_order_no,
+                      "subtitle": "原始交易 · 待关联", "ref": source.external_order_no, "source_id": source.id})
 
     # 收报人：姓名 / 电话。
     recipients = (
