@@ -583,18 +583,28 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 
 ### 3.16 商品库（products）+ 电商订单导入（CBJ 小程序）
 
+**批量补订期（2026-09-10）**：`order_coverage_service` + `api/order_coverage` + `schemas/order_coverage` 提供独立日期写入通道，前端两个入口复用 `OrderCoverageDrawer`。复用 `order_items` 日期字段和 `item_modified` 审计事件，无 schema 变更。
+
+- `GET /api/order-coverage/candidates`：管理员按刊物、投递、平台、下单日期及所选订单筛选；DB 侧计数和分页（最多 100 条/页），统计不同订单数。候选仅为生效订单的有效订阅/续订明细；缺任一日期视为待补，退款等行保留提示并禁止批量填入。传 `import_session_id` 则读取本人导入预览中的待建明细。
+- `POST /api/order-coverage/preview`：最多 500 条 `key + expected_version + coverage_start_date + coverage_end_date`、补录原因和可选导入会话 ID。严格拒绝额外写入字段、重复明细和倒置日期；既有非空日期不得覆盖。返回逐行差异/错误，全部通过后签发 30 分钟预览 ID。
+- `POST /api/order-coverage/apply`：绑定预览操作人，按订单/明细 ID 顺序加锁，使用锁定读复核状态和内容指纹，整批通过才提交日期及审计。重复确认返回已完成结果。只更新覆盖起止和对应 `term_start_month`，保留创建时期数快照，不调用套餐定价、收件人版本更新、发货同步或投递台账修改。
+- 导入会话修改先作用于副本，整批校验后替换缓存；最终建单时一并写入补录审计。导入确认和补录共用锁，避免同一草稿同时确认/修改。缓存与原导入流程一致，仅支持单 worker，重启失效；HTTP 创建的导入会话绑定操作人。
+- 合同起止按自然月或实际日期明确填写；自定义期限不从付款时间推算。`OrderEditor` 对 `excel_import` 订单禁用标准定价回填，补月份仍按自然月重算覆盖期，保护促销与双刊分摊价格。
+
 把电商平台（首个：CBJ 小程序）的订单尽量自动、完整地导入订单管理。采用「商品中心」模式——**借成熟电商的数据模型，不引入重型平台**：商品库是真源 + 映射层，订单行（`order_items`）继续快照属性，所以改商品库永不篡改历史订单。
 
-**商品库 `products` 表（数据驱动的映射表，新促销 = 加一行）**
+**商品库 `products` 表（数据驱动的映射表，同款促销追加别名，履约规则不同再新增商品）**
 
 | 列 | 说明 |
 |----|------|
-| `code`（唯一）/ `display_name` / `aliases`（JSON） | 匹配键：精确编码/名称 → 别名 → 归一化包含（容活动后缀如「618促销活动」） |
+| `code`（唯一）/ `display_name` / `aliases`（JSON） | 编码用于定位商品；导入去除空白后按名称精确 → 别名精确 → 别名包含 → 非套餐名称包含匹配 |
 | `publication`（可空，套餐为 NULL）/ `publication_format` / `fulfillment_type` / `subscription_term` / `delivery_method` / `billing_type` | 与 `order_items` 快照字段一一对应，解析时直接拷贝 |
 | `coverage_rule`（`term_from_month` / `latest_issue` / `explicit` / `custom`）/ `coverage_start_date` / `coverage_end_date` | 覆盖期算法；起投时间由导入批次提供，不写死在商品上。**注**：后端枚举保留 `explicit`（固定日期），但因其无日期输入、导入端从不读取、选中会 422，**PR#43 已从商品表单「覆盖期算法」下拉移除该选项**（仅 UI 不可选，枚举与逻辑不动） |
 | `list_price` | 仅参考/差异提示——实际记录订单行的**实付价** |
 | `is_bundle` / `components`（JSON） | 套餐拆分：固定价腿 + 一个 `remainder` 腿（中国经营报固定 240、商学院拿余额）；每腿可带 `delivery_method` 逐刊设投递（缺省回落套餐顶层 `delivery_method`）|
 | `active` / `notes` / 时间戳 | |
+
+商品别名追加接口 `POST /api/products/{id}/aliases` 接收 `{alias}`，由 `product_catalog_service.append_product_alias` 处理。沿用商品管理写权限；按 ID 顺序锁定启用商品及目标商品，流式检查与识别器一致的去空白名称/别名冲突，再追加到最新别名数组。重复请求幂等，目标停用或跨商品精确名称冲突返回 409；不接受价格等额外字段，不修改订单或新增商品。前端 `LinkProductAliasModal` 展示目标履约属性与参考价，确认后刷新商品缓存及导入预览；商品价格仍由现有导入器按实付记录。无 schema 变更。
 
 **`orders` 表新增列**
 
@@ -621,7 +631,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 - 运费补拍行只计入订单总额、不建明细；含「中通」/「转中通」→ 投递改 `zto_mf` 并在预览高亮（漏检会让整年投递走错，后果严重）。
 - 起投时间**人为按批设定**（非写死 15 号）：付款晚于截止日 → 顺延一个月；每单可在预览/订单页改。
 - 状态映射：认得的映到干净枚举，认不得的默认 `paid` + 标黄待核；退款单「收但标记」，绝不静默丢。
-- 未识别商品 → 「待确认」队列：预览页按商品名聚合成「待确认商品汇总」，一键预填快速新增到商品库（智能默认 + `ProductForm` 共享组件）、保存后自动重新预览，绝不乱猜。
+- 未识别商品 → 「待确认」队列：预览页按商品名聚合成「待确认商品汇总」，优先关联已有商品并追加别名；履约规则不同再预填快速新增（智能默认 + `ProductForm` 共享组件）。保存后重新预览，已有补订期修改时先提示清除影响，由用户选择是否继续。
 - **商学院月刊自动识别（取代旧的「手动快速新增月刊为商品」思路）**：导入时，未匹配行若标题形如「2026年X月刊《…》」/「2026年2~3月合刊《…》」，自动识别为商学院单期（`publication=business_school`、`single_issue`），并填好 `issue_label`；它**不**创建以年份命名的商品库行、也**不**进「待确认」。守卫：必须含「月刊/合刊」标记 **且** 标题不含「中国经营报」（带日期的中国经营报行仍照常排队）；真正未知商品（如「2026年1月新春礼包」）仍 → 「待确认」。该单期的 `delivery_method` 保持为空（不被订单级 zto 覆盖盖成「中通」）。中国经营报单期走 `issue_number`（期号），商学院单期走 `issue_label`。
 - **「最新一期」自动判期号**：导入时 `coverage_rule=latest_issue` 的单期行，按"付款时间 + `publication_schedule` + 周五约 22 点翻期"算出 `issue_number`（中国经营报周一出刊；某期在其出刊周一前的周五 22:00 起售，订单期号 = 付款时间落入的起售窗口对应的期）。`app/services/latest_issue_resolver.py`（`FLIP_WEEKDAY/FLIP_HOUR/BORDERLINE_HOURS` 可配）。翻期点 ±4h 内的临界单加 warning 标黄待核（仍自动判、正常导入）；覆盖期仍留空（单期不走 term_from_month）。
 - `order_code` 发号由 `order_code_service` 的 `MAX(suffix)+1` + 批量块分配（替代旧的无锁 `COUNT(*)+1`，避免批量撞号），单 worker 假设。

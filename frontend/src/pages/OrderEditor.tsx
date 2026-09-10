@@ -912,7 +912,7 @@ export default function OrderEditor() {
                 {(fields, { add, remove }, { errors }) => (
                   <>
                     {fields.map((field, idx) => (
-                      <ItemBlock key={field.key} field={field} index={idx} onRemove={() => remove(field.name)} disabled={itemsReadOnly} />
+                      <ItemBlock key={field.key} field={field} index={idx} onRemove={() => remove(field.name)} disabled={itemsReadOnly} preserveImportedPrice={detailQuery.data?.entry_method === 'excel_import'} />
                     ))}
                     {!itemsReadOnly && (
                       <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add(buildBlankItem())}>
@@ -1029,9 +1029,10 @@ interface ItemBlockProps {
   index: number;
   onRemove: () => void;
   disabled: boolean;
+  preserveImportedPrice?: boolean;
 }
 
-function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
+function ItemBlock({ field, index, onRemove, disabled, preserveImportedPrice = false }: ItemBlockProps) {
   const form = Form.useFormInstance<OrderFormValues>();
   const fulfillmentType = Form.useWatch<FulfillmentType | undefined>(
     ['items', field.name, 'fulfillment_type'],
@@ -1094,7 +1095,7 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
       return res.data;
     },
     enabled:
-      requireCoverage &&
+      requireCoverage && !preserveImportedPrice &&
       subscriptionTerm !== 'custom' &&
       !!subscriptionTerm &&
       !!deliveryMethod &&
@@ -1104,13 +1105,13 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
   // 预览成功时以服务端刊期表结果回填实际覆盖期和套餐价。
   useEffect(() => {
     const preview = previewQuery.data;
-    if (!preview || disabled || !requireCoverage || subscriptionTerm === 'custom') return;
+    if (!preview || disabled || preserveImportedPrice || !requireCoverage || subscriptionTerm === 'custom') return;
     form.setFieldValue(['items', field.name, 'coverage_range'], [
       dayjs(preview.coverage_start_date),
       dayjs(preview.coverage_end_date),
     ]);
     form.setFieldValue(['items', field.name, 'unit_price'], Number(preview.unit_price));
-  }, [previewQuery.data, disabled, requireCoverage, subscriptionTerm, form, field.name]);
+  }, [previewQuery.data, disabled, preserveImportedPrice, requireCoverage, subscriptionTerm, form, field.name]);
 
   // 当履约类型在 订阅/续订 ↔ 其它 之间切换时，同步 subscription_term
   useEffect(() => {
@@ -1293,7 +1294,10 @@ function ItemBlock({ field, index, onRemove, disabled }: ItemBlockProps) {
           )}
         </>
       )}
-      {requireCoverage && subscriptionTerm !== 'custom' && (
+      {requireCoverage && subscriptionTerm !== 'custom' && preserveImportedPrice && (
+        <Alert type="info" showIcon title="订期按起始月份计算，原成交价格保留" description={`每订户原成交价 ¥${Number(unitPrice) || 0}；半年按 6 个月、全年按 12 个月。如需填写实际起止日期，可选择自定义。`} />
+      )}
+      {requireCoverage && subscriptionTerm !== 'custom' && !preserveImportedPrice && (
         <Alert
           className="order-pricing-preview"
           type={previewQuery.data?.schedule_incomplete ? 'warning' : 'info'}

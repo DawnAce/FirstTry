@@ -97,7 +97,7 @@
   display: block;
   margin-bottom: 4px;
   overflow: hidden;
-  color: #182230;
+  color: var(--color-text-primary);
   font-size: 19px;
   line-height: 1.3;
   white-space: nowrap;
@@ -106,7 +106,7 @@
 
 .ui-drawer-title-copy > div {
   overflow: hidden;
-  color: #7c8798;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 400;
   white-space: nowrap;

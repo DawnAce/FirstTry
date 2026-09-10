@@ -36,6 +36,7 @@ from app.api.history_import import router as history_import_router
 from app.api.orders import router as orders_router
 from app.api.products import router as products_router
 from app.api.order_import import router as order_import_router
+from app.api.order_coverage import router as order_coverage_router
 from app.api.analytics import router as analytics_router
 from app.api.customers import router as customers_router
 from app.api.partners import router as partners_router
@@ -120,6 +121,7 @@ app.include_router(history_import_router, dependencies=[Depends(require_mutation
 app.include_router(orders_router, dependencies=[Depends(require_mutation_permission)])
 app.include_router(products_router, dependencies=[Depends(require_mutation_permission)])
 app.include_router(order_import_router, dependencies=[Depends(require_mutation_permission)])
+app.include_router(order_coverage_router, dependencies=[Depends(require_mutation_permission)])
 app.include_router(analytics_router, dependencies=[Depends(require_mutation_permission)])
 app.include_router(customers_router, dependencies=[Depends(require_mutation_permission)])
 app.include_router(partners_router, dependencies=[Depends(require_mutation_permission)])

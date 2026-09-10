@@ -80,6 +80,7 @@ export const Loaded: Story = {
     // 异步数据到达：spinner 被替换为带订单编号的行
     await expect(await canvas.findByText('CBJ-2026-0001')).toBeVisible()
     await expect(canvas.getByRole('button', { name: '电商导入' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: '待补订期' })).toBeVisible()
   },
 }
 
@@ -94,6 +95,7 @@ export const Viewer: Story = {
     await expect(await canvas.findByText('CBJ-2026-0001')).toBeVisible()
     await expect(canvas.queryByRole('button', { name: '电商导入' })).not.toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: /新建订单/ })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: '待补订期' })).not.toBeInTheDocument()
   },
 }
 

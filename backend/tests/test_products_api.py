@@ -130,6 +130,75 @@ def test_update_product(client):
     assert r.json()["notes"] == "调价"
 
 
+def test_append_alias_preserves_catalog_and_is_idempotent(client):
+    product = client.post("/api/products", json=_simple_product(list_price="240")).json()
+    alias = "《中国经营报》全年订阅-合成测试促销"
+    url = f'/api/products/{product["id"]}/aliases'
+    for name in (alias, f"  {alias}  "):
+        response = client.post(url, json={"alias": name})
+        assert response.status_code == 200, response.text
+        assert response.json()["aliases"] == ["618促销活动", alias]
+        assert response.json()["list_price"] == "240.00"
+        assert response.json()["subscription_term"] == "one_year"
+    assert len(client.get("/api/products").json()) == 1
+
+
+def test_alias_conflicts_validation_and_inactive_product(client):
+    product = client.post("/api/products", json=_simple_product()).json()
+    other = client.post("/api/products", json=_simple_product(
+        code="P2", display_name="另一个商品", aliases=["已经关联的促销名"])).json()
+    url = f'/api/products/{product["id"]}/aliases'
+    for alias in (" 已经 关联的促销名 ", "另一个商品"):
+        response = client.post(url, json={"alias": alias})
+        assert response.status_code == 409, response.text
+        assert "P2" in response.json()["detail"]
+    assert client.post(url, json={"alias": "   "}).status_code == 422
+    assert client.post(url, json={"alias": "新的促销", "list_price": 199}).status_code == 422
+    client.post(f'/api/products/{other["id"]}/deactivate')
+    assert client.post(f'/api/products/{other["id"]}/aliases', json={"alias": "新别名"}).status_code == 409
+    assert client.post('/api/products/99999/aliases', json={"alias": "新别名"}).status_code == 404
+    assert client.get(f'/api/products/{product["id"]}').json()["aliases"] == ["618促销活动"]
+
+
+def test_alias_link_resolves_batch_and_preserves_actual_prices(client):
+    import io
+    from openpyxl import Workbook
+
+    product = client.post("/api/products", json=_simple_product(
+        code="PROMO-TEST", display_name="中国经营报 · 全年订阅 · 促销价", list_price="240")).json()
+    alias = "《中国经营报》全年订阅-合成开学季促销"
+    workbook = Workbook()
+    workbook.active.append(["订单号", "产品名称", "付款金额", "地址", "订单状态", "下单时间"])
+    for index in range(17):
+        workbook.active.append([f"SYNTHETIC-ALIAS-{index}", f"{alias}X1,单价:199", 199,
+                                "合成订户,13800000000,合成测试地址", "卖家已发货", "2026-08-01"])
+    stream = io.BytesIO()
+    workbook.save(stream)
+
+    def parse():
+        response = client.post("/api/order-import/preview", files={"file": ("synthetic.xlsx", stream.getvalue())}, data={"mode": "historical"})
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    assert parse()["counts"]["unresolved"] == 17
+    assert client.post(f'/api/products/{product["id"]}/aliases', json={"alias": alias}).status_code == 200
+    preview = parse()
+    assert preview["counts"]["import"] == 17
+    assert all(row["items"][0]["unit_price"] == "199.00" for row in preview["rows"])
+    committed = client.post("/api/order-import/commit", json={"session_id": preview["session_id"]})
+    assert committed.status_code == 200, committed.text
+    assert committed.json()["created"] == 17
+    order = client.get(f'/api/orders/{committed.json()["order_ids"][0]}').json()
+    assert order["paid_amount"] == "199.00" and order["items"][0]["unit_price"] == "199.00"
+    assert len(client.get("/api/products").json()) == 1
+
+
+def test_viewer_cannot_link_alias(client):
+    product = client.post("/api/products", json=_simple_product()).json()
+    app.dependency_overrides[get_current_user] = lambda: User(id=2, username="synthetic-viewer", role=UserRole.viewer)
+    assert client.post(f'/api/products/{product["id"]}/aliases', json={"alias": "新活动"}).status_code == 403
+
+
 def test_create_bundle_with_components(client):
     bundle = {
         "code": "BUNDLE",

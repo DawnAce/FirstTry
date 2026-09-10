@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import OrderCoverageDrawer from './OrderCoverageDrawer';
+import LinkProductAliasModal from './LinkProductAliasModal';
 import {
   Alert,
   Button,
@@ -9,6 +11,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Segmented,
   Select,
   Space,
@@ -24,7 +27,7 @@ import type { Dayjs } from 'dayjs';
 import { commitOrderImport, previewOrderImport } from '../api/orderImport';
 import { useAuth } from '../contexts/AuthContext';
 import type { ImportDecision, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
-import { createProduct } from '../api/products';
+import { createProduct, productQueryKeys } from '../api/products';
 import { ProductFormFields, PUBLICATION_OPTIONS, buildProductPayload } from './ProductForm';
 import type { ProductFormValues } from './ProductForm';
 import { deliveryMethodLabel, formatCoverage, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
@@ -85,7 +88,13 @@ function suggestCode(): string {
 }
 
 export default function OrderImport() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, canMutate } = useAuth();
+  const queryClient = useQueryClient();
+  const [modal, modalContext] = Modal.useModal();
+  const [coverageOpen, setCoverageOpen] = useState(false);
+  const [aliasName, setAliasName] = useState<string | null>(null);
+  const [hasCoverageEdits, setHasCoverageEdits] = useState(false);
+  const [importedOrderIds, setImportedOrderIds] = useState<number[] | null>(null);
   const [mode, setMode] = useState<Mode>('recent');
   const [file, setFile] = useState<File | null>(null);
   const [postOfficeStart, setPostOfficeStart] = useState<Dayjs | null>(null);
@@ -123,6 +132,9 @@ export default function OrderImport() {
     },
     onSuccess: (res) => {
       setPreview(res.data);
+      setHasCoverageEdits(false);
+      setCoverageOpen(false);
+      setImportedOrderIds(null);
       setIssueOverrides({}); // 新预览：行可能重排，作废旧的补期号
       setLabelOverrides({});
     },
@@ -141,7 +153,10 @@ export default function OrderImport() {
     },
     onSuccess: (res) => {
       message.success(`成功导入 ${res.data.created} 单（跳过重复 ${res.data.skipped_duplicates}）`);
+      setImportedOrderIds(res.data.order_ids);
+      void queryClient.invalidateQueries();
       setPreview(null);
+      setHasCoverageEdits(false);
       setFile(null);
       setIssueOverrides({});
       setLabelOverrides({});
@@ -153,9 +168,10 @@ export default function OrderImport() {
   const quickAddMutation = useMutation({
     mutationFn: (values: ProductFormValues) => createProduct(buildProductPayload(values)),
     onSuccess: () => {
-      message.success('商品已加入商品库，正在重新识别…');
+      message.success('商品已加入商品库');
+      void queryClient.invalidateQueries({ queryKey: productQueryKeys.all });
       setDrawerMode(null);
-      previewMutation.mutate(); // re-resolve the whole batch against the updated catalog
+      runPreview(); // re-resolve the whole batch against the updated catalog
     },
     onError: (err: { response?: { data?: { detail?: string } } }) =>
       message.error(err.response?.data?.detail ?? '保存失败'),
@@ -183,20 +199,35 @@ export default function OrderImport() {
   };
 
   const handleRowClick = (row: ImportPreviewRow) => {
-    if (row.decision === 'unresolved' && row.unresolved_product) {
-      openQuickAdd(row.unresolved_product);
+    if (canMutate && row.decision === 'unresolved' && row.unresolved_product) {
+      setAliasName(row.unresolved_product);
     } else {
       setDetailRow(row);
       setDrawerMode('detail');
     }
   };
 
+  const confirmPreviewReset = (action: () => void) => {
+    if (hasCoverageEdits) {
+      modal.confirm({
+        title: '重新生成导入预览？',
+        content: '本次已补录的订期尚未正式入库。重新识别、修改导入设置或更换文件会清除这些日期，之后需要重新补录。',
+        okText: '清除并继续', cancelText: '保留当前预览', onOk: action,
+      });
+    } else action();
+  };
+  const runPreview = () => confirmPreviewReset(() => previewMutation.mutate());
+  const updateImportSettings = (update: () => void) => confirmPreviewReset(() => {
+    update();
+    setPreview(null);
+    setHasCoverageEdits(false);
+  });
   const handlePreview = () => {
     if (!file) {
       message.warning('请先选择电商订单 Excel');
       return;
     }
-    previewMutation.mutate();
+    runPreview();
   };
 
   // 期次标签校验（镜像后端 is_valid_issue_label）：YYYY-MM 或 YYYY-MM~MM（合刊月份递增）。
@@ -311,49 +342,66 @@ export default function OrderImport() {
   return (
     <div>
       <PageHeader title="电商订单导入" description="预览、校验并导入各平台订单" />
+      {modalContext}
+      {aliasName && <LinkProductAliasModal alias={aliasName} orderCount={unresolvedSummary.find(row => row.name === aliasName)?.count ?? 0}
+        onClose={() => setAliasName(null)} onCreate={() => { openQuickAdd(aliasName); setAliasName(null); }}
+        onLinked={() => { setAliasName(null); message.success('已关联到现有商品，原别名和参考价保留'); runPreview(); }} />}
 
       <EcommerceRules />
+      {importedOrderIds && importedOrderIds.length > 0 && <Alert type="success" showIcon title={`本次已导入 ${importedOrderIds.length} 单`} action={<Button onClick={() => setCoverageOpen(true)}>继续补本次订期</Button>} style={{ marginBottom: 16 }} />}
+      {coverageOpen && (preview || importedOrderIds) && <OrderCoverageDrawer
+        importSessionId={preview?.session_id} orderIds={preview ? undefined : importedOrderIds ?? undefined}
+        onClose={() => setCoverageOpen(false)} onApplied={result => {
+          if (preview) setHasCoverageEdits(true);
+          const changed = new Map(result.changes.map(c => [c.key, c]));
+          setPreview(previous => previous ? { ...previous, rows: previous.rows.map(row => ({ ...row,
+            items: row.items.map((item, index) => {
+              const dates = changed.get(`${row.external_order_no}#${index}`);
+              return dates ? { ...item, coverage_start_date: dates.coverage_start_date, coverage_end_date: dates.coverage_end_date } : item;
+            }),
+          })) } : null);
+        }} />}
 
       <Card size="small" title="① 导入模式与起投设置" style={{ marginBottom: 16 }}>
         <Space direction="vertical" style={{ width: '100%' }}>
           <Segmented
             value={mode}
-            onChange={(v) => { setMode(v as Mode); setPreview(null); }}
+            onChange={(v) => updateImportSettings(() => setMode(v as Mode))}
             options={[
               { label: '近期订单（要安排投递）', value: 'recent' },
               { label: '历史归档（只补记录）', value: 'historical' },
             ]}
           />
           <Space wrap>
-            <span>活动标签：<Input value={campaign} onChange={(e) => { setCampaign(e.target.value); setPreview(null); }} placeholder="如 2026-618（可空）" style={{ width: 200 }} allowClear /></span>
+            <span>活动标签：<Input value={campaign} onChange={({ target: { value } }) => updateImportSettings(() => setCampaign(value))} placeholder="如 2026-618（可空）" style={{ width: 200 }} allowClear /></span>
             <Text type="secondary" style={{ fontSize: 12 }}>写到这批每张订单，便于追溯 + 按活动统计</Text>
           </Space>
           {mode === 'recent' ? (
             <>
               <Space wrap>
-                <span>邮局起投月：<DatePicker picker="month" value={postOfficeStart} onChange={(v) => { setPostOfficeStart(v); setPreview(null); }} placeholder="如 2026-07" /></span>
-                <span>中通起投月：<DatePicker picker="month" value={ztoStart} onChange={(v) => { setZtoStart(v); setPreview(null); }} placeholder="如 2026-07" /></span>
-                <span>截止日：<DatePicker value={cutoff} onChange={(v) => { setCutoff(v); setPreview(null); }} placeholder="此日后付款→下月" /></span>
+                <span>邮局起投月：<DatePicker picker="month" value={postOfficeStart} onChange={(v) => updateImportSettings(() => setPostOfficeStart(v))} placeholder="如 2026-07" /></span>
+                <span>中通起投月：<DatePicker picker="month" value={ztoStart} onChange={(v) => updateImportSettings(() => setZtoStart(v))} placeholder="如 2026-07" /></span>
+                <span>截止日：<DatePicker value={cutoff} onChange={(v) => updateImportSettings(() => setCutoff(v))} placeholder="此日后付款→下月" /></span>
               </Space>
               <Card size="small" type="inner" title="活动赠品（只给本批「含订阅」的订单，单期不送）">
                 <Space wrap align="end">
-                  <span>订期延长：<InputNumber min={0} max={12} value={bonusMonths} onChange={(v) => { setBonusMonths(v ?? 0); setPreview(null); }} addonAfter="个月" style={{ width: 130 }} /></span>
+                  <span>订期延长：<InputNumber min={0} max={12} value={bonusMonths} onChange={(v) => updateImportSettings(() => setBonusMonths(v ?? 0))} addonAfter="个月" style={{ width: 130 }} /></span>
                   <span>赠送刊物：
                     <Select
                       allowClear
                       placeholder="不送可空"
                       value={giftPublication}
-                      onChange={(v) => { setGiftPublication(v); setPreview(null); }}
+                      onChange={(v) => updateImportSettings(() => setGiftPublication(v))}
                       options={PUBLICATION_OPTIONS}
                       style={{ width: 150 }}
                     />
                   </span>
-                  <span>赠品说明：<Input value={giftNote} onChange={(e) => { setGiftNote(e.target.value); setPreview(null); }} placeholder="如《商学院》2-3月合刊（2026-618）" style={{ width: 280 }} disabled={!giftPublication} allowClear /></span>
+                  <span>赠品说明：<Input value={giftNote} onChange={({ target: { value } }) => updateImportSettings(() => setGiftNote(value))} placeholder="如《商学院》2-3月合刊（2026-618）" style={{ width: 280 }} disabled={!giftPublication} allowClear /></span>
                 </Space>
               </Card>
             </>
           ) : (
-            <Alert type="info" title="历史归档：保留下单日期、只补记录；订期留空（可在订单页补填），不进发货同步。赠品仅近期模式可设。" />
+            <Alert type="info" title="历史归档：保留下单日期；订期可在预览中批量补录，也可导入后补填。补录后仍需按既有流程安排投递。赠品仅近期模式可设。" />
           )}
         </Space>
       </Card>
@@ -363,8 +411,8 @@ export default function OrderImport() {
           <Upload.Dragger
             maxCount={1}
             accept=".xlsx"
-            beforeUpload={(f) => { setFile(f); setPreview(null); return false; }}
-            onRemove={() => { setFile(null); setPreview(null); }}
+            beforeUpload={(f) => { updateImportSettings(() => setFile(f)); return false; }}
+            onRemove={() => { updateImportSettings(() => setFile(null)); return false; }}
             fileList={file ? [{ uid: '1', name: file.name } as UploadFile] : []}
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
@@ -379,29 +427,32 @@ export default function OrderImport() {
           {unresolvedSummary.length > 0 && (
             <Card
               size="small"
-              title={`⚠ 待确认商品（${unresolvedSummary.length} 种，共 ${counts.unresolved ?? 0} 单）— 加入商品库后自动重新识别`}
+              title={`⚠ 待确认商品（${unresolvedSummary.length} 种，涉及 ${unresolvedSummary.reduce((total, row) => total + row.count, 0)} 单）`}
               style={{ marginBottom: 16, borderColor: 'var(--color-danger)' }}
             >
               <Space direction="vertical" style={{ width: '100%' }}>
                 {unresolvedSummary.map((u) => (
-                  <Space key={u.name} style={{ justifyContent: 'space-between', width: '100%' }}>
+                  <Space key={u.name} wrap style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Text>{u.name} <Text type="secondary">× {u.count} 单</Text></Text>
-                    <Button type="primary" ghost size="small" icon={<PlusOutlined />} onClick={() => openQuickAdd(u.name)}>加入商品库</Button>
+                    {canMutate ? <Space wrap>
+                      <Button type="primary" size="small" disabled={previewMutation.isPending || commitMutation.isPending} onClick={() => setAliasName(u.name)}>关联已有商品</Button>
+                      <Button size="small" icon={<PlusOutlined />} disabled={previewMutation.isPending || commitMutation.isPending} onClick={() => openQuickAdd(u.name)}>新增商品</Button>
+                    </Space> : <Text type="secondary">只读账号不能修改商品关联</Text>}
                   </Space>
                 ))}
-                <Text type="secondary" style={{ fontSize: 12 }}>提示：加一个商品，用它的所有订单会一起变为「导入」。逐个加完即可全部识别。</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>同款促销可关联已有商品的别名；刊物、期限或投递规则不同时再新增商品。保存后同名订单一起重新识别，保留实际成交金额。</Text>
               </Space>
             </Card>
           )}
 
           <Card
             size="small"
-            title="③ 预览（点任意行看详情；待确认行可直接加商品；每个缺期的单期 SKU 可各自行内补期号 / 期次，选填、留空也能导入）"
+            title="③ 预览（待确认商品可关联或新增；缺期的单期明细可各自补期号 / 期次，选填、留空也能导入）"
             extra={
               isAdmin ? (
-                <Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
+                <Space><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit}>
                   确认导入 {counts.import ?? 0} 单
-                </Button>
+                </Button></Space>
               ) : (
                 <Text type="secondary">确认导入需管理员权限</Text>
               )
@@ -431,7 +482,7 @@ export default function OrderImport() {
         title={(
           <DrawerTitle
             icon={drawerMode === 'quick' ? '➕' : '📦'}
-            title={drawerMode === 'quick' ? '加入商品库' : '订单识别详情'}
+            title={drawerMode === 'quick' ? '新增商品' : '订单识别详情'}
             description={drawerMode === 'quick'
               ? '补齐商品后自动重新识别本次导入'
               : `来源单号 ${detailRow?.external_order_no || '未记录'} · ${detailRow?.recipient_name || '未记录收件人'}`}

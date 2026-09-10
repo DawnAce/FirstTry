@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     Order,
     OrderCommercialStatus,
+    OrderEventType,
     OrderPaymentMethod,
     Product,
     PublicationSchedule,
@@ -42,7 +43,7 @@ from app.models.order_item import (
     SubscriptionTerm,
 )
 from app.models.product import CoverageRule
-from app.order_import_cache import pop_order_import_session, save_order_import_session
+from app.order_import_cache import get_order_import_session, pop_order_import_session, save_order_import_session, serialized_import
 from app.schemas.order import FulfillmentTargetIn, OrderCreate, OrderItemIn
 from app.services.cbj_order_import_parser import (
     ParsedOrder,
@@ -61,6 +62,7 @@ from app.services.issue_label import (
 )
 from app.services.latest_issue_resolver import resolve_latest_issue
 from app.services.order_service import create_imported_order
+from app.services.order_event_logger import log_event
 from app.services.product_resolver_service import (
     ResolvedItem,
     _make_item,
@@ -475,7 +477,7 @@ def _detect_and_parse(
     )
 
 
-def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings) -> Tuple[dict, str]:
+def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owner_id: int | None = None) -> Tuple[dict, str]:
     """Parse + resolve the upload, cache the importable rows, return a preview.
 
     The platform is auto-detected from the file header so a single upload box serves
@@ -495,7 +497,7 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings) -> T
         }
         for r in preview.by_decision("import")
     ]
-    session_id = save_order_import_session({"mode": settings.mode, "rows": commit_rows})
+    session_id = save_order_import_session({"mode": settings.mode, "rows": commit_rows, "owner_id": owner_id})
 
     out = {
         "session_id": session_id,
@@ -506,6 +508,7 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings) -> T
     return out, session_id
 
 
+@serialized_import
 def commit_import(
     db: Session,
     session_id: str,
@@ -531,9 +534,14 @@ def commit_import(
     Subscription rows, already-filled items, out-of-range indexes and unknown 单号
     are all ignored — both are 选填 and never block the commit.
     """
-    payload = pop_order_import_session(session_id)
+    payload = get_order_import_session(session_id)
     if payload is None:
         raise HTTPException(status_code=400, detail="导入会话不存在或已过期，请重新预览")
+    if payload.get("owner_id") is not None and payload["owner_id"] != operator_id:
+        raise HTTPException(status_code=403, detail="无权确认其他人的导入会话")
+    payload = pop_order_import_session(session_id)
+    if payload is None:
+        raise HTTPException(status_code=400, detail="导入会话已过期，请重新预览")
 
     rows = payload["rows"]
 
@@ -614,6 +622,17 @@ def commit_import(
             is_historical_archive=r["is_historical_archive"],
             operator_id=operator_id,
         )
+        if r.get("coverage_fills"):
+            # 新订单明细按创建 ID 对应导入顺序，将预览中的补录依据一并入审计。
+            created_items = sorted(order.items, key=lambda item: item.id)
+            for fill in r["coverage_fills"]:
+                log_event(db, order_id=order.id, event_type=OrderEventType.item_modified,
+                          operator_id=operator_id, payload={
+                              "item_id": created_items[fill["item_index"]].id,
+                              "field_diff": fill["field_diff"], "targets_changed": False,
+                              "change_reason": fill["change_reason"], "batch_id": fill["batch_id"],
+                              "operation": "coverage_fill", "during_import": True,
+                          })
         created.append(order)
 
     db.commit()

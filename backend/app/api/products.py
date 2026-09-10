@@ -1,7 +1,7 @@
 """Product catalog (商品库) admin CRUD.
 
-A data-driven mapping table the importer resolves against. New promo SKU = a row
-insert here, not a code change. Orders snapshot their own attributes, so editing
+A data-driven mapping table the importer resolves against. New campaign names
+can be aliases of an existing product. Orders snapshot their own attributes, so editing
 a product never mutates historical orders.
 """
 
@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Product, User
-from app.schemas.product import ProductCreate, ProductOut, ProductUpdate
+from app.schemas.product import ProductAliasIn, ProductCreate, ProductOut, ProductUpdate
+from app.services.product_catalog_service import append_product_alias
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
@@ -122,6 +123,17 @@ def deactivate_product(
     db.commit()
     db.refresh(product)
     return product
+
+
+@router.post("/{product_id}/aliases", response_model=ProductOut)
+def add_alias(
+    product_id: int,
+    data: ProductAliasIn,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """把完整导出名称关联到启用商品；重复添加幂等，跨商品重名返回 409。"""
+    return append_product_alias(db, product_id, data.alias)
 
 
 @router.delete("/{product_id}", status_code=204)

@@ -92,6 +92,10 @@ export function deactivateProduct(id: number): Promise<AxiosResponse<Product>> {
   return api.post(`/products/${id}/deactivate`);
 }
 
+export function appendProductAlias(id: number, alias: string): Promise<AxiosResponse<Product>> {
+  return api.post(`/products/${id}/aliases`, { alias });
+}
+
 export function deleteProduct(id: number): Promise<AxiosResponse<void>> {
   return api.delete(`/products/${id}`);
 }

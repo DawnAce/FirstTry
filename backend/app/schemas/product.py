@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.order_item import (
     BillingType,
@@ -106,3 +106,9 @@ class ProductOut(ProductBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ProductAliasIn(BaseModel):
+    """仅追加一个完整电商商品名，不接受价格或其他商品字段。"""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    alias: str = Field(min_length=1, max_length=255)
