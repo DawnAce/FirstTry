@@ -17,6 +17,7 @@ mode leaves coverage blank. Every row stays editable in the preview UI.
 """
 
 import re
+from copy import deepcopy
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -24,6 +25,7 @@ from decimal import Decimal
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -234,7 +236,9 @@ def build_import_preview(
     existing = {
         e
         for (e,) in db.query(Order.external_order_no)
-        .filter(Order.external_order_no.isnot(None))
+        .filter(Order.external_order_no.in_([p.external_order_no for p in parsed_orders]),
+                or_(Order.source_platform == source_platform, Order.source_platform.is_(None)),
+                func.coalesce(Order.source_store, "") == (source_store or ""))
         .all()
     }
 
@@ -477,7 +481,8 @@ def _detect_and_parse(
     )
 
 
-def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owner_id: int | None = None) -> Tuple[dict, str]:
+def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owner_id: int | None = None,
+                   filename: str | None = None) -> Tuple[dict, str]:
     """Parse + resolve the upload, cache the importable rows, return a preview.
 
     The platform is auto-detected from the file header so a single upload box serves
@@ -487,6 +492,47 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
     preview = build_import_preview(
         db, parsed, settings, source_platform=source_platform, source_store=source_store
     )
+    from app.models.order_source import OrderSource, OrderSourceVersion
+    from app.services.order_source_service import source_snapshot, fingerprint
+    numbers = [p.external_order_no for p in parsed]
+    if len(numbers) != len(set(numbers)):
+        raise ValueError("同一文件存在重复来源单号，请核对原表后重新预览")
+    sources = {s.external_order_no: s for s in db.query(OrderSource).filter(
+        OrderSource.platform == source_platform, OrderSource.store == (source_store or ""),
+        OrderSource.external_order_no.in_(numbers)).all()}
+    versions = {v.source_id: v for v in db.query(OrderSourceVersion).join(
+        OrderSource, (OrderSource.id == OrderSourceVersion.source_id) &
+        (OrderSource.revision == OrderSourceVersion.revision)).filter(OrderSource.id.in_(
+            [s.id for s in sources.values()])).all()}
+    source_records = []
+    source_details = {}
+    for po, row in zip(parsed, preview.rows):
+        snapshot = source_snapshot(po, source_platform, source_store, filename)
+        old = sources.get(po.external_order_no)
+        pure_fee = bool(po.product_lines) and all(p.is_shipping for p in po.product_lines)
+        kind = "shipping_fee" if pure_fee else "subscription" if row.order_create else "record"
+        if old:
+            changed = versions[old.id].fingerprint != fingerprint(snapshot)
+            row.decision = "source_update" if changed else "duplicate"
+            row.order_create = None
+            row.reason = "原始交易有变化，请核对前后信息并确认更新" if changed else "来源交易已留存"
+        elif pure_fee:
+            row.decision, row.order_create = "retain", None
+            row.reason = "纯运费交易：确认后留存，可查找关联订阅；不会自动转中通"
+        elif row.decision == "duplicate":
+            row.decision = "retain"
+            row.reason = "已有业务订单：补留原始来源，不重复建单、不覆盖人工修改"
+        elif row.decision == "unresolved" and row.commercial_status in (
+            OrderCommercialStatus.refunded, OrderCommercialStatus.partial_refund
+        ):
+            row.decision = "retain"
+            row.reason = "退款交易先留存；商品及退款金额仍需核对，不生成投递"
+        if row.decision in {"import", "retain", "source_update", "duplicate"}:
+            source_records.append({"snapshot": snapshot, "kind": old.kind if old else kind,
+                                   "expected_revision": old.lock_version if old else None, "decision": row.decision})
+        source_details[row.external_order_no] = {"source_snapshot": snapshot,
+            "source_id": old.id if old else None,
+            "previous_snapshot": versions[old.id].snapshot if old and row.decision == "source_update" else None}
 
     commit_rows = [
         {
@@ -497,24 +543,26 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
         }
         for r in preview.by_decision("import")
     ]
-    session_id = save_order_import_session({"mode": settings.mode, "rows": commit_rows, "owner_id": owner_id})
+    session_id = save_order_import_session({"mode": settings.mode, "rows": commit_rows, "owner_id": owner_id,
+                                           "sources": source_records})
 
     out = {
         "session_id": session_id,
         "counts": preview.counts,
-        "can_commit": preview.counts.get("import", 0) > 0,
-        "rows": [_serialize_row(r) for r in preview.rows],
+        "can_commit": any(preview.counts.get(key, 0) > 0 for key in ("import", "retain", "source_update")),
+        "rows": [{**_serialize_row(r), **source_details[r.external_order_no]} for r in preview.rows],
     }
     return out, session_id
 
 
 @serialized_import
-def commit_import(
+def _commit_import(
     db: Session,
     session_id: str,
     operator_id: Optional[int] = None,
     issue_overrides: Optional[dict[str, int]] = None,
     issue_label_overrides: Optional[dict[str, str]] = None,
+    confirmed_source_updates: Optional[list[str]] = None,
 ) -> dict:
     """Create the previewed importable orders atomically (single commit).
 
@@ -539,9 +587,9 @@ def commit_import(
         raise HTTPException(status_code=400, detail="导入会话不存在或已过期，请重新预览")
     if payload.get("owner_id") is not None and payload["owner_id"] != operator_id:
         raise HTTPException(status_code=403, detail="无权确认其他人的导入会话")
-    payload = pop_order_import_session(session_id)
-    if payload is None:
-        raise HTTPException(status_code=400, detail="导入会话已过期，请重新预览")
+    payload = deepcopy(payload)
+    from app.services.order_source_service import validate_import_sources, save_import_source
+    validate_import_sources(db, payload.get("sources", []), confirmed_source_updates or [])
 
     rows = payload["rows"]
 
@@ -592,13 +640,14 @@ def commit_import(
             ):
                 item["issue_label"] = label
 
-    existing = {
-        e
-        for (e,) in db.query(Order.external_order_no)
-        .filter(Order.external_order_no.isnot(None))
-        .all()
-    }
-    to_create = [r for r in rows if r["order_create"]["external_order_no"] not in existing]
+    existing_orders = db.query(Order).filter(Order.external_order_no.in_(
+        [r["order_create"]["external_order_no"] for r in rows])).all()
+    def exists(record: dict) -> bool:
+        data = record["order_create"]
+        return any(o.external_order_no == data["external_order_no"]
+                   and o.source_platform in (None, data.get("source_platform"))
+                   and (o.source_store or "") == (data.get("source_store") or "") for o in existing_orders)
+    to_create = [r for r in rows if not exists(r)]
     skipped = len(rows) - len(to_create)
 
     # Block-allocate order codes per order year (historical batches span years).
@@ -635,9 +684,39 @@ def commit_import(
                           })
         created.append(order)
 
+    created_by_external = {o.external_order_no: o for o in created}
+    retained = 0
+    source_ids = []
+    for record in payload.get("sources", []):
+        snapshot = record["snapshot"]
+        linked_order = created_by_external.get(snapshot["external_order_no"])
+        if linked_order is None and record["kind"] != "shipping_fee":
+            linked_order = db.query(Order).filter(Order.external_order_no == snapshot["external_order_no"],
+                Order.source_platform == snapshot["platform"],
+                func.coalesce(Order.source_store, "") == snapshot["store"]).one_or_none()
+        source, changed = save_import_source(db, record, linked_order, operator_id)
+        source_ids.append(source.id)
+        if changed and record["decision"] == "retain":
+            retained += 1
     db.commit()
+    pop_order_import_session(session_id)
     return {
         "created": len(created),
         "order_ids": [o.id for o in created],
         "skipped_duplicates": skipped,
+        "retained_sources": retained,
+        "source_ids": source_ids,
     }
+
+
+def commit_import(db: Session, session_id: str, operator_id: Optional[int] = None,
+                  issue_overrides: Optional[dict[str, int]] = None,
+                  issue_label_overrides: Optional[dict[str, str]] = None,
+                  confirmed_source_updates: Optional[list[str]] = None) -> dict:
+    """原子创建订单和来源记录；失败保留预览，允许核对后重试。"""
+    try:
+        return _commit_import(db, session_id, operator_id, issue_overrides,
+                              issue_label_overrides, confirmed_source_updates)
+    except Exception:
+        db.rollback()
+        raise

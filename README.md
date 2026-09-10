@@ -170,3 +170,7 @@ cd ../backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --p
 - [需求文档](docs/requirements.md)
 - [操作手册](docs/user-guide.md)
 - [电商订单导入·进度备忘](docs/order-import-progress.md)
+
+### 来源交易留存（2026-09-10）
+
+电商导入支持纯运费和退款原件留存，来源变化逐笔确认，原始版本可检索。入口为订单管理的“来源交易”。部署需执行 Alembic 迁移；关联及投递闭环进度见 [实施文档](docs/order-source-transactions.md)。

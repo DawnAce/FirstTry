@@ -47,6 +47,7 @@ const OrderEditor = lazy(loadOrderEditor);
 const OrderDetail = lazy(loadOrderDetail);
 const ProductCatalog = lazy(loadProductCatalog);
 const OrderImport = lazy(loadOrderImport);
+const OrderSources = lazy(() => import('./pages/OrderSources'));
 const IssueDispatch = lazy(loadIssueDispatch);
 const Analytics = lazy(loadAnalytics);
 const CustomerList = lazy(loadCustomerList);
@@ -142,6 +143,7 @@ function App() {
             <Route path="/orders" element={<OrderList />} />
             <Route path="/orders/new" element={<RequireMutationAccess fallback="/orders"><OrderEditor /></RequireMutationAccess>} />
             <Route path="/orders/import" element={<RequireMutationAccess fallback="/orders"><OrderImport /></RequireMutationAccess>} />
+            <Route path="/orders/sources" element={<OrderSources />} />
             <Route path="/orders/dispatch" element={<RequireMutationAccess fallback="/orders"><IssueDispatch /></RequireMutationAccess>} />
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/orders/:id/edit" element={<RequireMutationAccess fallback="/orders"><OrderEditor /></RequireMutationAccess>} />

@@ -59,7 +59,7 @@ async def preview(
         gift_note=(gift_note or "").strip() or None,
     )
     try:
-        out, _ = preview_import(db, content, settings, owner_id=_user.id)
+        out, _ = preview_import(db, content, settings, owner_id=_user.id, filename=file.filename)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return out
@@ -67,6 +67,7 @@ async def preview(
 
 class CommitIn(BaseModel):
     session_id: str
+    confirmed_source_updates: list[str] = []
     # 往期单选填补期号：{external_order_no: 期号}。只作用于单期且无期号的行，留空=现状。
     issue_overrides: dict[str, int] | None = None
     # 商学院单期选填补期次：{external_order_no: "YYYY-MM" / "YYYY-MM~MM"}。
@@ -85,4 +86,5 @@ def commit(
         operator_id=getattr(user, "id", None),
         issue_overrides=body.issue_overrides,
         issue_label_overrides=body.issue_label_overrides,
+        confirmed_source_updates=body.confirmed_source_updates,
     )

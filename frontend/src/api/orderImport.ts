@@ -1,7 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
 
-export type ImportDecision = 'import' | 'skip_status' | 'duplicate' | 'unresolved';
+export type ImportDecision = 'import' | 'skip_status' | 'duplicate' | 'unresolved' | 'retain' | 'source_update';
 
 export interface ImportItemPreview {
   publication: string | null;
@@ -31,6 +31,9 @@ export interface ImportPreviewRow {
   warnings: string[];
   items: ImportItemPreview[];
   unresolved_product: string | null;
+  source_id?: number | null;
+  source_snapshot?: Record<string, unknown>;
+  previous_snapshot?: Record<string, unknown> | null;
 }
 
 export interface ImportPreviewOut {
@@ -44,6 +47,8 @@ export interface ImportCommitOut {
   created: number;
   order_ids: number[];
   skipped_duplicates: number;
+  retained_sources?: number;
+  source_ids?: number[];
 }
 
 export interface PreviewSettings {
@@ -79,14 +84,17 @@ export function commitOrderImport(
   sessionId: string,
   issueOverrides?: Record<string, number>,
   issueLabelOverrides?: Record<string, string>,
+  confirmedSourceUpdates?: string[],
 ): Promise<AxiosResponse<ImportCommitOut>> {
   const body: {
     session_id: string;
     issue_overrides?: Record<string, number>;
     issue_label_overrides?: Record<string, string>;
+    confirmed_source_updates?: string[];
   } = {
     session_id: sessionId,
   };
+  if (confirmedSourceUpdates?.length) body.confirmed_source_updates = confirmedSourceUpdates;
   if (issueOverrides && Object.keys(issueOverrides).length > 0) {
     body.issue_overrides = issueOverrides;
   }
