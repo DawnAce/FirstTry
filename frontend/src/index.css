@@ -6955,8 +6955,10 @@ body {
 
 /* ===== Publication schedule (期刊表) ===== */
 .sched-page {
+  box-sizing: border-box;
   max-width: 1160px;
   margin: 0 auto;
+  padding-inline: 8px;
 }
 
 .sched-head {
@@ -6990,8 +6992,24 @@ body {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
+
+.sched-overview-heading,
+.sched-overview-footer,
+.sched-matrix-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+
+.sched-overview-heading,
+.sched-matrix-heading { margin-bottom: 12px; }
+.sched-overview-footer { margin-top: 12px; }
+.sched-note { font-size: 12px; color: var(--color-text-secondary); }
+.sched-published-count { color: var(--color-success-text); }
 
 .sched-overview-row {
   display: flex;
@@ -7001,10 +7019,11 @@ body {
 }
 
 .sched-months {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 8px;
-  flex-wrap: wrap;
   flex: 1;
+  min-width: 0;
 }
 
 .sched-month {
@@ -7012,10 +7031,10 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  min-width: 46px;
+  min-width: 0;
   padding: 7px 8px 8px;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--radius-input);
   background: var(--color-card);
   cursor: pointer;
   transition: all var(--transition);
@@ -7026,9 +7045,33 @@ body {
   background: var(--color-accent-soft);
 }
 
-.sched-month.on {
+.sched-month.on,
+.sched-month.current {
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
+}
+
+.sched-month.on { outline: 1px solid var(--color-accent); outline-offset: 2px; }
+.sched-month:disabled { cursor: default; opacity: .6; }
+.sched-month:disabled:hover { border-color: var(--color-border); background: var(--color-card); }
+.sched-month-count { font-size: 12px; color: var(--color-text-secondary); }
+.sched-month.current .sched-month-name,
+.sched-month.current .sched-month-count { color: var(--color-accent); }
+
+.sched-progress {
+  display: block;
+  width: 100%;
+  height: 3px;
+  border-radius: var(--radius-tag);
+  background: var(--color-bg-muted);
+  overflow: hidden;
+}
+
+.sched-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--color-success-text);
+  border-radius: inherit;
 }
 
 .sched-month-name {
@@ -7037,17 +7080,19 @@ body {
   font-weight: 500;
 }
 
-.sched-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.sched-swatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
   flex-shrink: 0;
   display: inline-block;
+  background: var(--color-card);
 }
 
-.sched-dot.normal { background: var(--color-success); }
-.sched-dot.adjust { background: var(--color-warning); }
-.sched-dot.rest { background: #c8c8ce; }
+.sched-swatch.published { background: var(--color-success-soft); border-color: var(--color-success-text); }
+.sched-swatch.next { background: var(--color-accent-soft); border-color: var(--color-accent); }
+.sched-swatch.rest { background: var(--color-bg-muted); border-style: dashed; border-color: var(--color-text-secondary); }
 
 .sched-legend {
   display: flex;
@@ -7055,6 +7100,7 @@ body {
   gap: 16px;
   font-size: 12px;
   color: var(--color-text-secondary);
+  flex-wrap: wrap;
 }
 
 .sched-legend span {
@@ -7105,7 +7151,7 @@ body {
   font-size: 15px;
   font-weight: 700;
   color: var(--color-text-primary);
-  padding: 2px 4px 14px;
+  padding: 2px 4px;
 }
 
 .sched-matrix-wrap {
@@ -7133,7 +7179,7 @@ body {
 }
 
 .sched-matrix thead th.col-month { width: 60px; text-align: center; }
-.sched-matrix thead th.col-issue { width: 172px; }
+.sched-matrix thead th.col-issue { width: auto; }
 .sched-matrix thead th.col-state { width: 108px; text-align: center; }
 
 .sched-matrix td {
@@ -7152,15 +7198,33 @@ body {
 
 .mx-cell {
   border: 1px solid var(--color-border);
-  border-radius: 9px;
-  padding: 7px 10px;
+  border-radius: var(--radius-input);
+  padding: calc(var(--table-cell-block) / 2) 10px;
   background: var(--color-card);
-  min-height: 60px;
+  min-height: calc(86px + var(--table-cell-block) * 2);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   transition: box-shadow var(--transition);
 }
+
+.mx-cell.published {
+  background: color-mix(in srgb, var(--color-success) 7%, var(--color-card));
+  border-color: color-mix(in srgb, var(--color-success-text) 20%, var(--color-border));
+}
+
+.mx-cell.next {
+  border-color: var(--color-accent);
+  outline: 1px solid var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.mx-cell-heading { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+.mx-next-label { font-size: 11px; color: var(--color-accent); white-space: nowrap; }
+.mx-publication-status { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--color-text-secondary); }
+.mx-cell.published .mx-publication-status { color: var(--color-success-text); }
+.mx-cell.next .mx-publication-status { color: var(--color-accent); }
+.mx-missing-print { color: var(--color-text-secondary); font-size: 11px; }
 
 .mx-cell:hover {
   box-shadow: var(--shadow-card);
@@ -7181,17 +7245,16 @@ body {
 
 .mx-meta {
   font-size: 11.5px;
-  color: var(--color-success-text);
+  color: var(--color-text-secondary);
+  margin-top: auto;
 }
 
-.mx-cell.mismatch {
+.mx-adjustment {
+  color: var(--color-warning-text);
   background: var(--color-warning-soft);
-  border-color: #ffd591;
-}
-
-.mx-cell.mismatch .mx-meta {
-  color: var(--color-warning);
-  font-weight: 600;
+  align-self: flex-start;
+  padding: 1px 5px;
+  border-radius: calc(var(--radius-input) / 2);
 }
 
 .mx-cell.rest {
@@ -7204,7 +7267,7 @@ body {
 
 .mx-cell.rest .anticon {
   font-size: 16px;
-  color: #c0c0c6;
+  color: var(--color-text-secondary);
 }
 
 .mx-rest-text {
@@ -7214,7 +7277,7 @@ body {
 
 .mx-empty {
   text-align: center;
-  color: #d0d0d6;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
@@ -7222,20 +7285,25 @@ body {
   text-align: center;
 }
 
-.mx-state {
-  display: inline-flex;
+.mx-month-progress {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  border-radius: var(--radius-tag);
-  padding: 3px 12px;
+  gap: 7px;
   font-size: 12px;
-  font-weight: 600;
   white-space: nowrap;
 }
 
-.mx-state.normal { background: var(--color-success-soft); color: var(--color-success-text); }
-.mx-state.adjust { background: var(--color-warning-soft); color: var(--color-warning-text); }
-.mx-state.rest { background: var(--color-bg-muted); color: var(--color-text-secondary); }
+.mx-month-progress .sched-progress { width: 72px; }
+.mx-month-progress .sched-note,
+.mx-adjustment-count { font-size: 11px; }
+.mx-adjustment-count { color: var(--color-warning-text); }
+.sched-matrix-note { margin: 12px 4px 0; }
+
+@media (max-width: 700px) {
+  .sched-months { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .sched-legend { gap: 8px 12px; }
+}
 
 /* ===== Import schedule (导入期刊表) ===== */
 .si-page {

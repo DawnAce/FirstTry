@@ -10,6 +10,50 @@ type RowWithDate = { publish_date: string };
 
 type IssueRange = Pick<ScheduleSummary, 'first_issue_number' | 'last_issue_number'>;
 
+export type SchedulePublicationStatus = 'published' | 'unpublished' | 'suspended';
+
+const beijingDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+export function getBeijingDate(now: Date = new Date()): string {
+  return beijingDateFormatter.format(now);
+}
+
+export function getSchedulePublicationStatus(
+  row: Pick<ScheduleEntry, 'is_suspended' | 'publish_date'>,
+  today: string,
+): SchedulePublicationStatus {
+  if (row.is_suspended) return 'suspended';
+  // 接口日期为 YYYY-MM-DD；出刊进度只看北京时间日期，不看印数工作流状态。
+  return row.publish_date <= today ? 'published' : 'unpublished';
+}
+
+export function isPageCountMismatch(row: ScheduleEntry): boolean {
+  return !row.is_suspended && row.actual_page_count != null && row.page_count != null
+    && row.actual_page_count !== row.page_count;
+}
+
+export function summarizeScheduleProgress(rows: ScheduleEntry[], today: string) {
+  const planned = rows.filter((row) => !row.is_suspended && row.issue_number !== null);
+  const publishedCount = planned.filter((row) => getSchedulePublicationStatus(row, today) === 'published').length;
+  return {
+    plannedCount: planned.length,
+    publishedCount,
+    unpublishedCount: planned.length - publishedCount,
+    suspendedCount: rows.filter((row) => row.is_suspended).length,
+    actualCount: planned.filter((row) => row.actual_page_count != null).length,
+    comparableCount: planned.filter((row) => row.actual_page_count != null && row.page_count != null).length,
+    mismatchCount: planned.filter(isPageCountMismatch).length,
+  };
+}
+
+export function findNextScheduledIssue(rows: ScheduleEntry[], today: string): ScheduleEntry | undefined {
+  return rows
+    .filter((row) => row.issue_number !== null && getSchedulePublicationStatus(row, today) === 'unpublished')
+    .reduce<ScheduleEntry | undefined>((next, row) => !next || row.publish_date < next.publish_date ? row : next, undefined);
+}
+
 export function groupScheduleRowsByMonth<T extends RowWithDate>(rows: T[]): ScheduleMonthGroup<T>[] {
   const groups = new Map<number, T[]>();
   [...rows]
