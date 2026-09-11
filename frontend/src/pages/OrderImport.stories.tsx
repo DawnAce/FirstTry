@@ -393,3 +393,148 @@ export const FeeOnlyImport: Story = {
     await waitFor(() => expect(body.getByText(/导入完成：新建 0 单，保存 2 笔交易记录/)).toBeVisible());
   },
 };
+
+const detailSnapshot = {
+  platform: 'CBJ小程序', external_order_no: 'SYNTHETIC-DETAIL',
+  status_raw: '卖家已退款', commercial_status: 'refunded', paid_amount: '150.00', original_amount: '150.00',
+  recipient_name: '合成测试订户', recipient_phone: '13800000000',
+  recipient_address: '合成省合成市测试区报刊路18号' + '合成长地址'.repeat(12), recipient_postal_code: '000000',
+  payment_method: '微信', order_date: '2026-09-01', payment_time: '2026-09-01T09:30:00', notes: '',
+  invoice: '合成开票公司\t\n合成税号0001', filename: 'synthetic-detail.xlsx', source_sheet: '合成订单', source_row: 12,
+  product_lines: [{ name: '合成中通运费', raw: '合成中通运费 X50,单价:3.00', quantity: 50, unit_price: '3.00', is_shipping: true, mentions_zto: true }],
+  raw_cells: { status: '卖家已退款', paid_amount: '150.00', product: '合成中通运费 X50,单价:3.00', invoice: '合成开票公司\t\n合成税号0001', merchant_note: '合成补充备注', sku: '运费', tracking: 'SYNTHETIC-TRACKING-' + '0'.repeat(100) },
+};
+const detailRow: ImportPreviewRow = {
+  ...transactionRows[1], external_order_no: 'SYNTHETIC-DETAIL', source_snapshot: detailSnapshot,
+};
+const detailHandlers = [http.post('/api/order-import/preview', () => HttpResponse.json({
+  session_id: 'synthetic-detail', counts: { retain: 1 }, can_commit: true, rows: [detailRow],
+} satisfies ImportPreviewOut))];
+
+async function openImportDetail(canvasElement: HTMLElement) {
+  const body = within(canvasElement.ownerDocument.body);
+  await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic-detail.xlsx'));
+  await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
+  await userEvent.click(await body.findByRole('cell', { name: 'SYNTHETIC-DETAIL' }));
+  return body.findByRole('dialog');
+}
+
+export const ReadableImportDetail: Story = {
+  name: '紧凑中文详情、长地址与开票信息',
+  parameters: { msw: { handlers: detailHandlers } },
+  play: async ({ canvasElement }) => {
+    const dialog = await openImportDetail(canvasElement);
+    const detail = within(dialog);
+    await expect(detail.queryAllByText('"150.00"')).toHaveLength(0);
+    await expect(within(detail.getByRole('region', { name: '交易信息' })).getByText('¥150.00')).toBeVisible();
+    await expect(detail.getByText('2026-09-01 09:30:00')).toBeVisible();
+    await expect(detail.queryByText(/refunded/)).not.toBeInTheDocument();
+    await expect(detail.queryByText('全部原始字段')).not.toBeInTheDocument();
+    await userEvent.click(detail.getByText('开票及其他信息'));
+    await expect(detail.getAllByText(/合成开票公司/)[0]).toBeVisible();
+    await userEvent.click(detail.getByText('查看原表信息'));
+    await expect(detail.getByText('商家备注')).toBeVisible();
+    await expect(detail.getByText('合成补充备注')).toBeVisible();
+    const label = within(detail.getByRole('region', { name: '交易信息' })).getByText('原付款金额');
+    expect(getComputedStyle(label).whiteSpace).toBe('nowrap');
+    expect(label.getBoundingClientRect().height).toBeLessThan(30);
+    const content = dialog.querySelector('.ant-drawer-body')!;
+    expect(content.scrollWidth).toBeLessThanOrEqual(content.clientWidth);
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(dialog).not.toBeVisible());
+  },
+};
+
+export const DarkCompactImportDetail: Story = {
+  ...ReadableImportDetail,
+  name: '暗色紧凑的中文导入详情', globals: { theme: 'dark', density: 'compact' },
+};
+
+const confirmSourceChange = fn();
+export const ReviewSourceChanges: Story = {
+  name: '核对清空及原表补充字段后才保存来源更新',
+  beforeEach: () => { confirmSourceChange.mockClear(); message.destroy(); },
+  parameters: { msw: { handlers: [
+    http.post('/api/order-import/preview', () => HttpResponse.json({
+      session_id: 'synthetic-source-change', counts: { source_update: 1 }, can_commit: true,
+      rows: [{ ...detailRow, decision: 'source_update', reason: '原始交易有变化，请核对前后信息并确认更新',
+        previous_snapshot: { ...detailSnapshot, notes: '工作日收件', raw_cells: { ...detailSnapshot.raw_cells, merchant_note: '旧补充备注' } },
+      }],
+    } satisfies ImportPreviewOut)),
+    http.post('/api/order-import/commit', async ({ request }) => {
+      const payload = await request.json() as { confirmed_source_updates?: string[] };
+      if (!payload.confirmed_source_updates?.includes('SYNTHETIC-DETAIL')) return HttpResponse.json({ detail: '请先逐笔核对来源变化' }, { status: 409 });
+      confirmSourceChange(payload);
+      return HttpResponse.json({ created: 0, order_ids: [], retained_sources: 0, skipped_duplicates: 0 });
+    }),
+  ] } },
+  play: async ({ canvasElement }) => {
+    const dialog = await openImportDetail(canvasElement);
+    const detail = within(dialog);
+    const body = within(canvasElement.ownerDocument.body);
+    await expect(detail.getByText('需要核对的变化 · 2 项')).toBeVisible();
+    await expect(detail.getByText('已清空')).toBeVisible();
+    await expect(detail.getByText('原表 · 商家备注')).toBeVisible();
+    const checkbox = detail.getByRole('checkbox', { name: '我已核对以上变化，确认保存新版本' });
+    await expect(checkbox).not.toBeChecked();
+    await userEvent.click(detail.getByRole('button', { name: '关闭' }));
+    await userEvent.click(body.getByRole('button', { name: /确认导入/ }));
+    await expect(await body.findByText('导入未完成')).toBeVisible();
+    await expect(confirmSourceChange).not.toHaveBeenCalled();
+    await userEvent.click(body.getByText('SYNTHETIC-DETAIL'));
+    await userEvent.click(within(await body.findByRole('dialog')).getByRole('checkbox', { name: '我已核对以上变化，确认保存新版本' }));
+    await userEvent.click(within(await body.findByRole('dialog')).getByRole('button', { name: '关闭' }));
+    await userEvent.click(body.getByRole('button', { name: /确认导入/ }));
+    await waitFor(() => expect(confirmSourceChange).toHaveBeenCalledWith({ session_id: 'synthetic-source-change', confirmed_source_updates: ['SYNTHETIC-DETAIL'] }));
+  },
+};
+
+export const ReadOnlySourceChanges: Story = {
+  name: '只读账号可看变化但不能勾选保存',
+  parameters: {
+    ...ReviewSourceChanges.parameters,
+    auth: { ...meta.parameters.auth, isAdmin: false, canMutate: false },
+  },
+  play: async ({ canvasElement }) => {
+    const detail = within(await openImportDetail(canvasElement));
+    await expect(detail.getByText('已清空')).toBeVisible();
+    await expect(detail.getByRole('checkbox', { name: '我已核对以上变化，确认保存新版本' })).toBeDisabled();
+  },
+};
+
+export const MissingPreviousSnapshot: Story = {
+  name: '缺少上次来源详情时提示重新预览',
+  parameters: { msw: { handlers: [http.post('/api/order-import/preview', () => HttpResponse.json({
+    session_id: 'synthetic-missing-snapshot', can_commit: true, counts: { source_update: 1 },
+    rows: [{ ...detailRow, decision: 'source_update', previous_snapshot: null }],
+  } satisfies ImportPreviewOut))] } },
+  play: async ({ canvasElement }) => {
+    const detail = within(await openImportDetail(canvasElement));
+    await expect(detail.getByText('暂时无法展示来源变化，请重新预览后核对')).toBeVisible();
+    await expect(detail.getByRole('checkbox', { name: '我已核对以上变化，确认保存新版本' })).toBeDisabled();
+  },
+};
+
+export const MultipleProductsAndUnknownStatus: Story = {
+  name: '多商品、缺订期及未知状态提醒',
+  parameters: { msw: { handlers: [http.post('/api/order-import/preview', () => HttpResponse.json({
+    session_id: 'synthetic-multiple-products', can_commit: true, counts: { import: 1 },
+    rows: [{ ...detailRow, decision: 'import', reason: null, status_unknown: true, commercial_status: 'paid', status_raw: '合成特殊状态',
+      source_snapshot: { ...detailSnapshot, commercial_status: 'paid', status_raw: '合成特殊状态', product_lines: [
+        { name: '合成全年订阅', quantity: 1, unit_price: '150.00' }, { name: '合成赠刊', quantity: 1, unit_price: '0.00' },
+      ] },
+      items: [{ publication: 'cbj', fulfillment_type: 'subscription', billing_type: 'paid', subscription_term: 'one_year', delivery_method: 'post_office',
+        total_quantity: 1, unit_price: '150.00', subtotal: '150.00', issue_label: null, issue_number: null, coverage_start_date: null, coverage_end_date: null }],
+    }],
+  } satisfies ImportPreviewOut))] } },
+  play: async ({ canvasElement }) => {
+    const detail = within(await openImportDetail(canvasElement));
+    await expect(detail.getByText('平台状态需要人工核对')).toBeVisible();
+    await expect(detail.getByText('合成全年订阅')).toBeVisible();
+    await expect(detail.getByText('合成赠刊')).toBeVisible();
+    await expect(detail.getByText('订期：未填写')).toBeVisible();
+    await userEvent.click(detail.getByText('开票及其他信息'));
+    await expect(detail.getByText('状态待核对')).toBeVisible();
+    await expect(detail.queryByText('已付款')).not.toBeInTheDocument();
+  },
+};
