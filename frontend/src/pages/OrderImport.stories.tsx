@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { http, HttpResponse } from 'msw';
+import { message } from 'antd';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import OrderImport from './OrderImport';
 import type { CoverageCandidate, CoverageChange } from '../api/orderCoverage';
@@ -95,7 +96,7 @@ export const PreviewFailureRetry: Story = {
     await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
     await expect(await canvas.findByText(/服务器处理异常；若系统刚升级，请确认数据库迁移已完成/)).toBeVisible();
     await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
-    await expect(await canvas.findByText('当前显示 0 单 / 全部 0 单')).toBeVisible();
+    await expect(await canvas.findByText('当前显示 0 笔 / 全部 0 笔')).toBeVisible();
     await expect(canvas.queryByText('预览未完成')).not.toBeInTheDocument();
     await expect(canvas.getByText('synthetic.xlsx')).toBeVisible();
     await expect(previewRetryCount).toBe(2);
@@ -123,7 +124,7 @@ export const FillBeforeImport: Story = {
     await userEvent.click(await body.findByRole('button', { name: '保留当前预览' }));
     await expect(parsed).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(body.getByText(/订期：2026-03-01 至 2027-02-28/)).toBeVisible());
-    await userEvent.click(body.getByRole('button', { name: '确认导入 1 单' }));
+    await userEvent.click(body.getByRole('button', { name: '确认导入 1 笔' }));
     await userEvent.click(await body.findByRole('button', { name: '继续补本次订期' }));
     await expect(await body.findByText('当前筛选 0 单、0 条明细')).toBeVisible();
   },
@@ -177,7 +178,7 @@ export const LinkExistingPromo: Story = {
     await userEvent.click(await body.findByRole('combobox', { name: '选择已有商品' }));
     await userEvent.click(await body.findByText(`${existingPromo.display_name}（${existingPromo.code}）`, { selector: '.ant-select-item-option-content' }));
     await userEvent.click(body.getByRole('button', { name: '保存别名并重新识别' }));
-    await expect(await body.findByRole('button', { name: '确认导入 17 单' })).toBeEnabled();
+    await expect(await body.findByRole('button', { name: '确认导入 17 笔' })).toBeEnabled();
     await expect(body.getByText('待确认 2')).toBeVisible();
     await expect(createdProduct).not.toHaveBeenCalled();
   },
@@ -249,7 +250,7 @@ export const FilterResults: Story = {
 
     // 问题订单在原列表第二页，筛选必须作用于完整预览并回到第一页。
     await userEvent.click(filters.getByRole('button', { name: '待确认 2' }));
-    await expect(body.getByText('当前显示 2 单 / 全部 56 单')).toBeVisible();
+    await expect(body.getByText('当前显示 2 笔 / 全部 56 笔')).toBeVisible();
     await expect(body.getByText('SYNTHETIC-FILTER-54')).toBeVisible();
     await expect(body.queryByText('SYNTHETIC-FILTER-50')).not.toBeInTheDocument();
     await expect(canvasElement.querySelectorAll('tbody tr.ant-table-row')).toHaveLength(2);
@@ -261,13 +262,13 @@ export const FilterResults: Story = {
     await expect(body.getByText('SYNTHETIC-FILTER-52')).toBeVisible();
     await userEvent.click(filters.getByRole('button', { name: '跳过 1' }));
     await expect(body.getByText('取消订单不导入')).toBeVisible();
-    await userEvent.click(filters.getByRole('button', { name: '导入 51' }));
+    await userEvent.click(filters.getByRole('button', { name: '可导入 51' }));
     await expect(body.getByRole('spinbutton')).toHaveValue('2677');
     await expect(body.getByPlaceholderText('选填，如 2026-06')).toHaveValue('2026-08');
-    await expect(body.getByText('当前显示 51 单 / 全部 56 单')).toBeVisible();
+    await expect(body.getByText('当前显示 51 笔 / 全部 56 笔')).toBeVisible();
 
     await userEvent.click(filters.getByRole('button', { name: '重复 2' }));
-    await userEvent.click(body.getByRole('button', { name: '确认导入 51 单' }));
+    await userEvent.click(body.getByRole('button', { name: '确认导入 51 笔' }));
     await waitFor(() => expect(committedFilteredBatch).toHaveBeenCalledWith({
       session_id: 'synthetic-filter-session', issue_overrides: { 'SYNTHETIC-FILTER-0#0': 2677 },
       issue_label_overrides: { 'SYNTHETIC-FILTER-1#0': '2026-08' },
@@ -284,10 +285,10 @@ export const RefreshFilteredPreview: Story = {
     const body = await previewFilterFile(canvasElement);
     await userEvent.click(body.getByRole('button', { name: '待确认 2' }));
     await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
-    await waitFor(() => expect(body.getByText('当前没有“待确认”订单')).toBeVisible());
+    await waitFor(() => expect(body.getByText('当前没有“待确认”记录')).toBeVisible());
     await expect(body.getByRole('button', { name: '待确认 0' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(body.getByRole('button', { name: '确认导入 53 单' })).toBeEnabled();
-    await expect(body.getByText('当前显示 0 单 / 全部 56 单')).toBeVisible();
+    await expect(body.getByRole('button', { name: '确认导入 53 笔' })).toBeEnabled();
+    await expect(body.getByText('当前显示 0 笔 / 全部 56 笔')).toBeVisible();
     await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['another synthetic'], 'another-synthetic.xlsx'));
     await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
     await waitFor(() => expect(body.getByRole('button', { name: '全部 56' })).toHaveAttribute('aria-pressed', 'true'));
@@ -303,6 +304,92 @@ export const DarkCompactFilters: Story = {
     const body = await previewFilterFile(canvasElement);
     await userEvent.click(body.getByRole('button', { name: '待确认 2' }));
     await expect(body.getByRole('button', { name: '待确认 2' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(body.getByText('当前显示 2 单 / 全部 56 单')).toBeVisible();
+    await expect(body.getByText('当前显示 2 笔 / 全部 56 笔')).toBeVisible();
+  },
+};
+
+const importTransactions = fn();
+const transactionRows: ImportPreviewRow[] = [
+  { external_order_no: 'SYNTHETIC-REFUND', decision: 'import', reason: null },
+  { external_order_no: 'SYNTHETIC-FEE', decision: 'retain', reason: '纯运费记录：仅保存交易，不新增订阅或发货；可到来源交易关联订阅' },
+  { external_order_no: 'SYNTHETIC-LEGACY', decision: 'retain', reason: '补充订单原件：仅保存交易，不重复建单、不覆盖人工修改' },
+  { external_order_no: 'SYNTHETIC-UNKNOWN-REFUND', decision: 'unresolved', reason: '商品库无匹配', unresolved_product: promoAlias },
+].map(row => ({
+  recipient_name: '合成测试订户', paid_amount: '150.00', status_raw: '卖家已退款', commercial_status: 'refunded',
+  status_unknown: false, delivery_overridden_to_zto: false, warnings: [], unresolved_product: null, items: [],
+  ...row,
+} as ImportPreviewRow));
+
+const transactionHandlers = [
+  http.post('/api/order-import/preview', () => HttpResponse.json({
+    session_id: 'synthetic-transactions', can_commit: true, rows: transactionRows,
+    counts: { total: 4, import: 1, retain: 2, unresolved: 1 },
+  } satisfies ImportPreviewOut)),
+  http.post('/api/order-import/commit', async ({ request }) => {
+    importTransactions(await request.json());
+    return HttpResponse.json({ created: 1, order_ids: [], retained_sources: 2, skipped_duplicates: 0 });
+  }),
+  http.get('/api/products', () => HttpResponse.json([existingPromo])),
+];
+
+export const ImportTransactions: Story = {
+  name: '运费及原件归入可导入，未知退款留在待确认',
+  parameters: { msw: { handlers: transactionHandlers } },
+  beforeEach: () => { importTransactions.mockClear(); message.destroy(); },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic-transactions.xlsx'));
+    await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
+    const filters = within(await body.findByRole('group', { name: '按识别结果筛选' }));
+    await expect(filters.queryByRole('button', { name: /留存/ })).not.toBeInTheDocument();
+    await expect(filters.getAllByRole('button')).toHaveLength(6);
+    await userEvent.click(filters.getByRole('button', { name: '可导入 3' }));
+    await expect(body.getByText('SYNTHETIC-FEE')).toBeVisible();
+    await expect(body.getByText('SYNTHETIC-LEGACY')).toBeVisible();
+    await expect(body.queryByText('SYNTHETIC-UNKNOWN-REFUND')).not.toBeInTheDocument();
+    await expect(canvasElement.querySelectorAll('tbody tr.ant-table-row')).toHaveLength(3);
+    await expect(body.getByText(/纯运费记录：仅保存交易/)).toBeVisible();
+    await userEvent.click(filters.getByRole('button', { name: '待确认 1' }));
+    await expect(body.getByText('SYNTHETIC-UNKNOWN-REFUND')).toBeVisible();
+    await userEvent.click(body.getByText('SYNTHETIC-UNKNOWN-REFUND'));
+    await waitFor(() => expect(body.getByRole('combobox', { name: '选择已有商品' })).toBeVisible());
+    await userEvent.click(body.getByRole('button', { name: /取\s*消/ }));
+    // 当前只显示待确认，确认仍处理整批 3 笔可导入记录。
+    await userEvent.click(body.getByRole('button', { name: '确认导入 3 笔' }));
+    await waitFor(() => expect(importTransactions).toHaveBeenCalledWith({ session_id: 'synthetic-transactions' }));
+    await waitFor(() => expect(body.getByText(/导入完成：新建 1 单，保存 2 笔交易记录/)).toBeVisible());
+  },
+};
+
+export const DarkCompactTransactions: Story = {
+  ...ImportTransactions,
+  name: '暗色紧凑的交易导入与退款待确认',
+  globals: { theme: 'dark', density: 'compact' },
+};
+
+export const FeeOnlyImport: Story = {
+  name: '只有运费及补原件时也能确认导入',
+  parameters: { msw: { handlers: [
+    http.post('/api/order-import/preview', () => HttpResponse.json({
+      session_id: 'synthetic-fees', can_commit: true, rows: transactionRows.slice(1, 3),
+      counts: { total: 2, import: 0, retain: 2 },
+    } satisfies ImportPreviewOut)),
+    http.post('/api/order-import/commit', async ({ request }) => {
+      importTransactions(await request.json());
+      return HttpResponse.json({ created: 0, order_ids: [], retained_sources: 2, skipped_duplicates: 0 });
+    }),
+  ] } },
+  beforeEach: () => { importTransactions.mockClear(); message.destroy(); },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic-fees.xlsx'));
+    await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
+    await userEvent.click(await body.findByRole('button', { name: '可导入 2' }));
+    await expect(body.getByText('当前显示 2 笔 / 全部 2 笔')).toBeVisible();
+    await userEvent.click(body.getByRole('button', { name: '待确认 0' }));
+    await expect(body.getByText('当前没有“待确认”记录')).toBeVisible();
+    await userEvent.click(body.getByRole('button', { name: '确认导入 2 笔' }));
+    await waitFor(() => expect(importTransactions).toHaveBeenCalledWith({ session_id: 'synthetic-fees' }));
+    await waitFor(() => expect(body.getByText(/导入完成：新建 0 单，保存 2 笔交易记录/)).toBeVisible());
   },
 };

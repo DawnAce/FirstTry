@@ -83,6 +83,7 @@ import {
   previewPostalImport,
   resolveAddressChangePending,
   shipComplaintMakeup,
+  supplementAddressAllocationStartDate,
   updateAddressChange,
   updateComplaint,
   updateDelivery,
@@ -92,6 +93,7 @@ import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives'
 import { addressChangeAllocations, coverageStatus, EXPIRING_DAYS } from './orderUtils';
 import type {
   AddrImportRow,
+  AddressAllocation,
   ComplaintImportPreview,
   ComplaintImportRow,
   ComplaintMakeupTask,
@@ -1950,13 +1952,17 @@ function formatTicketPhone(value: string | null) {
 }
 
 /** 信息变更详情抽屉：新旧对比 + 应用变更（更新投递记录，挂单则同步履约订单）。 */
-function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdit, onClose }: {
+export function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdit, onClose }: {
   addressId: number | null; readOnly?: boolean; modal?: boolean; onEdit: (rec: PostalAddressChange) => void; onClose: () => void;
 }) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const [resolveOpen, setResolveOpen] = useState(false);
   const [resolveForm] = Form.useForm();
+  const [startDateForm] = Form.useForm<{ start_date: Dayjs }>();
+  const [startDateTarget, setStartDateTarget] = useState<{
+    changeId: number; index: number; allocation: AddressAllocation;
+  } | null>(null);
   const resolveKind = Form.useWatch<'changed' | 'retained'>('kind', resolveForm);
   const open = addressId != null;
   const q = useQuery({
@@ -1984,6 +1990,22 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
       resolveForm.resetFields();
       qc.invalidateQueries({ queryKey: ['postalTickets'] });
       qc.invalidateQueries({ queryKey: ['postalAddrDetail', addressId] });
+    },
+    onError: (e) => message.error(errText(e)),
+  });
+  const startDateMut = useMutation({
+    mutationFn: (values: { changeId: number; index: number; allocation: AddressAllocation; startDate: string }) =>
+      supplementAddressAllocationStartDate(values.changeId, values.index, {
+        start_date: values.startDate,
+        expected_allocation: values.allocation,
+      }),
+    onSuccess: (_response, values) => {
+      message.success('起投日期已补充');
+      setStartDateTarget(null);
+      startDateForm.resetFields();
+      qc.invalidateQueries({ queryKey: ['postalAddrDetail', values.changeId] });
+      qc.invalidateQueries({ queryKey: ['postalTickets'] });
+      qc.invalidateQueries({ queryKey: ['postalAddrChanges'] });
     },
     onError: (e) => message.error(errText(e)),
   });
@@ -2041,7 +2063,13 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
                   </Tag>
                 </strong>
                 <small>{row.kind === 'pending' ? `当前暂按${a.old_name || '原收件人'}原姓名、电话和地址投递` : `${row.phone || '无电话'} · ${row.address || '无地址'}`}</small>
-                <small className="start">起投时间：{row.kind === 'pending' ? `待确认；当前暂按 ${row.start_date || sourceStart || '原时间'} 投递` : row.start_date || '—'}</small>
+                <small className="start">起投时间：{row.kind === 'pending' ? `待确认；当前暂按 ${row.start_date || sourceStart || '原时间'} 投递` : row.start_date || '待补充'}</small>
+                {row.kind !== 'pending' && !row.start_date && a.applied_to_order && isAdmin && !readOnly && (
+                  <Button size="small" aria-label={`${row.name || '收件人'}：补充起投日期`} onClick={() => {
+                    startDateForm.resetFields();
+                    setStartDateTarget({ changeId: a.id, index, allocation: { ...row } });
+                  }}>补充起投日期</Button>
+                )}
               </div>
               <b>{row.copies}份</b>
             </div>
@@ -2185,6 +2213,28 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
       </Form>
     </Modal>
   );
+  const startDateDialog = (
+    <Modal title="补充起投日期" width={520} centered
+      open={open && startDateTarget?.changeId === addressId}
+      onCancel={() => { setStartDateTarget(null); startDateForm.resetFields(); }}
+      okText="保存起投日期" cancelText="取消" confirmLoading={startDateMut.isPending}
+      onOk={() => startDateForm.submit()}>
+      <Alert type="info" showIcon title="已带入收件信息，选择实际起投日期即可。保存后会记录本次补充。" />
+      <Descriptions size="small" column={1} className="address-resolve-form" items={[
+        { key: 'name', label: '收件人', children: startDateTarget?.allocation.name || '未填写' },
+        { key: 'phone', label: '电话', children: startDateTarget?.allocation.phone || '未填写' },
+        { key: 'address', label: '地址', children: startDateTarget?.allocation.address || '未填写' },
+        { key: 'copies', label: '份数', children: startDateTarget?.allocation.copies },
+      ]} />
+      <Form form={startDateForm} layout="vertical" onFinish={(values) => {
+        if (startDateTarget) startDateMut.mutate({ ...startDateTarget, startDate: values.start_date.format('YYYY-MM-DD') });
+      }}>
+        <Form.Item name="start_date" label="起投日期" rules={[{ required: true, message: '请选择起投日期' }]}>
+          <DatePicker style={{ width: '100%' }} />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
   if (modal) return (
     <><Modal
       title={a ? (
@@ -2239,7 +2289,7 @@ function AddressDetailDrawer({ addressId, readOnly = false, modal = false, onEdi
         </div>
       )}>
       {content}
-    </Drawer>{resolveDialog}</>
+    </Drawer>{resolveDialog}{startDateDialog}</>
   );
 }
 

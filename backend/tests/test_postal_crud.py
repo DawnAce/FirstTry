@@ -429,6 +429,139 @@ def test_address_change_pending_copies_can_be_resolved(client):
     assert client.get("/api/postal/tickets", params={"recipient_pending": True}).json()["total"] == 0
 
 
+def _change_missing_start_date(client, *, applied: bool = True) -> tuple[dict, dict]:
+    delivery = client.post("/api/postal/deliveries", json={
+        "year": 2026, "delivery_no": "9901", "recipient_name": "测试原收件人",
+        "recipient_address": "测试原地址", "copies": 2,
+        "coverage_start_date": "2026-01-01", "coverage_end_date": "2026-12-31",
+    }).json()
+    response = client.post("/api/postal/address-changes", json={
+        "year": 2026, "delivery_no": "9901", "change_date": "2026-03-16",
+        "old_name": "测试原收件人", "old_address": "测试原地址", "old_copies": 2,
+        "new_name": "测试新收件人", "new_phone": "00000000000",
+        "new_address": "测试新地址", "new_copies": 1, "original_start_month": "0101",
+    })
+    assert response.status_code == 201
+    change = response.json()
+    if applied:
+        response = client.post(f"/api/postal/address-changes/{change['id']}/apply")
+        assert response.status_code == 200
+        change = response.json()
+    return change, delivery
+
+
+def _missing_start_allocation() -> dict:
+    return {
+        "kind": "changed", "copies": 1, "name": "测试新收件人", "phone": "00000000000",
+        "address": "测试新地址", "start_date": None,
+    }
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_supplement_allocation_start_date_preserves_recipient_and_pending(client, explicit):
+    change, delivery = _change_missing_start_date(client, applied=False)
+    expected = _missing_start_allocation()
+    if explicit:
+        response = client.put(f"/api/postal/address-changes/{change['id']}", json={
+            "copy_allocations": [expected, {
+                "kind": "pending", "copies": 1, "name": "测试原收件人",
+                "phone": None, "address": "测试原地址", "start_date": "2026-01-01",
+            }],
+        })
+        assert response.status_code == 200
+    change = client.post(f"/api/postal/address-changes/{change['id']}/apply").json()
+    delivery_before = client.get(f"/api/postal/deliveries/{delivery['id']}").json()
+    url = f"/api/postal/address-changes/{change['id']}/allocations/0/start-date"
+    payload = {"start_date": "2027-02-01", "expected_allocation": expected}
+    response = client.post(url, json=payload)
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    assert saved["copy_allocations"][0] == {**expected, "start_date": "2027-02-01"}
+    assert saved["copy_allocations"][1] == {
+        "kind": "pending", "copies": 1, "name": "测试原收件人", "phone": None,
+        "address": "测试原地址", "start_date": "2026-01-01",
+    }
+    assert saved["unresolved_copies"] == 1
+    for field, value in change.items():
+        if field != "copy_allocations":
+            assert saved[field] == value, field
+    assert client.get(f"/api/postal/deliveries/{delivery['id']}").json() == delivery_before
+    assert client.get("/api/postal/tickets", params={"recipient_pending": True}).json()["total"] == 1
+    assert client.post(url, json=payload).status_code == 200  # 重试不重复留痕。
+    assert client.post(url, json={**payload, "start_date": "2027-03-01"}).status_code == 409
+    assert client.put(f"/api/postal/address-changes/{change['id']}", json={"new_name": "覆盖"}).status_code == 409
+    db_override = app.dependency_overrides[get_db]()
+    db = next(db_override)
+    try:
+        events = db.query(PostalComplaintHandlingRecord).filter(
+            PostalComplaintHandlingRecord.ticket_id == change["id"],
+            PostalComplaintHandlingRecord.action == "补充起投日期",
+        ).all()
+        assert len(events) == 1
+        assert events[0].handled_by == 1
+        assert "未填写 → 2027-02-01" in events[0].follow_result
+        assert "去向 1" in events[0].follow_result
+    finally:
+        db_override.close()
+
+
+def test_supplement_start_date_rejects_draft_pending_and_stale_recipient(client):
+    change, _ = _change_missing_start_date(client, applied=False)
+    url = f"/api/postal/address-changes/{change['id']}/allocations/0/start-date"
+    payload = {"start_date": "2026-04-01", "expected_allocation": _missing_start_allocation()}
+    assert client.post(url, json=payload).status_code == 409
+    client.post(f"/api/postal/address-changes/{change['id']}/apply")
+    assert client.post(url, json={**payload, "expected_allocation": {
+        **payload["expected_allocation"], "name": "另一位收件人",
+    }}).status_code == 409
+    assert client.post(url.replace("/0/", "/1/"), json=payload).status_code == 409
+    assert client.post(url.replace("/0/", "/99/"), json=payload).status_code == 409
+    assert client.post(url.replace(str(change["id"]), "999999", 1), json=payload).status_code == 404
+    assert client.get(f"/api/postal/address-changes/{change['id']}").json()["copy_allocations"] is None
+
+
+def test_supplement_retained_recipient_date_changes_only_selected_allocation(client):
+    change, _ = _change_missing_start_date(client, applied=False)
+    retained = {
+        "kind": "retained", "copies": 1, "name": "测试原收件人", "phone": None,
+        "address": "测试原地址", "start_date": None,
+    }
+    response = client.put(f"/api/postal/address-changes/{change['id']}", json={
+        "original_start_month": None, "copy_allocations": [_missing_start_allocation(), retained],
+    })
+    assert response.status_code == 200
+    client.post(f"/api/postal/address-changes/{change['id']}/apply")
+    response = client.post(f"/api/postal/address-changes/{change['id']}/allocations/1/start-date", json={
+        "start_date": "2026-01-01", "expected_allocation": retained,
+    })
+    assert response.status_code == 200
+    assert response.json()["copy_allocations"] == [
+        _missing_start_allocation(), {**retained, "start_date": "2026-01-01"},
+    ]
+    assert response.json()["unresolved_copies"] == 0
+
+
+@pytest.mark.parametrize("patch", [
+    {"start_date": None}, {"start_date": "2026-02-30"},
+    {"expected_allocation": None}, {"new_name": "不应覆盖姓名"},
+])
+def test_supplement_start_date_validates_input(client, patch):
+    change, _ = _change_missing_start_date(client)
+    payload = {"start_date": "2026-04-01", "expected_allocation": _missing_start_allocation(), **patch}
+    response = client.post(f"/api/postal/address-changes/{change['id']}/allocations/0/start-date", json=payload)
+    assert response.status_code == 422
+
+
+def test_supplement_start_date_requires_admin(client):
+    change, _ = _change_missing_start_date(client)
+    app.dependency_overrides.pop(require_admin)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=2, role="viewer")
+    response = client.post(f"/api/postal/address-changes/{change['id']}/allocations/0/start-date", json={
+        "start_date": "2026-04-01", "expected_allocation": _missing_start_allocation(),
+    })
+    assert response.status_code == 403
+
+
 def test_follow_up_crud(client):
     r = client.post("/api/postal/follow-ups", json={
         "year": 2026, "delivery_no": "123", "follow_up_date": "2026-03-20",

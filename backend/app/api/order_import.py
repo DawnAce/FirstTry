@@ -53,7 +53,11 @@ async def preview(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    """解析并预览订单；缺少来源交易表或列时返回 503，提示完成迁移。"""
+    """解析并预览订单；退款识别失败返回 unresolved，补齐后重新预览。
+
+    import 建单、retain 仅保存运费/旧订单原件，页面合并展示为可导入。
+    返回结构保持兼容；缺少来源交易表或列时返回 503，提示完成迁移。
+    """
     content = await read_upload(file)
     cutoff = None
     if cutoff_date:

@@ -520,6 +520,15 @@ class AddressAllocationResolveIn(BaseModel):
     start_date: Optional[date] = None
 
 
+class AddressAllocationStartDateIn(BaseModel):
+    """仅补齐所选去向的缺失日期；携带查看时的去向快照用于冲突检测。"""
+
+    start_date: date
+    expected_allocation: AddressAllocation
+
+    model_config = {"extra": "forbid"}
+
+
 # --- 回访 -------------------------------------------------------------
 class FollowUpCreateIn(BaseModel):
     year: Optional[int] = Field(default=None, ge=2000, le=2100)

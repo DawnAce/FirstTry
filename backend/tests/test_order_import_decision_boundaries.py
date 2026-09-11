@@ -83,12 +83,21 @@ def existing_order(db: Session, external_order_no: str) -> Order:
     return order
 
 
-def workbook_bytes(orders: list[ParsedOrder]) -> bytes:
+def workbook_bytes(orders: list[ParsedOrder], platform: str = "cbj") -> bytes:
     workbook = Workbook()
     sheet = workbook.active
-    sheet.append(["订单号", "产品名称", "原价", "付款金额", "支付方式", "发票",
-                  "地址", "备注", "下单时间", "支付时间", "订单状态"])
+    sheet.append(
+        ["订单编号", "商品标题", "总金额", "买家实付金额", "订单状态", "订单创建时间", "宝贝总数量"]
+        if platform == "taobao" else
+        ["订单号", "产品名称", "原价", "付款金额", "支付方式", "发票",
+         "地址", "备注", "下单时间", "支付时间", "订单状态"]
+    )
     for order in orders:
+        if platform == "taobao":
+            sheet.append([order.external_order_no, ",".join(p.name for p in order.product_lines),
+                          order.original_amount, order.paid_amount, order.status_raw,
+                          order.order_date, sum(p.quantity for p in order.product_lines)])
+            continue
         products = "\n".join(f"{p.name}X{p.quantity},单价:{p.unit_price}" for p in order.product_lines)
         sheet.append([order.external_order_no, products, order.original_amount, order.paid_amount,
                       order.payment_method_raw, "", "", "合成测试", order.order_date,
@@ -105,8 +114,8 @@ def workbook_bytes(orders: list[ParsedOrder]) -> bytes:
         ("卖家已发货", "known", False, False, "import", "shipped", None, "import"),
         ("卖家已退款", "known", False, False, "import", "refunded", None, "import"),
         ("卖家部分退款", "known", False, False, "import", "partial_refund", None, "import"),
-        ("卖家已退款", "unknown", False, False, "unresolved", "refunded", "商品库无匹配", "retain"),
-        ("卖家部分退款", "unknown", False, False, "unresolved", "partial_refund", "商品库无匹配", "retain"),
+        ("卖家已退款", "unknown", False, False, "unresolved", "refunded", "商品库无匹配", "unresolved"),
+        ("卖家部分退款", "unknown", False, False, "unresolved", "partial_refund", "商品库无匹配", "unresolved"),
         ("卖家已退款", "known", True, False, "duplicate", "refunded", "订单号已存在", "retain"),
         ("卖家已退款", "unknown", True, True, "duplicate", "refunded", "订单号已存在", "retain"),
         ("待付款", "known", False, False, "skip_status", "pending_payment", "状态", "skip_status"),
@@ -115,13 +124,13 @@ def workbook_bytes(orders: list[ParsedOrder]) -> bytes:
         ("卖家已退款", "ignored", False, False, "skip_status", "refunded", "已忽略", "skip_status"),
         ("卖家已发货", "ignored", True, False, "duplicate", "shipped", "订单号已存在", "retain"),
         ("卖家已发货", "ignored", False, True, "unresolved", "shipped", "缺少下单/支付时间", "unresolved"),
-        ("卖家已退款", "known", False, True, "unresolved", "refunded", "缺少下单/支付时间", "retain"),
+        ("卖家已退款", "known", False, True, "unresolved", "refunded", "缺少下单/支付时间", "unresolved"),
         ("卖家已退款", "shipping", False, False, "unresolved", "refunded", "无可识别的商品行", "retain"),
         ("卖家已发货", "empty", False, False, "unresolved", "shipped", "无可识别的商品行", "unresolved"),
         ("卖家已发货", "known_ignored", False, False, "import", "shipped", None, "import"),
         ("卖家已发货", "unknown_ignored", False, False, "unresolved", "shipped", "商品库无匹配", "unresolved"),
-        ("卖家已退款", "ignored", False, True, "unresolved", "refunded", "缺少下单/支付时间", "retain"),
-        ("卖家已退款", "empty", False, False, "unresolved", "refunded", "无可识别的商品行", "retain"),
+        ("卖家已退款", "ignored", False, True, "unresolved", "refunded", "缺少下单/支付时间", "unresolved"),
+        ("卖家已退款", "empty", False, False, "unresolved", "refunded", "无可识别的商品行", "unresolved"),
     ],
 )
 def test_decision_priority_and_exclusive_counts(
@@ -249,6 +258,42 @@ def test_payment_date_is_a_valid_fallback(db: Session) -> None:
     assert db.query(Order).one().order_date == date(2026, 9, 1)
 
 
+@pytest.mark.parametrize("status", ["卖家已退款", "卖家部分退款"])
+@pytest.mark.parametrize("platform", ["cbj", "taobao"])
+def test_refund_can_be_resolved_after_other_rows_are_imported(
+    db: Session, status: str, platform: str,
+) -> None:
+    refund = parsed_order(status, "unknown", False)
+    ready = parsed_order("卖家已发货", "known", False)
+    ready.external_order_no = "SYNTHETIC-READY"
+    content = workbook_bytes([refund, ready], platform)
+    preview, sid = preview_import(db, content, SETTINGS, filename="synthetic-refund.xlsx")
+    row = preview["rows"][0]
+    assert row["decision"] == "unresolved"
+    assert row["unresolved_product"] == UNKNOWN
+    assert "商品库无匹配" in row["reason"]
+    assert row["source_snapshot"]["status_raw"] == status
+    assert commit_import(db, sid)["created"] == 1
+    assert db.query(OrderSource).count() == 1  # 待确认不能提前变成已导入来源。
+
+    product = db.query(Product).one()
+    product.aliases = [UNKNOWN]
+    db.commit()
+    preview, sid = preview_import(db, content, SETTINGS, filename="synthetic-refund.xlsx")
+    assert [row["decision"] for row in preview["rows"]] == ["import", "duplicate"]
+    result = commit_import(db, sid)
+    assert result["created"] == 1
+    assert result["retained_sources"] == 0
+    order = db.query(Order).filter_by(external_order_no=refund.external_order_no).one()
+    assert order.commercial_status.value == preview["rows"][0]["commercial_status"]
+    source = db.query(OrderSource).filter_by(external_order_no=refund.external_order_no).one()
+    original = db.query(OrderSourceVersion).filter_by(source_id=source.id).one()
+    assert original.snapshot["filename"] == "synthetic-refund.xlsx"
+    assert original.snapshot["status_raw"] == status
+    assert original.snapshot["product_lines"][0]["name"] == UNKNOWN
+    assert db.query(Order).count() == db.query(OrderSource).count() == 2
+
+
 def test_duplicate_source_numbers_in_one_file_fail_before_confirmation(db: Session) -> None:
     source = parsed_order("卖家已退款", "known", False)
     with pytest.raises(ValueError, match="同一文件存在重复来源单号"):
@@ -271,7 +316,8 @@ def test_six_decisions_survive_excel_preview_and_atomic_commit(db: Session) -> N
     cases = [
         ("SYNTHETIC-REFUNDED", "known", "卖家已退款", "import"),
         ("SYNTHETIC-PARTIAL", "known", "卖家部分退款", "import"),
-        ("SYNTHETIC-RETAINED", "unknown", "卖家已退款", "retain"),
+        ("SYNTHETIC-FEE", "shipping", "卖家已退款", "retain"),
+        ("SYNTHETIC-REFUND-UNRESOLVED", "unknown", "卖家已退款", "unresolved"),
         ("SYNTHETIC-LEGACY", "known", "卖家已退款", "retain"),
         ("SYNTHETIC-PENDING", "known", "待付款", "skip_status"),
         ("SYNTHETIC-IGNORED", "ignored", "卖家已退款", "skip_status"),
@@ -286,8 +332,8 @@ def test_six_decisions_survive_excel_preview_and_atomic_commit(db: Session) -> N
         sources.append(source)
     preview, session_id = preview_import(db, workbook_bytes(sources), SETTINGS)
     assert preview["counts"] == {
-        "total": 9, "import": 2, "retain": 2, "source_update": 1,
-        "skip_status": 2, "duplicate": 1, "unresolved": 1,
+        "total": 10, "import": 2, "retain": 2, "source_update": 1,
+        "skip_status": 2, "duplicate": 1, "unresolved": 2,
     }
     assert {row["external_order_no"]: row["decision"] for row in preview["rows"]} == {
         external_no: decision for external_no, _, _, decision in cases
@@ -315,7 +361,7 @@ def test_six_decisions_survive_excel_preview_and_atomic_commit(db: Session) -> N
     }
     retained = {source.external_order_no: source for source in db.query(OrderSource).all()}
     assert set(retained) == {
-        "SYNTHETIC-REFUNDED", "SYNTHETIC-PARTIAL", "SYNTHETIC-RETAINED",
+        "SYNTHETIC-REFUNDED", "SYNTHETIC-PARTIAL", "SYNTHETIC-FEE",
         "SYNTHETIC-LEGACY", "SYNTHETIC-DUPLICATE", "SYNTHETIC-UPDATE",
     }
     assert retained["SYNTHETIC-UPDATE"].commercial_status == "refunded"
