@@ -16,6 +16,7 @@ from app.upload import read_upload
 from app.schemas.postal import (
     AddressChangeCreateIn,
     AddressAllocationResolveIn,
+    AddressAllocationStartDateIn,
     AddressChangeListOut,
     AddressChangeOut,
     AddressChangeUpdateIn,
@@ -706,6 +707,22 @@ def resolve_address_change_pending(
         db,
         change_id,
         body.model_dump(),
+        operator_id=getattr(user, "id", None),
+    )
+
+
+@router.post("/address-changes/{change_id}/allocations/{allocation_index}/start-date", response_model=AddressChangeOut)
+def supplement_address_allocation_start_date(
+    change_id: int,
+    allocation_index: int,
+    body: AddressAllocationStartDateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """管理员补齐已应用工单指定去向的起投日期；保留收件信息并记录审计，冲突返回 409。"""
+    return change_svc.supplement_allocation_start_date(
+        db, change_id, allocation_index, body.start_date,
+        body.expected_allocation.model_dump(mode="json"),
         operator_id=getattr(user, "id", None),
     )
 

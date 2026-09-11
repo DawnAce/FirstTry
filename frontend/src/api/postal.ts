@@ -321,6 +321,13 @@ export function resolveAddressChangePending(id: number, body: {
   return api.post(`/postal/address-changes/${id}/resolve-pending`, body);
 }
 
+export function supplementAddressAllocationStartDate(id: number, allocationIndex: number, body: {
+  start_date: string;
+  expected_allocation: AddressAllocation;
+}): Promise<AxiosResponse<PostalAddressChange>> {
+  return api.post(`/postal/address-changes/${id}/allocations/${allocationIndex}/start-date`, body);
+}
+
 // --- 回访 (P3) -------------------------------------------------------------
 
 export interface PostalFollowUp {

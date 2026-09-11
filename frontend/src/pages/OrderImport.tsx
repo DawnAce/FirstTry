@@ -39,24 +39,23 @@ import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives'
 const { Text } = Typography;
 
 type Mode = 'recent' | 'historical';
-type PreviewFilter = 'all' | ImportDecision;
+type PreviewFilter = 'all' | Exclude<ImportDecision, 'retain'>;
 
 const PREVIEW_FILTERS = [
   { value: 'all', label: '全部', color: 'primary' },
   { value: 'unresolved', label: '待确认', color: 'danger' },
-  { value: 'retain', label: '留存', color: 'cyan' },
   { value: 'source_update', label: '来源更新', color: 'orange' },
   { value: 'duplicate', label: '重复', color: 'blue' },
-  { value: 'import', label: '导入', color: 'green' },
+  { value: 'import', label: '可导入', color: 'green' },
   { value: 'skip_status', label: '跳过', color: 'default' },
 ] as const;
 
 const DECISION_META: Record<ImportDecision, { label: string; color: string }> = {
-  import: { label: '✅ 导入', color: 'green' },
+  import: { label: '✅ 可导入', color: 'green' },
   skip_status: { label: '⏭ 跳过', color: 'default' },
   duplicate: { label: '♻ 重复', color: 'blue' },
   unresolved: { label: '⚠ 待确认', color: 'red' },
-  retain: { label: '留存待处理', color: 'cyan' },
+  retain: { label: '✅ 可导入', color: 'green' },
   source_update: { label: '来源更新待核对', color: 'orange' },
 };
 
@@ -177,7 +176,7 @@ export default function OrderImport() {
       return commitOrderImport(preview!.session_id, issueOverrides, validLabels, confirmedSourceUpdates);
     },
     onSuccess: (res) => {
-      message.success(`成功导入 ${res.data.created} 单，另留存 ${res.data.retained_sources ?? 0} 笔交易（跳过重复 ${res.data.skipped_duplicates}）`);
+      message.success(`导入完成：新建 ${res.data.created} 单，保存 ${res.data.retained_sources ?? 0} 笔交易记录${preview?.counts.source_update ? `，更新 ${preview.counts.source_update} 笔来源` : ''}（跳过重复 ${res.data.skipped_duplicates}）`);
       setImportedOrderIds(res.data.order_ids);
       void queryClient.invalidateQueries();
       setPreview(null);
@@ -269,7 +268,7 @@ export default function OrderImport() {
     { title: '结果', dataIndex: 'decision', key: 'decision', width: 100, render: (d: ImportDecision) => <Tag color={DECISION_META[d].color}>{DECISION_META[d].label}</Tag> },
     { title: '来源单号', dataIndex: 'external_order_no', key: 'ext', width: 160, ellipsis: true },
     { title: '收件人', dataIndex: 'recipient_name', key: 'name', width: 90 },
-    { title: '付款', dataIndex: 'paid_amount', key: 'paid', width: 80, align: 'right', render: (v) => `¥${v}` },
+    { title: '付款', dataIndex: 'paid_amount', key: 'paid', width: 100, align: 'right', render: (v) => `¥${v}` },
     {
       title: '状态', key: 'status', width: 150,
       render: (_: unknown, r) => (
@@ -366,15 +365,17 @@ export default function OrderImport() {
   ];
 
   const counts = preview?.counts ?? {};
+  const importableCount = (counts.import ?? 0) + (counts.retain ?? 0);
   const visibleRows = useMemo(() => {
     const rows = preview?.rows ?? [];
-    return previewFilter === 'all' ? rows : rows.filter(row => row.decision === previewFilter);
+    return previewFilter === 'all' ? rows : rows.filter(row =>
+      row.decision === previewFilter || (previewFilter === 'import' && row.decision === 'retain'));
   }, [preview, previewFilter]);
   const previewFilterLabel = PREVIEW_FILTERS.find(filter => filter.value === previewFilter)!.label;
 
   return (
     <div>
-      <PageHeader title="电商订单导入" description="预览、校验并导入各平台订单" actions={<Button href="/orders/sources">处理已留存的来源交易</Button>} />
+      <PageHeader title="电商订单导入" description="预览、校验并导入各平台订单" actions={<Button href="/orders/sources">查看来源交易</Button>} />
       {modalContext}
       {aliasName && <LinkProductAliasModal alias={aliasName} orderCount={unresolvedSummary.find(row => row.name === aliasName)?.count ?? 0}
         onClose={() => setAliasName(null)} onCreate={() => { openQuickAdd(aliasName); setAliasName(null); }}
@@ -482,11 +483,11 @@ export default function OrderImport() {
 
           <Card
             size="small"
-            title="③ 预览（商品关联、订期补录及原始交易留存）"
+            title="③ 预览（商品关联、订期补录及交易记录）"
             extra={
               isAdmin ? (
                 <Space><Button href="/orders/sources">来源交易</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || previewMutation.isPending || previewMutation.isError}>
-                  确认导入 {counts.import ?? 0} 单{counts.retain ? `，留存 ${counts.retain} 笔` : ''}{counts.source_update ? `，更新 ${counts.source_update} 笔来源` : ''}
+                  确认导入 {importableCount} 笔{counts.source_update ? `，更新 ${counts.source_update} 笔来源` : ''}
                 </Button></Space>
               ) : (
                 <Text type="secondary">确认导入需管理员权限</Text>
@@ -504,22 +505,25 @@ export default function OrderImport() {
                   aria-pressed={previewFilter === filter.value}
                   disabled={previewMutation.isPending || commitMutation.isPending}
                   onClick={() => { setPreviewFilter(filter.value); setPreviewPage(1); }}>
-                  {filter.label} {filter.value === 'all' ? preview.rows.length : counts[filter.value] ?? 0}
+                  {filter.label} {filter.value === 'all' ? preview.rows.length : filter.value === 'import' ? importableCount : counts[filter.value] ?? 0}
                 </Button>
               ))}
-              <Text type="secondary" role="status">当前显示 {visibleRows.length} 单 / 全部 {preview.rows.length} 单</Text>
+              <Text type="secondary" role="status">当前显示 {visibleRows.length} 笔 / 全部 {preview.rows.length} 笔</Text>
             </Space>
-            <div style={{ marginBottom: 12 }}><Text type="secondary">分类仅筛选显示；确认时处理整批 {counts.import ?? 0} 单可导入订单、{counts.retain ?? 0} 笔留存和 {counts.source_update ?? 0} 笔来源更新。来源更新须逐笔核对后确认。</Text></div>
+            <div style={{ marginBottom: 12 }}><Text type="secondary">可导入 {importableCount} 笔：新建 {counts.import ?? 0} 单，另 {counts.retain ?? 0} 笔仅保存交易。分类仅筛选显示，确认始终处理整批可导入记录{counts.source_update ? `及 ${counts.source_update} 笔来源更新` : ''}。</Text></div>
+            {!!counts.unresolved && <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+              title={`还有 ${counts.unresolved} 笔待确认，尚未录入`}
+              description="可先补齐后重新预览；若先导入其他记录，请保留原文件，补齐后再次上传。" />}
             {!!(counts.retain || counts.source_update) && <Alert type="info" showIcon style={{ marginBottom: 12 }}
-              title="留存交易不会生成订阅或发货。来源更新需点开逐笔核对；保存后到“来源交易”继续处理。" />}
+              title="仅保存交易的记录不新增订阅或发货，可到“来源交易”查看或关联订阅。来源更新须点开逐笔核对后确认。" />}
             <Table<ImportPreviewRow>
               rowKey="external_order_no"
               columns={columns}
               dataSource={visibleRows}
               loading={previewMutation.isPending}
               size="small"
-              locale={{ emptyText: previewFilter === 'all' ? '没有可预览的订单' : `当前没有“${previewFilterLabel}”订单` }}
-              pagination={{ current: previewPage, pageSize: previewPageSize, showTotal: (t) => `共 ${t} 单`,
+              locale={{ emptyText: previewFilter === 'all' ? '没有可预览的记录' : `当前没有“${previewFilterLabel}”记录` }}
+              pagination={{ current: previewPage, pageSize: previewPageSize, showTotal: (t) => `共 ${t} 笔`,
                 onChange: (page, pageSize) => { setPreviewPage(pageSize === previewPageSize ? page : 1); setPreviewPageSize(pageSize); } }}
               scroll={{ x: 1000 }}
               onRow={(row) => ({ onClick: () => handleRowClick(row), style: { cursor: 'pointer' } })}
@@ -538,7 +542,7 @@ export default function OrderImport() {
               : `来源单号 ${detailRow?.external_order_no || '未记录'} · ${detailRow?.recipient_name || '未记录收件人'}`}
             tone={drawerMode === 'quick' ? 'purple' : 'info'}
             status={(
-              <StatusPill tone={drawerMode === 'quick' ? 'warning' : detailRow?.decision === 'import' ? 'success' : detailRow?.decision === 'unresolved' ? 'danger' : 'neutral'}>
+              <StatusPill tone={drawerMode === 'quick' ? 'warning' : detailRow?.decision === 'import' || detailRow?.decision === 'retain' ? 'success' : detailRow?.decision === 'unresolved' ? 'danger' : 'neutral'}>
                 {drawerMode === 'quick' ? '待补商品' : detailRow ? DECISION_META[detailRow.decision].label : '查看中'}
               </StatusPill>
             )}

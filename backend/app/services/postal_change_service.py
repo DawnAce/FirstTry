@@ -524,6 +524,58 @@ def resolve_address_allocation(
     return rec
 
 
+def supplement_allocation_start_date(
+    db: Session,
+    change_id: int,
+    allocation_index: int,
+    start_date: date,
+    expected_allocation: dict,
+    operator_id: Optional[int] = None,
+) -> PostalAddressChange:
+    """补齐已确认收件人的缺失起投日期，原始工单与投递订期保持不变。"""
+    rec = (
+        db.query(PostalAddressChange)
+        .filter(PostalAddressChange.id == change_id)
+        .with_for_update()
+        .first()
+    )
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"信息变更工单 {change_id} 不存在")
+    if not rec.applied_to_order:
+        raise HTTPException(status_code=409, detail="未应用工单请通过编辑填写起投日期")
+
+    rows = address_change_allocations(rec)
+    if not 0 <= allocation_index < len(rows):
+        raise HTTPException(status_code=409, detail="份数去向已变化，请刷新工单后重试")
+    row = rows[allocation_index]
+    if row["kind"] == "pending":
+        raise HTTPException(status_code=409, detail="请先确认该份数的最终收件人，再补充起投日期")
+    # 同一去向可能因确认剩余份数而换位，不能仅凭数组下标定位收件人。
+    if any(row.get(key) != value for key, value in expected_allocation.items() if key != "start_date"):
+        raise HTTPException(status_code=409, detail="收件人或份数已变化，请刷新工单后重试")
+    new_date = start_date.isoformat()
+    if row.get("start_date") == new_date:
+        return rec  # 网络重试：同一日期不重复写入审计。
+    if row.get("start_date"):
+        raise HTTPException(status_code=409, detail="该起投日期已填写，请刷新核对；如需更正请新建信息变更工单")
+    if expected_allocation.get("start_date") != row.get("start_date"):
+        raise HTTPException(status_code=409, detail="起投日期已变化，请刷新工单后重试")
+
+    rows[allocation_index] = {**row, "start_date": new_date}
+    rec.copy_allocations = rows
+    db.add(PostalComplaintHandlingRecord(
+        ticket_id=rec.id,
+        event_type=PostalTicketEventType.address_applied,
+        handled_at=datetime.now(),
+        handled_by=operator_id,
+        action="补充起投日期",
+        follow_result=f"去向 {allocation_index + 1} · {row.get('name') or '未命名'} · {row['copies']}份：未填写 → {new_date}",
+    ))
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
 def delete_address_change(db: Session, change_id: int) -> None:
     rec = (
         db.query(PostalAddressChange)

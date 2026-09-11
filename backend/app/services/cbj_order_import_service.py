@@ -495,6 +495,8 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
 
     The platform is auto-detected from the file header so a single upload box serves
     both CBJ 小程序 and 淘宝 exports, and each order gets the right source_platform.
+    ``retain`` only saves a fee/legacy source; the UI groups it with importable
+    orders. Unresolved refunds keep their validation reason until corrected.
     """
     parsed, source_platform, source_store = _detect_and_parse(file_bytes)
     preview = build_import_preview(
@@ -526,15 +528,10 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
             row.reason = "原始交易有变化，请核对前后信息并确认更新" if changed else "来源交易已留存"
         elif pure_fee:
             row.decision, row.order_create = "retain", None
-            row.reason = "纯运费交易：确认后留存，可查找关联订阅；不会自动转中通"
+            row.reason = "纯运费记录：仅保存交易，不新增订阅或发货；可到来源交易关联订阅"
         elif row.decision == "duplicate":
             row.decision = "retain"
-            row.reason = "已有业务订单：补留原始来源，不重复建单、不覆盖人工修改"
-        elif row.decision == "unresolved" and row.commercial_status in (
-            OrderCommercialStatus.refunded, OrderCommercialStatus.partial_refund
-        ):
-            row.decision = "retain"
-            row.reason = "退款交易先留存；商品及退款金额仍需核对，不生成投递"
+            row.reason = "补充订单原件：仅保存交易，不重复建单、不覆盖人工修改"
         if row.decision in {"import", "retain", "source_update", "duplicate"}:
             source_records.append({"snapshot": snapshot, "kind": old.kind if old else kind,
                                    "expected_revision": old.lock_version if old else None, "decision": row.decision})

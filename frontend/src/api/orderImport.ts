@@ -1,6 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
 
+// retain 是仅保存交易的后台动作，页面与 import 一起展示为「可导入」。
 export type ImportDecision = 'import' | 'skip_status' | 'duplicate' | 'unresolved' | 'retain' | 'source_update';
 
 export interface ImportItemPreview {
