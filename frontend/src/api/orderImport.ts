@@ -4,6 +4,17 @@ import api from './client';
 // retain 是仅保存交易的后台动作，页面与 import 一起展示为「可导入」。
 export type ImportDecision = 'import' | 'skip_status' | 'duplicate' | 'unresolved' | 'retain' | 'source_update';
 
+export interface ImportIssueReview {
+  suggested_issue_number: number | null;
+  suggested_publish_date: string | null;
+  reason: string;
+}
+
+export interface ImportIssueOption {
+  issue_number: number;
+  publish_date: string;
+}
+
 export interface ImportItemPreview {
   publication: string | null;
   fulfillment_type: string;
@@ -12,6 +23,7 @@ export interface ImportItemPreview {
   delivery_method: string | null;
   issue_label: string | null;
   issue_number: number | null;
+  issue_review?: ImportIssueReview | null;
   total_quantity: number;
   unit_price: string;
   subtotal: string;
@@ -42,6 +54,7 @@ export interface ImportPreviewOut {
   counts: Record<string, number>;
   can_commit: boolean;
   rows: ImportPreviewRow[];
+  issue_review_options?: ImportIssueOption[];
 }
 
 export interface ImportCommitOut {
@@ -86,16 +99,21 @@ export function commitOrderImport(
   issueOverrides?: Record<string, number>,
   issueLabelOverrides?: Record<string, string>,
   confirmedSourceUpdates?: string[],
+  confirmedIssueNumbers?: Record<string, number>,
 ): Promise<AxiosResponse<ImportCommitOut>> {
   const body: {
     session_id: string;
     issue_overrides?: Record<string, number>;
     issue_label_overrides?: Record<string, string>;
     confirmed_source_updates?: string[];
+    confirmed_issue_numbers?: Record<string, number>;
   } = {
     session_id: sessionId,
   };
   if (confirmedSourceUpdates?.length) body.confirmed_source_updates = confirmedSourceUpdates;
+  if (confirmedIssueNumbers && Object.keys(confirmedIssueNumbers).length > 0) {
+    body.confirmed_issue_numbers = confirmedIssueNumbers;
+  }
   if (issueOverrides && Object.keys(issueOverrides).length > 0) {
     body.issue_overrides = issueOverrides;
   }

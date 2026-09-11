@@ -609,6 +609,30 @@ body {
   color: var(--color-text-secondary);
 }
 
+.order-import-issue-review {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-block: 6px;
+  padding: calc(var(--space-section) / 2);
+  border-radius: var(--radius-input);
+  background: var(--color-warning-soft);
+}
+
+.order-import-issue-review[data-reviewed="true"] {
+  background: var(--color-success-soft);
+}
+
+.order-import-issue-select {
+  width: 260px;
+  max-width: 100%;
+}
+
+.order-import-product > .order-import-issue-review {
+  flex-basis: 100%;
+}
+
 .order-import-detail {
   display: flex;
   flex-direction: column;
@@ -686,7 +710,7 @@ body {
   font-weight: 500;
 }
 
-.order-import-product span,
+.order-import-product > span,
 .order-import-source,
 .order-import-confirm p {
   color: var(--color-text-secondary);

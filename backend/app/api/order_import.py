@@ -2,10 +2,10 @@
 
 from datetime import date
 import re
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -56,6 +56,8 @@ async def preview(
     """解析并预览订单；退款识别失败返回 unresolved，补齐后重新预览。
 
     import 建单、retain 仅保存运费/旧订单原件，页面合并展示为可导入。
+    不确定的最新一期在 items[].issue_review 返回核对依据；issue_review_options
+    提供刊期表中的可选期号及出版日期，确认时必须逐明细提交人工核对结果。
     返回结构保持兼容；缺少来源交易表或列时返回 503，提示完成迁移。
     """
     content = await read_upload(file)
@@ -94,6 +96,8 @@ async def preview(
 class CommitIn(BaseModel):
     session_id: str
     confirmed_source_updates: list[str] = []
+    # 明确确认的期号：{来源单号#明细序号: 期号}，允许修正自动建议，必须是刊期表有效期号。
+    confirmed_issue_numbers: dict[str, Annotated[int, Field(strict=True, gt=0)]] = Field(default_factory=dict)
     # 往期单选填补期号：{external_order_no: 期号}。只作用于单期且无期号的行，留空=现状。
     issue_overrides: dict[str, int] | None = None
     # 商学院单期选填补期次：{external_order_no: "YYYY-MM" / "YYYY-MM~MM"}。
@@ -106,7 +110,9 @@ def commit(
     db: Session = Depends(get_db),
     user: User = Depends(require_admin),
 ):
-    """原子确认导入；缺少来源交易结构时返回 503，保留可重试的会话。"""
+    """原子确认导入。期号未核对/刊期变化返回 409，无效期号返回 422；
+    缺少来源交易结构时返回 503。失败保留会话，成功记录逐明细期号核对审计。
+    """
     try:
         return commit_import(
             db,
@@ -115,6 +121,7 @@ def commit(
             issue_overrides=body.issue_overrides,
             issue_label_overrides=body.issue_label_overrides,
             confirmed_source_updates=body.confirmed_source_updates,
+            confirmed_issue_numbers=body.confirmed_issue_numbers,
         )
     except DBAPIError as exc:
         _explain_missing_source_schema(db, exc)

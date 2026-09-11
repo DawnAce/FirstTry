@@ -1,5 +1,6 @@
 import { Alert, Checkbox } from 'antd';
-import type { ImportPreviewRow } from '../api/orderImport';
+import type { ReactNode } from 'react';
+import type { ImportItemPreview, ImportPreviewRow } from '../api/orderImport';
 import { deliveryMethodLabel, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
 import { formatImportValue, importFieldLabel, importResultCopy, importStatusLabel, snapshotChanges, snapshotFields } from './orderImportDisplay';
 
@@ -14,11 +15,12 @@ function Fields({ fields }: { fields: Field[] }) {
   </dl>;
 }
 
-export default function OrderImportDetail({ row, confirmed, onConfirmChange, disabled }: {
+export default function OrderImportDetail({ row, confirmed, onConfirmChange, disabled, renderIssueReview }: {
   row: ImportPreviewRow;
   confirmed: boolean;
   onConfirmChange: (checked: boolean) => void;
   disabled: boolean;
+  renderIssueReview?: (item: ImportItemPreview, index: number) => ReactNode;
 }) {
   const source = row.source_snapshot;
   const snapshot: Record<string, unknown> = { status_raw: row.status_raw, paid_amount: row.paid_amount, recipient_name: row.recipient_name, ...source };
@@ -37,7 +39,8 @@ export default function OrderImportDetail({ row, confirmed, onConfirmChange, dis
       title={result.title} description={result.description} />
     {row.status_unknown && <Alert showIcon type="warning" title="平台状态需要人工核对" description="请根据原表确认订单是否付款、发货或退款，再决定如何处理。" />}
     {row.delivery_overridden_to_zto && <Alert showIcon type="warning" title="投递方式已识别为中通，请核对" />}
-    {row.warnings.map((warning, index) => <Alert key={index} showIcon type="warning" title={warning} />)}
+    {row.warnings.filter(warning => !renderIssueReview || !row.items.some(item => item.issue_review?.reason === warning))
+      .map((warning, index) => <Alert key={index} showIcon type="warning" title={warning} />)}
 
     {row.decision === 'source_update' && <section aria-label="来源变化核对" className="order-import-detail-section">
       <h3>需要核对的变化 · {changes.length} 项</h3>
@@ -76,6 +79,7 @@ export default function OrderImportDetail({ row, confirmed, onConfirmChange, dis
             {item.delivery_method ? ` · ${deliveryMethodLabel(item.delivery_method as never)}` : ''}</strong>
           <span>{item.issue_number ? `第 ${item.issue_number} 期 · ` : ''}{item.issue_label ? `${item.issue_label} · ` : ''}{item.total_quantity} 份 · {formatImportValue('paid_amount', item.subtotal)}</span>
           <span>订期：{!item.coverage_start_date && !item.coverage_end_date ? '未填写' : `${item.coverage_start_date || '未填写'} 至 ${item.coverage_end_date || '未填写'}`}</span>
+          {renderIssueReview?.(item, index)}
         </div>)}
       </div>}
     </section>}
