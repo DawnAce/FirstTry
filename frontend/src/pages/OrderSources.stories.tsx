@@ -84,6 +84,30 @@ export const LinkSubscription: Story = {
   },
 };
 
+export const ImportFollowUp: Story = {
+  name: '导入后的运费入口直接打开关联窗口',
+  parameters: { ...LinkSubscription.parameters,
+    reactRouter: reactRouterParameters({ routing: { path: '/orders/sources' }, location: { searchParams: { source: '1', action: 'link' } } }),
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    await waitFor(() => expect(body.getByRole('textbox', { name: '关联原因' })).toBeVisible());
+    await body.findByText('疑似关联');
+    await userEvent.click(body.getByRole('checkbox'));
+    await expect(body.getByRole('button', { name: '预览关联' })).toBeVisible();
+  },
+};
+
+export const ReadOnlyImportFollowUp: Story = {
+  name: '只读账号不能从运费链接进入编辑',
+  parameters: { ...ImportFollowUp.parameters, auth: { isAdmin: false } },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    await waitFor(() => expect(body.getByText('尚未关联订阅，原始记录已保存。')).toBeVisible());
+    await expect(body.queryByRole('textbox', { name: '关联原因' })).not.toBeInTheDocument();
+  },
+};
+
 export const VerifyFeeRefund: Story = {
   name: '核对全额运费退款并保留订阅',
   parameters: { auth: { isAdmin: true }, msw: { handlers: [

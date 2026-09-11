@@ -3,8 +3,8 @@
 
 We never depend on the platform having a clean/complete vocabulary: exact known
 strings map directly; otherwise keyword fallbacks catch variants; anything still
-unrecognized defaults to ``paid`` + import **but is flagged** so the operator
-confirms it in the preview. The raw string is always stored on the order.
+unrecognized remains unset and requires an explicit operator choice in the
+preview before an order can be created. The raw string is always stored on the order.
 
 Import / skip policy (agreed):
 * 已付款 / 已发货(/已完成) → import
@@ -20,7 +20,7 @@ from app.models import OrderCommercialStatus
 
 @dataclass
 class StatusMapping:
-    status: OrderCommercialStatus
+    status: OrderCommercialStatus | None
     should_import: bool
     unknown: bool = False  # True → not recognized; flag for operator review
 
@@ -56,10 +56,12 @@ def map_commercial_status(raw: str | None) -> StatusMapping:
         return StatusMapping(OrderCommercialStatus.cancelled, False)
     if "待付" in norm or "未付" in norm or "等待付款" in norm:
         return StatusMapping(OrderCommercialStatus.pending_payment, False)
+    if "待发货" in norm or "等待发货" in norm:
+        return StatusMapping(OrderCommercialStatus.paid, True)
     if "发货" in norm or "完成" in norm or "成功" in norm or "收货" in norm:
         return StatusMapping(OrderCommercialStatus.shipped, True)
     if "付款" in norm or "已支付" in norm or "支付成功" in norm:
         return StatusMapping(OrderCommercialStatus.paid, True)
 
-    # Unrecognized → default to paid + import, but flag for operator confirmation.
-    return StatusMapping(OrderCommercialStatus.paid, True, unknown=True)
+    # 保留未判定状态，导入草稿必须经人工选择，不能以“已付款”兜底建单。
+    return StatusMapping(None, True, unknown=True)

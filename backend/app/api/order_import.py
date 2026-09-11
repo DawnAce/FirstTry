@@ -19,6 +19,11 @@ from app.services.cbj_order_import_service import (
     commit_import,
     preview_import,
 )
+from app.schemas.order_import_review import (
+    ImportReviewIn, ImportFeeLinksIn, ImportDraftOut, ImportFeeCandidatesOut, ImportCommitOut,
+)
+from app.services import order_import_review_service as reviews, order_import_fee_service as fees
+from app.order_import_cache import serialized_import
 
 router = APIRouter(prefix="/api/order-import", tags=["order-import"])
 
@@ -39,7 +44,7 @@ def _explain_missing_source_schema(db: Session, error: DBAPIError) -> None:
         ) from None
 
 
-@router.post("/preview")
+@router.post("/preview", response_model=ImportDraftOut)
 async def preview(
     file: UploadFile = File(...),
     mode: str = Form("recent"),
@@ -58,6 +63,7 @@ async def preview(
     import 建单、retain 仅保存运费/旧订单原件，页面合并展示为可导入。
     不确定的最新一期在 items[].issue_review 返回核对依据；issue_review_options
     提供刊期表中的可选期号及出版日期，确认时必须逐明细提交人工核对结果。
+    reviews 提供投递、状态、金额或人工订期待核对事项；version 用于后续草稿编辑。
     返回结构保持兼容；缺少来源交易表或列时返回 503，提示完成迁移。
     """
     content = await read_upload(file)
@@ -95,6 +101,7 @@ async def preview(
 
 class CommitIn(BaseModel):
     session_id: str
+    expected_version: int | None = Field(default=None, strict=True, ge=1)
     confirmed_source_updates: list[str] = []
     # 明确确认的期号：{来源单号#明细序号: 期号}，允许修正自动建议，必须是刊期表有效期号。
     confirmed_issue_numbers: dict[str, Annotated[int, Field(strict=True, gt=0)]] = Field(default_factory=dict)
@@ -104,14 +111,16 @@ class CommitIn(BaseModel):
     issue_label_overrides: dict[str, str] | None = None
 
 
-@router.post("/commit")
+@router.post("/commit", response_model=ImportCommitOut)
 def commit(
     body: CommitIn,
     db: Session = Depends(get_db),
     user: User = Depends(require_admin),
 ):
-    """原子确认导入。期号未核对/刊期变化返回 409，无效期号返回 422；
-    缺少来源交易结构时返回 503。失败保留会话，成功记录逐明细期号核对审计。
+    """原子保存订单、来源、核对审计及选定运费关联。
+
+    必核项未完成、草稿/商品/刊期/关联目标变化返回 409，无效输入返回 422；
+    缺少来源交易结构时返回 503。失败保留会话，成功返回逐笔运费后续处理入口数据。
     """
     try:
         return commit_import(
@@ -122,7 +131,34 @@ def commit(
             issue_label_overrides=body.issue_label_overrides,
             confirmed_source_updates=body.confirmed_source_updates,
             confirmed_issue_numbers=body.confirmed_issue_numbers,
+            expected_version=body.expected_version,
         )
     except DBAPIError as exc:
         _explain_missing_source_schema(db, exc)
         raise
+
+
+@router.get("/sessions/{session_id}", response_model=ImportDraftOut)
+@serialized_import
+def current_draft(session_id: str, user: User = Depends(get_current_user)):
+    """刷新当前用户的导入草稿；不读取或改写正式订单。"""
+    return reviews.output(reviews.draft(session_id, user.id), session_id)
+
+
+@router.post("/sessions/{session_id}/review", response_model=ImportDraftOut)
+def review_draft(session_id: str, body: ImportReviewIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """确认/修正投递、状态、分摊、日期或商品；版本过期409，无效值422。只更新草稿。"""
+    return reviews.review(db, session_id, body, user.id)
+
+
+@router.get("/sessions/{session_id}/fee-candidates", response_model=ImportFeeCandidatesOut)
+def fee_candidates(session_id: str, external_order_no: str, search: str | None = None,
+                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """推荐已有及本批订阅收件目标，不自动关联、不提前保存运费。"""
+    return fees.candidates(db, session_id, external_order_no, user.id, search)
+
+
+@router.post("/sessions/{session_id}/fee-links", response_model=ImportDraftOut)
+def fee_links(session_id: str, body: ImportFeeLinksIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """保存运费归属草稿；最终导入时重新验证并原子建立关联，不自动转投。"""
+    return fees.save_links(db, session_id, body, user.id)

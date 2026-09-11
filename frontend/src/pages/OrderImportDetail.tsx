@@ -15,15 +15,17 @@ function Fields({ fields }: { fields: Field[] }) {
   </dl>;
 }
 
-export default function OrderImportDetail({ row, confirmed, onConfirmChange, disabled, renderIssueReview }: {
+export default function OrderImportDetail({ row, confirmed, onConfirmChange, disabled, renderIssueReview, reviewActions }: {
   row: ImportPreviewRow;
   confirmed: boolean;
   onConfirmChange: (checked: boolean) => void;
   disabled: boolean;
   renderIssueReview?: (item: ImportItemPreview, index: number) => ReactNode;
+  reviewActions?: ReactNode;
 }) {
   const source = row.source_snapshot;
-  const snapshot: Record<string, unknown> = { status_raw: row.status_raw, paid_amount: row.paid_amount, recipient_name: row.recipient_name, ...source };
+  const snapshot: Record<string, unknown> = { status_raw: row.status_raw, paid_amount: row.paid_amount, recipient_name: row.recipient_name, ...source,
+    order_date: row.order_date ?? source?.order_date };
   const result = importResultCopy(row);
   const changes = row.previous_snapshot && source ? snapshotChanges(row.previous_snapshot, source) : [];
   const canReview = !!row.previous_snapshot && !!source && changes.length > 0;
@@ -37,8 +39,9 @@ export default function OrderImportDetail({ row, confirmed, onConfirmChange, dis
   return <div className="order-import-detail">
     <Alert showIcon type={row.decision === 'unresolved' || row.decision === 'source_update' ? 'warning' : 'info'}
       title={result.title} description={result.description} />
-    {row.status_unknown && <Alert showIcon type="warning" title="平台状态需要人工核对" description="请根据原表确认订单是否付款、发货或退款，再决定如何处理。" />}
-    {row.delivery_overridden_to_zto && <Alert showIcon type="warning" title="投递方式已识别为中通，请核对" />}
+    {reviewActions}
+    {row.status_unknown && !row.reviews && <Alert showIcon type="warning" title="平台状态需要人工核对" description="请根据原表确认订单是否付款、发货或退款，再决定如何处理。" />}
+    {row.delivery_overridden_to_zto && !row.reviews && <Alert showIcon type="warning" title="投递方式已识别为中通，请核对" />}
     {row.warnings.filter(warning => !renderIssueReview || !row.items.some(item => item.issue_review?.reason === warning))
       .map((warning, index) => <Alert key={index} showIcon type="warning" title={warning} />)}
 

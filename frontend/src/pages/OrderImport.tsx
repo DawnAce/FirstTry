@@ -4,6 +4,8 @@ import OrderCoverageDrawer from './OrderCoverageDrawer';
 import LinkProductAliasModal from './LinkProductAliasModal';
 import OrderImportDetail from './OrderImportDetail';
 import OrderImportIssueReview from './OrderImportIssueReview';
+import OrderImportReviewEditor from './OrderImportReviewEditor';
+import OrderImportFeeEditor from './OrderImportFeeEditor';
 import { formatImportValue, importReason, importStatusLabel } from './orderImportDisplay';
 import {
   Alert,
@@ -27,7 +29,7 @@ import {
 import { CheckOutlined, InboxOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
-import { commitOrderImport, previewOrderImport } from '../api/orderImport';
+import { commitOrderImport, getImportDraft, previewOrderImport } from '../api/orderImport';
 import { getApiErrorMessage } from '../api/errorMessage';
 import { useAuth } from '../contexts/AuthContext';
 import type { ImportDecision, ImportItemPreview, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
@@ -41,7 +43,7 @@ import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives'
 const { Text } = Typography;
 
 type Mode = 'recent' | 'historical';
-type PreviewFilter = 'all' | 'issue_review' | Exclude<ImportDecision, 'retain'>;
+type PreviewFilter = 'all' | 'issue_review' | 'review' | 'fee' | Exclude<ImportDecision, 'retain'>;
 
 const PREVIEW_FILTERS = [
   { value: 'all', label: '全部', color: 'primary' },
@@ -115,6 +117,9 @@ export default function OrderImport() {
   const [coverageOpen, setCoverageOpen] = useState(false);
   const [aliasName, setAliasName] = useState<string | null>(null);
   const [hasCoverageEdits, setHasCoverageEdits] = useState(false);
+  const [hasReviewEdits, setHasReviewEdits] = useState(false);
+  const [workflow, setWorkflow] = useState<{ number: string; kind: 'review' | 'fee' } | null>(null);
+  const [feeResults, setFeeResults] = useState<{ id: number; external_order_no: string; linked: boolean }[]>([]);
   const [importedOrderIds, setImportedOrderIds] = useState<number[] | null>(null);
   const [mode, setMode] = useState<Mode>('recent');
   const [file, setFile] = useState<File | null>(null);
@@ -166,6 +171,9 @@ export default function OrderImport() {
       setDrawerMode(null);
       setPreviewPage(1);
       setHasCoverageEdits(false);
+      setHasReviewEdits(false);
+      setWorkflow(null);
+      setFeeResults([]);
       setCoverageOpen(false);
       setImportedOrderIds(null);
       setIssueOverrides({}); // 新预览：行可能重排，作废旧的补期号
@@ -181,14 +189,16 @@ export default function OrderImport() {
       for (const [ext, label] of Object.entries(labelOverrides)) {
         if (isValidIssueLabel(label)) validLabels[ext] = label;
       }
-      return commitOrderImport(preview!.session_id, issueOverrides, validLabels, confirmedSourceUpdates, confirmedIssueNumbers);
+      return commitOrderImport(preview!.session_id, issueOverrides, validLabels, confirmedSourceUpdates, confirmedIssueNumbers, preview!.version);
     },
     onSuccess: (res) => {
       message.success(`导入完成：新建 ${res.data.created} 单，保存 ${res.data.retained_sources ?? 0} 笔交易记录${preview?.counts.source_update ? `，更新 ${preview.counts.source_update} 笔来源` : ''}（跳过重复 ${res.data.skipped_duplicates}）`);
       setImportedOrderIds(res.data.order_ids);
+      setFeeResults(res.data.fee_sources ?? []);
       void queryClient.invalidateQueries();
       setPreview(null);
       setHasCoverageEdits(false);
+      setHasReviewEdits(false);
       setFile(null);
       setIssueOverrides({});
       setLabelOverrides({});
@@ -241,10 +251,10 @@ export default function OrderImport() {
   };
 
   const confirmPreviewReset = (action: () => void) => {
-    if (hasCoverageEdits || Object.keys(issueSelections).length || Object.keys(confirmedIssueNumbers).length) {
+    if (hasCoverageEdits || hasReviewEdits || Object.keys(issueSelections).length || Object.keys(confirmedIssueNumbers).length) {
       modal.confirm({
         title: '重新生成导入预览？',
-        content: '本次已补录的订期或期号核对尚未正式入库。重新识别、修改导入设置或更换文件会清除这些结果，之后需要重新补录和核对。',
+        content: '本次订期、期号核对、识别核对及运费关联草稿尚未正式入库。重新识别、修改导入设置或更换文件会清除这些结果，之后需要重新补录和核对。',
         okText: '清除并继续', cancelText: '保留当前预览', onOk: action,
       });
     } else action();
@@ -258,6 +268,7 @@ export default function OrderImport() {
     setPreviewFilter('all');
     setPreviewPage(1);
     setHasCoverageEdits(false);
+    setHasReviewEdits(false);
     setIssueSelections({});
     setConfirmedIssueNumbers({});
   });
@@ -281,10 +292,10 @@ export default function OrderImport() {
     return key in issueSelections ? issueSelections[key] : item.issue_number;
   };
   const renderIssueReview = (row: ImportPreviewRow, item: ImportItemPreview, index: number) => {
-    if (row.decision !== 'import' || !item.issue_review) return null;
+    if (row.decision !== 'import') return null;
     const key = `${row.external_order_no}#${index}`;
     const value = selectedIssue(row, item, index);
-    return <OrderImportIssueReview review={item.issue_review} index={index}
+    if (item.issue_review) return <OrderImportIssueReview review={item.issue_review} index={index}
       options={preview?.issue_review_options ?? []} value={value}
       confirmed={value != null && confirmedIssueNumbers[key] === value}
       disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}
@@ -297,7 +308,81 @@ export default function OrderImport() {
         });
       }}
       onConfirm={number => setConfirmedIssueNumbers(previous => ({ ...previous, [key]: number }))} />;
+    const needNumber = item.fulfillment_type === 'single_issue' && item.publication !== 'business_school' && !item.issue_number;
+    const needLabel = item.fulfillment_type === 'single_issue' && item.publication === 'business_school' && !item.issue_label;
+    return <>
+      {needNumber && (
+        <Space size={4} style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
+          <Text type="warning" style={{ fontSize: 12 }}>补期号：</Text>
+          <InputNumber
+            size="small"
+            min={1}
+            disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}
+            placeholder="选填"
+            aria-label={`明细 ${index + 1} 补期号`}
+            style={{ width: 100 }}
+            value={issueOverrides[key] ?? null}
+            onChange={(v) =>
+              setIssueOverrides((prev) => {
+                const next = { ...prev };
+                if (v == null) delete next[key];
+                else next[key] = v;
+                return next;
+              })
+            }
+          />
+        </Space>
+      )}
+      {needLabel && (
+        <Space size={4} style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
+          <Text type="warning" style={{ fontSize: 12 }}>补期次：</Text>
+          <Input
+            size="small"
+            placeholder="选填，如 2026-06"
+            aria-label={`明细 ${index + 1} 补期次`}
+            disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}
+            style={{ width: 130 }}
+            status={labelOverrides[key] && !isValidIssueLabel(labelOverrides[key]) ? 'error' : undefined}
+            value={labelOverrides[key] ?? ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              setLabelOverrides((prev) => {
+                const next = { ...prev };
+                if (!v.trim()) delete next[key];
+                else next[key] = v.trim();
+                return next;
+              });
+            }}
+          />
+        </Space>
+      )}
+    </>;
   };
+
+  const acceptDraft = (data: ImportPreviewOut, number?: string) => {
+    const changed = new Set(number ? [number] : data.rows.filter(row => {
+      const old = preview?.rows.find(item => item.external_order_no === row.external_order_no);
+      return JSON.stringify(old?.items) !== JSON.stringify(row.items) || old?.commercial_status !== row.commercial_status;
+    }).map(row => row.external_order_no));
+    const keep = <T,>(values: Record<string, T>) => Object.fromEntries(Object.entries(values).filter(([key]) => !changed.has(key.slice(0, key.lastIndexOf('#')))));
+    setIssueSelections(keep); setConfirmedIssueNumbers(keep); setIssueOverrides(keep); setLabelOverrides(keep);
+    setPreview(data); setHasReviewEdits(true);
+    void queryClient.invalidateQueries({ queryKey: ['order-import', data.session_id] });
+    void queryClient.invalidateQueries({ queryKey: ['order-coverage'] });
+  };
+  const refreshDraft = useMutation({ mutationFn: () => getImportDraft(preview!.session_id), onSuccess: res => acceptDraft(res.data),
+    onError: error => { void message.error(getApiErrorMessage(error, '草稿刷新失败')); } });
+  const workflowActions = (row: ImportPreviewRow) => <Space wrap onClick={event => event.stopPropagation()}>
+    {row.is_shipping_fee ? row.source_id ? <Button size="small" href={`/orders/sources?source=${row.source_id}`}>查看运费关联</Button> : <>
+      <Tag color={row.fee_link_count ? 'green' : 'orange'}>{row.fee_link_count ? `已选 ${row.fee_link_count} 个订阅，待导入保存` : '运费待关联'}</Tag>
+      <Button size="small" disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending} onClick={() => setWorkflow({ number: row.external_order_no, kind: 'fee' })}>查找关联订阅</Button>
+    </> : !row.source_id && row.decision !== 'retain' && row.decision !== 'duplicate' && <>
+      {!!row.reviews?.length && <Tag color={row.reviews.some(review => review.status === 'pending') ? 'orange' : 'green'}>
+        {row.reviews.some(review => review.status === 'pending') ? `待核对 ${row.reviews.filter(review => review.status === 'pending').length} 项` : '识别已核对'}
+      </Tag>}
+      <Button size="small" disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending} onClick={() => setWorkflow({ number: row.external_order_no, kind: 'review' })}>核对／修改识别</Button>
+    </>}
+  </Space>;
 
   const columns: TableColumnsType<ImportPreviewRow> = [
     { title: '结果', dataIndex: 'decision', key: 'decision', width: 100, render: (d: ImportDecision) => <Tag color={DECISION_META[d].color}>{DECISION_META[d].label}</Tag> },
@@ -317,8 +402,9 @@ export default function OrderImport() {
       render: (_: unknown, r) => {
         if (r.decision !== 'import') {
           return (
-            <Space>
+            <Space direction="vertical">
               <Text type="secondary">{importReason(r) || '—'}</Text>
+              {workflowActions(r)}
               {r.decision === 'unresolved' && r.unresolved_product && (
                 <Button type="link" size="small" icon={<PlusOutlined />} onClick={(e) => { e.stopPropagation(); openQuickAdd(r.unresolved_product!); }}>
                   加入商品库
@@ -329,18 +415,9 @@ export default function OrderImport() {
         }
         return (
           <Space direction="vertical" size={2} style={{ width: '100%' }}>
-            {r.delivery_overridden_to_zto && <Tag color="orange">投递→中通（请核对）</Tag>}
+            {workflowActions(r)}
             {r.items.map((it, i) => {
-              const key = `${r.external_order_no}#${i}`;
               const issueNumber = selectedIssue(r, it, i);
-              const needNumber =
-                it.fulfillment_type === 'single_issue' &&
-                it.publication !== 'business_school' &&
-                !it.issue_number && !it.issue_review;
-              const needLabel =
-                it.fulfillment_type === 'single_issue' &&
-                it.publication === 'business_school' &&
-                !it.issue_label;
               return (
                 <div key={i}>
                   <Text style={{ fontSize: 12 }}>
@@ -349,47 +426,7 @@ export default function OrderImport() {
                     {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{issueNumber ? ` · 第${issueNumber}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal} · 订期：{formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}
                   </Text>
                   {renderIssueReview(r, it, i)}
-                  {needNumber && (
-                    <Space size={4} style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
-                      <Text type="warning" style={{ fontSize: 12 }}>补期号：</Text>
-                      <InputNumber
-                        size="small"
-                        min={1}
-                        placeholder="选填"
-                        style={{ width: 100 }}
-                        value={issueOverrides[key] ?? null}
-                        onChange={(v) =>
-                          setIssueOverrides((prev) => {
-                            const next = { ...prev };
-                            if (v == null) delete next[key];
-                            else next[key] = v;
-                            return next;
-                          })
-                        }
-                      />
-                    </Space>
-                  )}
-                  {needLabel && (
-                    <Space size={4} style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
-                      <Text type="warning" style={{ fontSize: 12 }}>补期次：</Text>
-                      <Input
-                        size="small"
-                        placeholder="选填，如 2026-06"
-                        style={{ width: 130 }}
-                        status={labelOverrides[key] && !isValidIssueLabel(labelOverrides[key]) ? 'error' : undefined}
-                        value={labelOverrides[key] ?? ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setLabelOverrides((prev) => {
-                            const next = { ...prev };
-                            if (!v.trim()) delete next[key];
-                            else next[key] = v.trim();
-                            return next;
-                          });
-                        }}
-                      />
-                    </Space>
-                  )}
+
                 </div>
               );
             })}
@@ -409,31 +446,47 @@ export default function OrderImport() {
   ])), [preview, confirmedIssueNumbers]);
   const pendingIssueCount = [...pendingIssueReviews.values()].reduce((sum, count) => sum + count, 0);
   const hasIssueReviews = preview?.rows.some(row => row.decision === 'import' && row.items.some(item => item.issue_review));
+  const pendingReviewCount = preview?.pending_review_count ?? 0;
+  const feeRows = preview?.rows.filter(row => row.is_shipping_fee && !row.source_id) ?? [];
   const visibleRows = useMemo(() => {
     const rows = preview?.rows ?? [];
     if (previewFilter === 'issue_review') return rows.filter(row => (pendingIssueReviews.get(row.external_order_no) ?? 0) > 0);
+    if (previewFilter === 'review') return rows.filter(row => row.decision === 'import' && row.reviews?.some(review => review.status === 'pending'));
+    if (previewFilter === 'fee') return rows.filter(row => row.is_shipping_fee);
     return previewFilter === 'all' ? rows : rows.filter(row =>
       row.decision === previewFilter || (previewFilter === 'import' && row.decision === 'retain'));
   }, [preview, previewFilter, pendingIssueReviews]);
-  const previewFilterLabel = previewFilter === 'issue_review' ? '期号待核对' : PREVIEW_FILTERS.find(filter => filter.value === previewFilter)!.label;
+  const previewFilterLabel = previewFilter === 'issue_review' ? '期号待核对' : previewFilter === 'review' ? '识别待核对' : previewFilter === 'fee' ? '运费关联' : PREVIEW_FILTERS.find(filter => filter.value === previewFilter)!.label;
   const currentDetailRow = preview?.rows.find(row => row.external_order_no === detailRow?.external_order_no) ?? detailRow;
+  const workflowRow = preview?.rows.find(row => row.external_order_no === workflow?.number);
 
   return (
     <div>
       <PageHeader title="电商订单导入" description="预览、校验并导入各平台订单" actions={<Button href="/orders/sources">查看来源交易</Button>} />
       {modalContext}
+      {preview && workflowRow && workflow && (workflow.kind === 'review' ? <OrderImportReviewEditor key={`${preview.session_id}:${workflowRow.external_order_no}`} row={workflowRow}
+        sessionId={preview.session_id} version={preview.version ?? 1} disabled={!isAdmin || commitMutation.isPending || previewMutation.isPending}
+        onApplied={acceptDraft} onClose={() => setWorkflow(null)} /> : <OrderImportFeeEditor key={`${preview.session_id}:${workflowRow.external_order_no}`} row={workflowRow}
+        sessionId={preview.session_id} version={preview.version ?? 1} disabled={!isAdmin || commitMutation.isPending || previewMutation.isPending}
+        onApplied={acceptDraft} onClose={() => setWorkflow(null)} />)}
       {aliasName && <LinkProductAliasModal alias={aliasName} orderCount={unresolvedSummary.find(row => row.name === aliasName)?.count ?? 0}
         onClose={() => setAliasName(null)} onCreate={() => { openQuickAdd(aliasName); setAliasName(null); }}
         onLinked={() => { setAliasName(null); message.success('已关联到现有商品，原别名和参考价保留'); runPreview(); }} />}
 
       <EcommerceRules />
       {importedOrderIds && importedOrderIds.length > 0 && <Alert type="success" showIcon title={`本次已导入 ${importedOrderIds.length} 单`} action={<Button onClick={() => setCoverageOpen(true)}>继续补本次订期</Button>} style={{ marginBottom: 16 }} />}
+      {feeResults.length > 0 && <Card size="small" title={`本批运费后续处理 · ${feeResults.length} 笔`} style={{ marginBottom: 16 }}>
+        <Space direction="vertical">{feeResults.map(fee => <Space key={fee.id} wrap><Text>{fee.external_order_no}</Text>
+          <Tag color={fee.linked ? 'green' : 'orange'}>{fee.linked ? '已关联订阅' : '待关联订阅'}</Tag>
+          <Button href={`/orders/sources?source=${fee.id}${fee.linked ? '' : '&action=link'}`}>{fee.linked ? '查看关联并核对投递' : '继续关联此笔运费'}</Button>
+        </Space>)}<Text type="secondary">运费原件已保存；关联完成后，按实际需求另行核对邮局停投与中通生效刊期。</Text></Space>
+      </Card>}
       {coverageOpen && (preview || importedOrderIds) && <OrderCoverageDrawer
         importSessionId={preview?.session_id} orderIds={preview ? undefined : importedOrderIds ?? undefined}
         onClose={() => setCoverageOpen(false)} onApplied={result => {
           if (preview) setHasCoverageEdits(true);
           const changed = new Map(result.changes.map(c => [c.key, c]));
-          setPreview(previous => previous ? { ...previous, rows: previous.rows.map(row => ({ ...row,
+          setPreview(previous => previous ? { ...previous, version: result.import_version ?? previous.version, rows: previous.rows.map(row => ({ ...row,
             items: row.items.map((item, index) => {
               const dates = changed.get(`${row.external_order_no}#${index}`);
               return dates ? { ...item, coverage_start_date: dates.coverage_start_date, coverage_end_date: dates.coverage_end_date } : item;
@@ -531,7 +584,7 @@ export default function OrderImport() {
             title="③ 预览（商品关联、订期补录及交易记录）"
             extra={
               isAdmin ? (
-                <Space><Button href="/orders/sources">来源交易</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || pendingIssueCount > 0 || previewMutation.isPending || previewMutation.isError}>
+                <Space wrap><Button href="/orders/sources">来源交易</Button><Button onClick={() => refreshDraft.mutate()} loading={refreshDraft.isPending} disabled={commitMutation.isPending}>刷新当前草稿</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || pendingIssueCount > 0 || pendingReviewCount > 0 || previewMutation.isPending || previewMutation.isError || refreshDraft.isPending}>
                   确认导入 {importableCount} 笔{counts.source_update ? `，更新 ${counts.source_update} 笔来源` : ''}
                 </Button></Space>
               ) : (
@@ -559,12 +612,19 @@ export default function OrderImport() {
                 onClick={() => { setPreviewFilter('issue_review'); setPreviewPage(1); }}>
                 期号待核对 {pendingIssueCount}
               </Button>}
+              {preview.rows.some(row => row.reviews?.length) && <Button size="small" shape="round" color="orange" variant={previewFilter === 'review' ? 'solid' : 'filled'}
+                aria-pressed={previewFilter === 'review'} onClick={() => { setPreviewFilter('review'); setPreviewPage(1); }}>识别待核对 {pendingReviewCount}</Button>}
+              {feeRows.length > 0 && <Button size="small" shape="round" variant={previewFilter === 'fee' ? 'solid' : 'filled'} aria-pressed={previewFilter === 'fee'}
+                onClick={() => { setPreviewFilter('fee'); setPreviewPage(1); }}>运费关联 {feeRows.length}</Button>}
               <Text type="secondary" role="status">当前显示 {visibleRows.length} 笔 / 全部 {preview.rows.length} 笔</Text>
             </Space>
             <div style={{ marginBottom: 12 }}><Text type="secondary">可导入 {importableCount} 笔：新建 {counts.import ?? 0} 单，另 {counts.retain ?? 0} 笔仅保存交易。分类仅筛选显示，确认始终处理整批可导入记录{counts.source_update ? `及 ${counts.source_update} 笔来源更新` : ''}。</Text></div>
             {pendingIssueCount > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }}
               title={`还有 ${pendingIssueCount} 条明细待核对期号，完成后才能确认导入`}
               description="点击“期号待核对”集中查看。核对付款时间及实际购买的期号，在明细下确认或修改；修改后需要重新确认。" />}
+            {pendingReviewCount > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={`还有 ${pendingReviewCount} 项识别待核对，完成后才能导入`}
+              description="点击行内或详情中的“核对／修改识别”，处理投递、状态和金额问题。金额不合法时不能通过确认跳过。"
+              action={<Button onClick={() => { const row = preview.rows.find(row => row.decision === 'import' && row.reviews?.some(review => review.status === 'pending')); if (row) setWorkflow({ number: row.external_order_no, kind: 'review' }); }}>处理下一条</Button>} />}
             {!!counts.unresolved && <Alert type="warning" showIcon style={{ marginBottom: 12 }}
               title={`还有 ${counts.unresolved} 笔待确认，尚未录入`}
               description="可先补齐后重新预览；若先导入其他记录，请保留原文件，补齐后再次上传。" />}
@@ -629,6 +689,7 @@ export default function OrderImport() {
           <OrderImportDetail key={currentDetailRow.external_order_no} row={{ ...currentDetailRow,
             items: currentDetailRow.items.map((item, index) => ({ ...item, issue_number: selectedIssue(currentDetailRow, item, index) })),
           }} renderIssueReview={(item, index) => renderIssueReview(currentDetailRow, item, index)}
+            reviewActions={workflowActions(currentDetailRow)}
             confirmed={confirmedSourceUpdates.includes(currentDetailRow.external_order_no)}
             disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}
             onConfirmChange={checked => setConfirmedSourceUpdates(previous => checked

@@ -280,9 +280,18 @@ def apply_coverage(db: Session, token: str, owner_id: int) -> CoverageApplyOut:
                               "change_reason": request.reason, "operation": "coverage_fill", "batch_id": token})
             if request.import_session_id:
                 payload["rows"] = draft["rows"]
+                if "preview_rows" in payload:
+                    payload["version"] = payload.get("version", 1) + 1
+                    for row in payload["preview_rows"]:
+                        for change in request.changes:
+                            number, _, index = change.key.rpartition("#")
+                            if row["external_order_no"] == number:
+                                row["items"][int(index)].update(coverage_start_date=change.coverage_start_date.isoformat(),
+                                                              coverage_end_date=change.coverage_end_date.isoformat())
             else:
                 db.commit()
-            result = CoverageApplyOut(updated=len(request.changes), order_count=len(orders), changes=request.changes)
+            result = CoverageApplyOut(updated=len(request.changes), order_count=len(orders), changes=request.changes,
+                                      import_version=payload.get("version") if request.import_session_id else None)
             plan["result"] = result
             return result
         except Exception:

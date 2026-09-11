@@ -13,7 +13,7 @@ OrderCreate to ``order_service.create_imported_order``.
 
 ``preview_import`` then determines the final, mutually exclusive UI decision:
 existing source → ``source_update`` / ``duplicate``; otherwise pure shipping fees,
-legacy business-order duplicates, and unresolved refunds → ``retain``. Remaining
+legacy business-order duplicates → ``retain``. Unresolved refunds remain unresolved. Remaining
 rows keep their initial decision. Only ``import`` creates business orders;
 ``retain`` saves sources and ``source_update`` requires explicit source review.
 Commercial status is separate. See docs/order-import-decision-rules.md.
@@ -22,7 +22,8 @@ Coverage is operator-driven per batch: ``BatchSettings`` carries the start month
 (邮局/中通 separately) and a cutoff date (payment after it → next month). Historical
 mode leaves coverage blank. The preview supports filling missing coverage and
 single-issue identity, plus explicit confirmation/correction of uncertain latest
-issues; other corrections use the source or the order detail.
+issues. Versioned draft reviews also correct delivery, status, money, date and
+product mapping while preserving the original source snapshot.
 """
 
 import re
@@ -66,7 +67,7 @@ from app.services.taobao_order_import_parser import (
     parse_taobao_orders,
 )
 from app.services.order_code_service import allocate_order_codes
-from app.services.order_import_status_service import map_commercial_status
+from app.services.order_import_status_service import StatusMapping, map_commercial_status
 from app.services.issue_label import (
     is_valid_issue_label,
     normalize_business_school_issue_label,
@@ -122,11 +123,15 @@ class PreviewRow:
     status_raw: str
     commercial_status: Optional[OrderCommercialStatus]
     decision: str
+    order_date: date | None = None
     reason: Optional[str] = None
     status_unknown: bool = False
     delivery_overridden_to_zto: bool = False
     warnings: List[str] = field(default_factory=list)
     issue_reviews: dict[str, IssueReview] = field(default_factory=dict)
+    reviews: list[dict] = field(default_factory=list)
+    money: dict = field(default_factory=dict)
+    product_signatures: dict[int, str] = field(default_factory=dict)
     order_create: Optional[OrderCreate] = None
     # The raw product-line name that failed to resolve (for the 待确认 queue /
     # quick-add to catalog). Set only when decision == unresolved due to a miss.
@@ -225,6 +230,7 @@ def _row(po, status_map, decision, **kw) -> PreviewRow:
         status_raw=po.status_raw,
         commercial_status=status_map.status,
         decision=decision,
+        order_date=po.order_date or (po.payment_time.date() if po.payment_time else None),
         **kw,
     )
 
@@ -244,8 +250,9 @@ def build_import_preview(
     settings: BatchSettings,
     source_platform: str = _SOURCE_PLATFORM,
     source_store: Optional[str] = None,
+    corrections: Optional[dict[str, dict]] = None,
 ) -> ImportPreview:
-    products = db.query(Product).filter(Product.active.is_(True)).all()
+    products = db.query(Product).filter(Product.active.is_(True)).populate_existing().all()
     schedule = db.query(PublicationSchedule).all()
     existing = {
         e
@@ -258,9 +265,20 @@ def build_import_preview(
 
     rows: List[PreviewRow] = []
     for po in parsed_orders:
+        correction = (corrections or {}).get(po.external_order_no, {})
+        original_po = po
+        po = deepcopy(po)
+        if correction.get("date"):
+            po.order_date = date.fromisoformat(correction["date"])
         sm = map_commercial_status(po.status_raw)
+        status_unknown = sm.unknown
+        if correction.get("status"):
+            status = OrderCommercialStatus(correction["status"])
+            sm = StatusMapping(status, status not in {OrderCommercialStatus.pending_payment, OrderCommercialStatus.cancelled})
+        elif sm.unknown:
+            sm = StatusMapping(None, True, unknown=True)
         if not sm.should_import:
-            rows.append(_row(po, sm, "skip_status", reason=f"状态「{po.status_raw}」跳过"))
+            rows.append(_row(po, sm, "skip_status", reason="人工核对为待付款或取消，本次跳过" if correction.get("status") else f"状态「{po.status_raw}」跳过"))
             continue
         if po.external_order_no in existing:
             rows.append(_row(po, sm, "duplicate", reason="订单号已存在，跳过"))
@@ -271,16 +289,17 @@ def build_import_preview(
             rows.append(_row(po, sm, "unresolved", reason="缺少下单/支付时间"))
             continue
 
-        real_lines = [pl for pl in po.product_lines if not pl.is_shipping]
+        real_lines = [(idx, pl) for idx, pl in enumerate(po.product_lines) if not pl.is_shipping]
         shipping_total = sum(
             (pl.unit_price * pl.quantity for pl in po.product_lines if pl.is_shipping),
             Decimal("0"),
         )
         # 忽略名单：整单只有忽略品 → 跳过（不导入、不进待确认）；多商品单里的忽略行被丢弃、
         # 其余照常导入。
-        ignored_lines = [pl for pl in real_lines if _is_ignored_product(pl.name)]
-        real_lines = [pl for pl in real_lines if not _is_ignored_product(pl.name)]
-        zto_override = any(pl.mentions_zto for pl in po.product_lines)
+        ignored_lines = [pl for _, pl in real_lines if _is_ignored_product(pl.name)]
+        ignored_total = sum((pl.unit_price * pl.quantity for pl in ignored_lines), Decimal("0"))
+        real_lines = [(idx, pl) for idx, pl in real_lines if not _is_ignored_product(pl.name)]
+        fee_zto = any(pl.mentions_zto for pl in po.product_lines if pl.is_shipping)
         if not real_lines:
             if ignored_lines:
                 rows.append(_row(po, sm, "skip_status",
@@ -291,16 +310,26 @@ def build_import_preview(
 
         warnings: List[str] = []
         resolved = []
+        product_signatures = {}
+        origins: list[str] = []
         miss_reason = None
         miss_product = None
-        for idx, line in enumerate(real_lines):
+        for source_index, line in real_lines:
             # single real line carries (paid − shipping); rare multi-line keeps own price.
             line_paid = (
-                po.paid_amount - shipping_total
+                po.paid_amount - shipping_total - ignored_total
                 if len(real_lines) == 1
                 else line.unit_price * line.quantity
             )
-            res = resolve_product(products, line.name, line.quantity, line_paid)
+            matching_name = line.name
+            matching_products = products
+            if str(source_index) in correction.get("products", {}):
+                product = next((p for p in products if p.id == correction["products"][str(source_index)]), None)
+                if product is None:
+                    raise HTTPException(409, "所选商品已停用或删除，请重新选择商品")
+                matching_name = product.display_name
+                matching_products = [product]
+            res = resolve_product(matching_products, matching_name, line.quantity, line_paid)
             if not res.matched:
                 # 商学院月刊单期没有稳定的商品库键，按模式直接识别为商学院单期，期次身份落
                 # issue_label —— 不在商品库建带年份的行。两种触发：
@@ -335,6 +364,7 @@ def build_import_preview(
                     resolved.append(
                         ResolvedItem(item=item, coverage_rule=CoverageRule.custom)
                     )
+                    origins.append(line.name)
                     continue
                 miss_reason = res.reason
                 miss_product = line.name
@@ -351,8 +381,12 @@ def build_import_preview(
                         and not ri.item.issue_label
                     ):
                         ri.item.issue_label = issue_label
-            warnings.extend(res.warnings)
+            # 金额错误统一进入结构化核对，不再用可忽略的字符串警告放行。
+            from app.services.order_import_review_service import product_signature
+            matched_product = next(p for p in matching_products if p.code == res.product_code)
+            product_signatures[matched_product.id] = product_signature(matched_product)
             resolved.extend(res.items)
+            origins.extend([line.name] * len(res.items))
         if miss_reason:
             rows.append(
                 _row(po, sm, "unresolved", reason=miss_reason, unresolved_product=miss_product)
@@ -361,15 +395,41 @@ def build_import_preview(
 
         items = []
         issue_reviews: dict[str, IssueReview] = {}
-        for ri in resolved:
+        reviews = []
+        if status_unknown:
+            reviews.append({"id": "status", "kind": "status", "title": "平台状态待核对",
+                            "reason": f"原始状态：{original_po.status_raw or '未填写'}；请选择实际交易状态",
+                            "original": None, "suggested": None, "value": correction.get("status"),
+                            "status": "confirmed" if correction.get("status") else "pending"})
+        for index, ri in enumerate(resolved):
             item = ri.item
-            # Flip an item's own channel to 中通, but don't invent one for a line that
-            # deliberately has none (e.g. the 商学院 single-issue fallback, delivery=None).
-            if zto_override and item.delivery_method is not None:
-                item.delivery_method = DeliveryMethod.zto_mf
+            original_delivery = item.delivery_method
+            explicit_zto = "中通" in origins[index]
+            explicit_post = "邮局" in origins[index] and "转中通" not in origins[index]
+            suggested = (DeliveryMethod.zto_mf if explicit_zto or fee_zto else
+                         DeliveryMethod.post_office if explicit_post else original_delivery)
+            chosen = correction.get("deliveries", {}).get(str(index))
+            if original_delivery is not None and (suggested != original_delivery or chosen):
+                reviews.append({"id": f"delivery:{index}", "kind": "delivery", "item_index": index,
+                                "title": "投递方式待核对", "reason": "同单运费注明中通，请核对本条明细是否转投" if fee_zto else f"商品原文：{origins[index]}，与商品投递配置需核对",
+                                "original": original_delivery.value, "suggested": suggested.value,
+                                "value": chosen or original_delivery.value,
+                                "status": "confirmed" if chosen else "pending"})
+            if chosen:
+                item.delivery_method = DeliveryMethod(chosen)
             item.coverage_start_date, item.coverage_end_date = _coverage_for(
                 settings, item, ri.coverage_rule, po.payment_time
             )
+            manual_coverage = correction.get("coverage", {}).get(str(index))
+            if manual_coverage:
+                item.coverage_start_date = date.fromisoformat(manual_coverage[0]) if manual_coverage[0] else None
+                item.coverage_end_date = date.fromisoformat(manual_coverage[1]) if manual_coverage[1] else None
+                item.term_start_month = item.coverage_start_date.strftime("%Y-%m") if item.coverage_start_date else None
+                if chosen:
+                    reviews.append({"id": f"coverage:{index}", "kind": "coverage", "item_index": index,
+                                    "title": "投递变更后的人工订期待核对", "reason": "已保留人工补录的订期，请核对是否适用于本次投递方式",
+                                    "value": " 至 ".join(value or "未填写" for value in manual_coverage),
+                                    "status": "confirmed" if str(index) in correction.get("confirmed_coverage", []) else "pending"})
             # 最新一期：按"付款时间 + 刊期表 + 周五~22点翻期(±4h临界)"自动判期号；临界标黄待核。
             if ri.coverage_rule == CoverageRule.latest_issue:
                 li = resolve_latest_issue(schedule, po.payment_time)
@@ -402,6 +462,23 @@ def build_import_preview(
             ]
             items.append(item)
 
+        amounts = correction.get("amounts")
+        if amounts is not None:
+            if len(amounts) != len(items):
+                raise HTTPException(409, "商品明细已变化，请重新核对金额分摊")
+            for item, amount in zip(items, amounts):
+                item.subtotal = Decimal(amount)
+                item.unit_price = (item.subtotal / item.total_quantity).quantize(Decimal("0.01"))
+        expected_items = po.paid_amount - shipping_total - ignored_total
+        invalid_money = (expected_items < 0 or any(it.subtotal < 0 for it in items)
+                         or sum((it.subtotal for it in items), Decimal("0")) != expected_items)
+        if invalid_money or amounts is not None:
+            reviews.append({"id": "amount", "kind": "amount", "title": "金额分摊待核对",
+                            "reason": "明细不能为负；商品明细＋运费＋已排除商品金额必须等于原实付",
+                            "status": "pending" if invalid_money else "confirmed"})
+        if amounts is not None and invalid_money:
+            raise HTTPException(422, "分摊金额不合法：各项须非负，合计须等于实付减运费及已排除商品金额")
+
         # Campaign gift (e.g. 618 送《商学院》合刊): one free recorded line per order
         # that contains a subscription. Single-issue-only orders don't get it.
         if settings.gift_publication and any(
@@ -430,10 +507,13 @@ def build_import_preview(
                 po,
                 sm,
                 "import",
-                status_unknown=sm.unknown,
-                delivery_overridden_to_zto=zto_override,
+                status_unknown=status_unknown and not correction.get("status"),
+                delivery_overridden_to_zto=any(r["kind"] == "delivery" and r["status"] == "pending" for r in reviews),
                 warnings=warnings,
                 issue_reviews=issue_reviews,
+                reviews=reviews,
+                money={"paid": str(po.paid_amount), "shipping": str(shipping_total), "excluded": str(ignored_total), "items": str(expected_items)},
+                product_signatures=product_signatures,
                 order_create=oc,
             )
         )
@@ -471,6 +551,7 @@ def _serialize_row(r: PreviewRow) -> dict:
         "external_order_no": r.external_order_no,
         "recipient_name": r.recipient_name,
         "paid_amount": str(r.paid_amount),
+        "order_date": r.order_date.isoformat() if r.order_date else None,
         "status_raw": r.status_raw,
         "commercial_status": r.commercial_status.value if r.commercial_status else None,
         "decision": r.decision,
@@ -478,6 +559,8 @@ def _serialize_row(r: PreviewRow) -> dict:
         "status_unknown": r.status_unknown,
         "delivery_overridden_to_zto": r.delivery_overridden_to_zto,
         "warnings": r.warnings,
+        "reviews": r.reviews,
+        "money": r.money,
         "items": items,
         "unresolved_product": r.unresolved_product,
     }
@@ -536,7 +619,7 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
         pure_fee = bool(po.product_lines) and all(p.is_shipping for p in po.product_lines)
         kind = "shipping_fee" if pure_fee else "subscription" if row.order_create else "record"
         if old:
-            changed = versions[old.id].fingerprint != fingerprint(snapshot)
+            changed = fingerprint(versions[old.id].snapshot) != fingerprint(snapshot)
             row.decision = "source_update" if changed else "duplicate"
             row.order_create = None
             row.reason = "原始交易有变化，请核对前后信息并确认更新" if changed else "来源交易已留存"
@@ -546,34 +629,27 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
         elif row.decision == "duplicate":
             row.decision = "retain"
             row.reason = "补充订单原件：仅保存交易，不重复建单、不覆盖人工修改"
+        if row.decision != "import":
+            row.reviews = []
+            row.issue_reviews = {}
+            row.delivery_overridden_to_zto = False
         if row.decision in {"import", "retain", "source_update", "duplicate"}:
             source_records.append({"snapshot": snapshot, "kind": old.kind if old else kind,
                                    "expected_revision": old.lock_version if old else None, "decision": row.decision})
         source_details[row.external_order_no] = {"source_snapshot": snapshot,
             "source_id": old.id if old else None,
+            "is_shipping_fee": pure_fee,
+            "fee_link_count": 0,
             "previous_snapshot": versions[old.id].snapshot if old and row.decision == "source_update" else None}
 
-    commit_rows = [
-        {
-            "order_create": r.order_create.model_dump(mode="json"),
-            "commercial_status": r.commercial_status.value if r.commercial_status else None,
-            "source_status_raw": r.status_raw,
-            "is_historical_archive": settings.mode == "historical",
-            "issue_reviews": r.issue_reviews,
-        }
-        for r in preview.by_decision("import")
-    ]
-    session_id = save_order_import_session({"mode": settings.mode, "rows": commit_rows, "owner_id": owner_id,
-                                           "sources": source_records,
-                                           "issue_review_options": preview.issue_review_options})
-
-    out = {
-        "session_id": session_id,
-        "counts": preview.counts,
-        "can_commit": any(preview.counts.get(key, 0) > 0 for key in ("import", "retain", "source_update")),
-        "rows": [{**_serialize_row(r), **source_details[r.external_order_no]} for r in preview.rows],
-        "issue_review_options": preview.issue_review_options,
-    }
+    from app.services.order_import_review_service import cache_row, output
+    payload = {"mode": settings.mode, "rows": [cache_row(r, settings.mode == "historical") for r in preview.by_decision("import")],
+               "owner_id": owner_id, "sources": source_records, "issue_review_options": preview.issue_review_options,
+               "preview_rows": [{**_serialize_row(r), **source_details[r.external_order_no]} for r in preview.rows],
+               "version": 1, "parsed": {po.external_order_no: po for po in parsed}, "settings": settings,
+               "platform": source_platform, "store": source_store}
+    session_id = save_order_import_session(payload)
+    out = output(payload, session_id)
     return out, session_id
 
 
@@ -586,6 +662,7 @@ def _commit_import(
     issue_label_overrides: Optional[dict[str, str]] = None,
     confirmed_source_updates: Optional[list[str]] = None,
     confirmed_issue_numbers: Optional[dict[str, int]] = None,
+    expected_version: int | None = None,
 ) -> dict:
     """Create the previewed importable orders atomically (single commit).
 
@@ -615,6 +692,11 @@ def _commit_import(
     if payload.get("owner_id") is not None and payload["owner_id"] != operator_id:
         raise HTTPException(status_code=403, detail="无权确认其他人的导入会话")
     payload = deepcopy(payload)
+    from app.services.order_import_review_service import validate_reviews, validate_products, log_reviews
+    from app.services.order_import_fee_service import validate_fee_links, apply_fee_links
+    validate_reviews(payload, expected_version)
+    validate_products(db, payload)
+    validate_fee_links(db, payload)
     from app.services.order_source_service import validate_import_sources, save_import_source
     validate_import_sources(db, payload.get("sources", []), confirmed_source_updates or [])
 
@@ -700,6 +782,7 @@ def _commit_import(
             operator_id=operator_id,
         )
         log_import_issue_reviews(db, order, r, operator_id)
+        log_reviews(db, order, r, operator_id)
         if r.get("coverage_fills"):
             # 新订单明细按创建 ID 对应导入顺序，将预览中的补录依据一并入审计。
             created_items = sorted(order.items, key=lambda item: item.id)
@@ -716,6 +799,7 @@ def _commit_import(
     created_by_external = {o.external_order_no: o for o in created}
     retained = 0
     source_ids = []
+    fee_sources = []
     for record in payload.get("sources", []):
         snapshot = record["snapshot"]
         linked_order = created_by_external.get(snapshot["external_order_no"])
@@ -724,9 +808,19 @@ def _commit_import(
                 Order.source_platform == snapshot["platform"],
                 func.coalesce(Order.source_store, "") == snapshot["store"]).one_or_none()
         source, changed = save_import_source(db, record, linked_order, operator_id)
+        if record["kind"] == "shipping_fee":
+            selection = payload.get("fee_links", {}).get(snapshot["external_order_no"])
+            if selection:
+                apply_fee_links(db, source, selection, created_by_external, operator_id)
+            fee_sources.append({"id": source.id, "external_order_no": source.external_order_no})
         source_ids.append(source.id)
         if changed and record["decision"] == "retain":
             retained += 1
+    from app.models.order_source import OrderSourceLink
+    linked_fee_ids = {source_id for (source_id,) in db.query(OrderSourceLink.source_id).filter(
+        OrderSourceLink.source_id.in_([row["id"] for row in fee_sources]), OrderSourceLink.active == 1).distinct()}
+    for row in fee_sources:
+        row["linked"] = row["id"] in linked_fee_ids
     db.commit()
     pop_order_import_session(session_id)
     return {
@@ -735,6 +829,7 @@ def _commit_import(
         "skipped_duplicates": skipped,
         "retained_sources": retained,
         "source_ids": source_ids,
+        "fee_sources": fee_sources,
     }
 
 
@@ -742,11 +837,12 @@ def commit_import(db: Session, session_id: str, operator_id: Optional[int] = Non
                   issue_overrides: Optional[dict[str, int]] = None,
                   issue_label_overrides: Optional[dict[str, str]] = None,
                   confirmed_source_updates: Optional[list[str]] = None,
-                  confirmed_issue_numbers: Optional[dict[str, int]] = None) -> dict:
+                  confirmed_issue_numbers: Optional[dict[str, int]] = None,
+                  expected_version: int | None = None) -> dict:
     """原子创建订单和来源记录；失败保留预览，允许核对后重试。"""
     try:
         return _commit_import(db, session_id, operator_id, issue_overrides,
-                              issue_label_overrides, confirmed_source_updates, confirmed_issue_numbers)
+                              issue_label_overrides, confirmed_source_updates, confirmed_issue_numbers, expected_version)
     except Exception:
         db.rollback()
         raise

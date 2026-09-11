@@ -1,5 +1,42 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
+import type { SourceCandidate } from './orderSources';
+
+export interface ImportReview {
+  id: string;
+  kind: 'delivery' | 'status' | 'amount' | 'coverage';
+  title: string;
+  reason: string;
+  item_index?: number;
+  original?: string | null;
+  suggested?: string | null;
+  value?: string | null;
+  status: 'pending' | 'confirmed';
+}
+
+export interface ImportReviewChange {
+  kind: ImportReview['kind'] | 'date' | 'product';
+  reason: string;
+  item_index?: number;
+  value?: string | null;
+  amounts?: string[];
+  product_id?: number;
+}
+
+export interface ImportFeeCandidate extends Omit<SourceCandidate, 'order_id' | 'order_item_id' | 'target_id'> {
+  order_id: number | null;
+  order_item_id: number | null;
+  target_id: number | null;
+  draft_key?: string;
+}
+export interface ImportFeeAllocation {
+  draft_key?: string;
+  order_id?: number;
+  order_item_id?: number;
+  target_id?: number;
+  expected_target_version: string;
+  amount: string;
+}
 
 // retain 是仅保存交易的后台动作，页面与 import 一起展示为「可导入」。
 export type ImportDecision = 'import' | 'skip_status' | 'duplicate' | 'unresolved' | 'retain' | 'source_update';
@@ -47,6 +84,12 @@ export interface ImportPreviewRow {
   source_id?: number | null;
   source_snapshot?: Record<string, unknown>;
   previous_snapshot?: Record<string, unknown> | null;
+  reviews?: ImportReview[];
+  money?: { paid: string; shipping: string; excluded: string; items: string };
+  corrected?: boolean;
+  order_date?: string | null;
+  is_shipping_fee?: boolean;
+  fee_link_count?: number;
 }
 
 export interface ImportPreviewOut {
@@ -55,6 +98,8 @@ export interface ImportPreviewOut {
   can_commit: boolean;
   rows: ImportPreviewRow[];
   issue_review_options?: ImportIssueOption[];
+  version?: number;
+  pending_review_count?: number;
 }
 
 export interface ImportCommitOut {
@@ -63,6 +108,7 @@ export interface ImportCommitOut {
   skipped_duplicates: number;
   retained_sources?: number;
   source_ids?: number[];
+  fee_sources?: { id: number; external_order_no: string; linked: boolean }[];
 }
 
 export interface PreviewSettings {
@@ -100,6 +146,7 @@ export function commitOrderImport(
   issueLabelOverrides?: Record<string, string>,
   confirmedSourceUpdates?: string[],
   confirmedIssueNumbers?: Record<string, number>,
+  expectedVersion?: number,
 ): Promise<AxiosResponse<ImportCommitOut>> {
   const body: {
     session_id: string;
@@ -107,9 +154,11 @@ export function commitOrderImport(
     issue_label_overrides?: Record<string, string>;
     confirmed_source_updates?: string[];
     confirmed_issue_numbers?: Record<string, number>;
+    expected_version?: number;
   } = {
     session_id: sessionId,
   };
+  if (expectedVersion != null) body.expected_version = expectedVersion;
   if (confirmedSourceUpdates?.length) body.confirmed_source_updates = confirmedSourceUpdates;
   if (confirmedIssueNumbers && Object.keys(confirmedIssueNumbers).length > 0) {
     body.confirmed_issue_numbers = confirmedIssueNumbers;
@@ -122,3 +171,11 @@ export function commitOrderImport(
   }
   return api.post('/order-import/commit', body);
 }
+
+export const getImportDraft = (sessionId: string) => api.get<ImportPreviewOut>(`/order-import/sessions/${sessionId}`);
+export const reviewImportDraft = (sessionId: string, externalOrderNo: string, version: number, change: ImportReviewChange) =>
+  api.post<ImportPreviewOut>(`/order-import/sessions/${sessionId}/review`, { external_order_no: externalOrderNo, expected_version: version, ...change });
+export const getImportFeeCandidates = (sessionId: string, externalOrderNo: string, search?: string) =>
+  api.get<{ rows: ImportFeeCandidate[]; truncated: boolean; allocations: ImportFeeAllocation[] }>(`/order-import/sessions/${sessionId}/fee-candidates`, { params: { external_order_no: externalOrderNo, search } });
+export const saveImportFeeLinks = (sessionId: string, externalOrderNo: string, version: number, reason: string, allocations: ImportFeeAllocation[]) =>
+  api.post<ImportPreviewOut>(`/order-import/sessions/${sessionId}/fee-links`, { external_order_no: externalOrderNo, expected_version: version, reason, allocations });

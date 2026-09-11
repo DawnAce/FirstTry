@@ -167,17 +167,19 @@ def test_decision_priority_and_exclusive_counts(
 
 
 @pytest.mark.parametrize("status", ["", "合成未知平台状态"])
-def test_unknown_status_is_a_warning_not_an_unresolved_decision(db: Session, status: str) -> None:
+def test_unknown_status_requires_review_while_retaining_planned_import_decision(db: Session, status: str) -> None:
     row = build_import_preview(db, [parsed_order(status, "known", False)], SETTINGS).rows[0]
     assert row.decision == "import"
     assert row.status_unknown is True
-    assert row.commercial_status == OrderCommercialStatus.paid
+    assert row.commercial_status is None
+    assert row.reviews[0]["kind"] == "status"
     # 订期留空不等于待确认；入库资格也不代表发货信息已经完整。
     assert row.order_create.items[0].coverage_start_date is None
     assert row.order_create.items[0].coverage_end_date is None
     final, _ = preview_import(db, workbook_bytes([parsed_order(status, "known", False)]), SETTINGS)
     assert final["rows"][0]["decision"] == "import"
     assert final["rows"][0]["status_unknown"] is True
+    assert final["can_commit"] is False
 
 
 @pytest.mark.parametrize("status", ["待付款", "已取消", "卖家已退款", "卖家已发货"])

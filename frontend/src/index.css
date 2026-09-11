@@ -629,6 +629,16 @@ body {
   max-width: 100%;
 }
 
+.order-import-workflow {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.order-import-workflow .ant-form {
+  width: 100%;
+}
+
 .order-import-product > .order-import-issue-review {
   flex-basis: 100%;
 }
