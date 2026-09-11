@@ -582,6 +582,216 @@ body {
   color: #2f80ed;
 }
 
+/* 导入预览详情：字段名保留横排，长值在自己的区域换行。 */
+.order-import-detail-drawer .ant-drawer-header,
+.order-import-detail-drawer .ant-drawer-footer {
+  background: var(--color-card);
+  border-color: var(--color-border);
+}
+
+.order-import-detail-drawer .ant-drawer-header {
+  min-height: 72px;
+}
+
+.app-drawer-root.order-import-detail-drawer .ant-drawer-body {
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  padding: var(--space-section);
+}
+
+.order-import-detail-drawer .ant-drawer-footer {
+  min-height: 56px;
+  box-shadow: none;
+}
+
+.order-import-detail-drawer .app-drawer-footer-tip {
+  color: var(--color-text-secondary);
+}
+
+.order-import-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-section);
+  line-height: 22px;
+}
+
+.order-import-detail-section {
+  min-width: 0;
+}
+
+.app-drawer-root .order-import-detail-section h3 {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.order-import-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 16px;
+  margin: 0;
+}
+
+.order-import-field {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: start;
+  padding-block: calc(var(--table-cell-block) / 2 + 2px);
+}
+
+.order-import-field.is-full {
+  grid-column: 1 / -1;
+}
+
+.order-import-field dt {
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+.order-import-field dt.is-long-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.order-import-field dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-import-product {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  column-gap: 16px;
+  row-gap: 4px;
+  padding-block: calc(var(--table-cell-block) / 2 + 2px);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.order-import-product > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.order-import-product strong {
+  font-weight: 500;
+}
+
+.order-import-product span,
+.order-import-source,
+.order-import-confirm p {
+  color: var(--color-text-secondary);
+}
+
+.order-import-recognized h4 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.order-import-recognized .order-import-product {
+  flex-direction: column;
+}
+
+.order-import-extra {
+  border-top: 1px solid var(--color-border);
+}
+
+.order-import-extra summary {
+  padding-block: 8px;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.order-import-source {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.order-import-change-heading,
+.order-import-change {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  padding-block: 10px;
+}
+
+.order-import-change-heading,
+.order-import-before {
+  color: var(--color-text-secondary);
+}
+
+.order-import-change {
+  border-top: 1px solid var(--color-divider);
+}
+
+.order-import-change > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.order-import-change-label small {
+  display: block;
+  color: var(--color-text-secondary);
+}
+
+.order-import-after {
+  color: var(--color-warning-text);
+  background: var(--color-warning-soft);
+  padding: 2px 6px;
+  border-radius: var(--radius-input);
+}
+
+.order-import-change-caption {
+  display: none;
+}
+
+.order-import-confirm p {
+  margin: 6px 0 0 24px;
+  font-size: 12px;
+}
+
+@media (max-width: 540px) {
+  .order-import-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .order-import-change-heading {
+    display: none;
+  }
+  .order-import-change {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .order-import-change-label small {
+    display: inline;
+    margin-left: 8px;
+  }
+  .order-import-change-caption {
+    display: inline;
+  }
+}
+
+@media (pointer: coarse) {
+  .order-import-extra summary,
+  .order-import-confirm .ant-checkbox-wrapper {
+    min-height: 44px;
+  }
+}
+
 .complaint-makeup-panel {
   overflow: hidden;
   padding: 0;

@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import OrderCoverageDrawer from './OrderCoverageDrawer';
 import LinkProductAliasModal from './LinkProductAliasModal';
+import OrderImportDetail from './OrderImportDetail';
+import { formatImportValue, importReason, importStatusLabel } from './orderImportDisplay';
 import {
   Alert,
   Button,
   Card,
-  Checkbox,
   DatePicker,
   Drawer,
   Form,
@@ -268,13 +269,12 @@ export default function OrderImport() {
     { title: '结果', dataIndex: 'decision', key: 'decision', width: 100, render: (d: ImportDecision) => <Tag color={DECISION_META[d].color}>{DECISION_META[d].label}</Tag> },
     { title: '来源单号', dataIndex: 'external_order_no', key: 'ext', width: 160, ellipsis: true },
     { title: '收件人', dataIndex: 'recipient_name', key: 'name', width: 90 },
-    { title: '付款', dataIndex: 'paid_amount', key: 'paid', width: 100, align: 'right', render: (v) => `¥${v}` },
+    { title: '付款', dataIndex: 'paid_amount', key: 'paid', width: 100, align: 'right', render: (v) => formatImportValue('paid_amount', v) },
     {
       title: '状态', key: 'status', width: 150,
       render: (_: unknown, r) => (
         <Space size={2} direction="vertical">
-          <Text style={{ fontSize: 12 }}>{r.status_raw} → {r.commercial_status ?? '-'}</Text>
-          {r.status_unknown && <Tag color="orange">状态未知</Tag>}
+          <Text type={r.status_unknown ? 'warning' : undefined} style={{ fontSize: 12 }}>{importStatusLabel(r.status_raw, r.commercial_status, r.status_unknown)}</Text>
         </Space>
       ),
     },
@@ -284,7 +284,7 @@ export default function OrderImport() {
         if (r.decision !== 'import') {
           return (
             <Space>
-              <Text type="secondary">{r.reason ?? '-'}</Text>
+              <Text type="secondary">{importReason(r) || '—'}</Text>
               {r.decision === 'unresolved' && r.unresolved_product && (
                 <Button type="link" size="small" icon={<PlusOutlined />} onClick={(e) => { e.stopPropagation(); openQuickAdd(r.unresolved_product!); }}>
                   加入商品库
@@ -550,11 +550,11 @@ export default function OrderImport() {
         )}
         open={drawerMode !== null}
         onClose={() => setDrawerMode(null)}
-        size={560}
-        rootClassName="app-drawer-root"
+        size={drawerMode === 'detail' ? 640 : 560}
+        rootClassName={`app-drawer-root${drawerMode === 'detail' ? ' order-import-detail-drawer' : ''}`}
         footer={(
           <div className="app-drawer-footer">
-            <span className="app-drawer-footer-tip"><b>✓</b>{drawerMode === 'quick' ? '保存后自动刷新全部订单识别结果' : '这里只读展示本次导入判断'}</span>
+            <span className="app-drawer-footer-tip">{drawerMode === 'quick' ? '保存后自动刷新全部订单识别结果' : '当前为预览，请返回列表确认整批导入'}</span>
             <Button onClick={() => setDrawerMode(null)}>{drawerMode === 'quick' ? '取消' : '关闭'}</Button>
             {drawerMode === 'quick' && <Button type="primary" onClick={() => quickForm.submit()} loading={quickAddMutation.isPending}>保存并重新识别</Button>}
           </div>
@@ -572,47 +572,12 @@ export default function OrderImport() {
           </div>
         )}
         {drawerMode === 'detail' && detailRow && (
-          <div className="app-drawer-stack">
-            <div className="app-drawer-hero">
-              <span className="app-drawer-avatar">{detailRow.recipient_name.slice(0, 1)}</span>
-              <div className="app-drawer-hero-copy">
-                <strong>{detailRow.recipient_name}</strong>
-                <span>实付 ¥{detailRow.paid_amount} · 平台状态 {detailRow.status_raw} → {detailRow.commercial_status ?? '-'}</span>
-              </div>
-            </div>
-            <div className="app-drawer-panel">
-              <h3><span aria-hidden>🔎</span>识别结果</h3>
-            <Text><b>结果：</b>{DECISION_META[detailRow.decision].label}{detailRow.reason ? `（${detailRow.reason}）` : ''}</Text>
-            {detailRow.delivery_overridden_to_zto && <Tag color="orange">投递已改中通，请核对</Tag>}
-            {detailRow.items.length > 0 && (
-              <Card size="small" title="识别明细">
-                {detailRow.items.map((it, i) => (
-                  <div key={i} style={{ fontSize: 13 }}>
-                    {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
-                    {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
-                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{it.issue_number ? ` · 第${it.issue_number}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · 份{it.total_quantity} · ¥{it.subtotal} · 订期：{formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}
-                  </div>
-                ))}
-              </Card>
-            )}
-            {detailRow.decision === 'import' && <Text type="secondary" style={{ fontSize: 12 }}>导入后如需改起止日期/状态等，可到「订单管理 → 订单列表」对应订单详情页调整。</Text>}
-            {detailRow.source_snapshot && <div style={{ marginTop: 16 }}>
-              <Text strong>原始来源</Text>
-              <p>{String(detailRow.source_snapshot.filename ?? '')} · {String(detailRow.source_snapshot.source_sheet ?? '')} 第 {String(detailRow.source_snapshot.source_row ?? '')} 行</p>
-              <Table size="small" pagination={false} rowKey="field" columns={[
-                { title: '字段', dataIndex: 'field' },
-                ...(detailRow.previous_snapshot ? [{ title: '已留存', dataIndex: 'before' }] : []),
-                { title: '本次原始值', dataIndex: 'after' },
-              ]} dataSource={Object.entries({ status_raw: '状态', paid_amount: '付款金额', recipient_name: '姓名', recipient_phone: '电话', recipient_address: '地址', notes: '备注', order_date: '下单日期', product_lines: '商品原文', payment_time: '支付时间', original_amount: '原价', recipient_postal_code: '邮编', payment_method: '支付方式', invoice: '开票信息', raw_cells: '全部原始字段' }).map(([key, field]) => ({
-                field, before: JSON.stringify(detailRow.previous_snapshot?.[key] ?? ''), after: JSON.stringify(detailRow.source_snapshot?.[key] ?? ''),
-              }))} />
-              {detailRow.decision === 'source_update' && <Checkbox checked={confirmedSourceUpdates.includes(detailRow.external_order_no)}
-                onChange={e => setConfirmedSourceUpdates(prev => e.target.checked ? [...prev, detailRow.external_order_no] : prev.filter(no => no !== detailRow.external_order_no))}>
-                我已核对原始变化，确认保存新版本（不自动改变主订阅的财务或投递）
-              </Checkbox>}
-            </div>}
-            </div>
-          </div>
+          <OrderImportDetail key={detailRow.external_order_no} row={detailRow}
+            confirmed={confirmedSourceUpdates.includes(detailRow.external_order_no)}
+            disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}
+            onConfirmChange={checked => setConfirmedSourceUpdates(previous => checked
+              ? [...new Set([...previous, detailRow.external_order_no])]
+              : previous.filter(no => no !== detailRow.external_order_no))} />
         )}
       </Drawer>
     </div>
