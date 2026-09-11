@@ -84,3 +84,4 @@ class CoverageApplyOut(BaseModel):
     updated: int
     order_count: int
     changes: list[CoverageChange]
+    import_version: int | None = None

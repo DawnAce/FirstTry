@@ -31,7 +31,8 @@ def source_snapshot(po: ParsedOrder, platform: str, store: str | None, filename:
         "payment_time": po.payment_time.isoformat() if po.payment_time else None,
         "paid_amount": str(po.paid_amount.quantize(Decimal("0.01"))),
         "original_amount": str(po.original_amount.quantize(Decimal("0.01"))),
-        "status_raw": po.status_raw, "commercial_status": map_commercial_status(po.status_raw).status.value,
+        "status_raw": po.status_raw, "commercial_status": (
+            map_commercial_status(po.status_raw).status.value if map_commercial_status(po.status_raw).status else None),
         "recipient_name": po.recipient_name, "recipient_phone": po.recipient_phone,
         "recipient_address": po.recipient_address, "recipient_postal_code": po.recipient_postal_code,
         "notes": po.notes, "payment_method": po.payment_method_raw, "invoice": po.invoice_raw,
@@ -44,7 +45,8 @@ def source_snapshot(po: ParsedOrder, platform: str, store: str | None, filename:
 
 
 def fingerprint(snapshot: dict) -> str:
-    content = {k: v for k, v in snapshot.items() if k not in {"filename", "source_sheet", "source_row"}}
+    # 识别状态属于派生值，规则升级不代表原始交易发生变化。
+    content = {k: v for k, v in snapshot.items() if k not in {"filename", "source_sheet", "source_row", "commercial_status"}}
     return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -69,7 +71,7 @@ def validate_import_sources(db: Session, records: list[dict], confirmed: list[st
             raise HTTPException(409, "来源交易有变化，请逐笔核对并确认更新")
         if expected is None and current is not None:
             version = db.query(OrderSourceVersion).filter_by(source_id=current.id, revision=current.revision).one()
-            if version.fingerprint != fingerprint(snapshot):
+            if fingerprint(version.snapshot) != fingerprint(snapshot):
                 raise HTTPException(409, "来源交易已被另一次导入，请重新预览")
 
 
@@ -79,7 +81,7 @@ def save_import_source(db: Session, record: dict, order: Order | None, operator_
     digest = fingerprint(snapshot)
     if source is not None:
         version = db.query(OrderSourceVersion).filter_by(source_id=source.id, revision=source.revision).one()
-        if version.fingerprint == digest:
+        if fingerprint(version.snapshot) == digest:
             return source, False
         source.revision += 1
         source.lock_version += 1
@@ -164,6 +166,11 @@ def _sql_normalize(column):
 def candidates(db: Session, source_id: int, search: str | None = None) -> dict:
     source = get_source(db, source_id)
     snapshot = db.query(OrderSourceVersion).filter_by(source_id=source.id, revision=source.revision).one().snapshot
+    return candidates_for_source(db, source, snapshot, search)
+
+
+def candidates_for_source(db: Session, source: OrderSource, snapshot: dict, search: str | None = None) -> dict:
+    """来源原件及尚未保存的导入运费共用推荐规则；只查询，不建立关联。"""
     latest = db.query(FulfillmentAllocation.order_item_id.label("item_id"),
                       func.max(FulfillmentAllocation.version_no).label("version"))
     latest = latest.group_by(FulfillmentAllocation.order_item_id).subquery()
@@ -215,16 +222,17 @@ def candidates(db: Session, source_id: int, search: str | None = None) -> dict:
                      "订阅早于或同日补费" if before else "订阅晚于补费或日期缺失"]
         if order.commercial_status in {OrderCommercialStatus.refunded, OrderCommercialStatus.cancelled}:
             evidence.append("主订阅已退款或取消，仅供历史核对")
+        eligible = all(matches) and covered and before and order.commercial_status not in {
+            OrderCommercialStatus.refunded, OrderCommercialStatus.cancelled}
         row = {"order_id": order.id, "order_code": order.order_code, "external_order_no": order.external_order_no,
                "order_date": order.order_date, "order_item_id": item.id, "target_id": target.id,
                "publication": item.publication.value, "recipient_name": target.recipient_name,
                "recipient_phone": target.recipient_phone, "recipient_address": target.recipient_address,
                "coverage_start_date": item.coverage_start_date, "coverage_end_date": item.coverage_end_date,
-               "confidence": "possible", "evidence": evidence,
+               "confidence": "possible", "evidence": evidence, "_high_match": eligible,
                "expected_target_version": target_version(order, item, target)}
         rows.append(row)
-        if all(matches) and covered and before and order.commercial_status not in {
-                OrderCommercialStatus.refunded, OrderCommercialStatus.cancelled}:
+        if eligible:
             high.append(row)
     if len(high) == 1 and len(values) <= 100:
         high[0]["confidence"] = "high"

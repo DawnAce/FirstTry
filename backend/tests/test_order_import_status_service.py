@@ -53,9 +53,9 @@ def test_keyword_fallback_for_unseen_variant():
     assert m.status == OrderCommercialStatus.shipped and m.should_import is True
 
 
-def test_unknown_defaults_paid_and_flagged():
+def test_unknown_keeps_status_undetermined_for_review():
     m = map_commercial_status("某种没见过的怪状态xyz")
-    assert m.status == OrderCommercialStatus.paid
+    assert m.status is None
     assert m.should_import is True and m.unknown is True
 
 

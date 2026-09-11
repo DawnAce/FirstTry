@@ -55,6 +55,7 @@ export interface CoveragePreview {
 }
 
 export interface CoverageApplyResult {
+  import_version?: number | null;
   updated: number;
   order_count: number;
   changes: CoverageChange[];

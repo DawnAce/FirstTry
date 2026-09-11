@@ -35,10 +35,10 @@ function Snapshot({ value }: { value: SourceSnapshot }) {
 
 export default function OrderSources({ orderId, financeView }: { orderId?: number; financeView?: boolean }) {
   const { isAdmin } = useAuth();
-  const [linking, setLinking] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [linking, setLinking] = useState(() => searchParams.get('action') === 'link');
   const [refundOpen, setRefundOpen] = useState(false);
   const [delivery, setDelivery] = useState<{ linkId?: number; changeId?: number } | null>(null);
-  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [pending, setPending] = useState(false);
   const [page, setPage] = useState(1);
@@ -97,7 +97,7 @@ export default function OrderSources({ orderId, financeView }: { orderId?: numbe
           {!!source.events?.length && <Collapse items={[{ key: 'events', label: '查看核对与更正记录', children: source.events.map(event => <p key={event.id}>{event.created_at} · {({ imported: '留存原件', source_updated: '来源更新', linked: '关联订阅', unlinked: '解除关联', refund_verified: '核对退款', delivery_applied: '确认转投', delivery_reverted: '撤回转投' } as Record<string, string>)[event.action] || event.action} · {String(event.payload.reason || '')}</p>) }]} />}
           {refundOpen && <OrderSourceRefundEditor source={source} onClose={() => setRefundOpen(false)} />}
           {delivery && <OrderSourceDeliveryEditor source={source} {...delivery} onClose={() => setDelivery(null)} />}
-          {linking && <OrderSourceLinkEditor source={source} onClose={() => setLinking(false)} />}
+          {linking && isAdmin && source.kind === 'shipping_fee' && <OrderSourceLinkEditor source={source} onClose={() => setLinking(false)} />}
         </Space>}
     </Drawer>
   </Space>;

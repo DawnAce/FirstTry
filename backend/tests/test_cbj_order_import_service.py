@@ -117,7 +117,7 @@ def test_late_payment_shifts_start_month(db):
     assert item.coverage_end_date == date(2027, 7, 31)
 
 
-def test_shipping_line_folds_into_total_and_flips_delivery_to_zto(db):
+def test_shipping_line_folds_into_total_and_requires_delivery_review(db):
     lines = [
         _line("《中国经营报》全年订阅-618促销活动", qty=1, price=Decimal("199")),
         _line("《中国经营报》运费补拍（邮局转中通）", qty=50, price=Decimal("3"),
@@ -128,7 +128,9 @@ def test_shipping_line_folds_into_total_and_flips_delivery_to_zto(db):
     assert row.decision == "import"
     assert row.delivery_overridden_to_zto is True
     item = row.order_create.items[0]
-    assert item.delivery_method == DeliveryMethod.zto_mf
+    assert item.delivery_method == DeliveryMethod.post_office
+    assert row.reviews[0]["suggested"] == "zto_mf"
+    assert row.reviews[0]["status"] == "pending"
     # line paid = 349 − (50×3) = 199
     assert item.subtotal == Decimal("199.00")
     # order total keeps the full paid amount (freight included)
