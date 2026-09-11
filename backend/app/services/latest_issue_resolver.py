@@ -50,8 +50,8 @@ def resolve_latest_issue(
     ``schedule`` is any iterable of objects exposing ``issue_number`` /
     ``publish_date`` / ``is_suspended`` (e.g. ``PublicationSchedule`` rows).
     Returns the assigned issue plus a non-None ``note`` when borderline or
-    unresolvable (the caller surfaces it as an import warning; the order still
-    imports with the auto-assigned issue).
+    unresolvable. The import flow requires an explicit issue confirmation for
+    these uncertain suggestions before creating the order.
     """
     if payment_time is None:
         return LatestIssueResolution(None, None, "缺少付款时间，无法判定最新一期")

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import OrderCoverageDrawer from './OrderCoverageDrawer';
 import LinkProductAliasModal from './LinkProductAliasModal';
 import OrderImportDetail from './OrderImportDetail';
+import OrderImportIssueReview from './OrderImportIssueReview';
 import { formatImportValue, importReason, importStatusLabel } from './orderImportDisplay';
 import {
   Alert,
@@ -29,7 +30,7 @@ import type { Dayjs } from 'dayjs';
 import { commitOrderImport, previewOrderImport } from '../api/orderImport';
 import { getApiErrorMessage } from '../api/errorMessage';
 import { useAuth } from '../contexts/AuthContext';
-import type { ImportDecision, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
+import type { ImportDecision, ImportItemPreview, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
 import { createProduct, productQueryKeys } from '../api/products';
 import { ProductFormFields, PUBLICATION_OPTIONS, buildProductPayload } from './ProductForm';
 import type { ProductFormValues } from './ProductForm';
@@ -40,7 +41,7 @@ import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives'
 const { Text } = Typography;
 
 type Mode = 'recent' | 'historical';
-type PreviewFilter = 'all' | Exclude<ImportDecision, 'retain'>;
+type PreviewFilter = 'all' | 'issue_review' | Exclude<ImportDecision, 'retain'>;
 
 const PREVIEW_FILTERS = [
   { value: 'all', label: '全部', color: 'primary' },
@@ -126,6 +127,8 @@ export default function OrderImport() {
   const [giftNote, setGiftNote] = useState('');
   const [preview, setPreview] = useState<ImportPreviewOut | null>(null);
   const [confirmedSourceUpdates, setConfirmedSourceUpdates] = useState<string[]>([]);
+  const [issueSelections, setIssueSelections] = useState<Record<string, number | null>>({});
+  const [confirmedIssueNumbers, setConfirmedIssueNumbers] = useState<Record<string, number>>({});
   const [previewFilter, setPreviewFilter] = useState<PreviewFilter>('all');
   const [previewPage, setPreviewPage] = useState(1);
   const [previewPageSize, setPreviewPageSize] = useState(50);
@@ -157,6 +160,10 @@ export default function OrderImport() {
     onSuccess: (res) => {
       setPreview(res.data);
       setConfirmedSourceUpdates([]);
+      setIssueSelections({});
+      setConfirmedIssueNumbers({});
+      setDetailRow(null);
+      setDrawerMode(null);
       setPreviewPage(1);
       setHasCoverageEdits(false);
       setCoverageOpen(false);
@@ -174,7 +181,7 @@ export default function OrderImport() {
       for (const [ext, label] of Object.entries(labelOverrides)) {
         if (isValidIssueLabel(label)) validLabels[ext] = label;
       }
-      return commitOrderImport(preview!.session_id, issueOverrides, validLabels, confirmedSourceUpdates);
+      return commitOrderImport(preview!.session_id, issueOverrides, validLabels, confirmedSourceUpdates, confirmedIssueNumbers);
     },
     onSuccess: (res) => {
       message.success(`导入完成：新建 ${res.data.created} 单，保存 ${res.data.retained_sources ?? 0} 笔交易记录${preview?.counts.source_update ? `，更新 ${preview.counts.source_update} 笔来源` : ''}（跳过重复 ${res.data.skipped_duplicates}）`);
@@ -185,6 +192,8 @@ export default function OrderImport() {
       setFile(null);
       setIssueOverrides({});
       setLabelOverrides({});
+      setIssueSelections({});
+      setConfirmedIssueNumbers({});
     },
     onError: (err: unknown) => { void message.error(getApiErrorMessage(err, '导入失败')); },
   });
@@ -232,10 +241,10 @@ export default function OrderImport() {
   };
 
   const confirmPreviewReset = (action: () => void) => {
-    if (hasCoverageEdits) {
+    if (hasCoverageEdits || Object.keys(issueSelections).length || Object.keys(confirmedIssueNumbers).length) {
       modal.confirm({
         title: '重新生成导入预览？',
-        content: '本次已补录的订期尚未正式入库。重新识别、修改导入设置或更换文件会清除这些日期，之后需要重新补录。',
+        content: '本次已补录的订期或期号核对尚未正式入库。重新识别、修改导入设置或更换文件会清除这些结果，之后需要重新补录和核对。',
         okText: '清除并继续', cancelText: '保留当前预览', onOk: action,
       });
     } else action();
@@ -249,6 +258,8 @@ export default function OrderImport() {
     setPreviewFilter('all');
     setPreviewPage(1);
     setHasCoverageEdits(false);
+    setIssueSelections({});
+    setConfirmedIssueNumbers({});
   });
   const handlePreview = () => {
     if (!file) {
@@ -263,6 +274,29 @@ export default function OrderImport() {
     const m = /^(\d{4})-(0[1-9]|1[0-2])(?:~(0[1-9]|1[0-2]))?$/.exec(label.trim());
     if (!m) return false;
     return m[3] ? Number(m[2]) < Number(m[3]) : true;
+  };
+
+  const selectedIssue = (row: ImportPreviewRow, item: ImportItemPreview, index: number) => {
+    const key = `${row.external_order_no}#${index}`;
+    return key in issueSelections ? issueSelections[key] : item.issue_number;
+  };
+  const renderIssueReview = (row: ImportPreviewRow, item: ImportItemPreview, index: number) => {
+    if (row.decision !== 'import' || !item.issue_review) return null;
+    const key = `${row.external_order_no}#${index}`;
+    const value = selectedIssue(row, item, index);
+    return <OrderImportIssueReview review={item.issue_review} index={index}
+      options={preview?.issue_review_options ?? []} value={value}
+      confirmed={value != null && confirmedIssueNumbers[key] === value}
+      disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}
+      onChange={number => {
+        setIssueSelections(previous => ({ ...previous, [key]: number }));
+        setConfirmedIssueNumbers(previous => {
+          const next = { ...previous };
+          delete next[key];
+          return next;
+        });
+      }}
+      onConfirm={number => setConfirmedIssueNumbers(previous => ({ ...previous, [key]: number }))} />;
   };
 
   const columns: TableColumnsType<ImportPreviewRow> = [
@@ -298,10 +332,11 @@ export default function OrderImport() {
             {r.delivery_overridden_to_zto && <Tag color="orange">投递→中通（请核对）</Tag>}
             {r.items.map((it, i) => {
               const key = `${r.external_order_no}#${i}`;
+              const issueNumber = selectedIssue(r, it, i);
               const needNumber =
                 it.fulfillment_type === 'single_issue' &&
                 it.publication !== 'business_school' &&
-                !it.issue_number;
+                !it.issue_number && !it.issue_review;
               const needLabel =
                 it.fulfillment_type === 'single_issue' &&
                 it.publication === 'business_school' &&
@@ -311,8 +346,9 @@ export default function OrderImport() {
                   <Text style={{ fontSize: 12 }}>
                     {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
                     {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
-                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{it.issue_number ? ` · 第${it.issue_number}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal} · 订期：{formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}
+                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{issueNumber ? ` · 第${issueNumber}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal} · 订期：{formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}
                   </Text>
+                  {renderIssueReview(r, it, i)}
                   {needNumber && (
                     <Space size={4} style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
                       <Text type="warning" style={{ fontSize: 12 }}>补期号：</Text>
@@ -357,7 +393,8 @@ export default function OrderImport() {
                 </div>
               );
             })}
-            {r.warnings.map((w, i) => (<Text key={`w${i}`} type="warning" style={{ fontSize: 12 }}>⚠ {w}</Text>))}
+            {r.warnings.filter(w => !r.items.some(it => it.issue_review?.reason === w))
+              .map((w, i) => (<Text key={`w${i}`} type="warning" style={{ fontSize: 12 }}>⚠ {w}</Text>))}
           </Space>
         );
       },
@@ -366,12 +403,20 @@ export default function OrderImport() {
 
   const counts = preview?.counts ?? {};
   const importableCount = (counts.import ?? 0) + (counts.retain ?? 0);
+  const pendingIssueReviews = useMemo(() => new Map((preview?.rows ?? []).filter(row => row.decision === 'import').map(row => [
+    row.external_order_no,
+    row.items.filter((item, index) => item.issue_review && confirmedIssueNumbers[`${row.external_order_no}#${index}`] == null).length,
+  ])), [preview, confirmedIssueNumbers]);
+  const pendingIssueCount = [...pendingIssueReviews.values()].reduce((sum, count) => sum + count, 0);
+  const hasIssueReviews = preview?.rows.some(row => row.decision === 'import' && row.items.some(item => item.issue_review));
   const visibleRows = useMemo(() => {
     const rows = preview?.rows ?? [];
+    if (previewFilter === 'issue_review') return rows.filter(row => (pendingIssueReviews.get(row.external_order_no) ?? 0) > 0);
     return previewFilter === 'all' ? rows : rows.filter(row =>
       row.decision === previewFilter || (previewFilter === 'import' && row.decision === 'retain'));
-  }, [preview, previewFilter]);
-  const previewFilterLabel = PREVIEW_FILTERS.find(filter => filter.value === previewFilter)!.label;
+  }, [preview, previewFilter, pendingIssueReviews]);
+  const previewFilterLabel = previewFilter === 'issue_review' ? '期号待核对' : PREVIEW_FILTERS.find(filter => filter.value === previewFilter)!.label;
+  const currentDetailRow = preview?.rows.find(row => row.external_order_no === detailRow?.external_order_no) ?? detailRow;
 
   return (
     <div>
@@ -486,7 +531,7 @@ export default function OrderImport() {
             title="③ 预览（商品关联、订期补录及交易记录）"
             extra={
               isAdmin ? (
-                <Space><Button href="/orders/sources">来源交易</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || previewMutation.isPending || previewMutation.isError}>
+                <Space><Button href="/orders/sources">来源交易</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || pendingIssueCount > 0 || previewMutation.isPending || previewMutation.isError}>
                   确认导入 {importableCount} 笔{counts.source_update ? `，更新 ${counts.source_update} 笔来源` : ''}
                 </Button></Space>
               ) : (
@@ -508,9 +553,18 @@ export default function OrderImport() {
                   {filter.label} {filter.value === 'all' ? preview.rows.length : filter.value === 'import' ? importableCount : counts[filter.value] ?? 0}
                 </Button>
               ))}
+              {hasIssueReviews && <Button size="small" shape="round" color="orange"
+                variant={previewFilter === 'issue_review' ? 'solid' : 'filled'} aria-pressed={previewFilter === 'issue_review'}
+                disabled={previewMutation.isPending || commitMutation.isPending}
+                onClick={() => { setPreviewFilter('issue_review'); setPreviewPage(1); }}>
+                期号待核对 {pendingIssueCount}
+              </Button>}
               <Text type="secondary" role="status">当前显示 {visibleRows.length} 笔 / 全部 {preview.rows.length} 笔</Text>
             </Space>
             <div style={{ marginBottom: 12 }}><Text type="secondary">可导入 {importableCount} 笔：新建 {counts.import ?? 0} 单，另 {counts.retain ?? 0} 笔仅保存交易。分类仅筛选显示，确认始终处理整批可导入记录{counts.source_update ? `及 ${counts.source_update} 笔来源更新` : ''}。</Text></div>
+            {pendingIssueCount > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+              title={`还有 ${pendingIssueCount} 条明细待核对期号，完成后才能确认导入`}
+              description="点击“期号待核对”集中查看。核对付款时间及实际购买的期号，在明细下确认或修改；修改后需要重新确认。" />}
             {!!counts.unresolved && <Alert type="warning" showIcon style={{ marginBottom: 12 }}
               title={`还有 ${counts.unresolved} 笔待确认，尚未录入`}
               description="可先补齐后重新预览；若先导入其他记录，请保留原文件，补齐后再次上传。" />}
@@ -571,13 +625,15 @@ export default function OrderImport() {
             </div>
           </div>
         )}
-        {drawerMode === 'detail' && detailRow && (
-          <OrderImportDetail key={detailRow.external_order_no} row={detailRow}
-            confirmed={confirmedSourceUpdates.includes(detailRow.external_order_no)}
+        {drawerMode === 'detail' && currentDetailRow && (
+          <OrderImportDetail key={currentDetailRow.external_order_no} row={{ ...currentDetailRow,
+            items: currentDetailRow.items.map((item, index) => ({ ...item, issue_number: selectedIssue(currentDetailRow, item, index) })),
+          }} renderIssueReview={(item, index) => renderIssueReview(currentDetailRow, item, index)}
+            confirmed={confirmedSourceUpdates.includes(currentDetailRow.external_order_no)}
             disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}
             onConfirmChange={checked => setConfirmedSourceUpdates(previous => checked
-              ? [...new Set([...previous, detailRow.external_order_no])]
-              : previous.filter(no => no !== detailRow.external_order_no))} />
+              ? [...new Set([...previous, currentDetailRow.external_order_no])]
+              : previous.filter(no => no !== currentDetailRow.external_order_no))} />
         )}
       </Drawer>
     </div>

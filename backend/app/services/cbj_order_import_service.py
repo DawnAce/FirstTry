@@ -6,7 +6,7 @@ API and session cache wrap this (next slice); commit feeds the importable rows'
 OrderCreate to ``order_service.create_imported_order``.
 
 ``build_import_preview`` first checks eligibility to create a business order:
-* ``import``      — eligible to create; warnings / missing coverage may remain.
+* ``import``      — eligible to create; uncertain latest issues require review.
 * ``skip_status`` — excluded status (待付款 / 已取消), or only ignored products.
 * ``duplicate``   — an existing business order in the same platform/store scope.
 * ``unresolved``  — missing order/payment date, no product lines, or no match.
@@ -21,7 +21,8 @@ Commercial status is separate. See docs/order-import-decision-rules.md.
 Coverage is operator-driven per batch: ``BatchSettings`` carries the start month
 (邮局/中通 separately) and a cutoff date (payment after it → next month). Historical
 mode leaves coverage blank. The preview supports filling missing coverage and
-single-issue identity; other corrections use the source or the order detail.
+single-issue identity, plus explicit confirmation/correction of uncertain latest
+issues; other corrections use the source or the order detail.
 """
 
 import re
@@ -71,6 +72,9 @@ from app.services.issue_label import (
     normalize_business_school_issue_label,
 )
 from app.services.latest_issue_resolver import resolve_latest_issue
+from app.services.order_import_issue_review_service import (
+    IssueOption, IssueReview, apply_issue_reviews, issue_review_options, log_import_issue_reviews,
+)
 from app.services.order_service import create_imported_order
 from app.services.order_event_logger import log_event
 from app.services.product_resolver_service import (
@@ -122,6 +126,7 @@ class PreviewRow:
     status_unknown: bool = False
     delivery_overridden_to_zto: bool = False
     warnings: List[str] = field(default_factory=list)
+    issue_reviews: dict[str, IssueReview] = field(default_factory=dict)
     order_create: Optional[OrderCreate] = None
     # The raw product-line name that failed to resolve (for the 待确认 queue /
     # quick-add to catalog). Set only when decision == unresolved due to a miss.
@@ -131,6 +136,7 @@ class PreviewRow:
 @dataclass
 class ImportPreview:
     rows: List[PreviewRow]
+    issue_review_options: list[IssueOption] = field(default_factory=list)
 
     def by_decision(self, decision: str) -> List[PreviewRow]:
         return [r for r in self.rows if r.decision == decision]
@@ -354,6 +360,7 @@ def build_import_preview(
             continue
 
         items = []
+        issue_reviews: dict[str, IssueReview] = {}
         for ri in resolved:
             item = ri.item
             # Flip an item's own channel to 中通, but don't invent one for a line that
@@ -369,6 +376,11 @@ def build_import_preview(
                 item.issue_number = li.issue_number
                 if li.note:
                     warnings.append(li.note)
+                    issue_reviews[str(len(items))] = {
+                        "suggested_issue_number": li.issue_number,
+                        "suggested_publish_date": li.publish_date.isoformat() if li.publish_date else None,
+                        "reason": li.note,
+                    }
             # 往期零售（自定义单期，既无期号也无期次标签）：具体期号靠客服按单告知，
             # 导入留空 + 标黄提醒补，免得漏填导致发货不知发哪期。
             elif (
@@ -421,11 +433,12 @@ def build_import_preview(
                 status_unknown=sm.unknown,
                 delivery_overridden_to_zto=zto_override,
                 warnings=warnings,
+                issue_reviews=issue_reviews,
                 order_create=oc,
             )
         )
 
-    return ImportPreview(rows)
+    return ImportPreview(rows, issue_review_options(schedule) if any(r.issue_reviews for r in rows) else [])
 
 
 # ---------------------------------------------------------------------------
@@ -436,7 +449,7 @@ def build_import_preview(
 def _serialize_row(r: PreviewRow) -> dict:
     items = []
     if r.order_create:
-        for it in r.order_create.items:
+        for index, it in enumerate(r.order_create.items):
             items.append(
                 {
                     "publication": it.publication.value if it.publication else None,
@@ -446,6 +459,7 @@ def _serialize_row(r: PreviewRow) -> dict:
                     "delivery_method": it.delivery_method.value if it.delivery_method else None,
                     "issue_label": it.issue_label,
                     "issue_number": it.issue_number,
+                    "issue_review": r.issue_reviews.get(str(index)),
                     "total_quantity": it.total_quantity,
                     "unit_price": str(it.unit_price),
                     "subtotal": str(it.subtotal),
@@ -545,17 +559,20 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
             "commercial_status": r.commercial_status.value if r.commercial_status else None,
             "source_status_raw": r.status_raw,
             "is_historical_archive": settings.mode == "historical",
+            "issue_reviews": r.issue_reviews,
         }
         for r in preview.by_decision("import")
     ]
     session_id = save_order_import_session({"mode": settings.mode, "rows": commit_rows, "owner_id": owner_id,
-                                           "sources": source_records})
+                                           "sources": source_records,
+                                           "issue_review_options": preview.issue_review_options})
 
     out = {
         "session_id": session_id,
         "counts": preview.counts,
         "can_commit": any(preview.counts.get(key, 0) > 0 for key in ("import", "retain", "source_update")),
         "rows": [{**_serialize_row(r), **source_details[r.external_order_no]} for r in preview.rows],
+        "issue_review_options": preview.issue_review_options,
     }
     return out, session_id
 
@@ -568,8 +585,13 @@ def _commit_import(
     issue_overrides: Optional[dict[str, int]] = None,
     issue_label_overrides: Optional[dict[str, str]] = None,
     confirmed_source_updates: Optional[list[str]] = None,
+    confirmed_issue_numbers: Optional[dict[str, int]] = None,
 ) -> dict:
     """Create the previewed importable orders atomically (single commit).
+
+    ``confirmed_issue_numbers`` explicitly selects the actual issue for every
+    uncertain latest-issue item in the server preview. Missing review blocks the
+    batch; selected issues must still match the cached publication schedule.
 
     ``issue_overrides`` / ``issue_label_overrides`` (both optional) carry 选填
     per-SKU 补录 for single-issue items whose 期号 / 期次 was blank at preview.
@@ -597,6 +619,7 @@ def _commit_import(
     validate_import_sources(db, payload.get("sources", []), confirmed_source_updates or [])
 
     rows = payload["rows"]
+    apply_issue_reviews(db, rows, payload.get("issue_review_options", []), confirmed_issue_numbers or {})
 
     # 补期号 / 补期次都按 **单个 item** 定位：键为 "订单号#item序号"。一张订单可能有多个
     # 单期 SKU、各是不同期，所以补录必须精确到 item，不能整单套一个值。
@@ -676,6 +699,7 @@ def _commit_import(
             is_historical_archive=r["is_historical_archive"],
             operator_id=operator_id,
         )
+        log_import_issue_reviews(db, order, r, operator_id)
         if r.get("coverage_fills"):
             # 新订单明细按创建 ID 对应导入顺序，将预览中的补录依据一并入审计。
             created_items = sorted(order.items, key=lambda item: item.id)
@@ -717,11 +741,12 @@ def _commit_import(
 def commit_import(db: Session, session_id: str, operator_id: Optional[int] = None,
                   issue_overrides: Optional[dict[str, int]] = None,
                   issue_label_overrides: Optional[dict[str, str]] = None,
-                  confirmed_source_updates: Optional[list[str]] = None) -> dict:
+                  confirmed_source_updates: Optional[list[str]] = None,
+                  confirmed_issue_numbers: Optional[dict[str, int]] = None) -> dict:
     """原子创建订单和来源记录；失败保留预览，允许核对后重试。"""
     try:
         return _commit_import(db, session_id, operator_id, issue_overrides,
-                              issue_label_overrides, confirmed_source_updates)
+                              issue_label_overrides, confirmed_source_updates, confirmed_issue_numbers)
     except Exception:
         db.rollback()
         raise
