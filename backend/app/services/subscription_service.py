@@ -46,8 +46,11 @@ def list_batches(db: Session) -> List[SubscriptionBatch]:
     )
 
 
-def get_batch(db: Session, batch_id: int) -> SubscriptionBatch:
-    batch = db.query(SubscriptionBatch).filter(SubscriptionBatch.id == batch_id).first()
+def get_batch(db: Session, batch_id: int, *, for_update: bool = False) -> SubscriptionBatch:
+    query = db.query(SubscriptionBatch).filter(SubscriptionBatch.id == batch_id)
+    if for_update:
+        query = query.populate_existing().with_for_update()
+    batch = query.first()
     if batch is None:
         raise HTTPException(status_code=404, detail=f"订报批次 {batch_id} 不存在")
     return batch
@@ -73,12 +76,22 @@ def next_version_no(db: Session, batch_id: int) -> int:
 def activate_version(db: Session, version_id: int, operator_id: Optional[int] = None) -> SubscriptionImportVersion:
     """把校验通过的版本设为当前有效；旧 active 版本置 superseded；同事务汇入投递明细。"""
     version = get_version(db, version_id)
+    # 与激活后的人工投递单位调整串行，避免版本切换时覆盖正在保存的结果。
+    batch = get_batch(db, version.batch_id, for_update=True)
+    # MySQL 可重复读下使用锁定读，确保拿到等待批次锁期间已提交的最新状态。
+    versions = (
+        db.query(SubscriptionImportVersion)
+        .filter(SubscriptionImportVersion.batch_id == batch.id)
+        .order_by(SubscriptionImportVersion.id)
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
     if version.status not in (SubscriptionImportStatus.validation_passed, SubscriptionImportStatus.active):
         raise HTTPException(status_code=409, detail="仅校验通过的版本可设为当前有效")
-    batch = get_batch(db, version.batch_id)
 
     # 旧 active → superseded。
-    for v in batch.versions:
+    for v in versions:
         if v.id != version.id and v.status == SubscriptionImportStatus.active:
             v.status = SubscriptionImportStatus.superseded
 

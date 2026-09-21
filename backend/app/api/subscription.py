@@ -6,7 +6,7 @@
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,9 @@ from app.schemas.subscription import (
     BatchCreateIn,
     BatchDetailOut,
     BatchOut,
+    BatchDeliveryUnitsOut,
+    BatchDeliveryUnitsUpdateIn,
+    BatchDeliveryUnitsUpdateOut,
     GenerationRunOut,
     ImportStatusOut,
     ImportVersionOut,
@@ -33,6 +36,7 @@ from app.services import attachment_service
 from app.services import subscription_generation_service as gen_svc
 from app.services import subscription_import_service as import_svc
 from app.services import subscription_service as batch_svc
+from app.services import subscription_distribution_service as distribution_svc
 from app.services.operation_log_service import record_operation
 from app.upload import read_upload
 
@@ -63,6 +67,24 @@ def list_batches(db: Session = Depends(get_db), _user: User = Depends(get_curren
 @router.get("/batches/{batch_id}", response_model=BatchDetailOut)
 def get_batch(batch_id: int, db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
     return batch_svc.get_batch(db, batch_id)
+
+
+@router.get("/batches/{batch_id}/distribution-units", response_model=BatchDeliveryUnitsOut)
+def list_distribution_units(
+    batch_id: int, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db), _user: User = Depends(get_current_user),
+):
+    """当前有效批次的投递单位：分页明细、全批次汇总及冲突校验快照。"""
+    return distribution_svc.list_distribution_units(db, batch_id, page=page, page_size=page_size)
+
+
+@router.put("/batches/{batch_id}/distribution-units", response_model=BatchDeliveryUnitsUpdateOut)
+def update_distribution_units(
+    batch_id: int, body: BatchDeliveryUnitsUpdateIn,
+    db: Session = Depends(get_db), user: User = Depends(require_admin),
+):
+    """确认调整当前批次投递单位；支持全批次/逐条覆盖、冲突检测、重试及原子审计。"""
+    return distribution_svc.update_distribution_units(db, batch_id, body, user=user)
 
 
 # --- 导入版本 ----------------------------------------------------------------

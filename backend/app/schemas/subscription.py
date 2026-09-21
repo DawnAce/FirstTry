@@ -3,8 +3,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.subscription_batch import (
     SubscriptionArtifactType,
@@ -122,6 +123,65 @@ class ActivateOut(BaseModel):
 
     version: ImportVersionOut
     postal_sync: dict  # {created, replaced, skipped_sent}
+
+
+class DistributionUnitOut(BaseModel):
+    id: int
+    name: str
+
+
+class DistributionUnitCountOut(BaseModel):
+    id: Optional[int]
+    name: str
+    count: int
+
+
+class BatchDeliveryUnitOut(BaseModel):
+    id: int
+    year: int
+    delivery_no: str
+    recipient_name: str
+    recipient_province: Optional[str]
+    recipient_city: Optional[str]
+    recipient_district: Optional[str]
+    copies: int
+    distribution_unit_id: Optional[int]
+    distribution_unit_name: Optional[str]
+
+
+class BatchDeliveryUnitsOut(BaseModel):
+    active_version_id: int
+    snapshot: str
+    total: int
+    rows: List[BatchDeliveryUnitOut]
+    units: List[DistributionUnitOut]
+    unit_counts: List[DistributionUnitCountOut]
+
+
+class DeliveryUnitUpdateIn(BaseModel):
+    delivery_id: int = Field(gt=0)
+    distribution_unit_id: int = Field(gt=0)
+
+
+class BatchDeliveryUnitsUpdateIn(BaseModel):
+    request_id: UUID
+    active_version_id: int = Field(gt=0)
+    snapshot: str = Field(pattern=r"^[a-f0-9]{64}$")
+    all_distribution_unit_id: Optional[int] = Field(default=None, gt=0)
+    updates: List[DeliveryUnitUpdateIn] = Field(default_factory=list, max_length=10000)
+
+    @model_validator(mode="after")
+    def validate_updates(self) -> "BatchDeliveryUnitsUpdateIn":
+        if self.all_distribution_unit_id is None and not self.updates:
+            raise ValueError("请选择需要调整的投递记录")
+        ids = [row.delivery_id for row in self.updates]
+        if len(ids) != len(set(ids)):
+            raise ValueError("同一投递记录不能重复指定投递单位")
+        return self
+
+
+class BatchDeliveryUnitsUpdateOut(BaseModel):
+    changed: int
 
 
 # --- 生成 --------------------------------------------------------------------

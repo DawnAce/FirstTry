@@ -5,6 +5,7 @@ from datetime import datetime
 
 # 机器 action key -> 中文「操作内容」标签。读取时派生，不落库（避免回填历史行）。
 ACTION_LABELS: dict[str, str] = {
+    "update_distribution_units": "调整批次投递单位",
     "create": "新增计划明细",
     "update": "修改计划明细",
     "delete": "删除计划明细",

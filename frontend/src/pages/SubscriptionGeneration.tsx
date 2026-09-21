@@ -19,6 +19,7 @@ import type {
   Artifact, BatchStatus, ImportStatus, ImportVersion, IssueLevel, SubRecord, ValidationIssue,
 } from '../api/subscription';
 import { DrawerTitle, PageHeader, StatusPill } from '../components/UiPrimitives';
+import SubscriptionDistributionUnitsModal from '../components/SubscriptionDistributionUnitsModal';
 
 const { Title, Text } = Typography;
 
@@ -188,6 +189,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
   const [draftVersion, setDraftVersion] = useState<ImportVersion | null>(null);
   const [activated, setActivated] = useState(false);
   const [generationDone, setGenerationDone] = useState(false);
+  const [distributionOpen, setDistributionOpen] = useState(false);
 
   const batchQ = useQuery({ queryKey: ['subBatch', batchId], queryFn: () => getSubBatch(batchId).then((r) => r.data) });
   const artifactsQ = useQuery({ queryKey: ['subArtifacts', batchId], queryFn: () => listSubArtifacts(batchId).then((r) => r.data) });
@@ -215,8 +217,11 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
       const s = res.data.postal_sync;
       message.success(`已设为当前有效版本 · 名册新增 ${s.created}、更新 ${s.updated}、归档 ${s.archived} 条`);
       if (draftVersion?.id === res.data.version.id) setActivated(true);
+      setDistributionOpen(true);
       refresh();
       qc.invalidateQueries({ queryKey: ['postalDeliveries'] });
+      qc.invalidateQueries({ queryKey: ['postalDelivery'] });
+      qc.invalidateQueries({ queryKey: ['subDistributionUnits', batchId] });
     },
     onError: (e) => message.error(errText(e)),
   });
@@ -245,6 +250,9 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
   const effectiveUnitPrice = batch.unit_price != null
     ? Number(batch.unit_price)
     : (13 - batch.start_month) * 20;
+  const distributionModal = distributionOpen && <SubscriptionDistributionUnitsModal
+    batchId={batchId} batchLabel={`${batch.year}年${batch.start_month}月批次`}
+    onClose={() => setDistributionOpen(false)} />;
 
   const renderVersion = (v: ImportVersion) => {
     const st = IMPORT_STATUS_META[v.status];
@@ -381,6 +389,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
             <Text type="secondary">旧版本已保留，投递明细同步完成。</Text>
             <Flex justify="center" gap={8} style={{ marginTop: 20 }}>
               <Button onClick={() => setWorkspaceOpen(false)}>查看版本记录</Button>
+              <Button onClick={() => setDistributionOpen(true)}>投递单位</Button>
               <Button type="primary" icon={<ThunderboltOutlined />} loading={genMut.isPending}
                 onClick={() => genMut.mutate()}>{generationDone ? '重新生成文件' : '生成订报文件'}</Button>
             </Flex>
@@ -388,6 +397,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
         )}
         <IssuesDrawer versionId={issuesFor} open={issuesFor != null} onClose={() => setIssuesFor(null)} />
         <RecordsDrawer versionId={recordsFor} open={recordsFor != null} onClose={() => setRecordsFor(null)} />
+        {distributionModal}
       </>
     );
   }
@@ -409,6 +419,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
         {isAdmin && (
           <Space>
             <Button icon={<UploadOutlined />} onClick={() => { setWorkspaceOpen(true); setDraftVersion(null); setActivated(false); setGenerationDone(false); }}>重新上传来源</Button>
+            <Button disabled={!batch.active_version_id} onClick={() => setDistributionOpen(true)}>投递单位</Button>
             <Popconfirm title="基于当前有效版本生成全部文件？" disabled={!batch.active_version_id} onConfirm={() => genMut.mutate()}>
               <Button type="primary" icon={<ThunderboltOutlined />} loading={genMut.isPending} disabled={!batch.active_version_id}>生成订报文件</Button>
             </Popconfirm>
@@ -449,6 +460,7 @@ function BatchDetailPanel({ batchId }: { batchId: number }) {
 
       <IssuesDrawer versionId={issuesFor} open={issuesFor != null} onClose={() => setIssuesFor(null)} />
       <RecordsDrawer versionId={recordsFor} open={recordsFor != null} onClose={() => setRecordsFor(null)} />
+      {distributionModal}
     </Space>
   );
 }
