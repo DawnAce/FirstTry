@@ -670,6 +670,8 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 
 **订户服务详情状态（2026-08）**：投递详情 URL 保留 `delivery_id`，二级服务详情另使用 `ticket_type=complaint|address|follow` 与 `ticket_id`；关闭二级详情仅移除工单参数并返回当前订户。`ComplaintHandlingDrawer` 新增可选 `modal` 模式，`FollowDetailDrawer` 新增可选 `modal` / `readOnly` 模式，和已有的 `AddressDetailDrawer modal` 一起复用同一业务详情组件，避免维护两套内容。服务记录整行可点击；未解决投诉显示“去处理”，已解决投诉显示“查看”，信息变更显示“变更”，回访显示“查看回访”。
 
+**批次投递单位核对（2026-09）**：`SubscriptionDistributionUnitsModal` 在激活成功后打开，并在批次详情提供重新进入按钮。`GET /api/subscription/batches/{id}/distribution-units` 返回分页明细（默认50、最多100）、全批次单位计数、启用的集订分送选项及版本/记录快照。明细与汇总在数据库侧分页、聚合；快照流式读取本批次的 id、单位、更新时间及窗口展示的编号、收报人、地区和份数，避免 MySQL 秒级时间戳漏掉同秒修改。`PUT` 接收 `active_version_id/snapshot/request_id/all_distribution_unit_id/updates`，全批次默认单位可叠加逐条例外。保存与激活共用批次行锁，保存另锁投递行并复核快照；跨批次、已归档、失效快照返回409，非法或停用单位返回422。仅修改 `postal_delivery.distribution_unit_id`；整批变更前后单位和操作人在同一事务写入 `operation_logs`（`update_distribution_units`），按操作人及 request_id 安全重试。不改变原省份映射、来源版本或地区文件生成逻辑，无 schema 变更。
+
 订报文件采用“全部内存构建 → 全部落盘 → 单事务切换当前产物”流程；构建、落盘或数据库提交任一步失败时，上一套完整产物继续保持当前状态，本轮已写的半成品文件会清理，并单独记录一条失败生成任务。
 
 `subscription_batches.unit_price` 表示“每份完整订期单价”：显式配置时，版本金额、明细 Excel 公式和邮局汇总表统一使用 `份数 × unit_price`；未配置时才回退为 `份数 × (13−起始月) × 20`。

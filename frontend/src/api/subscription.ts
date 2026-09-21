@@ -166,6 +166,44 @@ export function activateSubImport(versionId: number): Promise<AxiosResponse<Acti
   return api.post(`/subscription/imports/${versionId}/activate`);
 }
 
+export interface BatchDeliveryUnit {
+  id: number;
+  year: number;
+  delivery_no: string;
+  recipient_name: string;
+  recipient_province: string | null;
+  recipient_city: string | null;
+  recipient_district: string | null;
+  copies: number;
+  distribution_unit_id: number | null;
+  distribution_unit_name: string | null;
+}
+
+export interface BatchDeliveryUnits {
+  active_version_id: number;
+  snapshot: string;
+  total: number;
+  rows: BatchDeliveryUnit[];
+  units: { id: number; name: string }[];
+  unit_counts: { id: number | null; name: string; count: number }[];
+}
+
+export interface BatchDeliveryUnitsUpdate {
+  request_id: string;
+  active_version_id: number;
+  snapshot: string;
+  all_distribution_unit_id: number | null;
+  updates: { delivery_id: number; distribution_unit_id: number }[];
+}
+
+export function getBatchDeliveryUnits(batchId: number, page = 1): Promise<AxiosResponse<BatchDeliveryUnits>> {
+  return api.get(`/subscription/batches/${batchId}/distribution-units`, { params: { page, page_size: 50 } });
+}
+
+export function updateBatchDeliveryUnits(batchId: number, body: BatchDeliveryUnitsUpdate): Promise<AxiosResponse<{ changed: number }>> {
+  return api.put(`/subscription/batches/${batchId}/distribution-units`, body);
+}
+
 export function generateSubBatch(batchId: number): Promise<AxiosResponse<GenerationRun>> {
   return api.post(`/subscription/batches/${batchId}/generate`);
 }
