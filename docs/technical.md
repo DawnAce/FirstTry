@@ -672,6 +672,8 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 
 **批次投递单位核对（2026-09）**：`SubscriptionDistributionUnitsModal` 在激活成功后打开，并在批次详情提供重新进入按钮。`GET /api/subscription/batches/{id}/distribution-units` 返回分页明细（默认50、最多100）、全批次单位计数、启用的集订分送选项及版本/记录快照。明细与汇总在数据库侧分页、聚合；快照流式读取本批次的 id、单位、更新时间及窗口展示的编号、收报人、地区和份数，避免 MySQL 秒级时间戳漏掉同秒修改。`PUT` 接收 `active_version_id/snapshot/request_id/all_distribution_unit_id/updates`，全批次默认单位可叠加逐条例外。保存与激活共用批次行锁，保存另锁投递行并复核快照；跨批次、已归档、失效快照返回409，非法或停用单位返回422。仅修改 `postal_delivery.distribution_unit_id`；整批变更前后单位和操作人在同一事务写入 `operation_logs`（`update_distribution_units`），按操作人及 request_id 安全重试。不改变原省份映射、来源版本或地区文件生成逻辑，无 schema 变更。
 
+**起投月与批次范围**：投递明细同时传入 `year/month` 时，按 `year` 及 `coverage_start_date ∈ [当月1日, 次月1日)` 筛选未归档记录；批次投递单位接口则严格限定 `subscription_batch_id = batch_id AND is_archived = false`。`subscription_batch_id IS NULL` 的历史记录即使起投月份相同也不会进入批次窗口。一次性按月数据维护应先复核两类记录及原单位分布，保存后核对目标范围、实际变更数和非投递单位业务字段；审计保留记录标识、原单位、新单位与操作人。维护结果保存在业务数据库，部署代码或应用迁移不会重放这类调整。
+
 订报文件采用“全部内存构建 → 全部落盘 → 单事务切换当前产物”流程；构建、落盘或数据库提交任一步失败时，上一套完整产物继续保持当前状态，本轮已写的半成品文件会清理，并单独记录一条失败生成任务。
 
 `subscription_batches.unit_price` 表示“每份完整订期单价”：显式配置时，版本金额、明细 Excel 公式和邮局汇总表统一使用 `份数 × unit_price`；未配置时才回退为 `份数 × (13−起始月) × 20`。
