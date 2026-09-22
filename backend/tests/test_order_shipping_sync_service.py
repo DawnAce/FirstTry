@@ -468,3 +468,35 @@ def test_sales_platform_is_not_shipping_business_channel(db):
     item.fulfillment_type = FulfillmentType.subscription
     order.source_platform = '待核对业务来源'
     assert _candidate_data(order, item, target, 2601)['channel'] is None
+
+
+def test_issue_start_and_adjusted_end_bound_shipping_candidates(db):
+    seed_issue(db, 2654, date(2026, 6, 1))
+    seed_issue(db, 2655, date(2026, 6, 8))
+    seed_issue(db, 2703, date(2027, 5, 31))
+    seed_issue(db, 2704, date(2027, 6, 7))
+    order, item, _, _ = seed_active_subscription_order(db,
+        coverage_start_date=date(2026, 6, 8), coverage_end_date=date(2027, 5, 31))
+    item.coverage_start_mode = 'issue'
+    item.coverage_start_issue = 2655
+    db.commit()
+    assert preview_order_shipping_sync(db, order.id, 2654).summary.candidates == 0
+    assert preview_order_shipping_sync(db, order.id, 2655).summary.candidates == 1
+    assert preview_order_shipping_sync(db, order.id, 2703).summary.candidates == 1
+    assert preview_order_shipping_sync(db, order.id, 2704).summary.candidates == 0
+
+
+def test_narrowing_coverage_does_not_leave_existing_shipping_outside_order(db):
+    from app.schemas.order import OrderItemsUpdate, OrderItemUpdate
+    from app.services.order_service import update_order_items
+    seed_issue(db, 2655, date(2026, 6, 8))
+    order, item, _, _ = seed_active_subscription_order(db,
+        coverage_start_date=date(2026, 6, 8), coverage_end_date=date(2027, 6, 7))
+    apply_order_shipping_sync(db, order.id, 2655, operator_id=7)
+    with pytest.raises(HTTPException, match='排除已关联发货刊期'):
+        update_order_items(db, order.id, OrderItemsUpdate(effective_from_issue=2655, items=[
+            OrderItemUpdate(id=item.id, fulfillment_type='subscription',
+                coverage_start_date=date(2026, 6, 15), coverage_end_date=date(2027, 6, 7)),
+        ]))
+    db.rollback()
+    assert item.coverage_start_date == date(2026, 6, 8)

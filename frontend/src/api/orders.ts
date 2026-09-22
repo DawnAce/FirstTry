@@ -105,6 +105,8 @@ export interface FulfillmentTargetIn {
   notes?: string | null;
 }
 
+export type CoverageStartMode = 'month' | 'issue' | 'date';
+
 export interface OrderItemIn {
   publication?: Publication;
   publication_format?: PublicationFormat;
@@ -113,6 +115,8 @@ export interface OrderItemIn {
   subscription_term?: SubscriptionTerm | null;
   delivery_method?: DeliveryMethod | null;
   term_start_month?: string | null;
+  coverage_start_mode?: CoverageStartMode | null;
+  coverage_start_issue?: number | null;
   coverage_start_date?: string | null;
   coverage_end_date?: string | null;
   issue_number?: number | null;
@@ -163,6 +167,7 @@ export interface OrderUpdatePayload {
   invoice_tax_no?: string | null;
   invoice_recipient_email?: string | null;
   notes?: string | null;
+  items_update?: OrderItemsUpdatePayload;
 }
 
 export interface OrderVoidPayload {
@@ -188,7 +193,7 @@ export interface OrderItemUpdate extends OrderItemIn {
 }
 
 export interface OrderItemsUpdatePayload {
-  effective_from_issue: number;
+  effective_from_issue?: number;
   change_reason?: string | null;
   items: OrderItemUpdate[];
 }
@@ -242,6 +247,8 @@ export interface OrderItemOut {
   subscription_term: SubscriptionTerm | null;
   delivery_method: DeliveryMethod | null;
   term_start_month: string | null;
+  coverage_start_mode?: CoverageStartMode | null;
+  coverage_start_issue?: number | null;
   coverage_start_date: string | null;
   coverage_end_date: string | null;
   issue_number: number | null;
@@ -695,3 +702,13 @@ export const orderQueryKeys = {
   events: (id: number) => [...orderQueryKeys.detail(id), 'events'] as const,
   progress: (id: number) => [...orderQueryKeys.detail(id), 'progress'] as const,
 };
+
+export interface CoveragePreviewOut {
+  first_issue: { issue_number: number; publish_date: string } | null;
+  last_issue: { issue_number: number; publish_date: string } | null;
+  expected_issue_count: number;
+  schedule_incomplete: boolean;
+}
+
+export const previewOrderCoverage = (start: string, end: string) =>
+  api.post<CoveragePreviewOut>('/orders/coverage-preview', { coverage_start_date: start, coverage_end_date: end });

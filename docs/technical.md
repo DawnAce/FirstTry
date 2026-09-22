@@ -2396,3 +2396,12 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 `backend/scripts/repair_order_sources.py` 调用 `order_source_repair_service.py`：只读预览包含身份规范化、重复组、下游计数和状态签名；执行要求管理员、逐组保留主单决定及原因。MySQL 与入口去重共享命名锁，在当前读锁定订单、来源、版本和下游后重新校验。重复单有财务／邮局／发货等下游时阻断；支持的订阅原件关联以旧关联失效＋新关联追加迁移，作废重复单并保留原件、履约和历史。
 
 整个修复与三类审计同事务提交；`operation_logs.action=identity_repair` 保存 plan_id、请求签名及计数，用于幂等。该工具不需要 schema 迁移，也不在应用启动／Alembic 升级时自动执行。具体操作见 [修复说明](order-source-repair.md)。
+
+### 订单按刊期起投（2026-09-22）
+
+- 迁移 `c9e1f3a5b7d0` 为 `order_items` 增加可空 `coverage_start_mode`（month/issue/date）和 `coverage_start_issue`。不回填历史行，不修改历史日期或金额；降级只删除新增字段。
+- `coverage_start_date / coverage_end_date` 仍是履约权威范围。前端期限与起投方式独立，显式选择的日期不再被定价预览覆写；旧客户端未传起投方式时保留原有新建套餐定价路径。编辑已有订单不自动重算套餐价。
+- 刊期选择复用 `/api/schedule/years` 和 `/api/schedule?year=...`；仅中国经营报订阅、续订开放。保存时 `validate_start_selection` 锁定并重查唯一非休刊正式刊期，日期不一致返回 409，无效刊期返回 422。
+- `POST /api/orders/coverage-preview` 接收实际起止日期，返回 `first_issue`、`last_issue`、`expected_issue_count`、`schedule_incomplete`，不修改任何订单。刊期表不完整仅影响预览提示，不截短合同日期。
+- `PUT /api/orders/{id}` 可传 `items_update`（结构同明细更新端点），基础资料、明细和事件流在同一事务中提交。`PUT /api/orders/{id}/items` 支持草稿；已生效订单仍要求 `effective_from_issue`。草稿保留初始 allocation；已生效订单沿用原有版本变更、来源及转投保护。日期调整如果排除非孤立的已关联发货刊期，则 409 阻断。
+- 编辑页重新打开优先使用已存起投模式；旧数据没有模式时按实际日期回显，避免舍入。日期、模式和起投刊期变更写入 `item_modified` 事件；订单详情同步展示起投方式。

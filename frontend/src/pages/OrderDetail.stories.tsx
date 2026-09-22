@@ -270,6 +270,7 @@ export const ComplaintMakeupFlow: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get('/api/order-sources/financial-summary', () => HttpResponse.json({ fee_count: 0 })),
         http.get('/api/orders/96', () => HttpResponse.json(order)),
         http.get('/api/orders/96/events', () => HttpResponse.json(events)),
         http.get('/api/postal/deliveries', () => HttpResponse.json({ rows: [delivery], total: 1, summary: { total_copies: 1, unit_count: 0, missing_unit_count: 1, nearest_expiry_date: null } })),
@@ -303,6 +304,7 @@ export const FulfillmentDossier: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get('/api/order-sources/financial-summary', () => HttpResponse.json({ fee_count: 0 })),
         http.get('/api/orders/96', () => HttpResponse.json(order)),
         http.get('/api/orders/96/events', () => HttpResponse.json(events)),
         http.get('/api/postal/deliveries', () => HttpResponse.json({

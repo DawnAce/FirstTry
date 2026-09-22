@@ -63,6 +63,8 @@ from app.schemas.order import (
     PaymentIn,
     PricingPreviewIn,
     PricingPreviewOut,
+    CoveragePreviewIn,
+    CoveragePreviewOut,
     RefundIn,
     ShipBatchResult,
 )
@@ -80,6 +82,7 @@ from app.services.order_shipping_sync_service import (
     preview_order_shipping_sync,
 )
 from app.services.order_pricing_service import build_pricing_preview
+from app.services.order_subscription_coverage import preview_coverage
 from app.services.excel_service import export_orders_excel
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -295,6 +298,16 @@ def bulk_delete(
     return order_service.bulk_delete_orders(
         db, payload.order_ids, operator=user
     )
+
+
+@router.post("/coverage-preview", response_model=CoveragePreviewOut)
+def preview_subscription_coverage(
+    data: CoveragePreviewIn,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """按实际日期预览中国经营报首末刊期和期数；不改写日期、价格或订单。"""
+    return preview_coverage(db, data.coverage_start_date, data.coverage_end_date)
 
 
 @router.post("/pricing-preview", response_model=PricingPreviewOut)
@@ -562,7 +575,7 @@ def update_items(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Batch update items on an active order with versioned allocation tracking."""
+    """编辑草稿或已生效订单明细；已生效订单必须指定版本生效期。"""
     order = order_service.update_order_items(db, order_id, data, operator_id=user.id)
     fresh = order_service.get_order_detail(db, order.id)
     return _build_order_out(db, fresh)
@@ -647,6 +660,8 @@ def _build_order_out(db: Session, order) -> OrderOut:
             subscription_term=item.subscription_term,
             delivery_method=item.delivery_method,
             term_start_month=item.term_start_month,
+            coverage_start_mode=item.coverage_start_mode,
+            coverage_start_issue=item.coverage_start_issue,
             coverage_start_date=item.coverage_start_date,
             coverage_end_date=item.coverage_end_date,
             issue_number=item.issue_number,

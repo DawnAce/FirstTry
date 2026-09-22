@@ -78,6 +78,7 @@ from app.services.expected_issues_calculator import compute_expected_issues
 from app.services.order_code_service import generate_order_code
 from app.services.order_event_logger import log_event
 from app.services.order_pricing_service import build_pricing_preview
+from app.services.order_subscription_coverage import validate_start_selection
 
 from app.services.order_source_identity import normalize_source, unique_order, serialized_identity, canonical_platform, platform_filter
 
@@ -161,7 +162,7 @@ def _update_existing_item(
     order: Order,
     item: OrderItem,
     item_data,
-    effective_from_issue: int,
+    effective_from_issue: Optional[int],
     change_reason: Optional[str],
     operator_id: Optional[int],
 ) -> None:
@@ -176,6 +177,20 @@ def _update_existing_item(
         if _targets_differ(live_targets, item_data.targets) or any(getattr(item, field) != getattr(item_data, field) for field in immutable):
             raise HTTPException(409, "此订阅有转投历史，请在来源交易中撤回未执行安排或从后续刊期更正投递；不能覆盖原履约范围")
     item_diff: dict = {}
+    if (item.coverage_start_date, item.coverage_end_date) != (item_data.coverage_start_date, item_data.coverage_end_date):
+        outside = []
+        if item_data.coverage_start_date:
+            outside.append(PublicationSchedule.publish_date < item_data.coverage_start_date)
+        if item_data.coverage_end_date:
+            outside.append(PublicationSchedule.publish_date > item_data.coverage_end_date)
+        linked = db.query(ShippingDetail.id).join(
+            PublicationSchedule, PublicationSchedule.issue_number == ShippingDetail.issue_number,
+        ).filter(ShippingDetail.order_item_id == item.id,
+                 ShippingDetail.sync_status != ShippingDetailSyncStatus.orphaned)
+        if outside and item_data.coverage_start_date and item_data.coverage_end_date:
+            linked = linked.filter(or_(*outside))
+        if (outside or not item_data.coverage_start_date or not item_data.coverage_end_date) and linked.first():
+            raise HTTPException(409, "新的覆盖日期会排除已关联发货刊期，请先核对发货计划或已发货记录，不能直接缩短覆盖范围")
     field_map = {
         "publication": item_data.publication,
         "publication_format": item_data.publication_format,
@@ -184,6 +199,8 @@ def _update_existing_item(
         "subscription_term": item_data.subscription_term,
         "delivery_method": item_data.delivery_method,
         "term_start_month": item_data.term_start_month,
+        "coverage_start_mode": item_data.coverage_start_mode,
+        "coverage_start_issue": item_data.coverage_start_issue,
         "coverage_start_date": item_data.coverage_start_date,
         "coverage_end_date": item_data.coverage_end_date,
         "issue_number": item_data.issue_number,
@@ -211,21 +228,27 @@ def _update_existing_item(
     targets_changed = _targets_differ(current_targets, item_data.targets)
 
     if targets_changed and current_alloc:
-        current_alloc.effective_until_issue = effective_from_issue - 1
-
-        new_version = current_alloc.version_no + 1
-        new_alloc = FulfillmentAllocation(
-            order_item_id=item.id,
-            version_no=new_version,
-            effective_from_issue=effective_from_issue,
-            effective_until_issue=None,
-            change_reason=change_reason or "item targets updated",
-            operator_id=operator_id,
-        )
-        db.add(new_alloc)
-        db.flush()
-        item.allocations.append(new_alloc)
-        new_alloc.targets = []
+        if order.status == OrderStatus.draft:
+            # 草稿未开始履约，保留初始 allocation；收件配置可原位编辑。
+            for old_target in list(current_alloc.targets):
+                item.targets.remove(old_target)
+                current_alloc.targets.remove(old_target)
+                db.delete(old_target)
+            new_alloc = current_alloc
+        else:
+            current_alloc.effective_until_issue = effective_from_issue - 1
+            new_alloc = FulfillmentAllocation(
+                order_item_id=item.id,
+                version_no=current_alloc.version_no + 1,
+                effective_from_issue=effective_from_issue,
+                effective_until_issue=None,
+                change_reason=change_reason or "item targets updated",
+                operator_id=operator_id,
+            )
+            db.add(new_alloc)
+            db.flush()
+            item.allocations.append(new_alloc)
+            new_alloc.targets = []
 
         for tgt_data in item_data.targets:
             target = FulfillmentTarget(
@@ -266,7 +289,7 @@ def _add_new_item(
     db: Session,
     order: Order,
     item_data,
-    effective_from_issue: int,
+    effective_from_issue: Optional[int],
     change_reason: Optional[str],
     operator_id: Optional[int],
 ) -> None:
@@ -280,6 +303,8 @@ def _add_new_item(
         subscription_term=item_data.subscription_term,
         delivery_method=item_data.delivery_method,
         term_start_month=item_data.term_start_month,
+        coverage_start_mode=item_data.coverage_start_mode,
+        coverage_start_issue=item_data.coverage_start_issue,
         coverage_start_date=item_data.coverage_start_date,
         coverage_end_date=item_data.coverage_end_date,
         issue_number=item_data.issue_number,
@@ -365,12 +390,14 @@ def _build_order_items(
     """
     created: List[OrderItem] = []
     for item_data in items_data:
+        validate_start_selection(db, item_data)
         coverage_start_date = item_data.coverage_start_date
         coverage_end_date = item_data.coverage_end_date
         unit_price = item_data.unit_price
         subtotal = item_data.subtotal
         if (
             apply_package_pricing
+            and item_data.coverage_start_mode is None
             and item_data.subscription_term is not None
             and item_data.subscription_term != SubscriptionTerm.custom
             and item_data.delivery_method is not None
@@ -397,6 +424,8 @@ def _build_order_items(
             subscription_term=item_data.subscription_term,
             delivery_method=item_data.delivery_method,
             term_start_month=item_data.term_start_month,
+            coverage_start_mode=item_data.coverage_start_mode,
+            coverage_start_issue=item_data.coverage_start_issue,
             coverage_start_date=coverage_start_date,
             coverage_end_date=coverage_end_date,
             issue_number=item_data.issue_number,
@@ -627,6 +656,7 @@ def confirm_order(
         order.order_code = generate_order_code(db, order.order_date.year)
 
     for item in order.items:
+        validate_start_selection(db, item)
         item.expected_issues_at_creation = compute_expected_issues(
             db,
             coverage_start=item.coverage_start_date,
@@ -687,6 +717,7 @@ def update_order(
     is_active = order.status == OrderStatus.active
 
     diff: dict = {}
+    items_update = update_dict.pop("items_update", None)
     for field, new_val in update_dict.items():
         if field == "external_order_no":
             new_val = (new_val or "").strip() or None
@@ -728,6 +759,8 @@ def update_order(
         from app.services.postal_renewal_service import link_deliveries_for_order
 
         link_deliveries_for_order(db, order)
+    if items_update is not None:
+        update_order_items(db, order.id, data.items_update, operator_id=operator_id, commit=False)
     db.commit()
     db.refresh(order)
     return order
@@ -1136,8 +1169,10 @@ def update_order_items(
     order_id: int,
     data: "OrderItemsUpdate",
     operator_id: Optional[int] = None,
+    *,
+    commit: bool = True,
 ) -> Order:
-    """Update items/targets on an active order with versioned allocations.
+    """Edit draft items or update active items with versioned allocations.
 
     For each submitted item:
     - Items with ``id`` matching an existing item: update item-level fields
@@ -1163,11 +1198,12 @@ def update_order_items(
 
     if order is None:
         raise HTTPException(status_code=404, detail=f"订单 {order_id} 不存在")
-    if order.status != OrderStatus.active:
-        raise HTTPException(
-            status_code=409,
-            detail=f"仅可编辑已激活订单的明细（当前状态：{order.status.value}）",
-        )
+    if order.status not in {OrderStatus.draft, OrderStatus.active}:
+        raise HTTPException(409, "仅可编辑草稿或已生效订单的明细")
+    if order.status == OrderStatus.active and data.effective_from_issue is None:
+        raise HTTPException(422, "已生效订单必须填写生效起始期号")
+    for item_data in data.items:
+        validate_start_selection(db, item_data)
 
     existing_items = {
         item.id: item for item in order.items if item.status == OrderItemStatus.active
@@ -1197,7 +1233,8 @@ def update_order_items(
             item.status = OrderItemStatus.cancelled
             for alloc in item.allocations:
                 if alloc.effective_until_issue is None:
-                    alloc.effective_until_issue = data.effective_from_issue - 1
+                    if data.effective_from_issue is not None:
+                        alloc.effective_until_issue = data.effective_from_issue - 1
             log_event(
                 db,
                 order_id=order.id,
@@ -1235,8 +1272,9 @@ def update_order_items(
     from app.services.postal_renewal_service import link_deliveries_for_order
 
     link_deliveries_for_order(db, order)
-    db.commit()
-    db.refresh(order)
+    if commit:
+        db.commit()
+        db.refresh(order)
     return order
 
 

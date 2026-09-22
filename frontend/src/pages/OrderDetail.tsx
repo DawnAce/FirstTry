@@ -1024,7 +1024,8 @@ function ItemCard({
       <div className="order-detail-item-facts">
         <div><span>覆盖期</span><strong>{formatCoverage(item.coverage_start_date, item.coverage_end_date)}</strong></div>
         <div><span>投递方式</span><strong>{deliveryMethodLabel(item.delivery_method)}</strong></div>
-        <div><span>起始月份</span><strong>{item.term_start_month ?? '-'}</strong></div>
+        <div><span>{item.coverage_start_mode === 'issue' ? '起投刊期' : '起投方式'}</span><strong>{item.coverage_start_mode === 'issue'
+          ? `第 ${item.coverage_start_issue} 期` : item.coverage_start_mode === 'date' ? '按实际日期' : item.term_start_month ?? '按已有覆盖日期'}</strong></div>
         <div><span>每期总份数</span><strong>{item.total_quantity} 份</strong></div>
         <div><span>单份套餐价</span><strong>{formatCurrency(item.unit_price)}</strong></div>
         <div><span>应收小计</span><strong>{formatCurrency(subtotal)}</strong></div>
@@ -2344,6 +2345,8 @@ const ORDER_EVENT_FIELD_LABELS: Record<string, string> = {
   fulfillment_type: '履约类型',
   delivery_method: '投递方式',
   coverage_start_date: '覆盖开始日期',
+  coverage_start_mode: '起投方式',
+  coverage_start_issue: '起投刊期',
   coverage_end_date: '覆盖结束日期',
   total_quantity: '每期总份数',
   unit_price: '单价',
