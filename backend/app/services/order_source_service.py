@@ -44,15 +44,19 @@ def source_snapshot(po: ParsedOrder, platform: str, store: str | None, filename:
     }
 
 
+from app.services.order_source_identity import identity_filter, normalize_source
+
+
 def fingerprint(snapshot: dict) -> str:
     # 识别状态属于派生值，规则升级不代表原始交易发生变化。
     content = {k: v for k, v in snapshot.items() if k not in {"filename", "source_sheet", "source_row", "commercial_status"}}
+    content["platform"], content["store"] = normalize_source(content.get("platform"), content.get("store"))
     return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def identity_query(db: Session, snapshot: dict):
     return db.query(OrderSource).filter(
-        OrderSource.platform == snapshot["platform"], OrderSource.store == snapshot["store"],
+        identity_filter(OrderSource.platform, OrderSource.store, snapshot["platform"], snapshot["store"]),
         OrderSource.external_order_no == snapshot["external_order_no"])
 
 
@@ -63,24 +67,30 @@ def source_event(db: Session, source: OrderSource, action: str, payload: dict, o
 def validate_import_sources(db: Session, records: list[dict], confirmed: list[str]) -> None:
     for record in records:
         snapshot = record["snapshot"]
-        current = identity_query(db, snapshot).with_for_update().first()
+        matches = identity_query(db, snapshot).populate_existing().with_for_update().all()
+        if len(matches) > 1:
+            raise HTTPException(409, "来源身份冲突：存在多个来源原件，请先核对")
+        current = matches[0] if matches else None
         expected = record["expected_revision"]
         if expected is not None and (current is None or current.lock_version != expected):
             raise HTTPException(409, "来源交易已变化，请重新预览后确认")
         if record["decision"] == "source_update" and snapshot["external_order_no"] not in confirmed:
             raise HTTPException(409, "来源交易有变化，请逐笔核对并确认更新")
         if expected is None and current is not None:
-            version = db.query(OrderSourceVersion).filter_by(source_id=current.id, revision=current.revision).one()
+            version = db.query(OrderSourceVersion).filter_by(source_id=current.id, revision=current.revision).populate_existing().with_for_update().one()
             if fingerprint(version.snapshot) != fingerprint(snapshot):
                 raise HTTPException(409, "来源交易已被另一次导入，请重新预览")
 
 
 def save_import_source(db: Session, record: dict, order: Order | None, operator_id: int | None) -> tuple[OrderSource, bool]:
     snapshot = record["snapshot"]
-    source = identity_query(db, snapshot).first()
+    matches = identity_query(db, snapshot).populate_existing().with_for_update().all()
+    if len(matches) > 1:
+        raise HTTPException(409, "来源身份冲突：存在多个来源原件，请先核对")
+    source = matches[0] if matches else None
     digest = fingerprint(snapshot)
     if source is not None:
-        version = db.query(OrderSourceVersion).filter_by(source_id=source.id, revision=source.revision).one()
+        version = db.query(OrderSourceVersion).filter_by(source_id=source.id, revision=source.revision).populate_existing().with_for_update().one()
         if fingerprint(version.snapshot) == digest:
             return source, False
         source.revision += 1

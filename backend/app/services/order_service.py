@@ -79,6 +79,8 @@ from app.services.order_code_service import generate_order_code
 from app.services.order_event_logger import log_event
 from app.services.order_pricing_service import build_pricing_preview
 
+from app.services.order_source_identity import normalize_source, unique_order, serialized_identity
+
 if TYPE_CHECKING:
     from app.models.user import User
 
@@ -441,6 +443,7 @@ def _build_order_items(
     return created
 
 
+@serialized_identity
 def create_order_draft(
     db: Session,
     data: OrderCreate,
@@ -453,15 +456,18 @@ def create_order_draft(
     calling this function — there is no business validation here beyond
     what the model constraints enforce.
     """
+    platform, store = normalize_source(data.source_platform, data.source_store, validate=True)
+    if data.external_order_no and unique_order(db, data.external_order_no.strip(), platform, store, lock=True):
+        raise HTTPException(409, "该来源交易已有订单，请打开原订单核对，不要重复新建")
     order = Order(
         order_date=data.order_date,
         # 录入方式 provenance 由服务端控制，不信任客户端传入值。
         # 本路径仅服务于手工录入入口（FastAPI 前端表单），固定写 manual。
         # Excel 批量导入 / API 同步由各自的入口函数固定写 `excel_import` / `api_sync`。
         entry_method=OrderEntryMethod.manual,
-        source_platform=data.source_platform,
-        source_store=data.source_store,
-        external_order_no=data.external_order_no,
+        source_platform=platform,
+        source_store=store,
+        external_order_no=(data.external_order_no or "").strip() or None,
         payer_name=data.payer_name,
         payer_contact=data.payer_contact,
         payment_method=data.payment_method,
@@ -531,14 +537,15 @@ def create_imported_order(
     The caller is responsible for allocating a unique ``order_code`` (see
     ``order_code_service.allocate_order_codes``) and for committing.
     """
+    platform, store = normalize_source(data.source_platform, data.source_store, validate=True)
     order = Order(
         order_code=order_code,
         order_date=data.order_date,
         entry_method=OrderEntryMethod.excel_import,
-        source_platform=data.source_platform,
-        source_store=data.source_store,
+        source_platform=platform,
+        source_store=store,
         campaign=data.campaign,
-        external_order_no=data.external_order_no,
+        external_order_no=(data.external_order_no or "").strip() or None,
         payer_name=data.payer_name,
         payer_contact=data.payer_contact,
         payment_method=data.payment_method,
@@ -644,6 +651,7 @@ def confirm_order(
     return order
 
 
+@serialized_identity
 def update_order(
     db: Session,
     order_id: int,
@@ -662,6 +670,20 @@ def update_order(
         raise HTTPException(status_code=409, detail="已作废的订单无法修改")
 
     update_dict = data.model_dump(exclude_unset=True)
+    if {"source_platform", "source_store", "external_order_no"} & update_dict.keys():
+        platform, store = normalize_source(update_dict.get("source_platform", order.source_platform),
+                                           update_dict.get("source_store", order.source_store), validate=True)
+        number = (update_dict.get("external_order_no", order.external_order_no) or "").strip() or None
+        from app.services.order_source_identity import matching_orders
+        if number and any(row.id != order.id for row in matching_orders(db, number, platform, store, lock=True)):
+            raise HTTPException(409, "该来源交易已有其他订单，请先核对重复订单")
+        before = (*normalize_source(order.source_platform, order.source_store), order.external_order_no)
+        if before != (platform, store, number):
+            from app.models.order_source import OrderSourceLink
+            if db.query(OrderSourceLink.id).filter_by(order_id=order.id, active=1).first():
+                raise HTTPException(409, "订单已关联来源交易，不能直接改写交易身份，请先在来源交易核对关联")
+        update_dict.update(source_platform=platform, source_store=store)
+
     is_active = order.status == OrderStatus.active
 
     diff: dict = {}

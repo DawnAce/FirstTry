@@ -87,7 +87,13 @@ from app.services.product_resolver_service import (
 # Source-platform / store labels written onto imported orders. Kept aligned with
 # the frontend OrderEditor dropdown so列表/详情显示一致。``_detect_and_parse`` picks
 # the pair per uploaded file; manual orders set these via the editor.
-CBJ_PLATFORM = "CBJ小程序"
+from app.models.order import OrderStatus
+from app.services.order_source_identity import (
+    identity_filter, normalize_source, serialized_identity,
+)
+
+CBJ_PLATFORM = "微信小程序"
+CBJ_STORE = "CBJ+"
 TAOBAO_PLATFORM = "淘宝"
 TAOBAO_STORE = "中国经营报发行部"
 _SOURCE_PLATFORM = CBJ_PLATFORM  # default for build_import_preview / existing callers
@@ -252,16 +258,16 @@ def build_import_preview(
     source_store: Optional[str] = None,
     corrections: Optional[dict[str, dict]] = None,
 ) -> ImportPreview:
+    source_platform, source_store = normalize_source(source_platform, source_store, validate=True)
     products = db.query(Product).filter(Product.active.is_(True)).populate_existing().all()
     schedule = db.query(PublicationSchedule).all()
-    existing = {
-        e
-        for (e,) in db.query(Order.external_order_no)
-        .filter(Order.external_order_no.in_([p.external_order_no for p in parsed_orders]),
-                or_(Order.source_platform == source_platform, Order.source_platform.is_(None)),
-                func.coalesce(Order.source_store, "") == (source_store or ""))
-        .all()
-    }
+    existing: dict[str, int] = {}
+    for number, in db.query(Order.external_order_no).filter(
+        Order.external_order_no.in_([p.external_order_no for p in parsed_orders]),
+        Order.status != OrderStatus.void,
+        identity_filter(Order.source_platform, Order.source_store, source_platform, source_store, legacy_empty=True),
+    ).all():
+        existing[number] = existing.get(number, 0) + 1
 
     rows: List[PreviewRow] = []
     for po in parsed_orders:
@@ -279,6 +285,9 @@ def build_import_preview(
             sm = StatusMapping(None, True, unknown=True)
         if not sm.should_import:
             rows.append(_row(po, sm, "skip_status", reason="人工核对为待付款或取消，本次跳过" if correction.get("status") else f"状态「{po.status_raw}」跳过"))
+            continue
+        if existing.get(po.external_order_no, 0) > 1:
+            rows.append(_row(po, sm, "unresolved", reason="来源身份冲突：同一交易存在多个订单，请先核对重复订单"))
             continue
         if po.external_order_no in existing:
             rows.append(_row(po, sm, "duplicate", reason="订单号已存在，跳过"))
@@ -579,7 +588,7 @@ def _detect_and_parse(
     if is_taobao_export(file_bytes):
         return parse_taobao_orders(file_bytes), TAOBAO_PLATFORM, TAOBAO_STORE
     if is_cbj_export(file_bytes):
-        return parse_cbj_orders(file_bytes), CBJ_PLATFORM, None
+        return parse_cbj_orders(file_bytes), CBJ_PLATFORM, CBJ_STORE
     raise ValueError(
         "无法识别的订单导出格式：表头既不匹配 CBJ（订单号 / 产品名称），"
         "也不匹配淘宝（订单编号 / 商品标题）"
@@ -604,9 +613,14 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
     numbers = [p.external_order_no for p in parsed]
     if len(numbers) != len(set(numbers)):
         raise ValueError("同一文件存在重复来源单号，请核对原表后重新预览")
-    sources = {s.external_order_no: s for s in db.query(OrderSource).filter(
-        OrderSource.platform == source_platform, OrderSource.store == (source_store or ""),
-        OrderSource.external_order_no.in_(numbers)).all()}
+    sources = {}
+    source_conflicts = set()
+    for source in db.query(OrderSource).filter(
+        identity_filter(OrderSource.platform, OrderSource.store, source_platform, source_store),
+        OrderSource.external_order_no.in_(numbers)).all():
+        if source.external_order_no in sources:
+            source_conflicts.add(source.external_order_no)
+        sources[source.external_order_no] = source
     versions = {v.source_id: v for v in db.query(OrderSourceVersion).join(
         OrderSource, (OrderSource.id == OrderSourceVersion.source_id) &
         (OrderSource.revision == OrderSourceVersion.revision)).filter(OrderSource.id.in_(
@@ -618,7 +632,10 @@ def preview_import(db: Session, file_bytes: bytes, settings: BatchSettings, owne
         old = sources.get(po.external_order_no)
         pure_fee = bool(po.product_lines) and all(p.is_shipping for p in po.product_lines)
         kind = "shipping_fee" if pure_fee else "subscription" if row.order_create else "record"
-        if old:
+        if po.external_order_no in source_conflicts or (row.reason or "").startswith("来源身份冲突"):
+            row.decision, row.order_create = "unresolved", None
+            row.reason = "来源身份冲突：同一交易存在多个订单或来源原件，请先核对重复记录"
+        elif old:
             changed = fingerprint(versions[old.id].snapshot) != fingerprint(snapshot)
             row.decision = "source_update" if changed else "duplicate"
             row.order_create = None
@@ -750,14 +767,29 @@ def _commit_import(
             ):
                 item["issue_label"] = label
 
-    existing_orders = db.query(Order).filter(Order.external_order_no.in_(
-        [r["order_create"]["external_order_no"] for r in rows])).all()
-    def exists(record: dict) -> bool:
-        data = record["order_create"]
-        return any(o.external_order_no == data["external_order_no"]
-                   and o.source_platform in (None, data.get("source_platform"))
-                   and (o.source_store or "") == (data.get("source_store") or "") for o in existing_orders)
-    to_create = [r for r in rows if not exists(r)]
+    # 一次当前读锁定整批候选，避免按订单数增加公网数据库往返。
+    numbers = {r["order_create"]["external_order_no"] for r in rows}
+    numbers.update(r["snapshot"]["external_order_no"] for r in payload.get("sources", []))
+    existing_by_number = {}
+    for existing in db.query(Order).filter(Order.external_order_no.in_(numbers), Order.status != OrderStatus.void).populate_existing().with_for_update().all():
+        existing_by_number.setdefault(existing.external_order_no, []).append(existing)
+
+    def existing_order(number, platform, store):
+        identity = normalize_source(platform, store)
+        matches = [o for o in existing_by_number.get(number, []) if
+                   normalize_source(o.source_platform, o.source_store) == identity or
+                   (o.source_platform is None and not o.source_store)]
+        if len(matches) > 1:
+            raise HTTPException(409, "来源身份冲突：同一交易存在多个订单，请先核对重复订单")
+        return matches[0] if matches else None
+
+    to_create = [row for row in rows if existing_order(row["order_create"]["external_order_no"],
+        row["order_create"].get("source_platform"), row["order_create"].get("source_store")) is None]
+    # 即使来源已存在、没有待建订单，也不能把重复身份当作无事发生。
+    for record in payload.get("sources", []):
+        snapshot = record["snapshot"]
+        if record["kind"] != "shipping_fee":
+            existing_order(snapshot["external_order_no"], snapshot["platform"], snapshot["store"])
     skipped = len(rows) - len(to_create)
 
     # Block-allocate order codes per order year (historical batches span years).
@@ -804,9 +836,7 @@ def _commit_import(
         snapshot = record["snapshot"]
         linked_order = created_by_external.get(snapshot["external_order_no"])
         if linked_order is None and record["kind"] != "shipping_fee":
-            linked_order = db.query(Order).filter(Order.external_order_no == snapshot["external_order_no"],
-                Order.source_platform == snapshot["platform"],
-                func.coalesce(Order.source_store, "") == snapshot["store"]).one_or_none()
+            linked_order = existing_order(snapshot["external_order_no"], snapshot["platform"], snapshot["store"])
         source, changed = save_import_source(db, record, linked_order, operator_id)
         if record["kind"] == "shipping_fee":
             selection = payload.get("fee_links", {}).get(snapshot["external_order_no"])
@@ -836,6 +866,7 @@ def _commit_import(
     return result
 
 
+@serialized_identity
 def commit_import(db: Session, session_id: str, operator_id: Optional[int] = None,
                   issue_overrides: Optional[dict[str, int]] = None,
                   issue_label_overrides: Optional[dict[str, str]] = None,
