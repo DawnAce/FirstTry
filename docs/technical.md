@@ -2390,3 +2390,9 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 平台筛选通过同一 SQL 别名条件在分页前完成；列表及详情响应、补订期候选、门户统计和订单导出统一展示标准名称，读取不更新历史记录。前端 `salesSourceCatalog.json` 由 `scripts/generate_sales_sources.py` 从后端目录生成，回归测试执行 `--check` 防止漂移。
 
 `GET /api/finance/postal-receipts/platforms` 返回标准平台和去重后的已有历史平台，供录入和筛选复用；查询缓存归属 `postalFinance`，既有写入失效会覆盖它。邮局原始渠道继续存储，已知别名按标准平台检索和展示。中通映射采用履约／计费业务属性，未知分类作为预览冲突阻断；销售来源保留在备注和关联订单，签约公司留空而不误用店铺。
+
+### 销售来源存量修复
+
+`backend/scripts/repair_order_sources.py` 调用 `order_source_repair_service.py`：只读预览包含身份规范化、重复组、下游计数和状态签名；执行要求管理员、逐组保留主单决定及原因。MySQL 与入口去重共享命名锁，在当前读锁定订单、来源、版本和下游后重新校验。重复单有财务／邮局／发货等下游时阻断；支持的订阅原件关联以旧关联失效＋新关联追加迁移，作废重复单并保留原件、履约和历史。
+
+整个修复与三类审计同事务提交；`operation_logs.action=identity_repair` 保存 plan_id、请求签名及计数，用于幂等。该工具不需要 schema 迁移，也不在应用启动／Alembic 升级时自动执行。具体操作见 [修复说明](order-source-repair.md)。
