@@ -1,3 +1,4 @@
+import { SOURCE_PLATFORM_OPTIONS, canonicalPlatform, sourceOptions } from '../api/salesSources';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -145,6 +146,7 @@ const MAKEUP_STATUS_META = {
 const COMPLAINT_SOURCE_OPTS = ['客服中心', '发行电话接入', '同事反馈'].map((value) => ({ label: value, value }));
 
 const POSTAL_CHANNELS = [
+  ...SOURCE_PLATFORM_OPTIONS.map(option => option.value),
   '中经报有赞',
   '对公转账',
   'CBJ+小程序',
@@ -544,7 +546,7 @@ function DeliveriesTab() {
         : <Tag color="orange" className="postal-unit-missing">待补投递单位</Tag>
     ) },
     { title: '订单来源', key: 'source_channel', width: 150, render: (_: unknown, r) => (
-      r.source_channel ? <span className="postal-source-pill">{r.source_channel}</span> : <Text type="secondary">—</Text>
+      r.source_channel ? <span className="postal-source-pill">{canonicalPlatform(r.source_channel)}</span> : <Text type="secondary">—</Text>
     ) },
     { title: '操作', key: 'act', width: 72, align: 'right', render: (_: unknown, r) => (
       <Button type="link" size="small" onClick={() => setDetailUrl(r)}>查看</Button>
@@ -565,7 +567,7 @@ function DeliveriesTab() {
       <Flex className="postal-toolbar" wrap gap={8}>
         <Input.Search allowClear placeholder="搜索姓名、电话、编号或地址" style={{ width: 300 }} onSearch={(v) => { setSearch(v); setPage(1); }} onChange={(e) => !e.target.value && setSearch('')} />
         <Select allowClear placeholder="年度" style={{ width: 110 }} value={year} onChange={(v) => { setYear(v); if (v == null) setMonth(undefined); setPage(1); }} options={YEAR_OPTS} />
-        <Select allowClear placeholder="订单来源" style={{ width: 150 }} value={channel} onChange={(v) => { setChannel(v); setPage(1); }} options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} />
+        <Select allowClear placeholder="订单来源" style={{ width: 150 }} value={channel} onChange={(v) => { setChannel(v); setPage(1); }} options={sourceOptions(POSTAL_CHANNELS)} />
         <Select allowClear placeholder="订阅状态" className={status === 'expiring' ? 'postal-status-filter-expiring' : undefined}
           style={{ width: 190 }} value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={DELIVERY_STATUS_OPTIONS} />
         <Dropdown trigger={['click']} dropdownRender={() => (
@@ -901,7 +903,7 @@ function DeliveryFormDrawer({ open, editing, unitOpts, onClose }: {
         <section className="complaint-form-section">
           <h3><span aria-hidden>💼</span>订单来源与业务</h3>
           <Flex gap={12} wrap>
-            <Form.Item name="source_channel" label="订单来源" style={{ width: 170 }}><Select allowClear options={POSTAL_CHANNELS.map((c) => ({ label: c, value: c }))} /></Form.Item>
+            <Form.Item name="source_channel" label="订单来源" style={{ width: 170 }}><Select allowClear options={sourceOptions(POSTAL_CHANNELS, editing?.source_channel)} /></Form.Item>
             <Form.Item name="distribution_unit_id" label="投递单位" style={{ width: 190 }}><Select allowClear showSearch optionFilterProp="label" options={unitOpts} /></Form.Item>
             <Form.Item name="salesperson" label="业务员" style={{ width: 120 }}><Input /></Form.Item>
             <Form.Item name="remittance_name" label="汇款名" style={{ width: 150 }}><Input /></Form.Item>
@@ -1079,7 +1081,7 @@ function DeliveryDetailDrawer({ record, isAdmin, deleting, linking, onClose, onE
               <div className="postal-detail-field"><span>来源系统订单</span><strong>{record.order_id
                 ? <Button type="link" className="postal-inline-link" onClick={() => navigate(`/orders/${record.order_id}`)}>{record.order_code || `订单 #${record.order_id}`}</Button>
                 : <Tag>未关联</Tag>}</strong></div>
-              <div className="postal-detail-field"><span>订单来源</span><strong>{record.source_channel || '未记录'}</strong></div>
+              <div className="postal-detail-field"><span>订单来源</span><strong>{canonicalPlatform(record.source_channel) || '未记录'}</strong></div>
               <div className="postal-detail-field"><span>来源单号</span><strong className={!record.external_order_no ? 'muted' : ''}>{record.external_order_no || '未记录'}</strong></div>
               <div className="postal-detail-field"><span>金额</span><strong>{record.amount != null ? `¥${record.amount}` : '未记录'}</strong></div>
               <div className="postal-detail-field"><span>业务员</span><strong className={!record.salesperson ? 'muted' : ''}>{record.salesperson || '未填写'}</strong></div>
@@ -1394,7 +1396,7 @@ export function ComplaintHandlingDrawer({ complaintId, modal = false, onClose }:
             { key: 's', label: '状态', children: <Tag color={COMPLAINT_STATUS_META[c.status].color}>{COMPLAINT_STATUS_META[c.status].label}</Tag> },
             { key: 'date', label: '接诉日期', children: c.complaint_date || '—' },
             { key: 'source', label: '投诉来源', children: c.complaint_source || '—' },
-            { key: 'platform', label: '来源平台', children: c.source_platform || '—' },
+            { key: 'platform', label: '来源平台', children: canonicalPlatform(c.source_platform) || '—' },
             { key: 'n', label: '收报人', children: c.snap_name || '—' },
             { key: 'phone', label: '电话', children: c.snap_phone || '—' },
             { key: 'address', label: '地址', children: c.snap_address || '—' },

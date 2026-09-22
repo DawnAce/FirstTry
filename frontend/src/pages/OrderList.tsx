@@ -1,3 +1,4 @@
+import { SOURCE_PLATFORM_OPTIONS as PLATFORM_OPTIONS, canonicalPlatform } from '../api/salesSources';
 import { useMemo, useState } from 'react';
 import OrderCoverageDrawer from './OrderCoverageDrawer';
 import { listOrderSources, sourceQueryKeys } from '../api/orderSources';
@@ -118,15 +119,6 @@ interface FilterState {
 }
 
 type SortField = NonNullable<ListOrdersParams['sort']>;
-
-// Distinct source_platform strings the system writes (imports: CBJ小程序 / 淘宝;
-// manual: the OrderEditor dropdown). Exact-match filter for the unified list.
-const PLATFORM_OPTIONS = [
-  { label: '淘宝', value: '淘宝' },
-  { label: 'CBJ小程序', value: 'CBJ小程序' },
-  { label: '微信小程序', value: '微信小程序' },
-  { label: '有赞', value: '有赞' },
-];
 
 const INITIAL_FILTERS: FilterState = { drift: 'all', payment: 'all' };
 
@@ -471,7 +463,7 @@ export default function OrderList() {
         <div className="order-list-order-cell">
           <div className="order-list-code-line">
             <Button type="link" onClick={() => setPreviewRow(row)}>{row.order_code ?? `草稿 #${row.id}`}</Button>
-            <Tag>{row.source_platform ?? '手工订单'}</Tag>
+            <Tag>{canonicalPlatform(row.source_platform) ?? '未记录平台'}</Tag>
             {!!row.source_count && <Tag>含 {row.source_count} 笔来源</Tag>}
           </div>
           <div className="order-list-source">来源单号 {row.external_order_no ?? '—'} · {row.order_date} 下单</div>
@@ -821,7 +813,7 @@ export default function OrderList() {
                 <div><dt>付款金额</dt><dd>{formatCurrency(previewOrder?.total_amount ?? previewRow.total_amount)}</dd></div>
                 <div><dt>订阅产品</dt><dd>{previewProducts}</dd></div>
                 <div><dt>履约方式</dt><dd>{previewDelivery}</dd></div>
-                <div><dt>来源平台</dt><dd>{previewOrder?.source_platform ?? previewRow.source_platform ?? '手工订单'}</dd></div>
+                <div><dt>来源平台</dt><dd>{canonicalPlatform(previewOrder?.source_platform ?? previewRow.source_platform) ?? '未记录平台'}</dd></div>
               </dl>
             </section>
 

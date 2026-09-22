@@ -434,3 +434,6 @@ export function updateFinance(id: number, body: Partial<FinancePayload>): Promis
 export function deleteFinance(id: number): Promise<AxiosResponse<void>> {
   return api.delete(`/finance/postal-receipts/${id}`);
 }
+
+/** 标准销售平台及已有历史来源。 */
+export const getPostalFinancePlatforms = () => api.get<string[]>('/finance/postal-receipts/platforms');

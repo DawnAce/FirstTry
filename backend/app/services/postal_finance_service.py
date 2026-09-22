@@ -2,6 +2,8 @@
 
 from typing import List, Optional, Tuple
 
+from app.services.order_source_identity import canonical_platform, platform_filter
+
 from fastapi import HTTPException
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
@@ -20,7 +22,7 @@ def _finance_query(
 ):
     q = db.query(PostalFinance)
     if platform:
-        q = q.filter(PostalFinance.platform == platform)
+        q = q.filter(platform_filter(PostalFinance.platform, platform))
     if tax_category:
         q = q.filter(PostalFinance.tax_category == tax_category)
     if linked is not None:
@@ -149,6 +151,7 @@ def _resolve_link(db: Session, external: Optional[str], payer_name: Optional[str
 def create_finance(db: Session, payload: dict, operator_id: Optional[int] = None) -> PostalFinance:
     """手工新增一条收款/发票。复用挂单（订单号优先/姓名兜底）+ 到款净额 net=金额-手续费 派生。"""
     d = dict(payload)
+    d["platform"] = canonical_platform(d.get("platform"))
     order_id, link_by = _resolve_link(db, d.get("external_order_no") or None, d.get("payer_name"))
     amount = d.get("amount")
     fee = d.get("fee_amount")
@@ -166,6 +169,8 @@ def update_finance(db: Session, finance_id: int, patch: dict) -> PostalFinance:
     if rec is None:
         raise HTTPException(status_code=404, detail=f"收款记录 {finance_id} 不存在")
     patch = dict(patch)
+    if "platform" in patch:
+        patch["platform"] = canonical_platform(patch["platform"])
     if "external_order_no" in patch or "payer_name" in patch:
         external = patch.get("external_order_no", rec.external_order_no)
         payer = patch.get("payer_name", rec.payer_name)

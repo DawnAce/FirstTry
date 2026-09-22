@@ -1,3 +1,5 @@
+import { canonicalPlatform, sourceOptions, SOURCE_PLATFORM_OPTIONS } from '../api/salesSources';
+import { getPostalFinancePlatforms } from '../api/finance';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -103,6 +105,7 @@ function FinanceFormModal({ open, editing, onClose }: {
   open: boolean; editing: PostalFinance | null; onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const platforms = useQuery({ queryKey: ['postalFinance', 'platforms'], queryFn: () => getPostalFinancePlatforms().then(r => r.data) });
   const [form] = Form.useForm();
   useEffect(() => {
     if (!open) return;
@@ -159,7 +162,7 @@ function FinanceFormModal({ open, editing, onClose }: {
         <Flex gap={12} wrap>
           <Form.Item name="invoiced_amount" label="开票金额" style={{ width: 120 }}><InputNumber style={{ width: '100%' }} min={0} precision={2} /></Form.Item>
           <Form.Item name="tax_category" label="票种" style={{ width: 120 }}><Select allowClear options={[{ label: '普票', value: '普票' }, { label: '专票', value: '专票' }]} /></Form.Item>
-          <Form.Item name="platform" label="平台" style={{ width: 170 }}><Input /></Form.Item>
+          <Form.Item name="platform" label="平台" style={{ width: 170 }}><Select allowClear showSearch optionFilterProp="label" options={sourceOptions(platforms.data ?? SOURCE_PLATFORM_OPTIONS.map(o => o.value), editing?.platform)} /></Form.Item>
         </Flex>
         <Form.Item name="buyer_title" label="发票抬头"><Input /></Form.Item>
         <Flex gap={12} wrap>
@@ -174,6 +177,7 @@ function FinanceFormModal({ open, editing, onClose }: {
 
 /** 财务管理 · 邮局收款 Tab（原邮局管理「收款发票」，迁入财务管理）。 */
 export default function PostalReceiptsPanel() {
+  const platforms = useQuery({ queryKey: ['postalFinance', 'platforms'], queryFn: () => getPostalFinancePlatforms().then(r => r.data) });
   const [platform, setPlatform] = useState<string | undefined>();
   const [taxCat, setTaxCat] = useState<string | undefined>();
   const [linked, setLinked] = useState<boolean | undefined>();
@@ -225,7 +229,7 @@ export default function PostalReceiptsPanel() {
     <div className="postal-expand">
       <div><div className="k">手续费</div><div className="v">{r.fee_amount ? `¥${r.fee_amount}` : '—'}</div></div>
       <div><div className="k">开票金额</div><div className="v">{r.invoiced_amount ? `¥${r.invoiced_amount}` : '—'}</div></div>
-      <div><div className="k">平台</div><div className="v">{r.platform || '—'}</div></div>
+      <div><div className="k">平台</div><div className="v">{canonicalPlatform(r.platform) || '—'}</div></div>
       <div><div className="k">份数</div><div className="v">{r.copies ?? '—'}</div></div>
       <div style={{ gridColumn: 'span 2' }}><div className="k">开票抬头</div><div className="v">{r.buyer_title || '不开票/—'}</div></div>
       <div><div className="k">购方税号</div><div className="v">{r.tax_no || '—'}</div></div>
@@ -240,7 +244,7 @@ export default function PostalReceiptsPanel() {
       <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 12 }}>
         <Space wrap>
           <Select allowClear placeholder="平台" style={{ width: 140 }} value={platform} onChange={(v) => { setPlatform(v); setPage(1); }}
-            options={['CBJ+小程序', '商学院APP', '淘宝发行部'].map((p) => ({ label: p, value: p }))} />
+            options={sourceOptions(platforms.data ?? SOURCE_PLATFORM_OPTIONS.map(o => o.value))} />
           <Select allowClear placeholder="票种" style={{ width: 100 }} value={taxCat} onChange={(v) => { setTaxCat(v); setPage(1); }}
             options={[{ label: '普票', value: '普票' }, { label: '专票', value: '专票' }]} />
           <Select allowClear placeholder="挂单" style={{ width: 120 }} value={linked} onChange={(v) => { setLinked(v); setPage(1); }}
@@ -272,7 +276,7 @@ export default function PostalReceiptsPanel() {
           { title: '商品', dataIndex: 'product', width: 120, ellipsis: true },
           { title: '金额', dataIndex: 'amount', width: 90, align: 'right', render: (v: string | null) => v ? `¥${v}` : '—' },
           { title: '票种', dataIndex: 'tax_category', width: 70 },
-          { title: '平台', dataIndex: 'platform', width: 120 },
+          { title: '平台', dataIndex: 'platform', width: 120, render: (value) => canonicalPlatform(value) || '—' },
           { title: '挂单', key: 'link', width: 100, render: (_: unknown, r) => r.linked ? <Tag color="green">{r.link_by === 'order_no' ? '订单号' : '姓名'}</Tag> : <Text type="secondary">未挂</Text> },
         ]}
       />

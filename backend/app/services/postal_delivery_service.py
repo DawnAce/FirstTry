@@ -6,6 +6,8 @@
 from datetime import date, timedelta
 from typing import List, Optional, Tuple
 
+from app.services.order_source_identity import canonical_platform, platform_filter
+
 from fastapi import HTTPException
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
@@ -39,7 +41,7 @@ def _deliveries_query(
     if year:
         q = q.filter(PostalDelivery.year == year)
     if channel and channel.strip():
-        q = q.filter(PostalDelivery.source_channel.contains(channel.strip()))
+        q = q.filter(platform_filter(PostalDelivery.source_channel, channel.strip(), partial_unknown=True))
     if distribution_unit_id:
         q = q.filter(PostalDelivery.distribution_unit_id == distribution_unit_id)
     if year and month and 1 <= month <= 12:

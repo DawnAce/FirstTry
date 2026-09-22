@@ -1,3 +1,4 @@
+import { SOURCE_PLATFORM_OPTIONS, canonicalPlatform } from '../api/salesSources';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Checkbox, DatePicker, Drawer, Empty, Input, Modal, Select, Space, Table, Typography, message } from 'antd';
@@ -112,7 +113,7 @@ export default function OrderCoverageDrawer({ importSessionId, orderIds, onClose
     } else reload();
   };
   const columns: TableColumnsType<CoverageCandidate> = [
-    { title: '订单 / 收件人', key: 'order', width: 210, render: (_, r) => <Space orientation="vertical" size={0}><Typography.Text>{r.external_order_no || `订单 ${r.order_id}`}</Typography.Text><Typography.Text>{r.recipient_name}</Typography.Text><Typography.Text type="secondary">{r.order_date} · {r.source_platform || '手工录入'}</Typography.Text></Space> },
+    { title: '订单 / 收件人', key: 'order', width: 210, render: (_, r) => <Space orientation="vertical" size={0}><Typography.Text>{r.external_order_no || `订单 ${r.order_id}`}</Typography.Text><Typography.Text>{r.recipient_name}</Typography.Text><Typography.Text type="secondary">{r.order_date} · {canonicalPlatform(r.source_platform) || '未记录平台'}</Typography.Text></Space> },
     { title: '订阅明细', key: 'product', width: 170, render: (_, r) => <Space orientation="vertical" size={0}><span>{publicationName(r.publication)} · {termName(r.subscription_term)}</span><Typography.Text type="secondary">{deliveryName(r.delivery_method)}</Typography.Text></Space> },
     { title: '原订期', key: 'original', width: 160, render: (_, r) => <>{r.coverage_start_date || '未填'}<br />至 {r.coverage_end_date || '未填'}</> },
     { title: '拟补日期', key: 'dates', width: 310, render: (_, r) => {
@@ -141,7 +142,7 @@ export default function OrderCoverageDrawer({ importSessionId, orderIds, onClose
       <Space wrap>
         <Select aria-label="刊物筛选" placeholder="全部刊物" allowClear options={publications} style={{ width: 150 }} value={filters.publication} disabled={busy} onChange={value => changeFilter({ publication: value })} />
         <Select aria-label="投递方式筛选" placeholder="全部投递方式" allowClear options={deliveries} style={{ width: 160 }} value={filters.delivery_method} disabled={busy} onChange={value => changeFilter({ delivery_method: value })} />
-        <Select aria-label="平台筛选" placeholder="全部平台" allowClear options={['CBJ小程序', '微信小程序', '淘宝', '有赞'].map(value => ({ value, label: value }))} style={{ width: 150 }} value={filters.source_platform} disabled={busy} onChange={value => changeFilter({ source_platform: value })} />
+        <Select aria-label="平台筛选" placeholder="全部平台" allowClear options={SOURCE_PLATFORM_OPTIONS} style={{ width: 150 }} value={filters.source_platform} disabled={busy} onChange={value => changeFilter({ source_platform: value })} />
         <DatePicker.RangePicker aria-label="下单日期筛选" placeholder={['下单开始日期', '下单结束日期']} disabled={busy} onChange={v => changeFilter({ order_date_start: v?.[0]?.format('YYYY-MM-DD'), order_date_end: v?.[1]?.format('YYYY-MM-DD') })} />
         <Checkbox checked={filters.missing_only} disabled={busy} onChange={e => changeFilter({ missing_only: e.target.checked })}>仅看待补订期</Checkbox>
         <Button disabled={busy} loading={query.isFetching} onClick={refresh}>刷新列表</Button>

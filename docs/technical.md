@@ -2386,3 +2386,7 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 `order_source_identity.py` 集中维护销售平台、店铺与已知别名，区分于 `entry_method`、邮局历史渠道和物流业务分类。手工创建、编辑与导入确认共享身份互斥锁：单进程使用 RLock，MySQL 额外由独立连接持有按库命名的 GET_LOCK，直到业务事务提交／回滚结束才释放。整批导入一次当前读锁定候选订单，不逐单查询去重。
 
 来源查询与原件指纹比较兼容旧名称，原始版本 JSON 不重写；多重身份返回可操作冲突提示。未知历史平台保持可读取，已知平台的错误店铺组合在写入时返回 422。已有来源关联的交易身份不能通过普通订单编辑改成另一笔交易。
+
+平台筛选通过同一 SQL 别名条件在分页前完成；列表及详情响应、补订期候选、门户统计和订单导出统一展示标准名称，读取不更新历史记录。前端 `salesSourceCatalog.json` 由 `scripts/generate_sales_sources.py` 从后端目录生成，回归测试执行 `--check` 防止漂移。
+
+`GET /api/finance/postal-receipts/platforms` 返回标准平台和去重后的已有历史平台，供录入和筛选复用；查询缓存归属 `postalFinance`，既有写入失效会覆盖它。邮局原始渠道继续存储，已知别名按标准平台检索和展示。中通映射采用履约／计费业务属性，未知分类作为预览冲突阻断；销售来源保留在备注和关联订单，签约公司留空而不误用店铺。

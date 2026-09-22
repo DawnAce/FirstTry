@@ -5,6 +5,8 @@ from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterable, Optional
 
+from app.services.order_source_identity import canonical_platform
+
 from fastapi import HTTPException
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, selectinload
@@ -628,7 +630,7 @@ def generate_renewals(
             continue
 
         previous = db.get(PostalDelivery, row["previous_delivery_id"]) if row["previous_delivery_id"] else None
-        source_channel = previous.source_channel if previous else (order.source_store or order.source_platform)
+        source_channel = canonical_platform(order.source_platform) or (previous.source_channel if previous else None)
         delivery = PostalDelivery(
             year=month_start.year,
             delivery_no=str(next_number),

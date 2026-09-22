@@ -79,7 +79,7 @@ from app.services.order_code_service import generate_order_code
 from app.services.order_event_logger import log_event
 from app.services.order_pricing_service import build_pricing_preview
 
-from app.services.order_source_identity import normalize_source, unique_order, serialized_identity
+from app.services.order_source_identity import normalize_source, unique_order, serialized_identity, canonical_platform, platform_filter
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -1603,7 +1603,7 @@ def _build_list_row(
         order_date=order.order_date,
         payer_name=order.payer_name,
         entry_method=order.entry_method,
-        source_platform=order.source_platform,
+        source_platform=canonical_platform(order.source_platform),
         campaign=order.campaign,
         total_quantity=total_quantity,
         total_amount=order.total_amount,
@@ -1649,7 +1649,7 @@ def _filtered_order_query(
     if campaign:
         q = q.filter(Order.campaign == campaign)
     if source_platform:
-        q = q.filter(Order.source_platform == source_platform)
+        q = q.filter(platform_filter(Order.source_platform, source_platform))
     if order_date_start is not None:
         q = q.filter(Order.order_date >= order_date_start)
     if order_date_end is not None:

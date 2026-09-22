@@ -1,0 +1,23 @@
+[
+  {
+    "platform": "微信小程序",
+    "store": "CBJ+",
+    "aliases": [
+      "CBJ小程序",
+      "CBJ+小程序",
+      "CBJ+"
+    ]
+  },
+  {
+    "platform": "淘宝",
+    "store": "中国经营报发行部",
+    "aliases": [
+      "淘宝发行部"
+    ]
+  },
+  {
+    "platform": "有赞",
+    "store": "中国经营报微店",
+    "aliases": []
+  }
+]

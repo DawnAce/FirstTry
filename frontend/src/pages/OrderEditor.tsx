@@ -1,3 +1,4 @@
+import { SOURCE_PLATFORM_OPTIONS, SOURCE_STORE_OPTIONS, normalizeSource } from '../api/salesSources';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -76,20 +77,6 @@ const { TextArea } = Input;
 // 「录入方式」（entry_method）前端表单完全隐藏，后端手工录入入口固定写 'manual'。
 // 销售渠道信息走 source_platform / source_store，付款方式走 payment_method。
 // Excel 批量导入 / API 同步入口会分别写 excel_import / api_sync。
-
-// 来源平台 / 来源店铺：使用 1:1 映射的固定选项
-// 数据库字段仍是自由文本，老数据非标值（如"天猫"）仍可读取展示，但下拉只列以下标准选项
-const SOURCE_PLATFORM_OPTIONS: Array<{ label: string; value: string }> = [
-  { label: '微信小程序', value: '微信小程序' },
-  { label: '淘宝', value: '淘宝' },
-  { label: '有赞', value: '有赞' },
-];
-
-const SOURCE_STORE_OPTIONS: Array<{ label: string; value: string; platform: string }> = [
-  { label: 'CBJ+', value: 'CBJ+', platform: '微信小程序' },
-  { label: '中国经营报发行部', value: '中国经营报发行部', platform: '淘宝' },
-  { label: '中国经营报微店', value: '中国经营报微店', platform: '有赞' },
-];
 
 // 平台 → 默认店铺（1:1）。切换平台时自动填店铺。
 const PLATFORM_DEFAULT_STORE: Record<string, string> = SOURCE_STORE_OPTIONS.reduce(
@@ -270,8 +257,8 @@ function buildInitialValues(): Partial<OrderFormValues> {
 function detailToFormValues(detail: OrderOut): Partial<OrderFormValues> {
   return {
     order_date: dayjs(detail.order_date),
-    source_platform: detail.source_platform,
-    source_store: detail.source_store,
+    source_platform: normalizeSource(detail.source_platform, detail.source_store).platform,
+    source_store: normalizeSource(detail.source_platform, detail.source_store).store,
     external_order_no: detail.external_order_no,
     payer_name: detail.payer_name,
     payer_contact: detail.payer_contact,

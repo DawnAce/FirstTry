@@ -33,6 +33,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.services.order_source_identity import canonical_platform, normalize_source
+
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import Invoice, Order, OrderEntryMethod, OrderStatus, User
@@ -163,7 +165,7 @@ def order_portal_summary(
     )
     channel_counts: dict[str, int] = {}
     for platform, _status, count in grouped:
-        label = platform or "手工录入"
+        label = canonical_platform(platform) or "未记录平台"
         channel_counts[label] = channel_counts.get(label, 0) + int(count)
     channels = [
         {"label": label, "count": count}
@@ -666,8 +668,8 @@ def _build_order_out(db: Session, order) -> OrderOut:
         external_order_no=order.external_order_no,
         order_date=order.order_date,
         entry_method=order.entry_method,
-        source_platform=order.source_platform,
-        source_store=order.source_store,
+        source_platform=normalize_source(order.source_platform, order.source_store)[0],
+        source_store=normalize_source(order.source_platform, order.source_store)[1],
         payer_name=order.payer_name,
         payer_contact=order.payer_contact,
         payment_method=order.payment_method,
