@@ -48,7 +48,7 @@ async function openPending(canvasElement: HTMLElement) {
   await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic-issue.xlsx'));
   await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
   await expect(await body.findByRole('button', { name: '确认导入 52 笔' })).toBeDisabled();
-  await userEvent.click(body.getByRole('button', { name: '期号待核对 2' }));
+  await userEvent.click(body.getByRole('button', { name: '期号 2 条' }));
   await expect(body.getByText('SYNTHETIC-REVIEW-51')).toBeVisible();
   return body;
 }
@@ -59,7 +59,7 @@ export const PendingIssueReview: Story = {
     const body = await openPending(canvasElement);
     await expect(body.getAllByRole('button', { name: '确认第 2638 期' })).toHaveLength(2);
     await expect(body.getAllByRole('button', { name: '修改期号' })).toHaveLength(2);
-    await expect(body.getByText('还有 2 条明细待核对期号，完成后才能确认导入')).toBeVisible();
+    await expect(body.getByText('导入前请完成核对')).toBeVisible();
     await expect(committed).not.toHaveBeenCalled();
   },
 };
@@ -98,7 +98,7 @@ export const EditingAndRepreviewRequireReview: Story = {
     await userEvent.click(first.getByRole('button', { name: '确认第 2638 期' }));
     await userEvent.click(first.getByRole('button', { name: '修改期号' }));
     await expect(first.queryByText('已核对：第 2638 期')).not.toBeInTheDocument();
-    await expect(body.getByRole('button', { name: '期号待核对 2' })).toBeVisible();
+    await expect(body.getByRole('button', { name: '期号 2 条' })).toBeVisible();
     await userEvent.click(first.getByRole('button', { name: '确认第 2638 期' }));
     await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
     const modal = within(await body.findByRole('dialog'));
@@ -125,7 +125,7 @@ export const ReadOnlyIssueReview: Story = {
     const body = within(canvasElement.ownerDocument.body);
     await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic-issue.xlsx'));
     await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
-    await userEvent.click(await body.findByRole('button', { name: '期号待核对 2' }));
+    await userEvent.click(await body.findByRole('button', { name: '期号 2 条' }));
     for (const button of body.getAllByRole('button', { name: '确认第 2638 期' })) await expect(button).toBeDisabled();
     for (const button of body.getAllByRole('button', { name: '修改期号' })) await expect(button).toBeDisabled();
   },

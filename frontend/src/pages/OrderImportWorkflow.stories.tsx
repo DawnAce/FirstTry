@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import OrderImport from './OrderImport';
 import type { ImportPreviewOut, ImportPreviewRow } from '../api/orderImport';
@@ -38,14 +38,14 @@ const meta = {
           rejectReview = false; data = { ...data, version: (data.version ?? 1) + 1 };
           return HttpResponse.json({ detail: '导入草稿已变化，请刷新核对内容后重试' }, { status: 409 });
         }
-        data = { ...data, version: (data.version ?? 1) + 1, can_commit: true, pending_review_count: 0, rows: [{ ...data.rows[0], delivery_overridden_to_zto: false,
+        data = { ...data, version: (data.version ?? 1) + 1, can_commit: true, pending_review_count: 0, rows: data.rows.map((row, rowIndex) => rowIndex > 0 ? row : { ...row, delivery_overridden_to_zto: false,
           ...(body.kind === 'status' ? { commercial_status: body.value } : {}),
           ...(body.kind === 'date' ? { order_date: body.value } : {}),
-          reviews: data.rows[0].reviews?.map(review => ({ ...review, value: body.value, status: 'confirmed' })),
-          items: data.rows[0].items.map((item, index) => ({ ...item,
+          reviews: row.reviews?.map(review => ({ ...review, value: body.value, status: 'confirmed' })),
+          items: row.items.map((item, index) => ({ ...item,
             ...(body.kind === 'delivery' ? { delivery_method: body.value, coverage_start_date: '2026-03-01' } : {}),
             ...(body.kind === 'amount' ? { subtotal: body.amounts![index] } : {}),
-          })) }] };
+          })) }) };
         return HttpResponse.json(data);
       }),
       http.get('/api/order-import/sessions/synthetic-workflow/fee-candidates', () => HttpResponse.json({ rows: emptyCandidates ? [] : [{
@@ -81,18 +81,110 @@ async function upload(canvasElement: HTMLElement) {
   await canvas.findByText('当前显示 ' + data.rows.length + ' 笔 / 全部 ' + data.rows.length + ' 笔');
 }
 
+function mixedReviewPreview() {
+  data = { ...data, counts: { import: 1, retain: 1 },
+    issue_review_options: [{ issue_number: 2638, publish_date: '2026-01-26' }],
+    rows: [{ ...structuredClone(transfer), items: [{ ...normal.items[0], fulfillment_type: 'single_issue', issue_number: 2638,
+      issue_review: { suggested_issue_number: 2638, suggested_publish_date: '2026-01-26', reason: '合成付款时间接近翻期点，请核对期号' } }] }, structuredClone(fee)] };
+}
+
+export const FixedPreviewFilters: Story = {
+  name: '固定六类入口、合并核对提示与独立运费工具',
+  beforeEach: mixedReviewPreview,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await upload(canvasElement);
+    const filters = within(canvas.getByRole('group', { name: '按识别结果筛选' }));
+    await expect(filters.getAllByRole('button').map(button => button.textContent?.trim())).toEqual([
+      '全部 2', '待确认 0', '来源更新 0', '重复 0', '可导入 2', '跳过 0',
+    ]);
+    const review = within(canvas.getByRole('region', { name: '导入前核对' }));
+    await expect(review.getAllByRole('alert')).toHaveLength(1);
+    await expect(review.getByRole('button', { name: '期号 1 条' })).toBeVisible();
+    await expect(review.getByRole('button', { name: '识别 1 项' })).toBeVisible();
+    filters.getByRole('button', { name: '待确认 0' }).focus();
+    await userEvent.keyboard('{Enter}');
+    await expect(canvas.getByText('当前没有“待确认”记录')).toBeVisible();
+    await expect(filters.getAllByRole('button')).toHaveLength(6);
+    const tools = within(canvas.getByRole('group', { name: '批次工具' }));
+    await userEvent.click(tools.getByRole('button', { name: '运费关联 1' }));
+    await expect(canvas.getByText('当前显示 1 笔 / 全部 2 笔')).toBeVisible();
+    await expect(canvas.queryByText('SYNTHETIC-SUB')).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole('button', { name: '返回全部' }));
+    await userEvent.click(review.getByRole('button', { name: '期号 1 条' }));
+    await expect(canvas.queryByText('SYNTHETIC-FEE')).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole('button', { name: '确认第 2638 期' }));
+    await expect(review.queryByRole('button', { name: '期号 1 条' })).not.toBeInTheDocument();
+    await expect(review.getByRole('button', { name: '识别 1 项' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: /确认导入/ })).toBeDisabled();
+    await userEvent.click(review.getByRole('button', { name: '识别 1 项' }));
+    await expect(canvas.getByText('SYNTHETIC-SUB')).toBeVisible();
+    await expect(canvas.getByRole('button', { name: '处理下一条' })).toBeEnabled();
+  },
+};
+
+export const DarkFixedPreviewFilters: Story = {
+  ...FixedPreviewFilters,
+  name: '暗色紧凑的固定六类预览', globals: { theme: 'dark', density: 'compact' },
+};
+
+export const FixedPreviewVisual: Story = {
+  ...FixedPreviewFilters,
+  name: '固定分类与单条核对提示展示',
+  play: async ({ canvasElement }) => { await upload(canvasElement); },
+};
+
+export const PreviewToolsReadOnly: Story = {
+  name: '只读用户可筛选但不能刷新或核对草稿',
+  beforeEach: mixedReviewPreview,
+  parameters: { auth: { ...meta.parameters.auth, isAdmin: false, canMutate: false } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await upload(canvasElement);
+    const tools = within(canvas.getByRole('group', { name: '批次工具' }));
+    await expect(tools.queryByRole('button', { name: '刷新草稿' })).not.toBeInTheDocument();
+    await expect(tools.queryByRole('button', { name: '批量补订期' })).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole('button', { name: '识别 1 项' }));
+    await expect(canvas.getByRole('button', { name: '处理下一条' })).toBeDisabled();
+    await expect(canvas.getByRole('button', { name: '核对／修改识别' })).toBeDisabled();
+  },
+};
+
+export const PreviewToolsRefreshing: Story = {
+  name: '刷新草稿时禁用分类与核对入口',
+  beforeEach: mixedReviewPreview,
+  parameters: { msw: { handlers: [http.get('/api/order-import/sessions/synthetic-workflow', async () => {
+    await delay(500);
+    return HttpResponse.json(data);
+  }), ...meta.parameters.msw.handlers] } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await upload(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: '刷新草稿' }));
+    const filters = within(canvas.getByRole('group', { name: '按识别结果筛选' }));
+    for (const button of filters.getAllByRole('button')) await expect(button).toBeDisabled();
+    await expect(canvas.getByRole('button', { name: '识别 1 项' })).toBeDisabled();
+    await expect(canvas.getByRole('button', { name: '运费关联 1' })).toBeDisabled();
+    await waitFor(() => expect(canvas.getByRole('button', { name: '全部 2' })).toBeEnabled());
+  },
+};
+
 export const DeliveryReview: Story = {
   name: '投递核对入口与提交阻断',
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement); const body = within(canvasElement.ownerDocument.body);
     await upload(canvasElement);
     await expect(canvas.getByRole('button', { name: /确认导入/ })).toBeDisabled();
+    await userEvent.click(canvas.getByRole('button', { name: '识别 1 项' }));
     await userEvent.click(canvas.getByRole('button', { name: '处理下一条' }));
     await userEvent.click(await body.findByRole('button', { name: '核对并处理' }));
     await userEvent.type(body.getByLabelText('核对依据'), '合成客服记录确认');
     await userEvent.click(body.getByRole('button', { name: '应用并确认核对' }));
     await expect(await body.findByText('已核对')).toBeVisible();
     await userEvent.click(body.getByRole('dialog').querySelector('.ant-modal-close') as HTMLElement);
+    await expect(canvas.queryByRole('region', { name: '导入前核对' })).not.toBeInTheDocument();
+    await expect(canvas.getByText('当前没有“识别待核对”记录')).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: '返回全部' }));
     await expect(canvas.getByText(/2026-03-01 至/)).toBeVisible();
     await expect(canvas.getByRole('button', { name: /确认导入/ })).toBeEnabled();
     await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
@@ -156,6 +248,7 @@ export const AmountCorrection: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement); const body = within(canvasElement.ownerDocument.body);
     await upload(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: '识别 1 项' }));
     await userEvent.click(canvas.getByRole('button', { name: '处理下一条' }));
     await userEvent.click(await body.findByRole('button', { name: '核对并处理' }));
     const first = body.getByLabelText(/明细 1 ·/); const second = body.getByLabelText(/明细 2 ·/);
@@ -209,6 +302,7 @@ export const StaleDraftRecovery: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement); const body = within(canvasElement.ownerDocument.body);
     await upload(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: '识别 1 项' }));
     await userEvent.click(canvas.getByRole('button', { name: '处理下一条' }));
     await userEvent.click(await body.findByRole('button', { name: '核对并处理' }));
     await userEvent.type(body.getByLabelText('核对依据'), '合成原始依据');
@@ -229,6 +323,7 @@ export const ReviewVisual: Story = {
   name: '核对窗口展示',
   play: async ({ canvasElement }) => {
     await upload(canvasElement);
+    await userEvent.click(within(canvasElement).getByRole('button', { name: '识别 1 项' }));
     await userEvent.click(within(canvasElement).getByRole('button', { name: '处理下一条' }));
     await within(canvasElement.ownerDocument.body).findByRole('button', { name: '核对并处理' });
   },
