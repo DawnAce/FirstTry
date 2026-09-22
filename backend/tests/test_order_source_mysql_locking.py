@@ -35,3 +35,27 @@ def test_shipping_write_reads_current_targets_after_other_transaction():
                 second.query(OrderItem).filter_by(order_id=order_id).delete(synchronize_session=False)
                 second.query(Order).filter_by(id=order_id).delete(synchronize_session=False)
                 second.commit()
+
+
+def test_source_identity_lock_survives_business_commit_and_releases_on_failure():
+    if os.environ.get('GITHUB_ACTIONS') != 'true':
+        pytest.skip('仅在 GitHub CI 的空 MySQL 验证命名锁')
+    from hashlib import sha256
+    from sqlalchemy import text
+    from sqlalchemy.orm import Session
+    from app.database import engine
+    from app.services.order_source_identity import serialized_identity
+    if engine.url.host not in {'127.0.0.1', 'localhost'} or engine.url.database != 'ci':
+        pytest.skip('不是明确的 CI 临时 MySQL')
+    key = 'order-source:' + sha256(str(engine.url.database).encode()).hexdigest()[:32]
+    with engine.connect() as observer, Session(engine) as db:
+        @serialized_identity
+        def operation(session):
+            session.execute(text('SELECT 1'))
+            session.commit()
+            assert observer.execute(text('SELECT GET_LOCK(:key, 0)'), {'key': key}).scalar() == 0
+            raise ValueError('synthetic failure')
+        with pytest.raises(ValueError, match='synthetic'):
+            operation(db)
+        assert observer.execute(text('SELECT GET_LOCK(:key, 0)'), {'key': key}).scalar() == 1
+        observer.execute(text('SELECT RELEASE_LOCK(:key)'), {'key': key})
