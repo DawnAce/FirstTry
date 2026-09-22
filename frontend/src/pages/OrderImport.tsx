@@ -26,7 +26,7 @@ import {
   Upload,
   message,
 } from 'antd';
-import { CheckOutlined, InboxOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, ExportOutlined, InboxOutlined, PlusOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { commitOrderImport, getImportDraft, previewOrderImport } from '../api/orderImport';
@@ -46,12 +46,12 @@ type Mode = 'recent' | 'historical';
 type PreviewFilter = 'all' | 'issue_review' | 'review' | 'fee' | Exclude<ImportDecision, 'retain'>;
 
 const PREVIEW_FILTERS = [
-  { value: 'all', label: '全部', color: 'primary' },
-  { value: 'unresolved', label: '待确认', color: 'danger' },
-  { value: 'source_update', label: '来源更新', color: 'orange' },
-  { value: 'duplicate', label: '重复', color: 'blue' },
-  { value: 'import', label: '可导入', color: 'green' },
-  { value: 'skip_status', label: '跳过', color: 'default' },
+  { value: 'all', label: '全部' },
+  { value: 'unresolved', label: '待确认' },
+  { value: 'source_update', label: '来源更新' },
+  { value: 'duplicate', label: '重复' },
+  { value: 'import', label: '可导入' },
+  { value: 'skip_status', label: '跳过' },
 ] as const;
 
 const DECISION_META: Record<ImportDecision, { label: string; color: string }> = {
@@ -445,9 +445,11 @@ export default function OrderImport() {
     row.items.filter((item, index) => item.issue_review && confirmedIssueNumbers[`${row.external_order_no}#${index}`] == null).length,
   ])), [preview, confirmedIssueNumbers]);
   const pendingIssueCount = [...pendingIssueReviews.values()].reduce((sum, count) => sum + count, 0);
-  const hasIssueReviews = preview?.rows.some(row => row.decision === 'import' && row.items.some(item => item.issue_review));
   const pendingReviewCount = preview?.pending_review_count ?? 0;
   const feeRows = preview?.rows.filter(row => row.is_shipping_fee && !row.source_id) ?? [];
+  const previewBusy = previewMutation.isPending || commitMutation.isPending || refreshDraft.isPending;
+  const isTaskFilter = previewFilter === 'issue_review' || previewFilter === 'review' || previewFilter === 'fee';
+  const selectPreviewFilter = (filter: PreviewFilter) => { setPreviewFilter(filter); setPreviewPage(1); };
   const visibleRows = useMemo(() => {
     const rows = preview?.rows ?? [];
     if (previewFilter === 'issue_review') return rows.filter(row => (pendingIssueReviews.get(row.external_order_no) ?? 0) > 0);
@@ -580,13 +582,17 @@ export default function OrderImport() {
           )}
 
           <Card
+            className="order-import-preview-card"
             size="small"
-            title="③ 预览（商品关联、订期补录及交易记录）"
+            title={<div className="order-import-preview-heading">
+              <span>③ 导入预览</span>
+              <Text type="secondary">共 {preview.rows.length} 笔 · 新建 {counts.import ?? 0} 单 · 仅保存交易 {counts.retain ?? 0} 笔{counts.source_update ? ` · 来源更新 ${counts.source_update} 笔` : ''}</Text>
+            </div>}
             extra={
               isAdmin ? (
-                <Space wrap><Button href="/orders/sources">来源交易</Button><Button onClick={() => refreshDraft.mutate()} loading={refreshDraft.isPending} disabled={commitMutation.isPending}>刷新当前草稿</Button><Button onClick={() => setCoverageOpen(true)} disabled={commitMutation.isPending}>批量补订期</Button><Button type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || pendingIssueCount > 0 || pendingReviewCount > 0 || previewMutation.isPending || previewMutation.isError || refreshDraft.isPending}>
+                <Button className="order-import-commit" type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || pendingIssueCount > 0 || pendingReviewCount > 0 || previewMutation.isPending || previewMutation.isError || refreshDraft.isPending}>
                   确认导入 {importableCount} 笔{counts.source_update ? `，更新 ${counts.source_update} 笔来源` : ''}
-                </Button></Space>
+                </Button>
               ) : (
                 <Text type="secondary">确认导入需管理员权限</Text>
               )
@@ -594,47 +600,57 @@ export default function OrderImport() {
           >
             {commitMutation.isError && <Alert type="error" showIcon style={{ marginBottom: 12 }} title="导入未完成"
               description={getApiErrorMessage(commitMutation.error, '导入失败')} />}
-            <Space style={{ marginBottom: 12 }} wrap role="group" aria-label="按识别结果筛选">
+            <div className="order-import-preview-tools" role="group" aria-label="批次工具">
+              <Button type="text" size="small" href="/orders/sources">来源交易 <ExportOutlined aria-hidden /></Button>
+              {isAdmin && <>
+                <Button type="text" size="small" icon={<ReloadOutlined aria-hidden />} onClick={() => refreshDraft.mutate()}
+                  loading={refreshDraft.isPending} disabled={previewBusy}>刷新草稿</Button>
+                <Button type="text" size="small" onClick={() => setCoverageOpen(true)} disabled={previewBusy}>批量补订期</Button>
+              </>}
+              {feeRows.length > 0 && <Button type="text" size="small" aria-pressed={previewFilter === 'fee'}
+                disabled={previewBusy} onClick={() => selectPreviewFilter('fee')}>运费关联 {feeRows.length} <ArrowRightOutlined aria-hidden /></Button>}
+            </div>
+            <div className="order-import-result-filters" role="group" aria-label="按识别结果筛选">
               {PREVIEW_FILTERS.map(filter => (
-                <Button key={filter.value} size="small" shape="round" color={filter.color}
-                  type={previewFilter === filter.value ? 'primary' : 'default'}
-                  variant={previewFilter === filter.value ? 'solid' : 'filled'}
-                  icon={previewFilter === filter.value ? <CheckOutlined aria-hidden /> : undefined}
-                  aria-pressed={previewFilter === filter.value}
-                  disabled={previewMutation.isPending || commitMutation.isPending}
-                  onClick={() => { setPreviewFilter(filter.value); setPreviewPage(1); }}>
-                  {filter.label} {filter.value === 'all' ? preview.rows.length : filter.value === 'import' ? importableCount : counts[filter.value] ?? 0}
-                </Button>
+                <button key={filter.value} type="button" className="order-import-result-filter"
+                  aria-pressed={previewFilter === filter.value} disabled={previewBusy}
+                  onClick={() => selectPreviewFilter(filter.value)}>
+                  {filter.label} <span>{filter.value === 'all' ? preview.rows.length : filter.value === 'import' ? importableCount : counts[filter.value] ?? 0}</span>
+                </button>
               ))}
-              {hasIssueReviews && <Button size="small" shape="round" color="orange"
-                variant={previewFilter === 'issue_review' ? 'solid' : 'filled'} aria-pressed={previewFilter === 'issue_review'}
-                disabled={previewMutation.isPending || commitMutation.isPending}
-                onClick={() => { setPreviewFilter('issue_review'); setPreviewPage(1); }}>
-                期号待核对 {pendingIssueCount}
-              </Button>}
-              {preview.rows.some(row => row.reviews?.length) && <Button size="small" shape="round" color="orange" variant={previewFilter === 'review' ? 'solid' : 'filled'}
-                aria-pressed={previewFilter === 'review'} onClick={() => { setPreviewFilter('review'); setPreviewPage(1); }}>识别待核对 {pendingReviewCount}</Button>}
-              {feeRows.length > 0 && <Button size="small" shape="round" variant={previewFilter === 'fee' ? 'solid' : 'filled'} aria-pressed={previewFilter === 'fee'}
-                onClick={() => { setPreviewFilter('fee'); setPreviewPage(1); }}>运费关联 {feeRows.length}</Button>}
+            </div>
+            {(pendingIssueCount > 0 || pendingReviewCount > 0) && <section aria-label="导入前核对" className="order-import-review-notice">
+              <Alert type="warning" showIcon title={<div className="order-import-review-notice-content">
+                <strong>导入前请完成核对</strong>
+                <div className="order-import-review-links">
+                  {pendingIssueCount > 0 && <Button type="link" size="small" disabled={previewBusy}
+                    aria-pressed={previewFilter === 'issue_review'} onClick={() => selectPreviewFilter('issue_review')}>
+                    期号 {pendingIssueCount} 条 <ArrowRightOutlined aria-hidden />
+                  </Button>}
+                  {pendingReviewCount > 0 && <Button type="link" size="small" disabled={previewBusy}
+                    aria-pressed={previewFilter === 'review'} onClick={() => selectPreviewFilter('review')}>
+                    识别 {pendingReviewCount} 项 <ArrowRightOutlined aria-hidden />
+                  </Button>}
+                </div>
+              </div>} />
+            </section>}
+            <div className="order-import-preview-scope">
+              <Text type="secondary">{previewFilter === 'all' ? '全部记录' : previewFilterLabel}</Text>
+              {previewFilter === 'review' && pendingReviewCount > 0 && <Button type="link" size="small" disabled={previewBusy || !isAdmin} onClick={() => {
+                const row = preview.rows.find(row => row.decision === 'import' && row.reviews?.some(review => review.status === 'pending'));
+                if (row) setWorkflow({ number: row.external_order_no, kind: 'review' });
+              }}>处理下一条</Button>}
+              {isTaskFilter && <Button type="link" size="small" disabled={previewBusy} onClick={() => selectPreviewFilter('all')}>返回全部</Button>}
               <Text type="secondary" role="status">当前显示 {visibleRows.length} 笔 / 全部 {preview.rows.length} 笔</Text>
-            </Space>
-            <div style={{ marginBottom: 12 }}><Text type="secondary">可导入 {importableCount} 笔：新建 {counts.import ?? 0} 单，另 {counts.retain ?? 0} 笔仅保存交易。分类仅筛选显示，确认始终处理整批可导入记录{counts.source_update ? `及 ${counts.source_update} 笔来源更新` : ''}。</Text></div>
-            {pendingIssueCount > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-              title={`还有 ${pendingIssueCount} 条明细待核对期号，完成后才能确认导入`}
-              description="点击“期号待核对”集中查看。核对付款时间及实际购买的期号，在明细下确认或修改；修改后需要重新确认。" />}
-            {pendingReviewCount > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={`还有 ${pendingReviewCount} 项识别待核对，完成后才能导入`}
-              description="点击行内或详情中的“核对／修改识别”，处理投递、状态和金额问题。金额不合法时不能通过确认跳过。"
-              action={<Button onClick={() => { const row = preview.rows.find(row => row.decision === 'import' && row.reviews?.some(review => review.status === 'pending')); if (row) setWorkflow({ number: row.external_order_no, kind: 'review' }); }}>处理下一条</Button>} />}
-            {!!counts.unresolved && <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-              title={`还有 ${counts.unresolved} 笔待确认，尚未录入`}
-              description="可先补齐后重新预览；若先导入其他记录，请保留原文件，补齐后再次上传。" />}
-            {!!(counts.retain || counts.source_update) && <Alert type="info" showIcon style={{ marginBottom: 12 }}
-              title="仅保存交易的记录不新增订阅或发货，可到“来源交易”查看或关联订阅。来源更新须点开逐笔核对后确认。" />}
+            </div>
+            {!!counts.unresolved && <p className="order-import-preview-note">
+              还有 {counts.unresolved} 笔待确认，尚未录入。可先补齐后重新预览；若先导入其他记录，请保留原文件，补齐后再次上传。
+            </p>}
             <Table<ImportPreviewRow>
               rowKey="external_order_no"
               columns={columns}
               dataSource={visibleRows}
-              loading={previewMutation.isPending}
+              loading={previewMutation.isPending || refreshDraft.isPending}
               size="small"
               locale={{ emptyText: previewFilter === 'all' ? '没有可预览的记录' : `当前没有“${previewFilterLabel}”记录` }}
               pagination={{ current: previewPage, pageSize: previewPageSize, showTotal: (t) => `共 ${t} 笔`,
@@ -642,6 +658,11 @@ export default function OrderImport() {
               scroll={{ x: 1000 }}
               onRow={(row) => ({ onClick: () => handleRowClick(row), style: { cursor: 'pointer' } })}
             />
+            <div className="order-import-preview-footer">
+              <span>确认导入处理整批，筛选仅影响显示。</span>
+              {!!counts.retain && <span>仅保存交易不新增订阅或发货，可到“来源交易”查看或关联订阅。</span>}
+              {!!counts.source_update && <span>来源更新须点开逐笔核对后确认。</span>}
+            </div>
           </Card>
         </>
       )}

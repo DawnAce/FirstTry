@@ -73,7 +73,7 @@ export const SchemaUpgradeRequired: Story = {
     await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
     await expect(await canvas.findByText('预览未完成')).toBeVisible();
     await expect(canvas.getByText(schemaUpgradeMessage)).toBeVisible();
-    await expect(canvas.getByText('synthetic.xlsx')).toBeVisible();
+    await waitFor(() => expect(canvas.getByText('synthetic.xlsx')).toBeVisible());
     await expect(canvas.getByRole('button', { name: /预览导入/ })).toBeEnabled();
     await expect(canvas.queryByRole('button', { name: /确认导入/ })).not.toBeInTheDocument();
   },
@@ -179,7 +179,7 @@ export const LinkExistingPromo: Story = {
     await userEvent.click(await body.findByText(`${existingPromo.display_name}（${existingPromo.code}）`, { selector: '.ant-select-item-option-content' }));
     await userEvent.click(body.getByRole('button', { name: '保存别名并重新识别' }));
     await expect(await body.findByRole('button', { name: '确认导入 17 笔' })).toBeEnabled();
-    await expect(body.getByText('待确认 2')).toBeVisible();
+    await expect(body.getByRole('button', { name: '待确认 2' })).toBeVisible();
     await expect(createdProduct).not.toHaveBeenCalled();
   },
 };
