@@ -454,3 +454,17 @@ def test_cancel_twice_rejected(db):
     with pytest.raises(HTTPException) as ctx:
         cancel_order(db, order.id, reason="再取消", operator_id=7)
     assert ctx.value.status_code == 409
+
+
+def test_sales_platform_is_not_shipping_business_channel(db):
+    from app.services.order_shipping_sync_service import _candidate_data
+    order, item, _, target = seed_active_subscription_order(db)
+    data = _candidate_data(order, item, target, 2601)
+    assert data['channel'] == '个人订阅'
+    assert data['company'] is None
+    assert '销售来源：微信小程序／CBJ+' in data['notes']
+    item.fulfillment_type = FulfillmentType.gift
+    assert _candidate_data(order, item, target, 2601)['channel'] == '赠阅'
+    item.fulfillment_type = FulfillmentType.subscription
+    order.source_platform = '待核对业务来源'
+    assert _candidate_data(order, item, target, 2601)['channel'] is None

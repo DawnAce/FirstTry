@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Iterable
 
+from app.services.order_source_identity import canonical_platform, normalize_source, SOURCE_CATALOG
+from app.models.order_item import BillingType
+
 from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -101,6 +104,10 @@ def preview_order_shipping_sync(
 
     for candidate in candidates:
         summary.candidates += 1
+        if not candidate.data["channel"]:
+            summary.conflicts += 1
+            items.append(_preview_item("conflict", candidate, None, "销售来源缺少明确的发货业务分类，请先核对订单来源或履约类型"))
+            continue
         linked = _find_linked_detail(db, issue_number, candidate)
         if linked is None:
             possible_duplicate = _find_possible_manual_duplicate(
@@ -376,13 +383,20 @@ def _candidate_data(
 ) -> dict:
     parsed_address = _normalize_address(target.recipient_address)
     notes = f"订单 {order.order_code or order.id}；明细 {item.id}；履约类型 {item.fulfillment_type.value}"
+    platform, store = normalize_source(order.source_platform, order.source_store)
+    if platform:
+        notes += f"；销售来源：{platform}" + (f"／{store}" if store else "")
     if target.notes:
         notes = f"{notes}；目标备注：{target.notes}"
     return {
         "issue_number": issue_number,
         "sheet_name": "ZTO-MF",
-        "channel": order.source_platform or "个人订阅",
-        "company": order.source_store,
+        "channel": (
+            "赠阅" if item.fulfillment_type == FulfillmentType.gift or item.billing_type in {BillingType.free_gift, BillingType.bundle_gift}
+            else "个人订阅" if not platform or platform in {row["platform"] for row in SOURCE_CATALOG}
+            else None
+        ),
+        "company": None,
         "transport": "中通物流",
         "frequency": "周",
         "status": "正常",

@@ -36,9 +36,11 @@ def normalize_source(platform: str | None, store: str | None, *, validate: bool 
     return platform, store
 
 
-def platform_filter(column, platform: str):
+def platform_filter(column, platform: str, *, partial_unknown: bool = False):
     rule = _CATALOG.get(platform.strip())
-    return column.in_([rule["platform"], *rule["aliases"]]) if rule else column == platform
+    if rule:
+        return column.in_([rule["platform"], *rule["aliases"]])
+    return column.contains(platform) if partial_unknown else column == platform
 
 
 def identity_filter(platform_column, store_column, platform: str | None, store: str | None, *, legacy_empty: bool = False):

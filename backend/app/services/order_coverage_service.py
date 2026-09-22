@@ -1,3 +1,4 @@
+from app.services.order_source_identity import canonical_platform, platform_filter
 """只补空缺订期。预览与确认共享校验，价格、履约版本和发货行不参与写入。"""
 from copy import deepcopy
 from datetime import date
@@ -70,7 +71,7 @@ def _db_candidate(item: OrderItem) -> CoverageCandidate:
         blocked = "仅可补录生效订单中有效的订阅或续订明细"
     return CoverageCandidate(
         key=str(item.id), order_id=order.id, external_order_no=order.external_order_no,
-        order_date=order.order_date, source_platform=order.source_platform,
+        order_date=order.order_date, source_platform=canonical_platform(order.source_platform),
         recipient_name="、".join(names) or order.payer_name,
         publication=_value(item.publication), subscription_term=_value(item.subscription_term),
         delivery_method=_value(item.delivery_method), coverage_start_date=item.coverage_start_date,
@@ -98,7 +99,7 @@ def _import_candidates(payload: dict) -> dict[str, tuple[CoverageCandidate, dict
             start, end = item.get("coverage_start_date"), item.get("coverage_end_date")
             candidate = CoverageCandidate(
                 key=key, external_order_no=order["external_order_no"], order_date=order["order_date"],
-                source_platform=order.get("source_platform"),
+                source_platform=canonical_platform(order.get("source_platform")),
                 recipient_name="、".join(t["recipient_name"] for t in item.get("targets", [])) or order["payer_name"],
                 publication=item["publication"], subscription_term=item.get("subscription_term"),
                 delivery_method=item.get("delivery_method"), coverage_start_date=start, coverage_end_date=end,
@@ -126,7 +127,7 @@ def list_candidates(
         with _lock:
             rows = [c for c, _ in _import_candidates(_import_payload(import_session_id, owner_id)).values()]
         rows = [r for r in rows if
-                (not source_platform or r.source_platform == source_platform)
+                (not source_platform or canonical_platform(r.source_platform) == canonical_platform(source_platform))
                 and (not publication or r.publication == publication)
                 and (not delivery_method or r.delivery_method == delivery_method)
                 and (not order_date_start or r.order_date >= order_date_start)
@@ -141,7 +142,7 @@ def list_candidates(
     if order_ids is not None:
         query = query.filter(Order.id.in_(order_ids))
     if source_platform:
-        query = query.filter(Order.source_platform == source_platform)
+        query = query.filter(platform_filter(Order.source_platform, source_platform))
     if publication:
         query = query.filter(OrderItem.publication == publication)
     if delivery_method:

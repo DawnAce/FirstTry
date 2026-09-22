@@ -6,6 +6,8 @@
 
 from typing import List, Optional
 
+from app.services.order_source_identity import canonical_platform
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
@@ -117,7 +119,7 @@ def _complaint_out(db: Session, rec) -> ComplaintOut:
         platform = db.query(PostalDelivery.source_channel).filter(
             PostalDelivery.id == rec.postal_delivery_id
         ).scalar()
-    out.source_platform = platform
+    out.source_platform = canonical_platform(platform)
     return out
 
 

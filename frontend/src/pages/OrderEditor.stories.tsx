@@ -66,6 +66,8 @@ export const ImportedPromoCoverage: Story = {
     ] },
   },
   play: async ({ canvas }) => {
+    await expect(await canvas.findByTitle('微信小程序')).toBeVisible()
+    await expect(await canvas.findByTitle('CBJ+')).toBeVisible()
     await expect(await canvas.findByDisplayValue('测试订户')).toBeVisible()
     const month = canvas.getByPlaceholderText('选择月份')
     await userEvent.click(month)

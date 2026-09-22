@@ -2,6 +2,8 @@
 import hashlib
 import json
 from datetime import date, timedelta
+from app.services.order_source_identity import canonical_platform
+
 from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -226,7 +228,7 @@ def apply(db: Session, source_id: int, data: SourceDeliveryIn, operator_id: int 
             recipient_name=new.recipient_name, recipient_phone=new.recipient_phone,
             recipient_address=new.recipient_address, recipient_postal_code=new.recipient_postal_code,
             copies=new.quantity, coverage_start_date=result["effective_date"], coverage_end_date=item.coverage_end_date,
-            product="中国经营报", source_channel=order.source_platform, created_by=operator_id,
+            product="中国经营报", source_channel=canonical_platform(order.source_platform), created_by=operator_id,
             notes=f"来源交易 {source.external_order_no} 转投更正；请确认邮局实际起投")
         db.add(record)
         db.flush()

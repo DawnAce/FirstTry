@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import User
+from app.models import User, PostalFinance
+from app.services.order_source_identity import canonical_platform, SOURCE_CATALOG
 from app.upload import read_upload
 from app.schemas.postal import (
     FinanceCreateIn,
@@ -25,6 +26,14 @@ from app.services import postal_finance_import_service as finance_import_svc
 from app.services import postal_finance_service as finance_svc
 
 router = APIRouter(prefix="/api/finance/postal-receipts", tags=["财务-邮局收款"])
+
+
+@router.get("/platforms", response_model=list[str])
+def finance_platforms(db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+    """标准平台及已有历史来源，确保所有可录入数据均有筛选入口。"""
+    values = {row["platform"] for row in SOURCE_CATALOG} | {"商学院APP"}
+    values.update(canonical_platform(value) for value, in db.query(PostalFinance.platform).distinct() if value)
+    return sorted(values)
 
 
 @router.get("", response_model=FinanceListOut)
