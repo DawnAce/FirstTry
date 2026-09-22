@@ -94,7 +94,7 @@ export default function OrderSources({ orderId, financeView }: { orderId?: numbe
               {isAdmin && change.status === 'applied' && <Button type="link" onClick={() => setDelivery({ changeId: change.id })}>核对撤回</Button>}
             </p>)}
           </Card>}
-          {!!source.events?.length && <Collapse items={[{ key: 'events', label: '查看核对与更正记录', children: source.events.map(event => <p key={event.id}>{event.created_at} · {({ imported: '留存原件', source_updated: '来源更新', linked: '关联订阅', unlinked: '解除关联', refund_verified: '核对退款', delivery_applied: '确认转投', delivery_reverted: '撤回转投' } as Record<string, string>)[event.action] || event.action} · {String(event.payload.reason || '')}</p>) }]} />}
+          {!!source.events?.length && <Collapse items={[{ key: 'events', label: '查看核对与更正记录', children: source.events.map(event => <p key={event.id}>{event.created_at} · {({ imported: '留存原件', source_updated: '来源更新', identity_normalized: '统一销售来源', identity_order_relinked: '更正重复订单关联', linked: '关联订阅', unlinked: '解除关联', refund_verified: '核对退款', delivery_applied: '确认转投', delivery_reverted: '撤回转投' } as Record<string, string>)[event.action] || event.action} · {String(event.payload.reason || '')}</p>) }]} />}
           {refundOpen && <OrderSourceRefundEditor source={source} onClose={() => setRefundOpen(false)} />}
           {delivery && <OrderSourceDeliveryEditor source={source} {...delivery} onClose={() => setDelivery(null)} />}
           {linking && isAdmin && source.kind === 'shipping_fee' && <OrderSourceLinkEditor source={source} onClose={() => setLinking(false)} />}

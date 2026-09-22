@@ -30,6 +30,14 @@ def test_aliases_share_list_coverage_and_portal_bucket(db):
     rows, total = list_orders(db, source_platform='微信小程序')
     assert total == 2 and {row.source_platform for row in rows} == {'微信小程序'}
     assert second.source_platform == 'CBJ小程序'  # 读取不写库。
+    from openpyxl import load_workbook
+    from app.services.excel_service import export_orders_excel
+    sheet = load_workbook(export_orders_excel(rows), read_only=True).active
+    exported = list(sheet.values)
+    platform_column = exported[0].index('平台')
+    assert len(exported) == 3
+    assert {row[platform_column] for row in exported[1:]} == {'微信小程序'}
+
 
 
 def test_postal_and_finance_filters_accept_legacy_alias(db):
