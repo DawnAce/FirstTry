@@ -14,6 +14,8 @@
 
 旧的 `/shipping/:issueId` 入口已重定向到当前的「快递管理 → 期数总览 → 单期详情」执行面。
 
+电商订单整批确认会持续等待服务器返回，并在保存期间禁用重复提交和批次修改。连接中断时显示“尚未收到导入结果”，应先核对订单及来源交易再重新预览；后台可能已完成写入。相关修复、验证结果及部署边界见 [订单导入进度](docs/order-import-progress.md#2026-09-22确认导入超时与提交后误报修复)。
+
 ## 技术栈
 - **后端**: Python / FastAPI / SQLAlchemy / JWT 认证 / openpyxl / pypdf / pypdfium2 / RapidOCR / Pillow / cpca（地址解析）
 - **前端**: React / TypeScript / Vite / Ant Design / TanStack Query / ECharts（图表）

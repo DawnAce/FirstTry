@@ -2361,6 +2361,8 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 
 导入 preview / commit 捕获来源交易缺表、缺列错误（MySQL 1146 / 1054；SQLite 对应错误供回归验证），回滚并返回带中文迁移提示的 HTTP 503，不向响应暴露 SQL、业务参数或库名。连接失败及无关数据库异常不误报为来源迁移缺失。前端复用统一错误解析并保留页面错误提示；预览失败或运行中禁止确认旧预览，文件和批次设置保留以便重试。这里不自动迁移业务数据库，也不跳过来源写入。
 
+确认导入仍是同步的整批原子事务。该请求单独使用 Axios `timeout: 0` 等待服务器结果，其他请求保留 120 秒超时；页面显示保存中并禁用重复提交。未收到响应的超时/网络错误显示“尚未收到导入结果”，引导核对订单及来源交易后重新预览，不自动重试。后端在 `db.commit()` 前提取返回所需的标量 ID，提交后不再访问已过期 ORM 对象，避免按订单数量新增 SELECT 或因回读失败将已保存的批次误报为 500；只有提交成功才消费预览会话。
+
 ### 来源关联接口
 
 `GET /api/order-sources/{id}/candidates` 推荐最多100个当前有效订阅目标；`POST /{id}/link-preview` 校验金额和目标签名；`PUT /{id}/links` 管理员显式确认（version 乐观锁 + 写事务）。旧关联 active=0 留存。主单搜索使用原件子查询，在分页前去重；source_count 批量聚合，避免逐行查询。全局搜索新增 order_source 类型与命中 source_id。

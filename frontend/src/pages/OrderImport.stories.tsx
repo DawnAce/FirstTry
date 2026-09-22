@@ -62,6 +62,61 @@ type Story = StoryObj<typeof meta>;
 
 const schemaUpgradeMessage = '订单来源交易的数据库升级尚未完成，暂时无法导入。请管理员完成数据库迁移后重新预览。';
 
+let finishSlowCommit: (() => void) | undefined;
+export const SlowCommit: Story = {
+  name: '长时间导入保持等待且不能重复提交',
+  beforeEach: () => { finishSlowCommit = undefined; },
+  parameters: { msw: { handlers: [
+    http.post('/api/order-import/commit', () => new Promise<Response>(resolve => {
+      finishSlowCommit = () => resolve(HttpResponse.json({ created: 1, order_ids: [777], skipped_duplicates: 0 }));
+    })),
+    ...meta.parameters.msw.handlers,
+  ] } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic.xlsx'));
+    await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
+    await userEvent.click(await canvas.findByRole('button', { name: '确认导入 1 笔' }));
+    try {
+      await expect(await canvas.findByText('正在保存整批订单和来源交易')).toBeVisible();
+      await expect(canvas.getByRole('button', { name: /确认导入 1 笔/ })).toBeDisabled();
+      await expect(canvas.getByRole('button', { name: /预览导入/ })).toBeDisabled();
+      await expect(canvas.getByRole('button', { name: '刷新草稿' })).toBeDisabled();
+      await expect(canvas.getByRole('radio', { name: '历史归档（只补记录）' })).toBeDisabled();
+      await expect(canvas.getByPlaceholderText('如 2026-618（可空）')).toBeDisabled();
+      await expect(canvasElement.querySelector('input[type="file"]')).toBeDisabled();
+      await expect(canvas.queryByText('导入未完成')).not.toBeInTheDocument();
+      await waitFor(() => expect(finishSlowCommit).toBeDefined());
+    } finally {
+      finishSlowCommit?.();
+    }
+    await waitFor(() => expect(canvas.queryByText('正在保存整批订单和来源交易')).not.toBeInTheDocument());
+    await expect(canvas.getByRole('button', { name: '继续补本次订期' })).toBeVisible();
+  },
+};
+
+export const InterruptedCommit: Story = {
+  name: '连接中断提示核对结果并阻止直接重复提交',
+  parameters: { msw: { handlers: [
+    http.post('/api/order-import/commit', () => HttpResponse.error()),
+    ...meta.parameters.msw.handlers,
+  ] } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic.xlsx'));
+    await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
+    await userEvent.click(await canvas.findByRole('button', { name: '确认导入 1 笔' }));
+    await expect(await canvas.findByText('尚未收到导入结果')).toBeVisible();
+    await expect(canvas.getByText('请到订单管理和来源交易核对；确认处理结果后再重新预览。')).toBeVisible();
+    await expect(canvas.getByRole('button', { name: '确认导入 1 笔' })).toBeDisabled();
+    await expect(canvas.getByText('synthetic.xlsx')).toBeVisible();
+    await expect(canvas.queryByText('导入未完成')).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
+    await waitFor(() => expect(canvas.queryByText('尚未收到导入结果')).not.toBeInTheDocument());
+    await expect(canvas.getByRole('button', { name: '确认导入 1 笔' })).toBeEnabled();
+  },
+};
+
 export const SchemaUpgradeRequired: Story = {
   name: '缺少数据库迁移时保留明确提示',
   parameters: { msw: { handlers: [

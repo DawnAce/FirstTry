@@ -30,7 +30,7 @@ import { ArrowRightOutlined, ExportOutlined, InboxOutlined, PlusOutlined, Reload
 import type { TableColumnsType, UploadFile } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { commitOrderImport, getImportDraft, previewOrderImport } from '../api/orderImport';
-import { getApiErrorMessage } from '../api/errorMessage';
+import { getApiErrorMessage, isApiConnectionError } from '../api/errorMessage';
 import { useAuth } from '../contexts/AuthContext';
 import type { ImportDecision, ImportItemPreview, ImportPreviewOut, ImportPreviewRow, PreviewSettings } from '../api/orderImport';
 import { createProduct, productQueryKeys } from '../api/products';
@@ -164,6 +164,7 @@ export default function OrderImport() {
     },
     onSuccess: (res) => {
       setPreview(res.data);
+      commitMutation.reset();
       setConfirmedSourceUpdates([]);
       setIssueSelections({});
       setConfirmedIssueNumbers({});
@@ -251,6 +252,7 @@ export default function OrderImport() {
   };
 
   const confirmPreviewReset = (action: () => void) => {
+    if (commitMutation.isPending) return;
     if (hasCoverageEdits || hasReviewEdits || Object.keys(issueSelections).length || Object.keys(confirmedIssueNumbers).length) {
       modal.confirm({
         title: '重新生成导入预览？',
@@ -448,6 +450,7 @@ export default function OrderImport() {
   const pendingReviewCount = preview?.pending_review_count ?? 0;
   const feeRows = preview?.rows.filter(row => row.is_shipping_fee && !row.source_id) ?? [];
   const previewBusy = previewMutation.isPending || commitMutation.isPending || refreshDraft.isPending;
+  const commitResultUnknown = commitMutation.isError && isApiConnectionError(commitMutation.error);
   const isTaskFilter = previewFilter === 'issue_review' || previewFilter === 'review' || previewFilter === 'fee';
   const selectPreviewFilter = (filter: PreviewFilter) => { setPreviewFilter(filter); setPreviewPage(1); };
   const visibleRows = useMemo(() => {
@@ -500,6 +503,7 @@ export default function OrderImport() {
         <Space direction="vertical" style={{ width: '100%' }}>
           <Segmented
             value={mode}
+            disabled={commitMutation.isPending}
             onChange={(v) => updateImportSettings(() => setMode(v as Mode))}
             options={[
               { label: '近期订单（要安排投递）', value: 'recent' },
@@ -507,22 +511,23 @@ export default function OrderImport() {
             ]}
           />
           <Space wrap>
-            <span>活动标签：<Input value={campaign} onChange={({ target: { value } }) => updateImportSettings(() => setCampaign(value))} placeholder="如 2026-618（可空）" style={{ width: 200 }} allowClear /></span>
+            <span>活动标签：<Input disabled={commitMutation.isPending} value={campaign} onChange={({ target: { value } }) => updateImportSettings(() => setCampaign(value))} placeholder="如 2026-618（可空）" style={{ width: 200 }} allowClear /></span>
             <Text type="secondary" style={{ fontSize: 12 }}>写到这批每张订单，便于追溯 + 按活动统计</Text>
           </Space>
           {mode === 'recent' ? (
             <>
               <Space wrap>
-                <span>邮局起投月：<DatePicker picker="month" value={postOfficeStart} onChange={(v) => updateImportSettings(() => setPostOfficeStart(v))} placeholder="如 2026-07" /></span>
-                <span>中通起投月：<DatePicker picker="month" value={ztoStart} onChange={(v) => updateImportSettings(() => setZtoStart(v))} placeholder="如 2026-07" /></span>
-                <span>截止日：<DatePicker value={cutoff} onChange={(v) => updateImportSettings(() => setCutoff(v))} placeholder="此日后付款→下月" /></span>
+                <span>邮局起投月：<DatePicker disabled={commitMutation.isPending} picker="month" value={postOfficeStart} onChange={(v) => updateImportSettings(() => setPostOfficeStart(v))} placeholder="如 2026-07" /></span>
+                <span>中通起投月：<DatePicker disabled={commitMutation.isPending} picker="month" value={ztoStart} onChange={(v) => updateImportSettings(() => setZtoStart(v))} placeholder="如 2026-07" /></span>
+                <span>截止日：<DatePicker disabled={commitMutation.isPending} value={cutoff} onChange={(v) => updateImportSettings(() => setCutoff(v))} placeholder="此日后付款→下月" /></span>
               </Space>
               <Card size="small" type="inner" title="活动赠品（只给本批「含订阅」的订单，单期不送）">
                 <Space wrap align="end">
-                  <span>订期延长：<InputNumber min={0} max={12} value={bonusMonths} onChange={(v) => updateImportSettings(() => setBonusMonths(v ?? 0))} addonAfter="个月" style={{ width: 130 }} /></span>
+                  <span>订期延长：<InputNumber disabled={commitMutation.isPending} min={0} max={12} value={bonusMonths} onChange={(v) => updateImportSettings(() => setBonusMonths(v ?? 0))} addonAfter="个月" style={{ width: 130 }} /></span>
                   <span>赠送刊物：
                     <Select
                       allowClear
+                      disabled={commitMutation.isPending}
                       placeholder="不送可空"
                       value={giftPublication}
                       onChange={(v) => updateImportSettings(() => setGiftPublication(v))}
@@ -530,7 +535,7 @@ export default function OrderImport() {
                       style={{ width: 150 }}
                     />
                   </span>
-                  <span>赠品说明：<Input value={giftNote} onChange={({ target: { value } }) => updateImportSettings(() => setGiftNote(value))} placeholder="如《商学院》2-3月合刊（2026-618）" style={{ width: 280 }} disabled={!giftPublication} allowClear /></span>
+                  <span>赠品说明：<Input value={giftNote} onChange={({ target: { value } }) => updateImportSettings(() => setGiftNote(value))} placeholder="如《商学院》2-3月合刊（2026-618）" style={{ width: 280 }} disabled={commitMutation.isPending || !giftPublication} allowClear /></span>
                 </Space>
               </Card>
             </>
@@ -544,6 +549,7 @@ export default function OrderImport() {
         <Space direction="vertical" style={{ width: '100%' }}>
           <Upload.Dragger
             maxCount={1}
+            disabled={commitMutation.isPending}
             accept=".xlsx"
             beforeUpload={(f) => { updateImportSettings(() => setFile(f)); return false; }}
             onRemove={() => { updateImportSettings(() => setFile(null)); return false; }}
@@ -552,7 +558,7 @@ export default function OrderImport() {
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
             <p className="ant-upload-text">点击或拖拽 CBJ 小程序 / 淘宝 导出的 .xlsx 到此处（自动识别平台）</p>
           </Upload.Dragger>
-          <Button type="primary" icon={<UploadOutlined />} onClick={handlePreview} loading={previewMutation.isPending} disabled={!file}>预览导入</Button>
+          <Button type="primary" icon={<UploadOutlined />} onClick={handlePreview} loading={previewMutation.isPending} disabled={commitMutation.isPending || !file}>预览导入</Button>
           {previewMutation.isError && <Alert type="error" showIcon title="预览未完成"
             description={getApiErrorMessage(previewMutation.error, '预览失败')} />}
         </Space>
@@ -590,7 +596,7 @@ export default function OrderImport() {
             </div>}
             extra={
               isAdmin ? (
-                <Button className="order-import-commit" type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={!preview.can_commit || pendingIssueCount > 0 || pendingReviewCount > 0 || previewMutation.isPending || previewMutation.isError || refreshDraft.isPending}>
+                <Button className="order-import-commit" type="primary" onClick={() => commitMutation.mutate()} loading={commitMutation.isPending} disabled={commitMutation.isPending || commitResultUnknown || !preview.can_commit || pendingIssueCount > 0 || pendingReviewCount > 0 || previewMutation.isPending || previewMutation.isError || refreshDraft.isPending}>
                   确认导入 {importableCount} 笔{counts.source_update ? `，更新 ${counts.source_update} 笔来源` : ''}
                 </Button>
               ) : (
@@ -598,8 +604,12 @@ export default function OrderImport() {
               )
             }
           >
-            {commitMutation.isError && <Alert type="error" showIcon style={{ marginBottom: 12 }} title="导入未完成"
-              description={getApiErrorMessage(commitMutation.error, '导入失败')} />}
+            {commitMutation.isPending && <Alert type="info" showIcon style={{ marginBottom: 12 }} title="正在保存整批订单和来源交易"
+              description="批量导入可能需要几分钟，请保持页面打开，等待处理结果。" />}
+            {commitMutation.isError && <Alert type={commitResultUnknown ? 'warning' : 'error'} showIcon style={{ marginBottom: 12 }}
+              title={commitResultUnknown ? '尚未收到导入结果' : '导入未完成'}
+              description={<>{getApiErrorMessage(commitMutation.error, '导入失败')}
+                {commitResultUnknown && <div>请到订单管理和来源交易核对；确认处理结果后再重新预览。</div>}</>} />}
             <div className="order-import-preview-tools" role="group" aria-label="批次工具">
               <Button type="text" size="small" href="/orders/sources">来源交易 <ExportOutlined aria-hidden /></Button>
               {isAdmin && <>

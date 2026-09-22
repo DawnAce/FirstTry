@@ -169,7 +169,9 @@ export function commitOrderImport(
   if (issueLabelOverrides && Object.keys(issueLabelOverrides).length > 0) {
     body.issue_label_overrides = issueLabelOverrides;
   }
-  return api.post('/order-import/commit', body);
+  // 整批原子写入可能超过普通请求的两分钟；超时断开并不会取消后端事务。
+  // 保持等待直到服务器返回，页面同时禁止重复提交并显示处理状态。
+  return api.post('/order-import/commit', body, { timeout: 0 });
 }
 
 export const getImportDraft = (sessionId: string) => api.get<ImportPreviewOut>(`/order-import/sessions/${sessionId}`);
