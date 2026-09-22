@@ -95,6 +95,8 @@ class OrderItem(Base):
         nullable=True,
     )
     term_start_month = Column(String(7), nullable=True)
+    coverage_start_mode = Column(String(16), nullable=True)
+    coverage_start_issue = Column(Integer, nullable=True)
     coverage_start_date = Column(Date, nullable=True)
     coverage_end_date = Column(Date, nullable=True)
     issue_number = Column(Integer, nullable=True)

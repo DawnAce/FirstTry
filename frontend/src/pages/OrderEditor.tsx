@@ -15,7 +15,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Radio,
   Row,
   Select,
   Space,
@@ -23,7 +22,6 @@ import {
   Switch,
   Tag,
   Tooltip,
-  Typography,
   message,
 } from 'antd';
 import {
@@ -45,12 +43,11 @@ import {
   createOrder,
   getOrder,
   orderQueryKeys,
-  previewOrderPricing,
   updateOrder,
-  updateOrderItems,
 } from '../api/orders';
 import type {
   BillingType,
+  CoverageStartMode,
   DeliveryMethod,
   FulfillmentType,
   FulfillmentTargetOut,
@@ -71,6 +68,8 @@ import {
 } from './orderUtils';
 import { extractFormValidation } from './OrderEditor.validation';
 import './OrderManagement.css';
+import OrderCoverageFields from './OrderCoverageFields';
+import { existingCoverage } from './orderCoverage';
 
 const { TextArea } = Input;
 
@@ -136,17 +135,6 @@ function inferSubscriptionTerm(
   return 'custom';
 }
 
-const SUBSCRIPTION_TERM_OPTIONS: Array<{ label: string; value: SubscriptionTerm }> = [
-  { label: '半年', value: 'half_year' },
-  { label: '一年', value: 'one_year' },
-  { label: '自定义', value: 'custom' },
-];
-
-const DELIVERY_METHOD_OPTIONS: Array<{ label: string; value: DeliveryMethod }> = [
-  { label: '邮局投递（半年120 / 一年240）', value: 'post_office' },
-  { label: 'ZTO-MF 快递（半年195 / 一年390）', value: 'zto_mf' },
-];
-
 // Fields that remain editable when an order has reached active status.
 // Mirrors backend ACTIVE_EDITABLE_FIELDS in order_service.py.
 const ACTIVE_EDITABLE_FIELDS = new Set<keyof OrderFormValues>([
@@ -180,10 +168,15 @@ export interface ItemFormValues {
   publication: Publication;
   fulfillment_type: FulfillmentType;
   billing_type: BillingType;
-  coverage_range?: [Dayjs, Dayjs] | null;
+  coverage_start?: Dayjs | null;
+  coverage_end?: Dayjs | null;
+  coverage_start_mode?: CoverageStartMode;
+  coverage_start_issue?: number | null;
+  issue_year?: number;
+  end_date_adjusted?: boolean;
   subscription_term?: SubscriptionTerm | null;
   delivery_method?: DeliveryMethod | null;
-  // 预设期限（半年/一年）的起始月份；自定义期限时从 coverage_range[0] 派生。
+  // 预设期限（半年/一年）的起始月份；自定义期限时从 coverage_start 派生。
   start_month?: Dayjs | null;
   issue_number?: number | null;
   total_quantity: number;
@@ -232,7 +225,10 @@ function buildBlankItem(): ItemFormValues {
     publication: 'cbj',
     fulfillment_type: 'subscription',
     billing_type: 'paid',
-    coverage_range: [s, e],
+    coverage_start: s,
+    coverage_end: e,
+    coverage_start_mode: 'month',
+    end_date_adjusted: false,
     subscription_term: 'one_year',
     delivery_method: 'post_office',
     start_month: start,
@@ -271,38 +267,40 @@ function detailToFormValues(detail: OrderOut): Partial<OrderFormValues> {
     invoice_tax_no: detail.invoice_tax_no,
     invoice_recipient_email: detail.invoice_recipient_email,
     notes: detail.notes,
-    items: detail.items.map<ItemFormValues>((it) => {
+    items: detail.items.filter(it => it.status !== 'cancelled').map<ItemFormValues>((it) => {
       // Select current active allocation (open-ended), falling back to highest version
       const activeAllocation =
         it.allocations
           .filter((a) => a.effective_until_issue == null)
           .sort((a, b) => b.version_no - a.version_no)[0]
         ?? [...it.allocations].sort((a, b) => b.version_no - a.version_no)[0];
-      const coverageRange: [Dayjs, Dayjs] | null =
-        it.coverage_start_date && it.coverage_end_date
-          ? [dayjs(it.coverage_start_date), dayjs(it.coverage_end_date)]
-          : null;
+      const coverage = existingCoverage(it);
       const isCoverageType = COVERAGE_REQUIRED_TYPES.has(it.fulfillment_type);
       return {
         id: it.id,
         publication: it.publication,
         fulfillment_type: it.fulfillment_type,
         billing_type: it.billing_type,
-        coverage_range: coverageRange,
+        coverage_start: coverage.start,
+        coverage_end: coverage.end,
+        coverage_start_mode: coverage.mode,
+        coverage_start_issue: it.coverage_start_issue,
+        issue_year: coverage.start?.year() ?? dayjs().year(),
+        end_date_adjusted: coverage.adjusted,
         subscription_term: it.subscription_term ?? (isCoverageType
-          ? inferSubscriptionTerm(coverageRange?.[0], coverageRange?.[1])
+          ? inferSubscriptionTerm(coverage.start, coverage.end)
           : null),
         delivery_method: it.delivery_method,
-        start_month: coverageRange?.[0]?.startOf('month') ?? null,
+        start_month: coverage.start?.startOf('month') ?? null,
         issue_number: it.issue_number,
         total_quantity: it.total_quantity,
         unit_price: Number(it.unit_price),
         notes: it.notes,
         targets:
           activeAllocation?.targets.filter(t => t.status === 'active' && !t.replaced_by_target_id).map((t) => ({
-            ...(t.source_delivery_managed ? { delivery_snapshot: { shipping_channel: t.shipping_channel,
+            delivery_snapshot: { shipping_channel: t.shipping_channel,
               distribution_unit_id: t.distribution_unit_id, effective_from_issue: t.effective_from_issue,
-              effective_until_issue: t.effective_until_issue } } : {}),
+              effective_until_issue: t.effective_until_issue },
             recipient_name: t.recipient_name,
             recipient_phone: t.recipient_phone,
             recipient_address: t.recipient_address,
@@ -328,7 +326,8 @@ function itemToCreatePayload(item: ItemFormValues): OrderItemIn {
   const totalQty = Number(item.total_quantity) || 0;
   const unitPrice = Number(item.unit_price) || 0;
   const isCoverageType = COVERAGE_REQUIRED_TYPES.has(item.fulfillment_type);
-  const [start, end] = item.coverage_range ?? [];
+  const start = item.coverage_start;
+  const end = item.coverage_end;
   return {
     publication: item.publication,
     publication_format: 'paper',
@@ -336,7 +335,9 @@ function itemToCreatePayload(item: ItemFormValues): OrderItemIn {
     billing_type: item.billing_type,
     subscription_term: item.subscription_term ?? null,
     delivery_method: item.delivery_method ?? null,
-    term_start_month: item.start_month ? item.start_month.format('YYYY-MM') : null,
+    term_start_month: isCoverageType && item.coverage_start_mode === 'month' && item.start_month ? item.start_month.format('YYYY-MM') : null,
+    coverage_start_mode: isCoverageType ? item.coverage_start_mode : null,
+    coverage_start_issue: isCoverageType && item.coverage_start_mode === 'issue' ? item.coverage_start_issue : null,
     coverage_start_date: isCoverageType && start ? start.format('YYYY-MM-DD') : null,
     coverage_end_date: isCoverageType && end ? end.format('YYYY-MM-DD') : null,
     issue_number: item.issue_number ?? null,
@@ -442,7 +443,7 @@ function validateBusinessRules(values: OrderFormValues): string[] {
     }
     if (
       COVERAGE_REQUIRED_TYPES.has(item.fulfillment_type) &&
-      (!item.coverage_range || !item.coverage_range[0] || !item.coverage_range[1])
+      (!item.coverage_start || !item.coverage_end)
     ) {
       errors.push(`${label}：订阅 / 续订履约类型必须填写覆盖期。`);
     }
@@ -592,6 +593,8 @@ export default function OrderEditor() {
     queryClient.invalidateQueries({ queryKey: orderQueryKeys.all });
     if (id) {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: ['postalDeliveries', 'order', id] });
+      queryClient.invalidateQueries({ queryKey: ['postalTickets', 'order', id] });
     }
   };
 
@@ -621,7 +624,7 @@ export default function OrderEditor() {
   };
 
   /**
-   * Persists base fields (and items on create). Returns the resulting order id
+   * Persists base fields and items atomically. Returns the resulting order id
    * if successful, otherwise null. Caller handles navigation / messaging.
    */
   const persistOrder = async (
@@ -638,17 +641,14 @@ export default function OrderEditor() {
     try {
       if (isEditMode) {
         const payload = formValuesToUpdatePayload(values, isActive);
-        const res = await updateMutation.mutateAsync({ id: orderId!, payload });
-
-        // Active orders: also update items via dedicated endpoint
-        if (isActive && values.items.length > 0) {
-          const itemsPayload = {
-            effective_from_issue: values.effective_from_issue!,
+        if (values.items.length > 0) {
+          payload.items_update = {
+            effective_from_issue: isActive ? values.effective_from_issue! : undefined,
             change_reason: values.change_reason ?? undefined,
             items: values.items.map(itemToUpdatePayload),
           };
-          await updateOrderItems(orderId!, itemsPayload);
         }
+        const res = await updateMutation.mutateAsync({ id: orderId!, payload });
 
         return res.data.id;
       }
@@ -665,7 +665,9 @@ export default function OrderEditor() {
   const handleSaveDraft = async () => {
     let values: OrderFormValues;
     try {
-      values = await form.validateFields();
+      await form.validateFields();
+      // 明细 ID、既有投递快照等不一定有可见控件，保存时必须保留。
+      values = form.getFieldsValue(true);
     } catch (error) {
       handleFormValidationFailure(error);
       return;
@@ -689,7 +691,8 @@ export default function OrderEditor() {
   const handleConfirm = async () => {
     let values: OrderFormValues;
     try {
-      values = await form.validateFields();
+      await form.validateFields();
+      values = form.getFieldsValue(true);
     } catch (error) {
       handleFormValidationFailure(error);
       return;
@@ -739,15 +742,13 @@ export default function OrderEditor() {
   }
 
   const summaryTotal = Number(watchedTotalAmount) || computedTotalAmount;
-  const summaryCoverage = summaryItem?.coverage_range?.[0] && summaryItem.coverage_range[1]
-    ? `${summaryItem.coverage_range[0].format('YYYY-MM-DD')} 至 ${summaryItem.coverage_range[1].format('YYYY-MM-DD')}`
+  const summaryCoverage = summaryItem?.coverage_start && summaryItem.coverage_end
+    ? `${summaryItem.coverage_start.format('YYYY-MM-DD')} 至 ${summaryItem.coverage_end.format('YYYY-MM-DD')}`
     : '待选择';
-  const summaryTerm = SUBSCRIPTION_TERM_OPTIONS.find(
-    (option) => option.value === summaryItem?.subscription_term,
-  )?.label ?? '-';
-  const summaryDelivery = DELIVERY_METHOD_OPTIONS.find(
-    (option) => option.value === summaryItem?.delivery_method,
-  )?.label.replace(/（.*）/, '') ?? '-';
+  const summaryTerm = summaryItem?.subscription_term
+    ? { half_year: '半年', one_year: '一年', custom: '自定义' }[summaryItem.subscription_term] : '待选择';
+  const summaryDelivery = summaryItem?.delivery_method
+    ? { post_office: '邮局投递', zto_mf: 'ZTO-MF 快递' }[summaryItem.delivery_method] : '待选择';
 
   return (
     <div className="order-page order-editor-page">
@@ -882,7 +883,7 @@ export default function OrderEditor() {
                 <div className="order-active-change">
                   <Row gutter={[14, 0]}>
                     <Col xs={24} md={8}>
-                      <Form.Item name="effective_from_issue" label="生效起始期号" rules={[{ required: true, message: '请填写生效起始期号' }]}>
+                      <Form.Item name="effective_from_issue" label="生效起始期号" tooltip="本次履约变更从哪一期生效；不能替代下方的订阅起投刊期与覆盖日期。" rules={[{ required: true, message: '请填写生效起始期号' }]}>
                         <InputNumber style={{ width: '100%' }} min={1} precision={0} placeholder="如 2660" />
                       </Form.Item>
                     </Col>
@@ -905,7 +906,7 @@ export default function OrderEditor() {
                 {(fields, { add, remove }, { errors }) => (
                   <>
                     {fields.map((field, idx) => (
-                      <ItemBlock key={field.key} field={field} index={idx} onRemove={() => remove(field.name)} disabled={itemsReadOnly} preserveImportedPrice={detailQuery.data?.entry_method === 'excel_import'} />
+                      <ItemBlock key={field.key} field={field} index={idx} onRemove={() => remove(field.name)} disabled={itemsReadOnly} preservePrice={isEditMode} />
                     ))}
                     {!itemsReadOnly && (
                       <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add(buildBlankItem())}>
@@ -987,6 +988,7 @@ export default function OrderEditor() {
               <dl>
                 <div><dt>付款主体</dt><dd>{watchedPayer || '待填写'}</dd></div>
                 <div><dt>订阅期限</dt><dd>{summaryTerm}</dd></div>
+                {summaryItem?.coverage_start_mode === 'issue' && <div><dt>起投刊期</dt><dd>{summaryItem.coverage_start_issue ? `第 ${summaryItem.coverage_start_issue} 期` : '待选择'}</dd></div>}
                 <div><dt>覆盖期</dt><dd>{summaryCoverage}</dd></div>
                 <div><dt>投递方式</dt><dd>{summaryDelivery}</dd></div>
                 <div><dt>履约目标</dt><dd>{summaryTargetCount} 人 / {summaryQuantity} 份</dd></div>
@@ -1000,7 +1002,7 @@ export default function OrderEditor() {
 
       <div className="order-action-bar">
         <Button type="text" icon={<SaveOutlined />} onClick={handleSaveDraft} disabled={isVoid || submitting} loading={submitting}>
-          保存草稿
+          {isActive ? '保存变更' : '保存草稿'}
         </Button>
         <div>
           <Button onClick={() => navigate(isEditMode ? `/orders/${orderId}` : '/orders')}>取消</Button>
@@ -1022,10 +1024,10 @@ interface ItemBlockProps {
   index: number;
   onRemove: () => void;
   disabled: boolean;
-  preserveImportedPrice?: boolean;
+  preservePrice?: boolean;
 }
 
-function ItemBlock({ field, index, onRemove, disabled, preserveImportedPrice = false }: ItemBlockProps) {
+function ItemBlock({ field, index, onRemove, disabled, preservePrice = false }: ItemBlockProps) {
   const form = Form.useFormInstance<OrderFormValues>();
   const fulfillmentType = Form.useWatch<FulfillmentType | undefined>(
     ['items', field.name, 'fulfillment_type'],
@@ -1047,11 +1049,6 @@ function ItemBlock({ field, index, onRemove, disabled, preserveImportedPrice = f
     ['items', field.name, 'subscription_term'],
     form,
   );
-  const deliveryMethod = Form.useWatch<DeliveryMethod | undefined | null>(
-    ['items', field.name, 'delivery_method'],
-    form,
-  );
-
   // Derived (displayed read-only): 应收小计 = 单价 × 每期总份数; 目标合计 = 各履约目标份数之和.
   const subtotal = (Number(unitPrice) || 0) * (Number(totalQuantity) || 0);
   const targetSum = (targets ?? []).reduce(
@@ -1064,98 +1061,11 @@ function ItemBlock({ field, index, onRemove, disabled, preserveImportedPrice = f
     : false;
   const requireIssueNumber = fulfillmentType === 'single_issue';
 
-  // 定价预览同时给出刊期表口径的实际覆盖期与套餐价。
-  const startMonth = Form.useWatch<Dayjs | undefined | null>(
-    ['items', field.name, 'start_month'],
-    form,
-  );
-  const previewQuery = useQuery({
-    queryKey: [
-      'orders',
-      'pricing-preview',
-      subscriptionTerm,
-      deliveryMethod,
-      startMonth?.format('YYYY-MM'),
-      totalQuantity,
-    ],
-    queryFn: async () => {
-      const res = await previewOrderPricing({
-        subscription_term: subscriptionTerm as Exclude<SubscriptionTerm, 'custom'>,
-        delivery_method: deliveryMethod as DeliveryMethod,
-        term_start_month: startMonth!.format('YYYY-MM'),
-        total_quantity: Number(totalQuantity) || 1,
-      });
-      return res.data;
-    },
-    enabled:
-      requireCoverage && !preserveImportedPrice &&
-      subscriptionTerm !== 'custom' &&
-      !!subscriptionTerm &&
-      !!deliveryMethod &&
-      !!startMonth,
-  });
-
-  // 预览成功时以服务端刊期表结果回填实际覆盖期和套餐价。
-  useEffect(() => {
-    const preview = previewQuery.data;
-    if (!preview || disabled || preserveImportedPrice || !requireCoverage || subscriptionTerm === 'custom') return;
-    form.setFieldValue(['items', field.name, 'coverage_range'], [
-      dayjs(preview.coverage_start_date),
-      dayjs(preview.coverage_end_date),
-    ]);
-    form.setFieldValue(['items', field.name, 'unit_price'], Number(preview.unit_price));
-  }, [previewQuery.data, disabled, preserveImportedPrice, requireCoverage, subscriptionTerm, form, field.name]);
-
-  // 当履约类型在 订阅/续订 ↔ 其它 之间切换时，同步 subscription_term
   useEffect(() => {
     const current = form.getFieldValue(['items', field.name, 'subscription_term']);
-    if (requireCoverage) {
-      if (!current) {
-        const range = form.getFieldValue(['items', field.name, 'coverage_range']) as
-          | [Dayjs, Dayjs]
-          | null
-          | undefined;
-        form.setFieldValue(
-          ['items', field.name, 'subscription_term'],
-          inferSubscriptionTerm(range?.[0], range?.[1]),
-        );
-      }
-    } else if (current) {
-      form.setFieldValue(['items', field.name, 'subscription_term'], null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requireCoverage]);
-
-  // 点击"半年/一年"快捷按钮：以起始月份（或当前月）为基准重算覆盖期。
-  const handleTermChange = (term: SubscriptionTerm) => {
-    form.setFieldValue(['items', field.name, 'subscription_term'], term);
-    if (term === 'custom') return;
-    const month = form.getFieldValue(['items', field.name, 'start_month']) as Dayjs | null | undefined;
-    const start = month?.startOf('month') ?? dayjs().startOf('month');
-    form.setFieldValue(['items', field.name, 'coverage_range'], computeCoverageRange(term, start));
-  };
-
-  // 起始月份变更：如果当前期限非自定义，则联动重算覆盖期。
-  const handleStartMonthChange = (month: Dayjs | null) => {
-    const term = form.getFieldValue(['items', field.name, 'subscription_term']) as SubscriptionTerm | null;
-    if (!month || !term || term === 'custom') return;
-    const start = month.startOf('month');
-    form.setFieldValue(['items', field.name, 'coverage_range'], computeCoverageRange(term, start));
-  };
-
-  // 用户手动改 RangePicker：仅当当前期限不是"自定义"且日期不再匹配时，降级为自定义。
-  const handleCoverageRangeChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
-    if (!dates || !dates[0] || !dates[1]) return;
-    const [s, e] = dates as [Dayjs, Dayjs];
-    form.setFieldValue(['items', field.name, 'start_month'], s.startOf('month'));
-    const term = form.getFieldValue(['items', field.name, 'subscription_term']) as SubscriptionTerm | null;
-    if (term && term !== 'custom') {
-      const inferred = inferSubscriptionTerm(s, e);
-      if (inferred !== term) {
-        form.setFieldValue(['items', field.name, 'subscription_term'], 'custom');
-      }
-    }
-  };
+    if (requireCoverage && !current) form.setFieldValue(['items', field.name, 'subscription_term'], 'custom');
+    if (!requireCoverage && current) form.setFieldValue(['items', field.name, 'subscription_term'], null);
+  }, [requireCoverage, form, field.name]);
   // 单价标签与占位符随期限切换
   const unitPriceMeta = useMemo(() => {
     if (!requireCoverage) {
@@ -1216,101 +1126,7 @@ function ItemBlock({ field, index, onRemove, disabled, preserveImportedPrice = f
           </Form.Item>
         </Col>
       </Row>
-      {requireCoverage && (
-        <>
-          <Row gutter={[12, 0]}>
-            <Col xs={24} lg={8}>
-              <Form.Item
-                name={[field.name, 'subscription_term']}
-                label={
-                  <Space size={4}>
-                    <span>订阅期限</span>
-                    <Tooltip
-                      title={
-                        <div>
-                          <div>选「半年 / 一年」会按起始月份自动算出覆盖期，并把"单价"标签换成对应套餐。</div>
-                          <div style={{ marginTop: 4 }}>非标周期（如 2 年）请选「自定义」并直接编辑覆盖期日期。</div>
-                        </div>
-                      }
-                    >
-                      <QuestionCircleOutlined style={{ color: 'var(--color-text-tertiary)', cursor: 'help' }} />
-                    </Tooltip>
-                  </Space>
-                }
-                rules={[{ required: true, message: '请选择订阅期限' }]}
-              >
-                <Radio.Group
-                  options={SUBSCRIPTION_TERM_OPTIONS}
-                  optionType="button"
-                  onChange={(e) => handleTermChange(e.target.value as SubscriptionTerm)}
-                  disabled={disabled}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-              <Form.Item
-                name={[field.name, 'start_month']}
-                label="起始月份"
-                rules={subscriptionTerm !== 'custom' ? [{ required: true, message: '请选择起始月份' }] : undefined}
-              >
-                <DatePicker
-                  picker="month"
-                  style={{ width: '100%' }}
-                  placeholder="选择月份"
-                  onChange={handleStartMonthChange}
-                  disabled={disabled || subscriptionTerm === 'custom'}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} lg={10}>
-              <Form.Item
-                name={[field.name, 'delivery_method']}
-                label="投递/收费方式"
-                rules={[{ required: true, message: '请选择投递/收费方式' }]}
-              >
-                <Radio.Group options={DELIVERY_METHOD_OPTIONS} disabled={disabled} />
-              </Form.Item>
-            </Col>
-          </Row>
-          {subscriptionTerm === 'custom' ? (
-            <Form.Item
-              name={[field.name, 'coverage_range']}
-              label="覆盖期"
-              rules={[{ required: true, message: '订阅/续订需要填写覆盖期' }]}
-            >
-              <DatePicker.RangePicker style={{ width: '100%' }} disabled={disabled} onChange={handleCoverageRangeChange} />
-            </Form.Item>
-          ) : (
-            <Form.Item name={[field.name, 'coverage_range']} hidden>
-              <DatePicker.RangePicker />
-            </Form.Item>
-          )}
-        </>
-      )}
-      {requireCoverage && subscriptionTerm !== 'custom' && preserveImportedPrice && (
-        <Alert type="info" showIcon title="订期按起始月份计算，原成交价格保留" description={`每订户原成交价 ¥${Number(unitPrice) || 0}；半年按 6 个月、全年按 12 个月。如需填写实际起止日期，可选择自定义。`} />
-      )}
-      {requireCoverage && subscriptionTerm !== 'custom' && !preserveImportedPrice && (
-        <Alert
-          className="order-pricing-preview"
-          type={previewQuery.data?.schedule_incomplete ? 'warning' : 'info'}
-          showIcon
-          title={previewQuery.isLoading ? '正在计算套餐价...' : previewQuery.data?.price_label ?? '请选择起始月份和投递方式'}
-          description={
-            previewQuery.data ? (
-              <Space wrap>
-                <span>覆盖期 {previewQuery.data.coverage_start_date} 至 {previewQuery.data.coverage_end_date}</span>
-                <span>· {previewQuery.data.expected_issue_count} 期</span>
-                <span>· 应收 {formatCurrency(previewQuery.data.subtotal)}</span>
-                {previewQuery.data.warning && <Typography.Text type="warning">{previewQuery.data.warning}</Typography.Text>}
-              </Space>
-            ) : previewQuery.isError ? (
-              '定价预览暂不可用（不影响建单）'
-            ) : undefined
-          }
-          style={{ marginBottom: 12 }}
-        />
-      )}
+      {requireCoverage && <OrderCoverageFields index={field.name} disabled={disabled} preservePrice={preservePrice} />}
       <Row gutter={[12, 0]}>
         {requireIssueNumber && (
           <Col xs={24} md={6}>

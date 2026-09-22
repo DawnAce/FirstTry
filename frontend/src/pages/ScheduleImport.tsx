@@ -363,6 +363,8 @@ export default function ScheduleImport() {
       await commitScheduleUpload(preview.upload_id, previewPageCount);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['schedule', preview.year] }),
+        queryClient.invalidateQueries({ queryKey: ['schedule-years'] }),
+        queryClient.invalidateQueries({ queryKey: ['orders', 'coverage-preview'] }),
         queryClient.invalidateQueries({ queryKey: ['scheduleUploads', preview.year] }),
       ]);
       setYear(preview.year);

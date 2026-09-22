@@ -778,7 +778,7 @@ def test_update_active_items_field_only_no_new_allocation(client):
     assert "unit_price" in mod_events[0]["payload_json"]["field_diff"]
 
 
-def test_update_active_items_rejects_draft_order(client):
+def test_update_items_accepts_draft_order(client):
     created = client.post("/api/orders", json=_make_create_payload()).json()
     r = client.put(
         f"/api/orders/{created['id']}/items",
@@ -801,7 +801,8 @@ def test_update_active_items_rejects_draft_order(client):
             ],
         },
     )
-    assert r.status_code == 409
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "draft"
 
 
 # ---------------------------------------------------------------------------

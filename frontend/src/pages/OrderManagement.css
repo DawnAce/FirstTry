@@ -2945,3 +2945,51 @@
     margin-inline: 12px;
   }
 }
+
+/* 订单订期：期限与具体刊期独立，沿用应用主题。 */
+.order-start-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+.order-start-modes .ant-radio-wrapper {
+  flex: 1 1 180px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  background: var(--color-card);
+}
+.order-start-modes .ant-radio-wrapper-checked {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.order-start-modes small { display: block; color: var(--color-text-secondary); margin-top: 4px; }
+.order-coverage-fields .ant-picker { width: 100%; }
+.order-coverage-preview { padding: 14px; margin-bottom: 16px; border-radius: var(--radius-input); background: var(--color-accent-soft); }
+.order-coverage-preview > strong { color: var(--color-accent); }
+.order-coverage-dates { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 12px 0; }
+.order-coverage-issues { margin: 8px 0; }
+.order-coverage-price-note { color: var(--color-success-text); margin-bottom: 16px; }
+.order-editor-page :is(.order-form-section.ant-card, .order-optional-section.ant-collapse, .order-summary-card.ant-card, .order-item-card.ant-card) {
+  background: var(--color-card) !important;
+  border-color: var(--color-border) !important;
+}
+.order-editor-page :is(.order-form-section, .order-item-card) > .ant-card-head { background: var(--color-bg-subtle); }
+.order-editor-page :is(.order-form-section .ant-card-head-title > span, .order-optional-section .ant-collapse-header-text > span, .order-item-card .ant-card-head-title > span, .order-summary-card dd) { color: var(--color-text-primary); }
+.order-editor-page .order-editor-form :is(.ant-input, .ant-input-number, .ant-picker, .ant-select-selector) { background: var(--color-card) !important; border-color: var(--color-border) !important; }
+.order-editor-page :is(.order-editor-form .ant-form-item-label > label, .order-summary-card dt, .order-summary-hero span, .order-section-meta) { color: var(--color-text-secondary); }
+.order-editor-page .order-active-change { background: var(--color-accent-soft); border-color: var(--color-border); }
+.order-editor-page .order-summary-hero { background: var(--color-accent-soft); }
+.order-editor-page .order-summary-hero strong { color: var(--color-accent); }
+.order-editor-page .order-summary-card dl > div { border-color: var(--color-border); }
+.order-editor-page .order-summary-check { color: var(--color-success-text); background: var(--color-success-soft); }
+.order-editor-page .order-action-bar { background: var(--color-card); border-color: var(--color-border); }
+.order-editor-page .order-editor-form .ant-radio-button-wrapper { border-color: var(--color-border); }
+.order-editor-page .order-editor-form .ant-radio-button-wrapper-checked { color: var(--color-accent); background: var(--color-accent-soft); border-color: var(--color-accent); }
+.order-editor-page .order-target-card.ant-card { background: var(--color-bg-subtle) !important; border-color: var(--color-border) !important; }
+.order-editor-page .order-optional-section .ant-collapse-content { background: var(--color-card); border-color: var(--color-border); }
+.order-editor-page .order-invoice-switch { background: var(--color-bg-subtle); }
+.order-editor-page .order-coverage-fields .ant-picker-disabled input { color: var(--color-text-secondary); }

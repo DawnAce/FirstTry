@@ -17,7 +17,7 @@ omitted: V1.1 is manual single-entry only.
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -109,6 +109,8 @@ class OrderItemIn(BaseModel):
     )
     coverage_start_date: Optional[date] = None
     coverage_end_date: Optional[date] = None
+    coverage_start_mode: Optional[Literal["month", "issue", "date"]] = None
+    coverage_start_issue: Optional[int] = Field(default=None, ge=1)
     issue_number: Optional[int] = Field(default=None, ge=1)
     # 单期身份标签（商学院月刊等无连续期号的刊物）：规范化 "YYYY-MM" / "YYYY-MM~MM"，
     # 供按期统计。年/月落在这里（期次层），不进商品名。
@@ -194,8 +196,8 @@ class OrderUpdate(BaseModel):
     a normal edit. Excel import / API sync flows set it via dedicated
     creation paths.
 
-    Items / targets edits are out of scope here; they will get dedicated
-    endpoints in V1.2.
+    ``items_update`` optionally saves item changes in the same transaction.
+    Active items still require an effective issue and retain version guards.
     """
 
     order_date: Optional[date] = None
@@ -213,6 +215,7 @@ class OrderUpdate(BaseModel):
     invoice_tax_no: Optional[str] = Field(default=None, max_length=64)
     invoice_recipient_email: Optional[str] = Field(default=None, max_length=128)
     notes: Optional[str] = None
+    items_update: Optional["OrderItemsUpdate"] = None
 
 
 class OrderVoidIn(BaseModel):
@@ -298,9 +301,9 @@ class OrderItemUpdate(OrderItemIn):
 
 
 class OrderItemsUpdate(BaseModel):
-    """Payload for PUT /orders/{id}/items — batch update items on an active order."""
+    """批量编辑草稿或已生效明细；后者必须填写新版本生效期。"""
 
-    effective_from_issue: int = Field(ge=1, description="新版本生效起始期号")
+    effective_from_issue: Optional[int] = Field(default=None, ge=1, description="已生效订单必填：新版本生效起始期号")
     change_reason: Optional[str] = Field(default=None, max_length=255)
     items: List[OrderItemUpdate] = Field(min_length=1)
 
@@ -322,6 +325,29 @@ class PricingPreviewOut(BaseModel):
     price_label: str
     schedule_incomplete: bool = False
     warning: Optional[str] = None
+
+
+class CoveragePreviewIn(BaseModel):
+    coverage_start_date: date
+    coverage_end_date: date
+
+    @model_validator(mode="after")
+    def check_dates(self) -> "CoveragePreviewIn":
+        if self.coverage_end_date < self.coverage_start_date:
+            raise ValueError("结束日期不能早于起投日期")
+        return self
+
+
+class CoverageIssueOut(BaseModel):
+    issue_number: int
+    publish_date: date
+
+
+class CoveragePreviewOut(BaseModel):
+    first_issue: Optional[CoverageIssueOut]
+    last_issue: Optional[CoverageIssueOut]
+    expected_issue_count: int
+    schedule_incomplete: bool
 
 
 # =============================================================================
@@ -385,6 +411,8 @@ class OrderItemOut(BaseModel):
     subscription_term: Optional[SubscriptionTerm] = None
     delivery_method: Optional[DeliveryMethod] = None
     term_start_month: Optional[str] = None
+    coverage_start_mode: Optional[Literal["month", "issue", "date"]] = None
+    coverage_start_issue: Optional[int] = None
     coverage_start_date: Optional[date]
     coverage_end_date: Optional[date]
     issue_number: Optional[int]
