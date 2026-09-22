@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -66,6 +66,49 @@ def review(client, data, number, kind, **values):
 
 def commit(client, data, **extra):
     return client.post('/api/order-import/commit', json={'session_id': data['session_id'], 'expected_version': data.get('version'), **extra})
+
+
+@pytest.mark.parametrize('order_count', [0, 1, 129])
+def test_commit_response_needs_no_database_reads_after_success(env, order_count):
+    """提交成功后即使数据库不可读，也应返回结果，不能把已保存误报为失败。"""
+    client, db, _ = env
+    rows = [(f'SYNTHETIC-SUB-{i}', POSTAL, 120, '卖家已发货') for i in range(order_count)]
+    rows += [(f'SYNTHETIC-FEE-{i}', FEE, 30, '卖家已发货') for i in range(2)]
+    data = preview(client, rows)
+    committed = False
+
+    def after_commit(_session):
+        nonlocal committed
+        committed = True
+
+    def reject_post_commit_reads(_conn, _cursor, statement, _parameters, _context, _many):
+        if committed and statement.lstrip().upper().startswith('SELECT'):
+            raise RuntimeError('synthetic database unavailable after successful commit')
+
+    engine = db.get_bind()
+    event.listen(db, 'after_commit', after_commit)
+    event.listen(engine, 'before_cursor_execute', reject_post_commit_reads)
+    try:
+        response = commit(client, data)
+    finally:
+        event.remove(db, 'after_commit', after_commit)
+        event.remove(engine, 'before_cursor_execute', reject_post_commit_reads)
+
+    assert committed
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['created'] == order_count
+    assert set(result['order_ids']) == {row.id for row in db.query(Order).all()}
+    assert result['retained_sources'] == 2
+    assert len(result['source_ids']) == order_count + 2
+    assert len(result['fee_sources']) == 2
+    assert all(not fee['linked'] for fee in result['fee_sources'])
+    assert db.query(OrderSourceVersion).count() == order_count + 2
+    assert db.query(OrderEvent).count() == order_count
+    assert client.get(f"/api/order-import/sessions/{data['session_id']}").status_code == 400
+    repeated = preview(client, rows)
+    assert repeated['counts']['duplicate'] == order_count + 2
+    assert db.query(Order).count() == order_count
 
 
 def test_native_zto_has_no_review_and_fee_transfer_must_be_confirmed(env):

@@ -821,9 +821,9 @@ def _commit_import(
         OrderSourceLink.source_id.in_([row["id"] for row in fee_sources]), OrderSourceLink.active == 1).distinct()}
     for row in fee_sources:
         row["linked"] = row["id"] in linked_fee_ids
-    db.commit()
-    pop_order_import_session(session_id)
-    return {
+    # Session.commit() 会过期 ORM 对象；先取标量，避免提交后逐单 SELECT，
+    # 更不能因这时读取断线而把已经成功保存的整批误报为导入失败。
+    result = {
         "created": len(created),
         "order_ids": [o.id for o in created],
         "skipped_duplicates": skipped,
@@ -831,6 +831,9 @@ def _commit_import(
         "source_ids": source_ids,
         "fee_sources": fee_sources,
     }
+    db.commit()
+    pop_order_import_session(session_id)
+    return result
 
 
 def commit_import(db: Session, session_id: str, operator_id: Optional[int] = None,
