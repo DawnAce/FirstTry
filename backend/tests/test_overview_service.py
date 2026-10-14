@@ -7,6 +7,7 @@ last_updated_at 取 operation_logs（决策③）。sqlite 直接调服务，风
 
 import unittest
 from datetime import date, datetime, timedelta
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -26,7 +27,8 @@ from app.models import (
 from app.services import overview_service
 from app.services.operation_log_service import record_operation
 
-TEST_YEAR = 2099
+TEST_YEAR = 2026
+TEST_TODAY = date(TEST_YEAR, 10, 14)
 
 
 def _admin() -> User:
@@ -35,6 +37,10 @@ def _admin() -> User:
 
 class _OverviewBase(unittest.TestCase):
     def setUp(self):
+        today_patch = patch("app.services.overview_service.date", wraps=date)
+        self.mock_date = today_patch.start()
+        self.mock_date.today.return_value = TEST_TODAY
+        self.addCleanup(today_patch.stop)
         self.engine = create_engine(
             "sqlite://",
             connect_args={"check_same_thread": False},
@@ -207,7 +213,7 @@ class DriftTests(_OverviewBase):
 class ScopeTests(_OverviewBase):
     def test_workbench_forces_current_year_periods_spans_all(self):
         db = self.SessionLocal()
-        cur = date.today().year
+        cur = TEST_YEAR
         other = cur - 5
         db.add_all([
             PublicationSchedule(year=cur, issue_number=6001, publish_date=date(cur, 3, 2), is_suspended=False),
@@ -229,7 +235,7 @@ class ScopeTests(_OverviewBase):
 class ReminderTests(_OverviewBase):
     def test_workbench_reminders_and_dedup(self):
         db = self.SessionLocal()
-        cur = date.today().year
+        cur = TEST_YEAR
         db.add_all([
             PublicationSchedule(year=cur, issue_number=7001, publish_date=date(cur, 3, 2), is_suspended=False),
             PublicationSchedule(year=cur, issue_number=7002, publish_date=date(cur, 3, 9), is_suspended=False),
@@ -259,6 +265,90 @@ class ReminderTests(_OverviewBase):
         self.assertEqual(rem.delta_diff_count, 1)       # 仅 7005（delta=5≠0）
         self.assertEqual(rem.draft_unconfirmed_count, 1)
         db.close()
+
+
+class PublishedPeriodTests(_OverviewBase):
+    def _seed_boundary_periods(self, db):
+        db.add_all([
+            PublicationSchedule(year=2025, issue_number=9000, publish_date=date(2025, 12, 29)),
+            PublicationSchedule(year=2026, issue_number=9001, publish_date=date(2026, 10, 5)),
+            PublicationSchedule(year=2026, issue_number=9002, publish_date=date(2026, 10, 12)),
+            PublicationSchedule(year=2026, issue_number=9003, publish_date=TEST_TODAY),
+            PublicationSchedule(year=2026, issue_number=9004, publish_date=date(2026, 10, 19)),
+            PublicationSchedule(year=2026, issue_number=9005, publish_date=date(2026, 10, 26)),
+            PublicationSchedule(year=2027, issue_number=9006, publish_date=date(2027, 1, 4)),
+            PublicationSchedule(year=2026, issue_number=9007, publish_date=date(2026, 10, 7), is_suspended=True),
+            PublicationSchedule(year=2026, issue_number=None, publish_date=date(2026, 10, 8)),
+        ])
+        # Issue 日期故意与刊历不一致；列表的截止日必须以正式刊历为准。
+        past = Issue(issue_number=9002, publish_date=date(2026, 10, 19), status=IssueStatus.confirmed)
+        future = Issue(issue_number=9004, publish_date=date(2026, 10, 12), status=IssueStatus.draft)
+        past.updated_at = datetime(2026, 10, 12, 10)
+        future.updated_at = datetime(2026, 10, 14, 15)
+        next_year = Issue(issue_number=9006, publish_date=date(2027, 1, 4), status=IssueStatus.confirmed)
+        db.add_all([past, future, next_year])
+        db.flush()
+        db.add_all([
+            ReportEntry(issue_id=past.id, category="social_use", sub_category="营报传媒_读者", value=10),
+            ShippingDetail(issue_number=9002, sheet_name="test", channel="test", name="合成收件人", quantity=10),
+            ShippingDetail(issue_number=9004, sheet_name="test", channel="test", name="未来合成收件人", quantity=20),
+            ShippingDetail(issue_number=9006, sheet_name="test", channel="test", name="次年合成收件人", quantity=30),
+        ])
+        db.commit()
+
+    def test_periods_use_calendar_cutoff_keep_past_missing_and_unshipped_plans(self):
+        with self.SessionLocal() as db:
+            self._seed_boundary_periods(db)
+            out = overview_service.build_overview(db, scope="periods")
+            self.assertEqual({r.issue_number for r in out.rows}, {9000, 9001, 9002, 9003})
+            self.assertEqual(out.kpi.total, 4)
+            self.assertEqual(out.kpi.uncreated, 3)
+            self.assertEqual(out.kpi.draft, 0)
+            self.assertEqual(out.kpi.uploaded, 1)
+            self.assertEqual(self._row(out, 9001).plan_status, "未创建")
+            ready = self._row(out, 9002)
+            self.assertEqual(ready.publish_date, date(2026, 10, 12))
+            self.assertEqual(ready.plan_status, "已就绪")
+            self.assertEqual(ready.waybill_status, "待上传")
+            self.assertEqual(ready.pending_quantity, 10)
+            # 筛选只影响展示，不删除未来已建期数和计划。
+            self.assertEqual(db.query(PublicationSchedule).count(), 9)
+            self.assertEqual(db.query(ShippingDetail).count(), 3)
+            future = overview_service.build_overview(db, scope="periods", year=2027)
+            self.assertEqual(future.rows, [])
+            self.assertEqual(future.kpi.total, 0)
+
+    def test_workbench_excludes_future_from_counts_recent_and_reminders_but_keeps_forecast(self):
+        with self.SessionLocal() as db:
+            self._seed_boundary_periods(db)
+            out = overview_service.build_overview(db, scope="workbench", year=2027)
+            self.assertEqual(out.year, 2026)
+            self.assertEqual({r.issue_number for r in out.rows}, {9001, 9002, 9003})
+            self.assertEqual(out.kpi.total, 3)
+            self.assertEqual(out.kpi.uncreated, 2)
+            self.assertEqual(out.kpi.draft, 0)
+            self.assertEqual([r.issue_number for r in out.extras.recent_issues], [9002])
+            self.assertEqual([r.issue_number for r in out.extras.upcoming_issues], [9003, 9004, 9005])
+            self.assertEqual(out.extras.reminders.no_shipping_count, 2)
+            self.assertEqual(out.extras.reminders.delta_diff_count, 0)
+            self.assertEqual(out.extras.reminders.draft_unconfirmed_count, 0)
+            self.assertEqual(out.extras.latest_this_month.issue_number, 9002)
+
+    def test_new_year_before_first_publication_has_no_current_work_and_retains_history(self):
+        self.mock_date.today.return_value = date(2026, 1, 1)
+        with self.SessionLocal() as db:
+            db.add_all([
+                PublicationSchedule(year=2025, issue_number=9100, publish_date=date(2025, 12, 29)),
+                PublicationSchedule(year=2026, issue_number=9101, publish_date=date(2026, 1, 5)),
+            ])
+            db.commit()
+            out = overview_service.build_overview(db, scope="periods")
+            self.assertEqual([r.issue_number for r in out.rows], [9100])
+            wb = overview_service.build_overview(db, scope="workbench")
+            self.assertEqual(wb.rows, [])
+            self.assertEqual(wb.kpi.total, 0)
+            self.assertEqual(wb.extras.reminders.no_shipping_count, 0)
+            self.assertEqual([r.issue_number for r in wb.extras.upcoming_issues], [9101])
 
 
 class LastUpdatedAtTests(_OverviewBase):

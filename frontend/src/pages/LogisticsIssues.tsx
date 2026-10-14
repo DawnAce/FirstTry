@@ -47,14 +47,19 @@ export default function LogisticsIssues({ mode = 'plan' }: { mode?: LogisticsIss
   const [searchNumber, setSearchNumber] = useState('');
   const [planFilter, setPlanFilter] = useState<'all' | PlanStatus>('all');
   const [waybillFilter, setWaybillFilter] = useState<'all' | WaybillStatus>('all');
-  const [filterYear, setFilterYear] = useState<number | 'all'>('all');
+  const [yearSelection, setYearSelection] = useState<{ mode: LogisticsIssuesMode; value: number | 'all' }>();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['logistics-overview', 'periods'],
     queryFn: async () => (await getPeriodsOverview()).data,
   });
 
-  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const rows = useMemo(() => {
+    const periods = data?.rows ?? [];
+    return mode === 'actual'
+      ? periods.filter((row) => row.detail_count > 0 || row.shipping_total > 0)
+      : periods;
+  }, [data, mode]);
   const yearOptions = useMemo(() => {
     const years = Array.from(new Set(rows.map((row) => row.year))).sort((a, b) => b - a);
     return [
@@ -62,29 +67,26 @@ export default function LogisticsIssues({ mode = 'plan' }: { mode?: LogisticsIss
       ...years.map((year) => ({ label: `${year} 年`, value: year })),
     ];
   }, [rows]);
+  // 数据加载后选最新年份；显式选择“全部年份”或历史年份后不再自动覆盖。
+  const selectedYear = (yearSelection?.mode === mode ? yearSelection.value : undefined) ?? yearOptions[1]?.value ?? 'all';
   const yearRows = useMemo(
-    () => (filterYear === 'all' ? rows : rows.filter((row) => row.year === filterYear)),
-    [filterYear, rows],
-  );
-  const actualRows = useMemo(
-    () => yearRows.filter((row) => row.detail_count > 0 || row.shipping_total > 0),
-    [yearRows],
+    () => (selectedYear === 'all' ? rows : rows.filter((row) => row.year === selectedYear)),
+    [selectedYear, rows],
   );
   const planCounts = useMemo(
     () => countBy(yearRows, 'plan_status', ['待导入', '已就绪', '有差异', '有变更', '草稿', '未创建']),
     [yearRows],
   );
   const waybillCounts = useMemo(
-    () => countBy(actualRows, 'waybill_status', ['待上传', '部分完成', '已完成', '需核对', '未开始']),
-    [actualRows],
+    () => countBy(yearRows, 'waybill_status', ['待上传', '部分完成', '已完成', '需核对', '未开始']),
+    [yearRows],
   );
-  const sourceRows = mode === 'plan' ? yearRows : actualRows;
-  const filtered = useMemo(() => sourceRows.filter((row) => {
+  const filtered = useMemo(() => yearRows.filter((row) => {
     if (searchNumber && !String(row.issue_number).includes(searchNumber.trim())) return false;
     if (mode === 'plan' && planFilter !== 'all' && row.plan_status !== planFilter) return false;
     if (mode === 'actual' && waybillFilter !== 'all' && row.waybill_status !== waybillFilter) return false;
     return true;
-  }), [mode, planFilter, searchNumber, sourceRows, waybillFilter]);
+  }), [mode, planFilter, searchNumber, yearRows, waybillFilter]);
 
   if (isError) {
     return (
@@ -114,7 +116,8 @@ export default function LogisticsIssues({ mode = 'plan' }: { mode?: LogisticsIss
       title: '期数',
       dataIndex: 'issue_number',
       width: 112,
-      sorter: (a, b) => a.issue_number - b.issue_number,
+      sorter: (a, b) => a.year - b.year || a.issue_number - b.issue_number,
+      defaultSortOrder: 'descend',
       render: (_, row) => <div className="logistics-period-cell"><strong>第 {row.issue_number} 期</strong></div>,
     },
     {
@@ -272,8 +275,8 @@ export default function LogisticsIssues({ mode = 'plan' }: { mode?: LogisticsIss
       <PageHeader
         title={mode === 'plan' ? '发货计划' : '实际发货'}
         description={mode === 'plan'
-          ? '维护收件人、地址与计划应发份数，不含运单信息。'
-          : '沿用发货计划信息，补充运单、实际收件调整与实发结果。'}
+          ? '仅列出已到出版日期的期次，维护收件人、地址与计划应发份数。'
+          : '仅列出已到出版日期且已有计划的期次，补充运单、实际收件调整与实发结果。'}
       />
 
       <div className="logistics-summary-grid">
@@ -317,12 +320,13 @@ export default function LogisticsIssues({ mode = 'plan' }: { mode?: LogisticsIss
             />}
           </div>
           <div className="logistics-filter-tools">
-            <Select value={filterYear} onChange={setFilterYear} options={yearOptions} style={{ width: 118 }} />
+            <Select aria-label="年份" value={selectedYear} onChange={(value) => setYearSelection({ mode, value })} options={yearOptions} style={{ width: 118 }} />
             <Input placeholder="搜索期号" prefix={<SearchOutlined />} allowClear value={searchNumber} onChange={(event) => setSearchNumber(event.target.value)} style={{ width: 150 }} />
             <span>共 <b>{filtered.length}</b> 期</span>
           </div>
         </div>
         <Table
+          key={mode}
           className="logistics-period-table"
           columns={mode === 'plan' ? planColumns : actualColumns}
           dataSource={filtered}

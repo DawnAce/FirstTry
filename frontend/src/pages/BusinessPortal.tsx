@@ -68,12 +68,12 @@ function useCenterPortalData(key?: BusinessCenterKey): PortalData {
 
     if (key === 'fulfilment') {
       const data = fulfilment.data;
-      if (!data) return { metrics: loadingMetrics(['年度期数', '已上传', '待处理', '异常']), analysisTitle: '履约状态分布', analysis: [], guides: ['正在读取履约数据'], loading: fulfilment.isLoading };
+      if (!data) return { metrics: loadingMetrics(['已到出版日期期数', '已上传', '待处理', '异常']), analysisTitle: '履约状态分布', analysis: [], guides: ['正在读取履约数据'], loading: fulfilment.isLoading };
       const kpi = data.kpi;
       const reminders = data.extras?.reminders;
       return {
         metrics: [
-          { label: '年度期数', value: `${kpi.total} 期`, caption: data.year ? `${data.year} 年` : '全部年份' },
+          { label: '已到出版日期期数', value: `${kpi.total} 期`, caption: data.year ? `${data.year} 年` : '全部年份' },
           { label: '已上传', value: `${kpi.uploaded} 期`, caption: '快递明细已完成' },
           { label: '待处理', value: `${kpi.pending + kpi.uncreated} 期`, caption: '待上传或未建期' },
           { label: '异常', value: `${kpi.exception} 期`, caption: kpi.exception ? '需要核对' : '当前正常' },

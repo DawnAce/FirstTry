@@ -102,8 +102,9 @@ def logistics_overview(
 ):
     """ZTO-MF 跨期总览。
 
-    ``scope=workbench`` 返回本年概况 + KPI + 3 待处理提醒 + 最近/后续期数 + 本月最新更新；
-    ``scope=periods`` 返回全部年份（``year`` 可选过滤）的期表 + KPI。缓存 30s，写操作即失效。
+    行、KPI、提醒和最近期数仅统计正式刊历中非休刊且出版日期不晚于今天的期次。
+    ``scope=workbench`` 强制本年，额外返回后续期数预告（日期正序）和本月最新更新；
+    ``scope=periods`` 跨年份（``year`` 可选过滤），返回期表 + KPI。缓存 30s，写操作即失效。
     """
     key_year = year if scope == "periods" else None
     cached = get_overview_cache(scope, key_year)

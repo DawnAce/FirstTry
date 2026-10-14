@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, screen, userEvent, waitFor, within } from 'storybook/test';
 import { HttpResponse, http } from 'msw';
 import { reactRouterParameters, withRouter } from 'storybook-addon-remix-react-router';
+import type { PeriodRow } from '../api/logisticsOverview';
 import LogisticsOverview from './LogisticsOverview';
 
 const handlers = [
@@ -78,4 +79,52 @@ export const ConsolidationBacklog: Story = {
     await waitFor(() => expect(dialog).toBeVisible());
     await expect(within(dialog).getByText(/全系统当前未完成 3 条，共 9 份/)).toBeVisible();
   },
+};
+
+const publishedPlan: PeriodRow = {
+  issue_number: 2671, issue_id: 1, year: 2026, publish_date: '2026-10-12',
+  status: '已上传', plan_status: '已就绪', waybill_status: '待上传',
+  report_zt_total: 10, shipping_total: 10, actual_shipped_total: 0,
+  handled_total: 0, pending_quantity: 10, delta: 0, is_match: true,
+  detail_count: 1, has_shipping_drift: false, exception_note: '', last_updated_at: null,
+};
+
+export const PublishedProgressAndForecast: Story = {
+  name: '当前进度与后续出刊预告',
+  parameters: {
+    msw: { handlers: [
+      http.get('/api/analytics/overview', () => HttpResponse.json({
+        scope: 'workbench', year: 2026,
+        rows: [publishedPlan, {
+          ...publishedPlan, issue_number: 2670, issue_id: null, publish_date: '2026-10-05',
+          status: '未创建', plan_status: '未创建', waybill_status: '未开始', detail_count: 0, shipping_total: 0,
+        }],
+        kpi: { total: 2, uploaded: 1, pending: 0, uncreated: 1, exception: 0, draft: 0 },
+        extras: {
+          recent_issues: [publishedPlan],
+          upcoming_issues: [
+            { ...publishedPlan, issue_number: 2672, publish_date: '2026-10-19' },
+            { ...publishedPlan, issue_number: 2673, publish_date: '2026-10-26' },
+          ],
+          reminders: { no_shipping_count: 1, delta_diff_count: 0, draft_unconfirmed_count: 0 }, latest_this_month: null,
+        },
+      })),
+      ...handlers.slice(1),
+    ] },
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByText('第 2671 期');
+    await expect(canvas.getAllByText('占本年已到出版日期期数 50%')).toHaveLength(2);
+    const cards = Array.from(canvasElement.querySelectorAll('.ui-metric-card-value')).map(card => card.textContent);
+    await expect(cards).toEqual(['1期', '0期', '0期', '1期']);
+    const forecast = canvas.getByText('后续期数').nextElementSibling;
+    await expect(forecast?.textContent?.indexOf('第 2672 期')).toBeLessThan(forecast?.textContent?.indexOf('第 2673 期') ?? -1);
+    await expect(canvas.getByRole('button', { name: /全部未完成 3条 \/ 9份/ })).toBeVisible();
+  },
+};
+
+export const PublishedProgressDarkCompact: Story = {
+  ...PublishedProgressAndForecast,
+  name: '当前进度与出刊预告（暗色紧凑）',
+  globals: { theme: 'dark', density: 'compact' },
 };

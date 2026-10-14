@@ -147,7 +147,7 @@ class PeriodRowOut(BaseModel):
 
 
 class OverviewKpiOut(BaseModel):
-    """总览 KPI 计数（均不含休刊）。工作台"待上传"卡 = pending + uncreated（决策②）。"""
+    """已到出版日期的非休刊期次计数。工作台"待上传"卡 = pending + uncreated（决策②）。"""
 
     total: int
     uploaded: int
@@ -158,7 +158,7 @@ class OverviewKpiOut(BaseModel):
 
 
 class OverviewReminderOut(BaseModel):
-    """工作台待处理提醒（3 项，本年）。"""
+    """工作台待处理提醒（3 项，本年已到出版日期的非休刊期次）。"""
 
     no_shipping_count: int         # 尚未上传发货明细（待上传 + 未创建）
     delta_diff_count: int          # 报数与发货差异（异常且 delta≠0）
@@ -172,7 +172,7 @@ class LatestUpdateOut(BaseModel):
 
 
 class OverviewExtrasOut(BaseModel):
-    """仅 scope=workbench 返回。"""
+    """仅 workbench 返回；最近期数已到出版日期，后续预告含当天及未来并按日期正序。"""
 
     recent_issues: List[PeriodRowOut]
     upcoming_issues: List[PeriodRowOut]
@@ -181,6 +181,8 @@ class OverviewExtrasOut(BaseModel):
 
 
 class OverviewOut(BaseModel):
+    """rows 和 kpi 仅含正式刊历中非休刊且出版日期不晚于服务端今天的期次。"""
+
     scope: str                       # workbench | periods
     year: Optional[int] = None
     rows: List[PeriodRowOut]
