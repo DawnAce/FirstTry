@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Button, Select, Space, Tag, Typography } from 'antd';
+import { Button, Select, Space, Typography } from 'antd';
 import { CheckOutlined } from '@ant-design/icons';
 import type { ImportIssueOption, ImportIssueReview } from '../api/orderImport';
+import { ImportPeriodBadge } from './OrderImportPeriod';
 
 export default function OrderImportIssueReview({ review, options, value, confirmed, disabled, index, onChange, onConfirm }: {
   review: ImportIssueReview;
@@ -17,10 +18,8 @@ export default function OrderImportIssueReview({ review, options, value, confirm
   const selected = options.find(option => option.issue_number === value);
   return <div className="order-import-issue-review" data-reviewed={confirmed}
     role="group" aria-label={`第 ${index + 1} 条明细期号核对`} onClick={event => event.stopPropagation()}>
-    <div>
-      <Tag color={confirmed ? 'green' : 'orange'}>{confirmed ? `已核对：第 ${value} 期` : '期号待核对'}</Tag>
-      <Typography.Text type="secondary">{selected ? `${selected.publish_date} 出版` : '请选择实际购买的期号'}</Typography.Text>
-    </div>
+    <ImportPeriodBadge label={value == null ? '请选择实际购买的期号' : `第 ${value} 期`}
+      publishDate={selected?.publish_date} status={confirmed ? '已核对' : '期号待核对'} tone={confirmed ? 'success' : 'warning'} />
     <Typography.Text type={confirmed ? 'secondary' : 'warning'}>{confirmed
       ? review.suggested_issue_number == null ? '系统未能判定，已按人工核对结果确认'
         : `自动建议：第 ${review.suggested_issue_number} 期${review.suggested_publish_date ? ` · ${review.suggested_publish_date} 出版` : ''}`

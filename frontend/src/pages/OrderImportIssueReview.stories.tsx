@@ -117,7 +117,10 @@ export const ReviewAndCorrectIssue: Story = {
     await expect(body.getByRole('button', { name: '确认导入 52 笔' })).toBeDisabled();
     await userEvent.click(body.getByText('SYNTHETIC-REVIEW-51'));
     const dialog = within(await body.findByRole('dialog'));
-    await expect(dialog.getByText('已核对：第 2638 期')).toBeVisible();
+    const confirmedPeriod = within(dialog.getByRole('group', { name: '第 1 条明细期号核对' }));
+    await expect(confirmedPeriod.getByText('第 2638 期')).toBeVisible();
+    await expect(confirmedPeriod.getByText('已核对')).toBeVisible();
+    await expect(confirmedPeriod.getByRole('group', { name: '单期发货期次' })).toHaveAttribute('data-tone', 'success');
     const second = within(dialog.getByRole('group', { name: '第 2 条明细期号核对' }));
     await userEvent.click(second.getByRole('button', { name: '修改期号' }));
     await userEvent.click(second.getByRole('combobox', { name: '选择核对期号' }));
@@ -140,7 +143,7 @@ export const EditingAndRepreviewRequireReview: Story = {
     const first = within(body.getByRole('group', { name: '第 1 条明细期号核对' }));
     await userEvent.click(first.getByRole('button', { name: '确认第 2638 期' }));
     await userEvent.click(first.getByRole('button', { name: '修改期号' }));
-    await expect(first.queryByText('已核对：第 2638 期')).not.toBeInTheDocument();
+    await expect(first.queryByText('已核对')).not.toBeInTheDocument();
     await expect(body.getByRole('button', { name: '期号 2 条' })).toBeVisible();
     await userEvent.click(first.getByRole('button', { name: '确认第 2638 期' }));
     await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
@@ -148,10 +151,10 @@ export const EditingAndRepreviewRequireReview: Story = {
     await waitFor(() => expect(modal.getByText(/期号核对/)).toBeVisible());
     await userEvent.click(modal.getByRole('button', { name: '保留当前预览' }));
     await waitFor(() => expect(body.queryByRole('dialog')).not.toBeInTheDocument());
-    await expect(body.getByText('已核对：第 2638 期')).toBeVisible();
+    await expect(body.getByText('已核对', { selector: '.order-import-period-status' })).toBeVisible();
     await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
     await userEvent.click(within(await body.findByRole('dialog')).getByRole('button', { name: '清除并继续' }));
-    await waitFor(() => expect(body.queryByText('已核对：第 2638 期')).not.toBeInTheDocument());
+    await waitFor(() => expect(body.queryByText('已核对', { selector: '.order-import-period-status' })).not.toBeInTheDocument());
     await expect(body.getAllByRole('button', { name: '确认第 2638 期' })).toHaveLength(2);
     await expect(body.getByRole('button', { name: '确认导入 52 笔' })).toBeDisabled();
   },

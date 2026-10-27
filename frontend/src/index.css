@@ -805,7 +805,9 @@ body {
   gap: 4px;
 }
 
-.order-import-issue-badge {
+.order-import-period-badge {
+  --period-color: var(--color-accent);
+  --period-background: var(--color-accent-soft);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -814,31 +816,55 @@ body {
   max-width: 100%;
   box-sizing: border-box;
   padding: calc(var(--table-cell-block) / 2) 12px;
-  border-inline-start: 3px solid var(--color-accent);
+  border-inline-start: 3px solid var(--period-color);
   border-radius: var(--radius-input);
-  background: var(--color-accent-soft);
+  background: var(--period-background);
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   line-height: 22px;
 }
 
-.order-import-issue-badge > .anticon {
-  color: var(--color-accent);
+.order-import-period-badge[data-tone="success"] {
+  --period-color: var(--color-success-text);
+  --period-background: var(--color-success-soft);
 }
 
-.order-import-issue-badge > strong,
-.order-import-product .order-import-issue-badge > strong {
+.order-import-period-badge[data-tone="warning"] {
+  --period-color: var(--color-warning-text);
+  --period-background: var(--color-warning-soft);
+}
+
+.order-import-period-badge > .anticon {
+  color: var(--period-color);
+}
+
+.order-import-period-badge > strong,
+.order-import-product .order-import-period-badge > strong {
   font-size: 16px;
   font-weight: 600;
 }
 
-.order-import-issue-badge > time {
+.order-import-period-badge > time {
   font-size: 13px;
 }
 
-.order-import-issue-badge-source {
-  color: var(--color-accent);
+.order-import-period-status {
+  color: var(--period-color);
   font-size: 12px;
+}
+
+.order-import-period-badge > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.order-import-status {
+  font-size: 12px;
+}
+
+.order-import-status .ant-tag {
+  margin-inline-end: 0;
+  font-weight: 600;
 }
 
 .order-import-issue-review {
