@@ -61,6 +61,7 @@ async def preview(
     """解析并预览订单；退款识别失败返回 unresolved，补齐后重新预览。
 
     import 建单、retain 仅保存运费/旧订单原件，页面合并展示为可导入。
+    最新一期在 items[].issue_publish_date 返回自动判定期号的出版日期。
     不确定的最新一期在 items[].issue_review 返回核对依据；issue_review_options
     提供刊期表中的可选期号及出版日期，确认时必须逐明细提交人工核对结果。
     reviews 提供投递、状态、金额或人工订期待核对事项；version 用于后续草稿编辑。

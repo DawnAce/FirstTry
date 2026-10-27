@@ -86,6 +86,7 @@ def test_preview_exposes_item_review_and_schedule_choices_without_writing(env):
     data = preview(client)
     item = data["rows"][0]["items"][0]
     assert item["issue_number"] == 2638
+    assert item["issue_publish_date"] == "2026-01-26"
     assert item["issue_review"]["suggested_issue_number"] == 2638
     assert item["issue_review"]["suggested_publish_date"] == "2026-01-26"
     assert "翻期临界" in item["issue_review"]["reason"]
@@ -209,7 +210,13 @@ def test_review_keeps_admin_and_session_owner_checks(env):
 def test_clean_latest_issue_and_source_updates_do_not_require_issue_review(env):
     client, db, _ = env
     data = preview(client, payment="2026-01-21 12:00:00")
-    assert data["rows"][0]["items"][0]["issue_review"] is None
+    item = data["rows"][0]["items"][0]
+    assert item["issue_number"] == 2637
+    assert item["issue_publish_date"] == "2026-01-19"
+    assert item["issue_review"] is None
+    assert data["rows"][1]["items"][0]["issue_publish_date"] is None
+    refreshed = client.get(f'/api/order-import/sessions/{data["session_id"]}').json()
+    assert refreshed["rows"][0]["items"][0]["issue_publish_date"] == "2026-01-19"
     assert commit(client, data).status_code == 200
     data = preview(client, notes="合成来源备注变化")
     assert data["rows"][0]["decision"] == "source_update"

@@ -80,6 +80,7 @@ class ImportItemOut(BaseModel):
     delivery_method: str | None
     issue_label: str | None
     issue_number: int | None
+    issue_publish_date: str | None = None
     issue_review: ImportIssueReviewOut | None = None
     total_quantity: int
     unit_price: str

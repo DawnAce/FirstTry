@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { ImportItemPreview, ImportPreviewRow } from '../api/orderImport';
 import { deliveryMethodLabel, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
 import { formatImportValue, importFieldLabel, importResultCopy, importStatusLabel, snapshotChanges, snapshotFields } from './orderImportDisplay';
+import OrderImportIssueBadge from './OrderImportIssueBadge';
 
 type Field = { key: string; value: unknown; label?: string; full?: boolean };
 
@@ -78,10 +79,11 @@ export default function OrderImportDetail({ row, confirmed, onConfirmChange, dis
       {row.items.length > 0 && <div className="order-import-recognized">
         <h4>识别后的订阅与投递</h4>
         {row.items.map((item, index) => <div className="order-import-product" key={index}>
+          <OrderImportIssueBadge item={item} />
           <strong>{item.billing_type === 'free_gift' ? '赠品 · ' : ''}{publicationLabel((item.publication ?? 'other') as never)} · {fulfillmentTypeLabel(item.fulfillment_type as never)}
             {item.delivery_method ? ` · ${deliveryMethodLabel(item.delivery_method as never)}` : ''}</strong>
-          <span>{item.issue_number ? `第 ${item.issue_number} 期 · ` : ''}{item.issue_label ? `${item.issue_label} · ` : ''}{item.total_quantity} 份 · {formatImportValue('paid_amount', item.subtotal)}</span>
-          <span>订期：{!item.coverage_start_date && !item.coverage_end_date ? '未填写' : `${item.coverage_start_date || '未填写'} 至 ${item.coverage_end_date || '未填写'}`}</span>
+          <span>{item.fulfillment_type !== 'single_issue' && item.issue_number ? `第 ${item.issue_number} 期 · ` : ''}{item.issue_label ? `${item.issue_label} · ` : ''}{item.total_quantity} 份 · {formatImportValue('paid_amount', item.subtotal)}</span>
+          {item.fulfillment_type !== 'single_issue' && <span>订期：{!item.coverage_start_date && !item.coverage_end_date ? '未填写' : `${item.coverage_start_date || '未填写'} 至 ${item.coverage_end_date || '未填写'}`}</span>}
           {renderIssueReview?.(item, index)}
         </div>)}
       </div>}

@@ -135,6 +135,7 @@ class PreviewRow:
     delivery_overridden_to_zto: bool = False
     warnings: List[str] = field(default_factory=list)
     issue_reviews: dict[str, IssueReview] = field(default_factory=dict)
+    issue_publish_dates: dict[str, str] = field(default_factory=dict)
     reviews: list[dict] = field(default_factory=list)
     money: dict = field(default_factory=dict)
     product_signatures: dict[int, str] = field(default_factory=dict)
@@ -404,6 +405,7 @@ def build_import_preview(
 
         items = []
         issue_reviews: dict[str, IssueReview] = {}
+        issue_publish_dates: dict[str, str] = {}
         reviews = []
         if status_unknown:
             reviews.append({"id": "status", "kind": "status", "title": "平台状态待核对",
@@ -443,6 +445,8 @@ def build_import_preview(
             if ri.coverage_rule == CoverageRule.latest_issue:
                 li = resolve_latest_issue(schedule, po.payment_time)
                 item.issue_number = li.issue_number
+                if li.publish_date:
+                    issue_publish_dates[str(len(items))] = li.publish_date.isoformat()
                 if li.note:
                     warnings.append(li.note)
                     issue_reviews[str(len(items))] = {
@@ -520,6 +524,7 @@ def build_import_preview(
                 delivery_overridden_to_zto=any(r["kind"] == "delivery" and r["status"] == "pending" for r in reviews),
                 warnings=warnings,
                 issue_reviews=issue_reviews,
+                issue_publish_dates=issue_publish_dates,
                 reviews=reviews,
                 money={"paid": str(po.paid_amount), "shipping": str(shipping_total), "excluded": str(ignored_total), "items": str(expected_items)},
                 product_signatures=product_signatures,
@@ -548,6 +553,7 @@ def _serialize_row(r: PreviewRow) -> dict:
                     "delivery_method": it.delivery_method.value if it.delivery_method else None,
                     "issue_label": it.issue_label,
                     "issue_number": it.issue_number,
+                    "issue_publish_date": r.issue_publish_dates.get(str(index)),
                     "issue_review": r.issue_reviews.get(str(index)),
                     "total_quantity": it.total_quantity,
                     "unit_price": str(it.unit_price),
