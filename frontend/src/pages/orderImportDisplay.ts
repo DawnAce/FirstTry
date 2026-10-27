@@ -20,6 +20,18 @@ const FIELD_LABELS: Record<string, string> = {
 const AMOUNT_FIELDS = new Set(['paid_amount', 'original_amount', 'unit_price', 'goods_payable', 'postage', 'list_total']);
 const LOCATION_FIELDS = new Set(['filename', 'source_sheet', 'source_row']);
 
+export function isValidImportIssueLabel(label: string): boolean {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])(?:~(0[1-9]|1[0-2]))?$/.exec(label.trim());
+  return !!match && (!match[3] || Number(match[2]) < Number(match[3]));
+}
+
+export function formatImportIssueLabel(label: string): string {
+  if (!isValidImportIssueLabel(label)) return label;
+  const [year, months] = label.trim().split('-');
+  const [start, end] = months.split('~').map(Number);
+  return `${year}年${start}${end ? `–${end}月合刊` : '月刊'}`;
+}
+
 export function importFieldLabel(key: string, index = 0): string {
   return Object.hasOwn(FIELD_LABELS, key) ? FIELD_LABELS[key] : /[\u3400-\u9fff]/.test(key) ? key : `其他信息 ${index + 1}`;
 }

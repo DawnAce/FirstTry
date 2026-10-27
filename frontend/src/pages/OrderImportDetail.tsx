@@ -2,26 +2,28 @@ import { Alert, Checkbox } from 'antd';
 import type { ReactNode } from 'react';
 import type { ImportItemPreview, ImportPreviewRow } from '../api/orderImport';
 import { deliveryMethodLabel, fulfillmentTypeLabel, publicationLabel } from './orderUtils';
-import { formatImportValue, importFieldLabel, importResultCopy, importStatusLabel, snapshotChanges, snapshotFields } from './orderImportDisplay';
-import OrderImportIssueBadge from './OrderImportIssueBadge';
+import { formatImportValue, importFieldLabel, importResultCopy, snapshotChanges, snapshotFields } from './orderImportDisplay';
+import OrderImportPeriod from './OrderImportPeriod';
+import OrderImportStatus from './OrderImportStatus';
 
-type Field = { key: string; value: unknown; label?: string; full?: boolean };
+type Field = { key: string; value: unknown; label?: string; full?: boolean; content?: ReactNode };
 
 function Fields({ fields }: { fields: Field[] }) {
   return <dl className="order-import-fields">
     {fields.map(field => <div key={field.key} className={`order-import-field${field.full ? ' is-full' : ''}`}>
       <dt className={(field.label?.length ?? 0) > 7 ? 'is-long-label' : undefined}>{field.label ?? importFieldLabel(field.key)}</dt>
-      <dd>{formatImportValue(field.key, field.value)}</dd>
+      <dd>{field.content ?? formatImportValue(field.key, field.value)}</dd>
     </div>)}
   </dl>;
 }
 
-export default function OrderImportDetail({ row, confirmed, onConfirmChange, disabled, renderIssueReview, reviewActions }: {
+export default function OrderImportDetail({ row, confirmed, onConfirmChange, disabled, renderIssueReview, renderItemPeriod, reviewActions }: {
   row: ImportPreviewRow;
   confirmed: boolean;
   onConfirmChange: (checked: boolean) => void;
   disabled: boolean;
   renderIssueReview?: (item: ImportItemPreview, index: number) => ReactNode;
+  renderItemPeriod?: (item: ImportItemPreview, index: number) => ReactNode;
   reviewActions?: ReactNode;
 }) {
   const source = row.source_snapshot;
@@ -34,7 +36,7 @@ export default function OrderImportDetail({ row, confirmed, onConfirmChange, dis
   const rawFields = source?.raw_cells ? snapshotFields({ raw_cells: source.raw_cells }) : [];
   const otherFields = source ? snapshotFields(Object.fromEntries(Object.entries(source).filter(([key]) =>
     !['external_order_no', 'status_raw', 'paid_amount', 'recipient_name', 'recipient_phone', 'recipient_address', 'order_date', 'payment_time', 'payment_method',
-      'invoice', 'original_amount', 'recipient_postal_code', 'notes', 'product_lines', 'raw_cells', 'filename', 'source_sheet', 'source_row'].includes(key)))) : [];
+      'commercial_status', 'invoice', 'original_amount', 'recipient_postal_code', 'notes', 'product_lines', 'raw_cells', 'filename', 'source_sheet', 'source_row'].includes(key)))) : [];
   const field = (key: string, full = false): Field => ({ key, value: snapshot[key], full });
 
   return <div className="order-import-detail">
@@ -60,7 +62,8 @@ export default function OrderImportDetail({ row, confirmed, onConfirmChange, dis
 
     <section aria-label="交易信息" className="order-import-detail-section">
       <h3>交易信息</h3>
-      <Fields fields={[field('status_raw'), field('paid_amount'), field('order_date'), field('payment_method'), field('payment_time', true)]} />
+      <Fields fields={[{ key: 'commercial_status', label: '交易状态', value: row.commercial_status, content: <OrderImportStatus row={row} /> },
+        field('status_raw'), field('paid_amount'), field('order_date'), field('payment_method'), field('payment_time', true)]} />
     </section>
     <section aria-label="收件信息" className="order-import-detail-section">
       <h3>收件信息</h3>
@@ -79,11 +82,10 @@ export default function OrderImportDetail({ row, confirmed, onConfirmChange, dis
       {row.items.length > 0 && <div className="order-import-recognized">
         <h4>识别后的订阅与投递</h4>
         {row.items.map((item, index) => <div className="order-import-product" key={index}>
-          <OrderImportIssueBadge item={item} />
+          {renderItemPeriod ? renderItemPeriod(item, index) : <OrderImportPeriod item={item} />}
           <strong>{item.billing_type === 'free_gift' ? '赠品 · ' : ''}{publicationLabel((item.publication ?? 'other') as never)} · {fulfillmentTypeLabel(item.fulfillment_type as never)}
             {item.delivery_method ? ` · ${deliveryMethodLabel(item.delivery_method as never)}` : ''}</strong>
-          <span>{item.fulfillment_type !== 'single_issue' && item.issue_number ? `第 ${item.issue_number} 期 · ` : ''}{item.issue_label ? `${item.issue_label} · ` : ''}{item.total_quantity} 份 · {formatImportValue('paid_amount', item.subtotal)}</span>
-          {item.fulfillment_type !== 'single_issue' && <span>订期：{!item.coverage_start_date && !item.coverage_end_date ? '未填写' : `${item.coverage_start_date || '未填写'} 至 ${item.coverage_end_date || '未填写'}`}</span>}
+          <span>{item.fulfillment_type !== 'single_issue' && item.issue_number ? `第 ${item.issue_number} 期 · ` : ''}{item.fulfillment_type !== 'single_issue' && item.issue_label ? `${item.issue_label} · ` : ''}{item.total_quantity} 份 · {formatImportValue('paid_amount', item.subtotal)}</span>
           {renderIssueReview?.(item, index)}
         </div>)}
       </div>}
@@ -93,8 +95,7 @@ export default function OrderImportDetail({ row, confirmed, onConfirmChange, dis
       <details className="order-import-extra">
         <summary>开票及其他信息</summary>
         <Fields fields={[field('invoice', true), field('original_amount'), field('recipient_postal_code'), field('notes', true)]} />
-        <Fields fields={otherFields.map(item => ({ key: item.id, label: item.label, value: item.key === 'commercial_status'
-          ? importStatusLabel(row.status_raw, row.commercial_status, row.status_unknown) : formatImportValue(item.key, item.value), full: true }))} />
+        <Fields fields={otherFields.map(item => ({ key: item.id, label: item.label, value: formatImportValue(item.key, item.value), full: true }))} />
       </details>
       {rawFields.length > 0 && <details className="order-import-extra">
         <summary>查看原表信息</summary>

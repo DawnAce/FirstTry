@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { formatImportValue, importReason, importStatusLabel, snapshotChanges, snapshotFields } from './orderImportDisplay';
+import { formatImportIssueLabel, formatImportValue, importReason, importStatusLabel, isValidImportIssueLabel, snapshotChanges, snapshotFields } from './orderImportDisplay';
 import type { ImportPreviewRow } from '../api/orderImport';
 
 describe('导入详情的业务文案', () => {
+  it('月刊与合刊显示业务名称，拒绝无效月份和倒序合刊', () => {
+    expect(formatImportIssueLabel('2026-10')).toBe('2026年10月刊');
+    expect(formatImportIssueLabel('2026-02~03')).toBe('2026年2–3月合刊');
+    for (const label of ['2026-13', '2026-00', '2026-03~02', '2026-02~02', '2026-2', '2026-02~2026-03']) {
+      expect(isValidImportIssueLabel(label)).toBe(false);
+      expect(formatImportIssueLabel(label)).toBe(label);
+    }
+  });
   it('去掉序列化引号，正确展示金额、日期、换行和空值', () => {
     expect(formatImportValue('paid_amount', '150.00')).toBe('¥150.00');
     expect(formatImportValue('payment_time', '2026-09-01T09:30:00')).toBe('2026-09-01 09:30:00');

@@ -4,10 +4,11 @@ import OrderCoverageDrawer from './OrderCoverageDrawer';
 import LinkProductAliasModal from './LinkProductAliasModal';
 import OrderImportDetail from './OrderImportDetail';
 import OrderImportIssueReview from './OrderImportIssueReview';
-import OrderImportIssueBadge from './OrderImportIssueBadge';
+import OrderImportPeriod from './OrderImportPeriod';
+import OrderImportStatus from './OrderImportStatus';
 import OrderImportReviewEditor from './OrderImportReviewEditor';
 import OrderImportFeeEditor from './OrderImportFeeEditor';
-import { formatImportValue, importReason, importStatusLabel } from './orderImportDisplay';
+import { formatImportValue, importReason, isValidImportIssueLabel } from './orderImportDisplay';
 import {
   Alert,
   Button,
@@ -106,11 +107,6 @@ function suggestCode(): string {
   return 'CBJ-' + Date.now().toString(36).toUpperCase().slice(-6);
 }
 
-function formatSubscriptionPeriod(start: string | null, end: string | null): string {
-  if (!start && !end) return '未填写';
-  return `${start || '未填写'} 至 ${end || '未填写'}`;
-}
-
 export default function OrderImport() {
   const { isAdmin, canMutate } = useAuth();
   const queryClient = useQueryClient();
@@ -189,7 +185,7 @@ export default function OrderImport() {
       // 只把格式合法的期次标签传给后端（非法值前端就丢弃，后端也会再兜一层）
       const validLabels: Record<string, string> = {};
       for (const [ext, label] of Object.entries(labelOverrides)) {
-        if (isValidIssueLabel(label)) validLabels[ext] = label;
+        if (isValidImportIssueLabel(label)) validLabels[ext] = label;
       }
       return commitOrderImport(preview!.session_id, issueOverrides, validLabels, confirmedSourceUpdates, confirmedIssueNumbers, preview!.version);
     },
@@ -283,16 +279,15 @@ export default function OrderImport() {
     runPreview();
   };
 
-  // 期次标签校验（镜像后端 is_valid_issue_label）：YYYY-MM 或 YYYY-MM~MM（合刊月份递增）。
-  const isValidIssueLabel = (label: string): boolean => {
-    const m = /^(\d{4})-(0[1-9]|1[0-2])(?:~(0[1-9]|1[0-2]))?$/.exec(label.trim());
-    if (!m) return false;
-    return m[3] ? Number(m[2]) < Number(m[3]) : true;
-  };
-
   const selectedIssue = (row: ImportPreviewRow, item: ImportItemPreview, index: number) => {
     const key = `${row.external_order_no}#${index}`;
     return key in issueSelections ? issueSelections[key] : item.issue_number;
+  };
+  const renderItemPeriod = (row: ImportPreviewRow, item: ImportItemPreview, index: number) => {
+    const key = `${row.external_order_no}#${index}`;
+    return <OrderImportPeriod item={item}
+      manualNumber={!item.issue_number ? issueOverrides[key] : undefined}
+      manualLabel={!item.issue_label ? labelOverrides[key] : undefined} />;
   };
   const renderIssueReview = (row: ImportPreviewRow, item: ImportItemPreview, index: number) => {
     if (row.decision !== 'import') return null;
@@ -345,7 +340,7 @@ export default function OrderImport() {
             aria-label={`明细 ${index + 1} 补期次`}
             disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}
             style={{ width: 130 }}
-            status={labelOverrides[key] && !isValidIssueLabel(labelOverrides[key]) ? 'error' : undefined}
+            status={labelOverrides[key] && !isValidImportIssueLabel(labelOverrides[key]) ? 'error' : undefined}
             value={labelOverrides[key] ?? ''}
             onChange={(e) => {
               const v = e.target.value;
@@ -394,11 +389,7 @@ export default function OrderImport() {
     { title: '付款', dataIndex: 'paid_amount', key: 'paid', width: 100, align: 'right', render: (v) => formatImportValue('paid_amount', v) },
     {
       title: '状态', key: 'status', width: 150,
-      render: (_: unknown, r) => (
-        <Space size={2} direction="vertical">
-          <Text type={r.status_unknown ? 'warning' : undefined} style={{ fontSize: 12 }}>{importStatusLabel(r.status_raw, r.commercial_status, r.status_unknown)}</Text>
-        </Space>
-      ),
+      render: (_: unknown, r) => <OrderImportStatus row={r} />,
     },
     {
       title: '识别明细 / 原因', key: 'items',
@@ -424,12 +415,11 @@ export default function OrderImport() {
               const singleIssue = it.fulfillment_type === 'single_issue';
               return (
                 <div key={i} className="order-import-item">
-                  <OrderImportIssueBadge item={it} />
+                  {renderItemPeriod(r, it, i)}
                   <Text style={{ fontSize: 12 }}>
                     {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
                     {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
-                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{!singleIssue && issueNumber ? ` · 第${issueNumber}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal}
-                    {!singleIssue && ` · 订期：${formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}`}
+                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{!singleIssue && issueNumber ? ` · 第${issueNumber}期` : ''}{!singleIssue && it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal}
                   </Text>
                   {renderIssueReview(r, it, i)}
 
@@ -721,9 +711,9 @@ export default function OrderImport() {
           </div>
         )}
         {drawerMode === 'detail' && currentDetailRow && (
-          <OrderImportDetail key={currentDetailRow.external_order_no} row={{ ...currentDetailRow,
-            items: currentDetailRow.items.map((item, index) => ({ ...item, issue_number: selectedIssue(currentDetailRow, item, index) })),
-          }} renderIssueReview={(item, index) => renderIssueReview(currentDetailRow, item, index)}
+          <OrderImportDetail key={currentDetailRow.external_order_no} row={currentDetailRow}
+            renderItemPeriod={(item, index) => renderItemPeriod(currentDetailRow, item, index)}
+            renderIssueReview={(item, index) => renderIssueReview(currentDetailRow, item, index)}
             reviewActions={workflowActions(currentDetailRow)}
             confirmed={confirmedSourceUpdates.includes(currentDetailRow.external_order_no)}
             disabled={!isAdmin || previewMutation.isPending || commitMutation.isPending}

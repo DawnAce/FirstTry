@@ -105,10 +105,11 @@ export const InterruptedCommit: Story = {
     const canvas = within(canvasElement);
     await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic.xlsx'));
     await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
-    await userEvent.click(await canvas.findByRole('button', { name: '确认导入 1 笔' }));
+    const confirmButton = await canvas.findByRole('button', { name: '确认导入 1 笔' });
+    await userEvent.click(confirmButton);
     await expect(await canvas.findByText('尚未收到导入结果')).toBeVisible();
     await expect(canvas.getByText('请到订单管理和来源交易核对；确认处理结果后再重新预览。')).toBeVisible();
-    await expect(await canvas.findByRole('button', { name: '确认导入 1 笔' })).toBeDisabled();
+    await expect(confirmButton).toBeDisabled();
     await expect(canvas.getByText('synthetic.xlsx')).toBeVisible();
     await expect(canvas.queryByText('导入未完成')).not.toBeInTheDocument();
     await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));
