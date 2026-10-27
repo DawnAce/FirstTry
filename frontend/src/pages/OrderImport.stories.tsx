@@ -108,7 +108,7 @@ export const InterruptedCommit: Story = {
     await userEvent.click(await canvas.findByRole('button', { name: '确认导入 1 笔' }));
     await expect(await canvas.findByText('尚未收到导入结果')).toBeVisible();
     await expect(canvas.getByText('请到订单管理和来源交易核对；确认处理结果后再重新预览。')).toBeVisible();
-    await expect(canvas.getByRole('button', { name: '确认导入 1 笔' })).toBeDisabled();
+    await expect(await canvas.findByRole('button', { name: '确认导入 1 笔' })).toBeDisabled();
     await expect(canvas.getByText('synthetic.xlsx')).toBeVisible();
     await expect(canvas.queryByText('导入未完成')).not.toBeInTheDocument();
     await userEvent.click(canvas.getByRole('button', { name: /预览导入/ }));

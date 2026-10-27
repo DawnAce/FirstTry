@@ -60,6 +60,7 @@ export interface ImportItemPreview {
   delivery_method: string | null;
   issue_label: string | null;
   issue_number: number | null;
+  issue_publish_date?: string | null;
   issue_review?: ImportIssueReview | null;
   total_quantity: number;
   unit_price: string;

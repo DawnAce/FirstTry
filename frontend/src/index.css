@@ -798,6 +798,49 @@ body {
   }
 }
 
+.order-import-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.order-import-issue-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px 10px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: calc(var(--table-cell-block) / 2) 12px;
+  border-inline-start: 3px solid var(--color-accent);
+  border-radius: var(--radius-input);
+  background: var(--color-accent-soft);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 22px;
+}
+
+.order-import-issue-badge > .anticon {
+  color: var(--color-accent);
+}
+
+.order-import-issue-badge > strong,
+.order-import-product .order-import-issue-badge > strong {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.order-import-issue-badge > time {
+  font-size: 13px;
+}
+
+.order-import-issue-badge-source {
+  color: var(--color-accent);
+  font-size: 12px;
+}
+
 .order-import-issue-review {
   display: flex;
   flex-direction: column;

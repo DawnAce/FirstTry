@@ -43,6 +43,49 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+export const RecognizedIssueDates: Story = {
+  name: '单期发货期号与出版日期醒目展示',
+  parameters: { msw: { handlers: [http.post('/api/order-import/preview', () => HttpResponse.json({
+    ...previewData, counts: { total: 4, import: 4 }, issue_review_options: [],
+    rows: [0, 1, 2, 3].map(index => ({
+      ...previewData.rows[0], external_order_no: `SYNTHETIC-CLEAN-${index}`,
+      items: [{ ...item, issue_review: null,
+        fulfillment_type: index === 3 ? 'subscription' : 'single_issue',
+        issue_number: index === 3 ? null : 2638 + index,
+        issue_publish_date: index < 2 ? ['2026-01-26', '2026-02-02'][index] : null,
+      }],
+    })),
+  } satisfies ImportPreviewOut))] } },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic-issue.xlsx'));
+    await userEvent.click(body.getByRole('button', { name: /预览导入/ }));
+    await expect(await body.findByRole('button', { name: '确认导入 4 笔' })).toBeEnabled();
+    const badges = body.getAllByRole('group', { name: '单期发货期次' });
+    await expect(badges).toHaveLength(3);
+    await expect(within(badges[0]).getByText('第 2638 期')).toBeVisible();
+    await expect(within(badges[0]).getByText('2026-01-26 出版')).toBeVisible();
+    await expect(within(badges[1]).getByText('2026-02-02 出版')).toBeVisible();
+    await expect(within(badges[2]).queryByText('自动识别')).not.toBeInTheDocument();
+    await expect(body.getAllByText('自动识别')).toHaveLength(2);
+    await expect(body.getAllByText(/订期：.*未填写/)).toHaveLength(1);
+    await expect(body.queryByText('导入前请完成核对')).not.toBeInTheDocument();
+    await userEvent.click(body.getByText('SYNTHETIC-CLEAN-0'));
+    const dialog = within(await body.findByRole('dialog'));
+    const badge = dialog.getByRole('group', { name: '单期发货期次' });
+    await expect(within(badge).getByText('2026-01-26 出版')).toBeVisible();
+    await expect(within(badge).getByText('自动识别')).toBeVisible();
+    await expect(dialog.queryByText(/订期：/)).not.toBeInTheDocument();
+    const content = badge.closest('.ant-drawer-body')!;
+    expect(content.scrollWidth).toBeLessThanOrEqual(content.clientWidth);
+    await userEvent.click(dialog.getByRole('button', { name: '关闭' }));
+  },
+};
+
+export const DarkCompactRecognizedIssueDates: Story = {
+  ...RecognizedIssueDates, name: '暗色紧凑单期发货期次', globals: { theme: 'dark', density: 'compact' },
+};
+
 async function openPending(canvasElement: HTMLElement) {
   const body = within(canvasElement.ownerDocument.body);
   await userEvent.upload(canvasElement.querySelector('input[type="file"]') as HTMLInputElement, new File(['synthetic'], 'synthetic-issue.xlsx'));

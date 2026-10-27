@@ -4,6 +4,7 @@ import OrderCoverageDrawer from './OrderCoverageDrawer';
 import LinkProductAliasModal from './LinkProductAliasModal';
 import OrderImportDetail from './OrderImportDetail';
 import OrderImportIssueReview from './OrderImportIssueReview';
+import OrderImportIssueBadge from './OrderImportIssueBadge';
 import OrderImportReviewEditor from './OrderImportReviewEditor';
 import OrderImportFeeEditor from './OrderImportFeeEditor';
 import { formatImportValue, importReason, importStatusLabel } from './orderImportDisplay';
@@ -420,12 +421,15 @@ export default function OrderImport() {
             {workflowActions(r)}
             {r.items.map((it, i) => {
               const issueNumber = selectedIssue(r, it, i);
+              const singleIssue = it.fulfillment_type === 'single_issue';
               return (
-                <div key={i}>
+                <div key={i} className="order-import-item">
+                  <OrderImportIssueBadge item={it} />
                   <Text style={{ fontSize: 12 }}>
                     {it.billing_type === 'free_gift' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>🎁 赠品</Tag>}
                     {publicationLabel((it.publication ?? 'other') as never)}/{fulfillmentTypeLabel(it.fulfillment_type as never)}
-                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{issueNumber ? ` · 第${issueNumber}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal} · 订期：{formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}
+                    {it.delivery_method ? `/${deliveryMethodLabel(it.delivery_method as never)}` : ''}{!singleIssue && issueNumber ? ` · 第${issueNumber}期` : ''}{it.issue_label ? ` · 期${it.issue_label}` : ''} · ¥{it.subtotal}
+                    {!singleIssue && ` · 订期：${formatSubscriptionPeriod(it.coverage_start_date, it.coverage_end_date)}`}
                   </Text>
                   {renderIssueReview(r, it, i)}
 
