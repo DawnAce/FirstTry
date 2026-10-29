@@ -369,6 +369,8 @@ class FulfillmentTargetOut(BaseModel):
     status: TargetStatus
     replaced_by_target_id: int | None = None
     source_delivery_managed: bool = False
+    resolved_shipping_channel: ShippingChannel | None = None
+    delivery_warning: str | None = None
     notes: Optional[str]
 
     model_config = {"from_attributes": True}
@@ -402,6 +404,15 @@ class FulfillmentProgress(BaseModel):
     skipped_count: int
 
 
+class DeliverySegmentOut(BaseModel):
+    target_id: int
+    shipping_channel: ShippingChannel
+    from_issue: int
+    until_issue: int
+    start_date: date
+    end_date: date
+
+
 class OrderItemOut(BaseModel):
     id: int
     publication: Publication
@@ -424,6 +435,7 @@ class OrderItemOut(BaseModel):
     status: OrderItemStatus
     notes: Optional[str]
     allocations: List[FulfillmentAllocationOut]
+    delivery_segments: list[DeliverySegmentOut] = Field(default_factory=list)
     progress: FulfillmentProgress
 
     model_config = {"from_attributes": True}

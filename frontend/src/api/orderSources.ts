@@ -78,6 +78,19 @@ export interface SourceCandidate {
   confidence: 'high' | 'possible';
   evidence: string[];
   expected_target_version: string;
+  delivery_options?: DeliveryOptions | null;
+}
+export interface DeliveryOptions {
+  full_period_issue: number;
+  full_period_available: boolean;
+  issues: { issue_number: number; publish_date: string }[];
+}
+export interface DeliveryArrangement {
+  scope: 'full_period' | 'from_issue';
+  effective_from_issue?: number | null;
+  postal_delivery_ids?: number[];
+  postal_confirmed: boolean;
+  expected_state?: string;
 }
 export interface SourceAllocation {
   order_id: number;
@@ -85,6 +98,7 @@ export interface SourceAllocation {
   target_id: number;
   amount: string;
   expected_target_version: string;
+  delivery?: DeliveryArrangement;
 }
 export interface SourceLinkPayload {
   version: number;
@@ -92,7 +106,7 @@ export interface SourceLinkPayload {
   allocations: SourceAllocation[];
 }
 export const getSourceCandidates = (id: number, search?: string) => api.get<{ rows: SourceCandidate[]; truncated: boolean }>(`/order-sources/${id}/candidates`, { params: { search } });
-export const previewSourceLinks = (id: number, body: SourceLinkPayload) => api.post<{ can_apply: boolean; total_amount: string; warnings: string[] }>(`/order-sources/${id}/link-preview`, body);
+export const previewSourceLinks = (id: number, body: SourceLinkPayload) => api.post<{ can_apply: boolean; total_amount: string; warnings: string[]; allocations?: SourceAllocation[]; delivery_previews?: SourceDeliveryReview[] }>(`/order-sources/${id}/link-preview`, body);
 export const saveSourceLinks = (id: number, body: SourceLinkPayload) => api.put<OrderSource>(`/order-sources/${id}/links`, body);
 
 export interface SourceFinanceSummary {
@@ -118,6 +132,7 @@ export interface SourceDeliveryPayload {
   link_id: number;
   effective_from_issue: number;
   shipping_channel: 'zto_outsource' | 'post_office';
+  scope?: 'full_period' | 'from_issue';
   postal_delivery_ids: number[];
   postal_confirmed: boolean;
   expected_state?: string;
@@ -148,7 +163,7 @@ export interface SourceDeliveryUndoPayload { version: number; reason: string; ch
 export const getSourceFinanceSummary = (orderId?: number) => api.get<SourceFinanceSummary>('/order-sources/financial-summary', { params: { order_id: orderId } });
 export const previewSourceRefund = (id: number, body: SourceRefundPayload) => api.post(`/order-sources/${id}/refund-preview`, body);
 export const saveSourceRefund = (id: number, body: SourceRefundPayload) => api.put<OrderSource>(`/order-sources/${id}/refund`, body);
-export const getSourceDeliveryOptions = (id: number, linkId: number) => api.get<{ target_id: number; recipient_name: string; shipping_channel: string; issues: { issue_number: number; publish_date: string }[] }>(`/order-sources/${id}/delivery-options`, { params: { link_id: linkId } });
+export const getSourceDeliveryOptions = (id: number, linkId: number) => api.get<DeliveryOptions & { target_id: number; recipient_name: string; shipping_channel: string }>(`/order-sources/${id}/delivery-options`, { params: { link_id: linkId } });
 export const previewSourceDelivery = (id: number, body: SourceDeliveryPayload) => api.post<SourceDeliveryReview>(`/order-sources/${id}/delivery-preview`, body);
 export const saveSourceDelivery = (id: number, body: SourceDeliveryPayload) => api.post<OrderSource>(`/order-sources/${id}/delivery`, body);
 export const previewSourceDeliveryUndo = (id: number, body: SourceDeliveryUndoPayload) => api.post<{ expected_state: string; message: string }>(`/order-sources/${id}/delivery-undo-preview`, body);

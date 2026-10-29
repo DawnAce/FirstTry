@@ -4,6 +4,7 @@ from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.schemas.order_source import DeliveryArrangementIn
 
 
 class DraftChange(BaseModel):
@@ -36,6 +37,7 @@ class ImportFeeAllocation(BaseModel):
     target_id: int | None = Field(default=None, strict=True, gt=0)
     expected_target_version: str = Field(min_length=64, max_length=64)
     amount: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    delivery: DeliveryArrangementIn | None = None
 
     @model_validator(mode="after")
     def one_target(self):
@@ -124,6 +126,7 @@ class ImportDraftOut(BaseModel):
 
 
 class ImportFeeCandidateOut(BaseModel):
+    delivery_options: dict[str, Any] | None = None
     draft_key: str | None = None
     order_id: int | None
     order_item_id: int | None
@@ -146,6 +149,11 @@ class ImportFeeCandidatesOut(BaseModel):
     rows: list[ImportFeeCandidateOut]
     truncated: bool
     allocations: list[ImportFeeAllocation]
+
+
+class ImportFeeLinkPreviewOut(BaseModel):
+    allocations: list[ImportFeeAllocation]
+    delivery_previews: list[dict[str, Any]]
 
 
 class ImportFeeResultOut(BaseModel):

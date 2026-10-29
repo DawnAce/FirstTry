@@ -1,6 +1,6 @@
 import type { AxiosResponse } from 'axios';
 import api from './client';
-import type { SourceCandidate } from './orderSources';
+import type { SourceCandidate, DeliveryArrangement, SourceDeliveryReview } from './orderSources';
 
 export interface ImportReview {
   id: string;
@@ -36,6 +36,7 @@ export interface ImportFeeAllocation {
   target_id?: number;
   expected_target_version: string;
   amount: string;
+  delivery?: DeliveryArrangement;
 }
 
 // retain 是仅保存交易的后台动作，页面与 import 一起展示为「可导入」。
@@ -182,3 +183,5 @@ export const getImportFeeCandidates = (sessionId: string, externalOrderNo: strin
   api.get<{ rows: ImportFeeCandidate[]; truncated: boolean; allocations: ImportFeeAllocation[] }>(`/order-import/sessions/${sessionId}/fee-candidates`, { params: { external_order_no: externalOrderNo, search } });
 export const saveImportFeeLinks = (sessionId: string, externalOrderNo: string, version: number, reason: string, allocations: ImportFeeAllocation[]) =>
   api.post<ImportPreviewOut>(`/order-import/sessions/${sessionId}/fee-links`, { external_order_no: externalOrderNo, expected_version: version, reason, allocations });
+export const previewImportFeeLinks = (sessionId: string, externalOrderNo: string, version: number, reason: string, allocations: ImportFeeAllocation[]) =>
+  api.post<{ allocations: ImportFeeAllocation[]; delivery_previews: (Omit<SourceDeliveryReview, 'order_id' | 'target_id'> & { draft_key?: string; order_id: number | null; target_id: number | null })[] }>(`/order-import/sessions/${sessionId}/fee-links/preview`, { external_order_no: externalOrderNo, expected_version: version, reason, allocations });

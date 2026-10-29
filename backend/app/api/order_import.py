@@ -20,7 +20,7 @@ from app.services.cbj_order_import_service import (
     preview_import,
 )
 from app.schemas.order_import_review import (
-    ImportReviewIn, ImportFeeLinksIn, ImportDraftOut, ImportFeeCandidatesOut, ImportCommitOut,
+    ImportReviewIn, ImportFeeLinksIn, ImportDraftOut, ImportFeeCandidatesOut, ImportCommitOut, ImportFeeLinkPreviewOut,
 )
 from app.services import order_import_review_service as reviews, order_import_fee_service as fees
 from app.order_import_cache import serialized_import
@@ -161,5 +161,11 @@ def fee_candidates(session_id: str, external_order_no: str, search: str | None =
 
 @router.post("/sessions/{session_id}/fee-links", response_model=ImportDraftOut)
 def fee_links(session_id: str, body: ImportFeeLinksIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
-    """保存运费归属草稿；最终导入时重新验证并原子建立关联，不自动转投。"""
+    """保存已预览的运费归属和投递范围草稿，最终导入时重新校验并原子写入。"""
     return fees.save_links(db, session_id, body, user.id)
+
+
+@router.post("/sessions/{session_id}/fee-links/preview", response_model=ImportFeeLinkPreviewOut)
+def preview_fee_links(session_id: str, body: ImportFeeLinksIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """只读预览已有/本批订阅的运费分配及全订期或中途投递安排。"""
+    return fees.preview_links(db, session_id, body, user.id)

@@ -52,12 +52,22 @@ class SourceRevisionIn(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
 
 
+class DeliveryArrangementIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scope: Literal["full_period", "from_issue"]
+    effective_from_issue: int | None = Field(default=None, gt=0)
+    postal_delivery_ids: list[int] = Field(default_factory=list, max_length=100)
+    postal_confirmed: bool = False
+    expected_state: str | None = Field(default=None, min_length=64, max_length=64)
+
+
 class SourceAllocationIn(BaseModel):
     order_id: int
     order_item_id: int
     target_id: int
     amount: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
     expected_target_version: str = Field(min_length=64, max_length=64)
+    delivery: DeliveryArrangementIn | None = None
 
 
 class SourceLinkIn(SourceRevisionIn):
@@ -79,6 +89,7 @@ class SourceDeliveryIn(SourceRevisionIn):
     link_id: int
     effective_from_issue: int = Field(gt=0)
     shipping_channel: Literal["zto_outsource", "post_office"] = "zto_outsource"
+    scope: Literal["full_period", "from_issue"] = "from_issue"
     postal_delivery_ids: list[int] = Field(default_factory=list, max_length=100)
     postal_confirmed: bool = False
     expected_state: str | None = Field(default=None, min_length=64, max_length=64)
@@ -105,6 +116,7 @@ class SourceCandidateOut(BaseModel):
     confidence: str
     evidence: list[str]
     expected_target_version: str
+    delivery_options: dict[str, Any] | None = None
 
 
 class SourceCandidatesOut(BaseModel):
@@ -117,6 +129,7 @@ class SourceLinkPreviewOut(BaseModel):
     total_amount: Decimal
     allocations: list[SourceAllocationIn]
     warnings: list[str]
+    delivery_previews: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SourceFinanceSummaryOut(BaseModel):

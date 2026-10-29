@@ -7,6 +7,13 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.order_source import OrderSource
+from app.models import Order, OrderItem, FulfillmentTarget, FulfillmentAllocation
+from app.models.order_source import OrderSourceLink
+from app.schemas.order_source import DeliveryArrangementIn
+from app.services.order_delivery_policy import candidate_options, fee_arrangement_available
+from app.models.order_item import OrderItemStatus
+from app.services import order_source_delivery_service as delivery
+from app.services import order_source_arrangement_service as arrangements
 from app.order_import_cache import serialized_import
 from app.schemas.order_import_review import ImportFeeLinksIn
 from app.schemas.order_source import SourceAllocationIn, SourceLinkIn
@@ -22,7 +29,23 @@ def source_for(payload: dict, number: str) -> tuple[OrderSource, dict]:
     return OrderSource(kind="shipping_fee", paid_amount=Decimal(snap["paid_amount"]),
                        recipient_name=normalize(snap["recipient_name"]), recipient_phone=normalize(snap["recipient_phone"]),
                        recipient_address=normalize(snap["recipient_address"]),
-                       order_date=date.fromisoformat(snap["order_date"]) if snap["order_date"] else None), snap
+                       order_date=date.fromisoformat(snap["order_date"]) if snap["order_date"] else None,
+                       commercial_status=snap.get("commercial_status"), lock_version=1,
+                       finance_review_required=False), snap
+
+
+def draft_context(record: dict, raw: dict, contact: dict) -> tuple:
+    order = Order(status="active", commercial_status=record.get("commercial_status"),
+                  is_historical_archive=record.get("is_historical_archive", False))
+    item = OrderItem(**{key: value for key, value in raw.items() if key in OrderItem.__table__.columns})
+    for field in ("coverage_start_date", "coverage_end_date"):
+        value = getattr(item, field)
+        if isinstance(value, str):
+            setattr(item, field, date.fromisoformat(value))
+    target = FulfillmentTarget(**contact)
+    target.status = "active"
+    item.status = item.status or OrderItemStatus.active
+    return order, item, target, FulfillmentAllocation(version_no=1)
 
 
 def draft_targets(payload: dict) -> dict[str, tuple[dict, dict, dict]]:
@@ -43,7 +66,10 @@ def candidates(db: Session, session_id: str, number: str, owner_id: int, search:
     # 推荐先展示待导入的同批订阅；不会创建临时订单来获得数据库 ID。
     product_names = " ".join(line["name"] for line in snapshot["product_lines"])
     batch = []
-    for key, (record, item, target) in draft_targets(payload).items():
+    draft_values = draft_targets(payload)
+    contexts = {key: draft_context(*value) for key, value in draft_values.items()}
+    options = candidate_options(db, [(o, i, t) for o, i, t, _ in contexts.values()]) if fee_arrangement_available(source) else {}
+    for key, (record, item, target) in draft_values.items():
         order = record["order_create"]
         fields = ["recipient_name", "recipient_phone", "recipient_address"]
         matches = [bool(getattr(source, field)) and normalize(target.get(field)) == getattr(source, field) for field in fields]
@@ -64,6 +90,7 @@ def candidates(db: Session, session_id: str, number: str, owner_id: int, search:
                       "order_code": None, "external_order_no": order["external_order_no"], "order_date": order["order_date"],
                       "publication": item["publication"], **{field: target.get(field) for field in fields},
                       "coverage_start_date": item.get("coverage_start_date"), "coverage_end_date": item.get("coverage_end_date"),
+                      "delivery_options": options.get(id(contexts[key][2])),
                       "confidence": "possible", "_high_match": high, "expected_target_version": signature(record),
                       "evidence": ["本批待导入订阅"] + [f"{label}{'一致' if match else '不同或缺失'}" for label, match in zip(("姓名", "电话", "地址"), matches)]
                       + ["补费日期在订期内" if covered else "订期不覆盖补费日期或未补齐"]
@@ -80,7 +107,8 @@ def candidates(db: Session, session_id: str, number: str, owner_id: int, search:
             "allocations": payload.get("fee_links", {}).get(number, {}).get("allocations", [])}
 
 
-def validate_selection(db: Session, payload: dict, number: str, selection: dict) -> None:
+def validate_selection(db: Session, payload: dict, number: str, selection: dict, *, refresh: bool = False,
+                       require_confirmation: bool = True) -> list[dict]:
     source, _ = source_for(payload, number)
     allocations = selection["allocations"]
     keys = [a.get("draft_key") or f'target:{a.get("target_id")}' for a in allocations]
@@ -100,6 +128,51 @@ def validate_selection(db: Session, payload: dict, number: str, selection: dict)
     if existing:
         source.paid_amount = sum((a.amount for a in existing), Decimal("0"))
         validate_links(db, source, SourceLinkIn(version=1, reason=selection["reason"], allocations=existing), lock=True)
+    source, _ = source_for(payload, number)
+    virtual = [OrderSourceLink(order_id=a.get("order_id"), order_item_id=a.get("order_item_id"),
+        target_id=a.get("target_id"), amount=Decimal(a["amount"]), refund_amount=None, active=1) for a in allocations]
+    reviews = []
+    for entry, link in zip(allocations, virtual):
+        if not entry.get("delivery"):
+            continue
+        plan = DeliveryArrangementIn.model_validate(entry["delivery"])
+        if entry.get("draft_key"):
+            order, item, target, allocation = draft_context(*targets[entry["draft_key"]])
+            if (order.is_historical_archive or order.commercial_status in {"refunded", "cancelled"}
+                    or item.publication != "cbj" or item.publication_format != "paper"):
+                raise HTTPException(409, "此投递安排适用于有效、非历史归档的中国经营报纸刊订阅")
+        else:
+            # 新运费尚未落库；目标与版本已由 validate_links 锁定并核对。
+            order = db.get(Order, entry["order_id"])
+            item = db.get(OrderItem, entry["order_item_id"])
+            target = db.get(FulfillmentTarget, entry["target_id"])
+            allocation = db.get(FulfillmentAllocation, target.allocation_id)
+            if order.is_historical_archive:
+                raise HTTPException(409, "历史归档订单只留存费用，不能在此安排转投")
+        if (order.commercial_status in {"refunded", "cancelled"} or item.publication != "cbj"
+                or item.publication_format != "paper"):
+            raise HTTPException(409, "此投递安排适用于有效的中国经营报纸刊订阅")
+        if (order.status != "active" or item.status != "active" or target.status != "active"
+                or target.replaced_by_target_id is not None or allocation.effective_until_issue is not None):
+            raise HTTPException(409, "订阅或收件目标已换版，请重新核对投递安排")
+        request = arrangements.delivery_request(db, source, link, plan, selection["reason"], item)
+        review = delivery.preview(db, 0, request, True,
+            context=(source, link, order, item, target, allocation), links_override=virtual)
+        if require_confirmation and not plan.postal_confirmed:
+            raise HTTPException(422, "请核对投递范围及邮局实际安排")
+        if not refresh and plan.expected_state != review["expected_state"]:
+            raise HTTPException(409, "投递范围或邮局记录已变化，请重新核对运费关联")
+        entry["delivery"]["expected_state"] = review["expected_state"]
+        reviews.append({**review, "draft_key": entry.get("draft_key")})
+    return reviews
+
+
+@serialized_import
+def preview_links(db: Session, session_id: str, request: ImportFeeLinksIn, owner_id: int) -> dict:
+    payload = draft(session_id, owner_id, request.expected_version)
+    selection = {"reason": request.reason, "allocations": [a.model_dump(mode="json", exclude_none=True) for a in request.allocations]}
+    reviews = validate_selection(db, payload, request.external_order_no, selection, refresh=True, require_confirmation=False)
+    return {"allocations": selection["allocations"], "delivery_previews": reviews}
 
 
 @serialized_import
@@ -143,4 +216,10 @@ def apply_fee_links(db: Session, source: OrderSource, selection: dict, created: 
                          expected_target_version=target_version(order, item, target))
         allocations.append(SourceAllocationIn(**value))
     if allocations:
-        link_source(db, source.id, SourceLinkIn(version=source.lock_version, reason=selection["reason"], allocations=allocations), operator_id)
+        request = SourceLinkIn(version=source.lock_version, reason=selection["reason"], allocations=allocations)
+        if any(value.delivery is not None for value in allocations):
+            review = arrangements.preview_links(db, source.id, request)
+            request.allocations = review["allocations"]
+            arrangements.save_links(db, source.id, request, operator_id)
+        else:
+            link_source(db, source.id, request, operator_id)
