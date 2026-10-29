@@ -421,6 +421,8 @@ def confirm_report(
             "level": "error",
         })
 
+    from app.services.channel_demand_service import print_confirmation_errors
+    errors.extend(print_confirmation_errors(db, issue))
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 

@@ -47,6 +47,7 @@ const OrderEditor = lazy(loadOrderEditor);
 const OrderDetail = lazy(loadOrderDetail);
 const ProductCatalog = lazy(loadProductCatalog);
 const OrderImport = lazy(loadOrderImport);
+const ChannelDemands = lazy(() => import('./pages/ChannelDemands'));
 const OrderSources = lazy(() => import('./pages/OrderSources'));
 const IssueDispatch = lazy(loadIssueDispatch);
 const Analytics = lazy(loadAnalytics);
@@ -140,6 +141,9 @@ function App() {
             <Route path="/history-import" element={<RequireMutationAccess fallback="/history"><HistoryImport /></RequireMutationAccess>} />
             <Route path="/schedule" element={<ScheduleView />} />
             <Route path="/schedule/import" element={<RequireMutationAccess fallback="/schedule"><ScheduleImport /></RequireMutationAccess>} />
+            <Route path="/orders/channel-demands" element={<ChannelDemands />} />
+            <Route path="/orders/channel-demands/new" element={<RequireMutationAccess fallback="/orders/channel-demands"><ChannelDemands /></RequireMutationAccess>} />
+            <Route path="/orders/channel-demands/:id" element={<ChannelDemands />} />
             <Route path="/orders" element={<OrderList />} />
             <Route path="/orders/new" element={<RequireMutationAccess fallback="/orders"><OrderEditor /></RequireMutationAccess>} />
             <Route path="/orders/import" element={<RequireMutationAccess fallback="/orders"><OrderImport /></RequireMutationAccess>} />

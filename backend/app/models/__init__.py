@@ -1,4 +1,5 @@
 from app.models.publication_schedule import PublicationSchedule
+from app.models.channel_demand import ChannelDemandProfile, ChannelDemand, ChannelDemandLine, ChannelDemandAttachment, ChannelDemandAdoption
 from app.models.issue import Issue, IssueStatus
 from app.models.report_item_template import ReportItemTemplate
 from app.models.report_entry import ReportEntry
@@ -109,6 +110,7 @@ from app.models.subscription_batch import (
 )
 
 __all__ = [
+    "ChannelDemandProfile", "ChannelDemand", "ChannelDemandLine", "ChannelDemandAttachment", "ChannelDemandAdoption",
     "PublicationSchedule",
     "Issue", "IssueStatus",
     "ReportItemTemplate",

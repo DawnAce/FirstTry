@@ -134,6 +134,7 @@ const sourceSummary = {
 }
 
 const handlers = [
+  http.get('/api/channel-demands/print/1', () => HttpResponse.json({ issue_number: 2654, token: 'a'.repeat(64), rows: [], can_apply: false })),
   http.get('/api/issues/1', () => HttpResponse.json(issue)),
   http.patch('/api/issues/1', async ({ request }) => HttpResponse.json({ ...issue, ...await request.json() as object })),
   http.get('/api/issues/1/report', () => HttpResponse.json(report)),

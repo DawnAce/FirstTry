@@ -5,6 +5,11 @@ from datetime import datetime
 
 # 机器 action key -> 中文「操作内容」标签。读取时派生，不落库（避免回填历史行）。
 ACTION_LABELS: dict[str, str] = {
+    "save_channel_demand": "保存机构渠道需求",
+    "confirm_channel_demand": "确认机构渠道需求",
+    "revise_channel_demand": "创建机构需求更正版本",
+    "upload_demand_attachment": "上传机构需求凭证",
+    "adopt_channel_demand": "采用机构需求到印数",
     "identity_repair": "修复订单销售来源及重复关联",
     "update_distribution_units": "调整批次投递单位",
     "create": "新增计划明细",

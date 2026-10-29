@@ -1,3 +1,4 @@
+import ChannelDemandPrint from '../components/ChannelDemandPrint';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1292,6 +1293,24 @@ export default function ReportEditor() {
             </div>
 
             <div className="report-editor-side-column">
+              <ChannelDemandPrint
+                issueId={Number(issueId)}
+                disabled={!canMutate || issue?.status !== 'draft' || saving || saveStatus === 'saving'}
+                beforePreview={async () => {
+                  if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+                  // 与自动保存串行，先持久化当前编辑再取得可核对预览。
+                  await updateReport(Number(issueId), entriesRef.current.map(entry => ({ category: entry.category, sub_category: entry.sub_category, value: entry.value })));
+                  setSaveStatus('saved');
+                }}
+                onApplied={async () => {
+                  if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+                  const result = await getReport(Number(issueId));
+                  setEntries(result.data.entries);
+                  entriesRef.current = result.data.entries;
+                  queryClient.setQueryData(['report', issueId], result.data);
+                  setSaveStatus('saved');
+                }}
+              />
               <aside className="report-editor-section report-editor-summary">
                 <div className="report-editor-section-head">
                   <span className="report-editor-section-icon" aria-hidden="true">∑</span>

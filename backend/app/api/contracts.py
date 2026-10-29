@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import ChannelSettlement, Contract, ContractStatus, Partner, User
+from app.models import ChannelDemand, ChannelSettlement, Contract, ContractStatus, Partner, User
 from app.schemas.contract import ContractCreate, ContractOut, ContractUpdate
 from app.services import attachment_service
 from app.upload import read_upload
@@ -140,6 +140,8 @@ def update_contract(
     patch = data.model_dump(exclude_unset=True)
     if "partner_id" in patch and patch["partner_id"] != contract.partner_id:
         _require_partner(db, patch["partner_id"])
+        if db.query(ChannelDemand.id).filter(ChannelDemand.contract_id == contract_id).first():
+            raise HTTPException(409, "该合同已关联机构渠道需求，不能更换所属机构")
     for field, value in patch.items():
         setattr(contract, field, value)
     db.commit()
@@ -166,6 +168,9 @@ def delete_contract(
             status_code=409,
             detail=f"该合同被 {settlement_count} 条结算记录引用，请先解除关联（或将合同状态改为「作废」）",
         )
+    demand_count = db.query(ChannelDemand).filter(ChannelDemand.contract_id == contract_id).count()
+    if demand_count:
+        raise HTTPException(409, f"该合同被 {demand_count} 份机构渠道需求引用，不能删除（可作废并保留历史关联）")
     stored_path = contract.attachment_path
     db.delete(contract)
     db.commit()
