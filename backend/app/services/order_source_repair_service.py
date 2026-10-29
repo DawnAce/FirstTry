@@ -9,7 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import Base
@@ -17,7 +17,7 @@ from app.models import Order, OrderEvent, OrderEventType, OrderItem, OrderStatus
 from app.models.operation_log import OperationLog
 from app.models.order_source import OrderSource, OrderSourceLink, OrderSourceVersion
 from app.models.user import User, UserRole
-from app.services.order_source_identity import SOURCE_CATALOG, normalize_source, serialized_identity
+from app.services.order_source_identity import SOURCE_CATALOG, identity_filter, normalize_source, serialized_identity
 from app.services.order_source_service import source_event
 from app.services.operation_log_service import record_operation
 
@@ -30,16 +30,40 @@ def _record(row: Any) -> dict:
     return {column.name: getattr(row, column.name) for column in row.__table__.columns}
 
 
-def _state(db: Session, *, lock: bool = False) -> dict:
+def _scope_ids(order_ids: list[int] | None) -> list[int] | None:
+    if order_ids is None:
+        return None
+    if (not isinstance(order_ids, list) or not order_ids or len(order_ids) > 500
+            or any(type(value) is not int or value <= 0 for value in order_ids)):
+        raise HTTPException(422, '限定修复范围须提供 1 至 500 个有效订单 ID')
+    return sorted(set(order_ids))
+
+
+def _state(db: Session, *, lock: bool = False, order_ids: list[int] | None = None) -> dict:
     names = [name for rule in SOURCE_CATALOG for name in [rule['platform'], *rule['aliases']]]
 
     def rows(model: Any, condition: Any) -> list:
         query = db.query(model).filter(condition).order_by(model.id).populate_existing()
         return (query.with_for_update() if lock else query).all()
 
-    orders = rows(Order, Order.source_platform.in_(names))
+    order_condition = Order.source_platform.in_(names)
+    source_condition = OrderSource.platform.in_(names)
+    if order_ids is not None:
+        selected = rows(Order, and_(Order.id.in_(order_ids), order_condition))
+        if len(selected) != len(order_ids) or any(not row.external_order_no for row in selected):
+            raise HTTPException(422, '限定范围含不存在、来源未知或缺少来源单号的订单')
+        # 选择的是业务身份；同身份的第三张订单仍必须进入预览及并发校验。
+        order_condition = and_(order_condition, or_(*[
+            and_(Order.external_order_no == row.external_order_no,
+                 identity_filter(Order.source_platform, Order.source_store,
+                                 row.source_platform, row.source_store)) for row in selected]))
+        source_condition = and_(source_condition, or_(*[
+            and_(OrderSource.external_order_no == row.external_order_no,
+                 identity_filter(OrderSource.platform, OrderSource.store,
+                                 row.source_platform, row.source_store)) for row in selected]))
+    orders = rows(Order, order_condition)
     ids = [row.id for row in orders]
-    sources = rows(OrderSource, OrderSource.platform.in_(names))
+    sources = rows(OrderSource, source_condition)
     source_ids = [row.id for row in sources]
     links = rows(OrderSourceLink, or_(OrderSourceLink.source_id.in_(source_ids), OrderSourceLink.order_id.in_(ids)))
     items = rows(OrderItem, OrderItem.order_id.in_(ids))
@@ -125,12 +149,16 @@ def _order_event(db: Session, order_id: int, event_type: OrderEventType, payload
     db.add(OrderEvent(order_id=order_id, event_type=event_type, payload_json=payload, operator_id=operator_id))
 
 
-def preview_repair(db: Session) -> dict:
-    """只读输出 IDs、分类及差异字段，不输出真实姓名、电话、地址、来源单号。"""
+def preview_repair(db: Session, *, order_ids: list[int] | None = None) -> dict:
+    """只读输出脱敏预览；可限定订单身份，仍包含同身份的全部关联和重复单。"""
     if db.new or db.dirty or db.deleted:
         raise HTTPException(409, '修复预览必须使用没有未提交修改的独立会话')
+    scope = _scope_ids(order_ids)
     with db.no_autoflush:
-        return {'plan_id': uuid4().hex, **_preview(_state(db))}
+        plan = {'plan_id': uuid4().hex, **_preview(_state(db, order_ids=scope))}
+        if scope is not None:
+            plan['scope_order_ids'] = scope
+        return plan
 
 
 @serialized_identity
@@ -142,14 +170,18 @@ def apply_repair(db: Session, plan: dict, *, operator_id: int, reason: str) -> d
             raise HTTPException(403, '销售来源修复需要管理员操作人')
         if not reason.strip() or plan.get('schema_version') != 1 or not plan.get('plan_id'):
             raise HTTPException(422, '请提供有效预览及修复原因')
-        request_hash = _digest({'state': plan.get('expected_state'), 'resolutions': plan.get('resolutions'), 'reason': reason})
+        scope = _scope_ids(plan.get('scope_order_ids'))
+        request = {'state': plan.get('expected_state'), 'resolutions': plan.get('resolutions'), 'reason': reason}
+        if scope is not None:
+            request['scope_order_ids'] = scope
+        request_hash = _digest(request)
         previous = db.query(OperationLog).filter(OperationLog.action == 'identity_repair',
             OperationLog.changes['plan_id'].as_string() == plan['plan_id']).populate_existing().with_for_update().first()
         if previous:
             if previous.changes['request_hash'] != request_hash:
                 raise HTTPException(409, '该预览已按另一份核对决定执行，不能复用')
             return {**previous.changes['result'], 'already_applied': True}
-        state = _state(db, lock=True)
+        state = _state(db, lock=True, order_ids=scope)
         if state['signature'] != plan.get('expected_state'):
             raise HTTPException(409, '预览后订单、来源或下游关联已变化，请重新生成修复预览')
         current = _preview(state)

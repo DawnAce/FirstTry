@@ -1,3 +1,4 @@
+import { itemDeliveryLabel } from './orderDeliveryDisplay';
 import { SOURCE_PLATFORM_OPTIONS as PLATFORM_OPTIONS, canonicalPlatform } from '../api/salesSources';
 import { useMemo, useState } from 'react';
 import OrderCoverageDrawer from './OrderCoverageDrawer';
@@ -63,7 +64,6 @@ import {
   canConfirmOrder,
   canDeleteOrder,
   canVoidOrder,
-  deliveryMethodLabel,
   driftColor,
   driftLabel,
   eventTypeLabel,
@@ -435,7 +435,7 @@ export default function OrderList() {
 
   const previewDelivery = useMemo(() => {
     if (!previewOrder) return '-';
-    const methods = [...new Set(previewOrder.items.map((item) => deliveryMethodLabel(item.delivery_method)))];
+    const methods = [...new Set(previewOrder.items.map(itemDeliveryLabel))];
     return methods.join('、') || '-';
   }, [previewOrder]);
 
@@ -551,6 +551,7 @@ export default function OrderList() {
         title="订单管理"
         description="统一查看订单、履约、收款与售后状态"
         actions={<Space>
+          <Button onClick={() => navigate('/orders/channel-demands')}>机构／渠道需求</Button>
           <Button onClick={() => navigate(`/orders/sources${filters.search ? `?search=${encodeURIComponent(filters.search)}` : ''}`)}>来源交易</Button>
           <Button
             icon={<ReloadOutlined />}

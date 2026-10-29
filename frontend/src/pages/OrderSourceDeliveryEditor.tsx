@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Checkbox, Input, Modal, Select, Space, Table, message } from 'antd';
+import { Alert, Button, Checkbox, Input, Modal, Radio, Select, Space, Table, message } from 'antd';
 import { getSourceDeliveryOptions, previewSourceDelivery, saveSourceDelivery, previewSourceDeliveryUndo, saveSourceDeliveryUndo } from '../api/orderSources';
 import type { OrderSource, SourceDeliveryPayload, SourceDeliveryReview, SourceDeliveryUndoPayload } from '../api/orderSources';
 import { getApiErrorMessage } from '../api/errorMessage';
@@ -8,6 +8,7 @@ import { getApiErrorMessage } from '../api/errorMessage';
 export default function OrderSourceDeliveryEditor({ source, linkId, changeId, onClose }: { source: OrderSource; linkId?: number; changeId?: number; onClose: () => void }) {
   const qc = useQueryClient();
   const [issue, setIssue] = useState<number>();
+  const [scope, setScope] = useState<'full_period' | 'from_issue'>('from_issue');
   const [reason, setReason] = useState('');
   const [selected, setSelected] = useState<number[]>([]);
   const [confirmed, setConfirmed] = useState(false);
@@ -25,18 +26,21 @@ export default function OrderSourceDeliveryEditor({ source, linkId, changeId, on
   const channel = options.data?.shipping_channel === 'post_office' ? 'zto_outsource' : 'post_office';
   return <Modal open title={changeId ? '撤回尚未执行的转投' : '确认或更正投递安排'} width={850} onCancel={onClose} footer={null}>
     <Space orientation="vertical" style={{ width: '100%' }}>
-      <Alert type="info" title="关联运费不会自动改变投递。请核对刊期及邮局实际手续；已执行的历史从后续刊期更正。" />
+      <Alert type="info" title="全订期中通从订阅首期开始；中途转投按起始期号分段。请核对邮局实际手续，已执行历史保留。" />
       {linkId && (options.isError ? <Alert type="error" title={getApiErrorMessage(options.error, '刊期加载失败')} action={<Button onClick={() => options.refetch()}>重试</Button>} /> : <>
         <span>{options.data?.recipient_name} · 本次改为{channel === 'zto_outsource' ? '中通' : '邮局'}</span>
+        {channel === 'zto_outsource' && <Radio.Group aria-label="转投范围" value={scope} disabled={busy}
+          options={[{ value: 'full_period', label: '整个订期走中通', disabled: !options.data?.full_period_available }, { value: 'from_issue', label: '中途改走中通' }]}
+          onChange={event => { setScope(event.target.value); setIssue(event.target.value === 'full_period' ? options.data?.full_period_issue : undefined); setReview(null); setConfirmed(false); }} />}
         <Select aria-label="转投生效刊期" placeholder="选择正式生效刊期" style={{ width: '100%' }} value={issue} loading={options.isLoading} disabled={busy}
           options={options.data?.issues.map(row => ({ value: row.issue_number, label: `第 ${row.issue_number} 期 · ${row.publish_date}` }))}
-          onChange={value => { setIssue(value); setReview(null); setConfirmed(false); }} />
+          onChange={value => { setIssue(value); setScope('from_issue'); setReview(null); setConfirmed(false); }} />
       </>)}
       <Input.TextArea aria-label="投递变更依据" placeholder="填写转投、邮局手续或更正依据" maxLength={1000} disabled={busy} value={reason}
         onChange={e => { setReason(e.target.value); setReview(null); setUndoReview(null); setConfirmed(false); }} />
       <Button disabled={busy || !reason.trim() || (!!linkId && !issue)} loading={preview.isPending || undoPreview.isPending} onClick={() => {
         if (changeId) undoPreview.mutate({ version: source.version, change_id: changeId, reason });
-        else preview.mutate({ version: source.version, reason, link_id: linkId!, effective_from_issue: issue!, shipping_channel: channel, postal_delivery_ids: selected, postal_confirmed: false });
+        else preview.mutate({ version: source.version, reason, link_id: linkId!, effective_from_issue: issue!, shipping_channel: channel, scope, postal_delivery_ids: selected, postal_confirmed: false });
       }}>{changeId ? '预览撤回' : '预览投递变更'}</Button>
       {review && <>
         <Alert type="warning" title={`${review.value.recipient_name}：${review.value.effective_date} 起${channel === 'zto_outsource' ? '改用中通，邮局截止 ' + review.value.postal_until_date : '恢复邮局投递'}`}

@@ -12,6 +12,7 @@ from app.services import order_source_finance_service as finance, order_source_d
 from app.schemas.order_source import (SourceRefundIn, SourceDeliveryIn, SourceDeliveryUndoIn,
                                      SourceFinanceSummaryOut, SourceDeliveryPreviewOut)
 from app.services import order_source_service as service
+from app.services import order_source_arrangement_service as arrangements
 
 router = APIRouter(prefix="/api/order-sources", tags=["order-sources"])
 
@@ -96,17 +97,16 @@ def candidates(source_id: int, search: str | None = None, db: Session = Depends(
 @router.post("/{source_id}/link-preview", response_model=SourceLinkPreviewOut)
 def preview_links(source_id: int, body: SourceLinkIn, db: Session = Depends(get_db),
                   _user: User = Depends(require_admin)):
-    """核对分配金额和订阅版本，不写入。"""
-    source = service.get_source(db, source_id, body.version)
-    return service.validate_links(db, source, body)
+    """核对金额、订阅版本及可选的全订期/中途投递安排，不写入。"""
+    return arrangements.preview_links(db, source_id, body)
 
 
 @router.put("/{source_id}/links", response_model=SourceOut)
 def link_source(source_id: int, body: SourceLinkIn, db: Session = Depends(get_db),
                 user: User = Depends(require_admin)):
-    """原子更新归属，旧关联及操作原因保留。"""
+    """原子保存归属和已预览的投递安排，旧关联、目标及操作原因保留。"""
     try:
-        source = service.link_source(db, source_id, body, user.id)
+        source = arrangements.save_links(db, source_id, body, user.id)
         db.commit()
     except Exception:
         db.rollback()

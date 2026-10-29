@@ -4,8 +4,8 @@
 最近操作时间」拼齐，服务端按 D2 优先级算好每期 status，前端只读不重算。
 
 - delta = 报数 − 发货（D1，正数=发货缺口/少发）。
-- workbench：强制本年（date.today().year），带 KPI + 3 提醒 + 最近/后续期数 + 本月最新更新。
-- periods：year 可选（不传=全部年份，D5），只返回行 + KPI。
+- workbench：强制本年；行、KPI、提醒和最近期数仅含已到出版日期的刊期，后续期数保留预告。
+- periods：year 可选（不传=全部年份，D5），只返回已到出版日期的行 + KPI。
 - 休刊行（is_suspended 或 issue_number 空）整行剔除，不进任何计数/分母。
 - 最后更新时间取「该期任何操作」（operation_logs），回退发货明细/刊期更新时间（决策③）。
   历史 operation_logs 行 issue_number 为空、取不到，即回退到发货明细更新时间。
@@ -170,6 +170,8 @@ def build_overview(db: Session, scope: str = "workbench", year: int | None = Non
     )
     if year is not None:
         overview_query = overview_query.filter(PublicationSchedule.year == year)
+    if scope == "periods":
+        overview_query = overview_query.filter(PublicationSchedule.publish_date <= today)
     joined_rows = overview_query.order_by(
         PublicationSchedule.year, PublicationSchedule.publish_date
     ).all()
@@ -290,6 +292,9 @@ def build_overview(db: Session, scope: str = "workbench", year: int | None = Non
             )
         )
 
+    # 工作台还需用完整本年刊历展示后续预告；当前进度与待办只统计已到出版日期的期次。
+    calendar_rows = rows
+    rows = [r for r in calendar_rows if r.publish_date <= today]
     kpi = OverviewKpiOut(
         total=len(rows),
         uploaded=sum(1 for r in rows if r.status == "已上传"),
@@ -307,7 +312,7 @@ def build_overview(db: Session, scope: str = "workbench", year: int | None = Non
             reverse=True,
         )[:_RECENT_LIMIT]
         upcoming = sorted(
-            (r for r in rows if r.publish_date >= today),
+            (r for r in calendar_rows if r.publish_date >= today),
             key=lambda r: r.publish_date,
         )[:_UPCOMING_LIMIT]
         reminders = OverviewReminderOut(

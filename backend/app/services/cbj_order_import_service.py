@@ -471,6 +471,7 @@ def build_import_preview(
                     recipient_address=po.recipient_address or "(未填写)",
                     recipient_postal_code=po.recipient_postal_code,
                     quantity=item.total_quantity,
+                    shipping_channel=("post_office" if item.delivery_method == DeliveryMethod.post_office else "zto_outsource"),
                 )
             ]
             items.append(item)

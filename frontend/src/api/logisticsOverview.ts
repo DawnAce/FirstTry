@@ -57,15 +57,15 @@ export interface OverviewExtras {
 export interface OverviewData {
   scope: string;
   year: number | null;
-  rows: PeriodRow[];
+  rows: PeriodRow[]; // 正式刊历中非休刊、出版日期 <= 服务端今天的期次
   kpi: OverviewKpi;
   extras: OverviewExtras | null; // 仅 workbench 返回
 }
 
-// 工作台总览：本年概况 + KPI + 提醒 + 最近/后续期数（PR5 用）。
+// 工作台：本年已到出版日期的概况与待办；extras.upcoming_issues 保留后续预告。
 export const getWorkbenchOverview = (year?: number) =>
   api.get<OverviewData>('/analytics/overview', { params: { scope: 'workbench', year } });
 
-// 期数总览：全部年份（year 可选过滤）。
+// 期数总览：跨年份的已到出版日期期次（year 可选过滤）。
 export const getPeriodsOverview = (year?: number) =>
   api.get<OverviewData>('/analytics/overview', { params: { scope: 'periods', year } });

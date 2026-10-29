@@ -217,6 +217,8 @@ def candidates_for_source(db: Session, source: OrderSource, snapshot: dict, sear
                           case((covering, 1), else_=0).desc(), case((prior, 1), else_=0).desc(),
                           Order.order_date.desc(), Order.id.desc(), FulfillmentTarget.id)
     values = query.limit(101).all()
+    from app.services.order_delivery_policy import candidate_options, fee_arrangement_available
+    delivery_options = candidate_options(db, values[:100]) if fee_arrangement_available(source) else {}
     rows = []
     high = []
     for order, item, target in values[:100]:
@@ -240,7 +242,8 @@ def candidates_for_source(db: Session, source: OrderSource, snapshot: dict, sear
                "recipient_phone": target.recipient_phone, "recipient_address": target.recipient_address,
                "coverage_start_date": item.coverage_start_date, "coverage_end_date": item.coverage_end_date,
                "confidence": "possible", "evidence": evidence, "_high_match": eligible,
-               "expected_target_version": target_version(order, item, target)}
+               "expected_target_version": target_version(order, item, target),
+               "delivery_options": delivery_options.get(id(target))}
         rows.append(row)
         if eligible:
             high.append(row)

@@ -623,6 +623,7 @@ def _build_order_out(db: Session, order) -> OrderOut:
     """
     from app.schemas.order import (
         FulfillmentAllocationOut,
+        DeliverySegmentOut,
         OrderItemOut,
         PaymentOut,
         RefundOut,
@@ -639,8 +640,10 @@ def _build_order_out(db: Session, order) -> OrderOut:
     from app.models.order_source import OrderSourceDeliveryChange, OrderSourceLink
     changes = db.query(OrderSourceDeliveryChange).join(OrderSourceLink,
         OrderSourceLink.id == OrderSourceDeliveryChange.link_id).filter(OrderSourceLink.order_id == order.id).all()
-    managed_targets = {change.to_target_id for change in changes} | {
+    managed_targets = {change.to_target_id for change in changes if change.status == "applied"} | {
         change.from_target_id for change in changes if change.status == "applied"}
+    from app.services.order_delivery_policy import target_channel, item_segments
+    segments = item_segments(db, order.items, managed_targets)
     progress_by_item = order_service.compute_fulfillment_progresses(db, order)
     item_outs = []
     for item in order.items:
@@ -651,6 +654,9 @@ def _build_order_out(db: Session, order) -> OrderOut:
         for allocation in allocations:
             for target in allocation.targets:
                 target.source_delivery_managed = target.id in managed_targets
+                target.resolved_shipping_channel = target_channel(item, target, managed_targets)
+                if target.resolved_shipping_channel != target.shipping_channel:
+                    target.delivery_warning = "历史目标渠道与订阅配置不一致，按原邮局订阅处理；如已补中通运费，请核对投递范围。"
         item_out = OrderItemOut.model_construct(
             id=item.id,
             publication=item.publication,
@@ -673,6 +679,7 @@ def _build_order_out(db: Session, order) -> OrderOut:
             status=item.status,
             notes=item.notes,
             allocations=allocations,
+            delivery_segments=[DeliverySegmentOut(**segment) for segment in segments.get(item.id, [])],
             progress=progress,
         )
         item_outs.append(item_out)

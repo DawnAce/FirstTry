@@ -567,7 +567,7 @@ OCR 使用 `pypdfium2` 将 PDF 页面以 3 倍比例渲染，再交给本地 `ra
 - **原价列 `orders.original_amount`（迁移 `c4f1a9e2b6d3`，`Numeric(10,2)`、可空）**：CBJ 导出的「原价」（折前标价）列原先解析后被丢弃（导入器只写 `total_amount=实付`），现予以持久化；`total_amount` 仍追踪实付。该列支撑 §4.15「按活动统计」的折扣计算：`原价合计 = SUM(COALESCE(original_amount, paid))`，`折扣额 = 原价合计 − 实收`（未捕获原价的订单按「无折扣」计）。
 - 所有金额字段使用 `DECIMAL(10, 2)`（最大 9999 9999.99 元）；前端 TS 用 `string` 传输，避免 JS 浮点损失
 - `OrderEditor.tsx` 在 `validateFields()` 失败时通过 `extractFormValidation()` 保留 Ant Design 返回的字段路径和具体错误；单项错误直接 toast，多项错误沿用汇总弹窗，并滚动 / 聚焦第一处错误。`items` 是列表字段，使用 `#order-items-section` 定位到订单明细卡片。
-- `OrderDetail.tsx` 的下方信息区统一为 7 个标签页：订单内容、履约方案、履约档案、收款记录、关联快递、关联邮局、事件流。标签使用图标和数量徽标；订单内容中的履约目标只展示当前有效投递信息与服务记录数量摘要，不再重复放置变更查看/修改入口；履约档案集中展示当前投递快照、地址变更前后对比、投诉记录和唯一的收件信息修改入口。履约方案继续使用版本工单卡片，投递方式与目标份数使用响应式横向配置条，其中展示口径以 `order_items.delivery_method` 为权威值，不再被历史 `fulfillment_targets.shipping_channel` 默认值误导。收款、邮局关联和事件流分别使用摘要流水卡、投递工单卡与纵向时间线。事件流通过字段映射输出中文业务摘要，不向业务页面暴露 `payload_json` 原始 JSON，并合并订单事件、邮局工单及工单处理事件。邮局订单的快递标签保留入口但展示“不适用”空状态，原有同步和信息变更业务动作不变。
+- `OrderDetail.tsx` 的下方信息区统一为 7 个标签页：订单内容、履约方案、履约档案、收款记录、关联快递、关联邮局、事件流。标签使用图标和数量徽标；订单内容中的履约目标只展示当前有效投递信息与服务记录数量摘要，不再重复放置变更查看/修改入口；履约档案集中展示当前投递快照、地址变更前后对比、投诉记录和唯一的收件信息修改入口。履约方案继续使用版本工单卡片，投递方式与目标份数使用响应式横向配置条，其中展示口径使用服务端实际投递段：未确认转投的邮局商品按邮局，显式转投后的目标按渠道和生效边界展示；原 `order_items.delivery_method` 留作商业产品属性。收款、邮局关联和事件流分别使用摘要流水卡、投递工单卡与纵向时间线。事件流通过字段映射输出中文业务摘要，不向业务页面暴露 `payload_json` 原始 JSON，并合并订单事件、邮局工单及工单处理事件。实际投递段包含中通的订单可进入快递同步；纯邮局仍展示“不适用”空状态。
 - 在 active 状态下，`PUT /api/orders/{id}` 仍只允许 `order_service.ACTIVE_EDITABLE_FIELDS` 白名单内的 13 个非结构字段被修改；明细 / 履约目标的结构改动改走 `PUT /api/orders/{id}/items`，并按 `effective_from_issue` 关闭旧 allocation、创建新版本或取消缺失明细
 - **当前业务范围限定**：仍主要覆盖"个人客户预付 + 同事赠阅"两种场景。`paid_amount` 字段虽已建表，但**没有任何业务逻辑读它**（不算欠款、不阻塞 confirm、不做对账、列表不能按"未付清"过滤）。"渠道订单（先履约后付款 / 赊账）"留待后续版本的财务对账引入「收款流水子表 + 欠款追踪 + 未付清筛选 + Dashboard 欠款卡片」时再激活该字段的业务价值
 - **`source_type` 字段的录入方式收敛**：原 5 个枚举值（`ecommerce` / `corporate_transfer` / `vip_gift` / `manual` / `mail_annual`）实际混杂了 4 个维度的概念（销售渠道 / 付款方式 / 业务性质 / 录入方式），与已有的 `source_platform`（销售渠道）/ `payment_method`（付款方式）/ `billing_type`（业务性质）字段重复。**PR-A 已将 UX 解耦为"录入方式"** —— 前端表单完全隐藏该字段，列表筛选器移除，详情页用 Tag「📥 手工录入」展示；后端 `OrderCreate.source_type` 默认 `manual`、`OrderUpdate` 完全移除该字段（provenance 元数据任何状态下都不可改）。数据迁移 `d8a1f4e7b9c2` 已把全部历史数据规范化为 `manual`。后续版本电商批量导入 / API 同步启用前，建议继续推进 DB schema rename `source_type` → `entry_method`，枚举值收敛为 `manual / excel_import / api_sync`
@@ -2141,6 +2141,10 @@ draft ──confirm──> active ──void──> void
 
 ### 7.1 开发环境
 
+**本地数据库恢复隔离**：运行数据使用根目录下被 Git 忽略的 `local-data/`，其中 `mysql/` 是 MySQL 数据目录，`private/` 是仅当前用户可读的私密连接配置，`restored-attachments/` 是附件验证副本，`verification/` 保存恢复核对结果。备份仍独立保存在 `backups/`。本机 MySQL 仅监听回环地址，关闭事件调度器及通用查询日志。备份导入使用全新的独立数据库，并核对表集合、逐表行数、迁移版本、表健康状态及附件 SHA-256；业务验证使用独立副本，正式切换前再次逐表比较云端与恢复库的完整内容并校验原附件，保留切换前数据库快照及私密原配置后再修改根目录 `.env`。原账号密码哈希及 JWT 配置保留。正式应用使用原 `backend/uploads/`，不会把验证库或合成验收数据复制进正式库。
+
+**本机正式运行**：已准备的 `local-data/app-control.py` 支持 `start / stop / status`。启动检查配置与私密恢复配置一致，并检查数据库 Alembic revision 与代码 head 一致；不自动执行迁移。使用项目虚拟环境启动 Uvicorn，在本机提供 `frontend/dist` 及 API，关闭访问日志。进程信息和应用日志保存在被忽略的本地运行目录，通过正常终止信号关闭。该工具不配置开机自启或定时备份。数据在外接盘时，必须先停止应用、再正常关闭 MySQL，之后才能卸载磁盘。
+
 **启动顺序**：
 1. 启动 MySQL
 2. 运行后端：
@@ -2253,7 +2257,7 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - 会话管理（`SessionLocal`）
 
 ### 8.3 数据库连接性能优化
-由于数据库部署在腾讯云（远程），每次 DB 往返约 500ms+，因此采用以下策略：
+2026-08 远程腾讯云数据库的 DB 往返曾约 500ms+，因此采用以下策略；2026-10 正式系统已迁至本机，这些数值保留为历史基线，当前运行方式见 §7 与文末「本机迁移后的运行与备份」：
 - **启动预热**：`warmup_pool()` 在 FastAPI startup 事件中预建连接，避免首次请求冷启动
 - **连接超时**：`connect_timeout=5s`、`read_timeout=10s`、`write_timeout=10s`
 - **优先复用热连接**：`pool_pre_ping=True`、`pool_recycle=3600`、`pool_use_lifo=True`，避免正常页面浏览反复承担公网 MySQL 握手成本
@@ -2273,7 +2277,8 @@ gh pr create --base main ...  # 此后 gh / API 调用全部以 DawnAce 身份
 - 页面组件通过 `React.lazy` 按路由拆包；TanStack Query 默认数据新鲜期为 60 秒、缓存回收期为 10 分钟，减少短时间往返页面时的重复读取
 - ZTO-MF 单期页通过 `logisticsIssueState.ts` 显式区分 Query 的 loading / error / success-empty 状态：请求失败不得回退为 `[]` 后渲染业务空态。计划区使用「发货计划对账」，以确认报数中通合计为业务基准，按“确认报数 = 当前计划 + 已归因停发”计算未解释差异；`IssueAuditSnapshot.shipping_total` 继续作为不可变的确认时发货明细快照，只用于橙色漂移审计。确认流程仅在当前期不存在非固定计划时复制上一期明细，复制查询排除 `complaint_makeup` 和 `recurring_generated`，因此固定政府明细既不阻断初始化也不会跨期重复。实际区独立展示物理发货与核销；取得核销摘要后可区分「待录入运单 / 部分已发货 / 已完成发货核销 / 核销已完成 · 部分发货」。运单操作优先展示后端 `detail`，500 错误提示检查数据库迁移状态。
 - 发行履约在 `AppLayout` 中使用统一的展开式树形导航：「邮局管理」直接展开投递明细、待续投、订报转投、邮局工单，「快递管理」直接展开发货计划、实际发货。两个父项共用同一段菜单生成逻辑与交互，不再为邮局替换整套侧栏；旧入口 `/business/fulfilment/postal` 保留并重定向至 `/post-delivery/deliveries`。选中态由 `findPostalFunction` / `findCourierFunction` 按深层路由映射，面包屑统一为“业务首页 / 发行履约 / 模块 / 子功能”。
-- 快递管理的列表入口拆为 `/logistics/plans` 与 `/logistics/shipments`；列表页不再用内容区标签卡模拟导航。两页共用期数总览接口，但分别采用计划状态与履约状态筛选。列表 Query 同样显式区分 error 与 success-empty，接口失败不得显示为 0 期。
+- 快递管理的列表入口拆为 `/logistics/plans` 与 `/logistics/shipments`；列表页不再用内容区标签卡模拟导航。两页共用 `GET /api/analytics/overview?scope=periods`，服务层从正式刊历出发，在 SQL 中限定非休刊、期号非空及 `publish_date <= date.today()`；保留过去无 `Issue` 的【未创建】，不删除未来数据。前端按列表模式先确定展示行（实际发货额外要求 `detail_count > 0 || shipping_total > 0`），再生成年份选项、默认最新年份和统计，状态/搜索筛选后分页；两页均默认按年份、期号倒序，允许手动排序。列表 Query 显式区分 error 与 success-empty，接口失败不得显示为 0 期。
+- `scope=workbench` 仍查询完整本年非休刊刊历以生成当天及未来的后续预告（出版日期正序），但返回的 `rows`、KPI、待办提醒、最近期数和本月最新更新只取已到出版日期的行。旧 `/recipients` 工作台与 `/business/fulfilment` 首页共用这一投影；前端不依赖浏览器时钟重复计算出版截止日。接口字段结构与计划/核销状态算法不变，缓存仍为 30 秒并在写操作后失效，无数据库迁移。
 - 迁移 `f0a2c4e6b8d9` 为 `shipping_details` 增加 `actual_name / actual_phone / actual_address / actual_adjustment_reason / actual_adjusted_at`。这些字段只保存实际发货阶段的临时收件调整，空值表示沿用计划字段；实际调整不反向覆盖计划，清空或替换计划时必须保护已有实际历史。部署本版本必须执行 `alembic upgrade head`。
 - 表格固定列使用 `fixed: 'end'` + `scroll={{ x: 'max-content' }}`，操作列固定在右侧
 - 表格行 hover 使用不透明语义背景色（`var(--color-bg-subtle)`），避免固定列穿透问题
@@ -2370,13 +2375,21 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 
 ### 来源费用及转投实现
 
+**2026-10-29 运费关联与投递范围统一**：`order_source_arrangement_service` 在同一外层事务中完成关联与逐目标投递变更，任一步失败全部回滚。原 `SourceAllocationIn` / `ImportFeeAllocation` 兼容可选 `delivery`：`scope=full_period|from_issue`、中途起始期、邮局记录选择、人工确认和 `expected_state`。来源 `link-preview` 返回逐目标签名和投递预览；新增 `POST /api/order-import/sessions/{session_id}/fee-links/preview` 只读预览。导入关联仅保存带签名草稿，最终提交前重新核对正式刊期、目标、费用与邮局记录；支持同批尚未落库的订阅，不创建临时订单。
+
+全订期取覆盖期内首个非休刊正式刊期；中途保留此前邮局段，前段截止使用前一个正式刊期，不能简单将期号减一。两者都只修改未来、未确认报数、无既有发货范围；原订期、份数、价格不重算。费用已退或待核时保留纯关联，不由费用状态推定投递。原同一交易内的商品投递识别核对仍沿用导入规则，此处针对独立运费关联。
+
+`order_delivery_policy` 统一订单详情、快递同步、邮局待续投及履约进度的实际渠道。没有已应用转投的邮局明细仍按邮局处理，历史默认中通值给出差异提示；显式转投按目标链和有效刊期分段。新建邮局明细显式保存邮局目标渠道。响应新增 `resolved_shipping_channel`、`delivery_warning` 及有类型的 `delivery_segments`，前端显示全订期中通、转换顺序或分收件人履约。
+
+本次复用已有表和审计，无新增 schema 或迁移，也不批量修复历史数据。`PostalDelivery` 的关联记录与续投缺口参与转投边界；订报转投的上传源版本、独立文件和模板不自动重写，出具给邮局的文件仍需按实际手续核对有效来源版本。
+
 迁移 `b8d0f2a4c6e9` 新增 `order_source_delivery_changes`，来源增加 `finance_review_required`，关联增加 `refund_amount`。`GET /api/order-sources/financial-summary` 在 SQL 中按运费来源唯一汇总；传 order_id 时只用该主单的有效分配，退款或分配待核时合计为 null。原订阅来源不重复入账，也不自动创建付款、退款流水或发票。
 
 `POST /{id}/refund-preview` 与 `PUT /{id}/refund` 核对累计退款、日期及精确目标分配；单目标自动归全额，多目标须明确金额。全退须等于付款，部分退款介于0与付款之间；正退款需实际日期。重新导入使原核对失效。所有写接口管理员权限并核对 version，失败回滚。
 
 `GET /{id}/delivery-options?link_id` 读取订期内正式未来刊期。`POST /{id}/delivery-preview` 返回生效日、邮局截止、候选邮局记录及 expected_state；`POST /{id}/delivery` 必须提交状态签名和 postal_confirmed，重新核对来源、目标、刊期及邮局/发货范围后锁定来源和父订单，原子写入。
 
-转投在当前 allocation 中保留单目标替换链及前后期号边界，item.delivery_method 保留原商业产品属性。旧 postal 明细可能保留默认 zto 目标值，继续兼容；只有显式转投目标按新渠道决定后续投递。邮局已有记录缩短截止，原值留审计；恢复邮局时新建后续投递段且不重复计订阅金额。中通发货仍走现有同步流程。
+转投在当前 allocation 中保留单目标替换链及前后期号边界，item.delivery_method 保留原商业产品属性。旧 postal 明细可能保留默认 zto 目标值，继续兼容；只有显式转投目标按新渠道决定后续投递。邮局已开始的记录缩短截止，尚未开始且完全落入新中通范围的记录归档，原值留审计且可按条件撤回；恢复邮局时新建后续投递段且不重复计订阅金额。中通发货仍走现有同步流程。
 
 转投、更正及发货同步写入共用父订单锁，写入前使用 MySQL 当前读重新读取目标与版本，避免 REPEATABLE READ 的旧快照覆盖其他操作。CI 的临时 MySQL 包含双事务目标变更测试；该测试在本地或非 CI 数据库环境跳过，不连接用户业务库。
 
@@ -2398,6 +2411,16 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 
 整个修复与三类审计同事务提交；`operation_logs.action=identity_repair` 保存 plan_id、请求签名及计数，用于幂等。该工具不需要 schema 迁移，也不在应用启动／Alembic 升级时自动执行。具体操作见 [修复说明](order-source-repair.md)。
 
+预览可用 `--order-id` 限定范围，服务对应 `preview_repair(order_ids=...)`。范围按规范销售身份展开，锁定并签名同身份全部订单、原件及下游，包含后来新增的重复单；其他交易不参与规范化或作废。执行使用预览内 `scope_order_ids`，保留原有权限、冲突、幂等及下游保护。
+
+### 本机迁移后的运行与备份（2026-10-12）
+
+本机私密 `local-data/system-control.py` 串行协调 MySQL、应用和备份，文件锁防止重复启停；正常停止应用后备份，再正常停止 MySQL。备份只允许根 `.env` 与本地正式凭据一致且 host 为 loopback，拒绝连接云库。MySQL 8.4 dump 使用一致性事务；归档前后比较所有表内容指纹、附件集合和哈希，发生并发修改会重试，不能发布不一致快照。ZIP 校验 CRC、路径、成员集合、大小、SHA-256 和 SQL 完成标记，不自动清理旧归档。
+
+MySQL 启动工具会检查残留的 PID、socket 和 socket lock：拒绝符号链接、无效 PID、仍存活的记录进程、运行中的 mysqld 及活跃或状态不明的端点；确认均已失效时，将这些运行标记移动到 `local-data/private/stale-mysql-runtime/` 保留后启动。不会删除或重建数据库数据目录。该修复覆盖异常退出后残留状态文件阻断下次启动的情况。
+
+`cloud-backup.py` 使用 AES-256-GCM 和随机 nonce，上传前实际解密并核对主归档哈希及全部成员。密钥在内置盘独立私密目录，不包含在归档；密文暂存于内置盘 `~/FirstTryEncryptedBackups/cloud-ready/`，供极空间客户端单向自动上传至用户指定目录。禁用本地删除联动远端删除，排除隐藏临时文件。每次备份生成新文件，不覆盖历史密文。必须区分本机加密就绪、上传完成和远端回下载校验；本地指针不证明远端成功。Codex 每日任务不启动用户已停止的服务，也不执行迁移或修复业务数据。
+
 ### 订单按刊期起投（2026-09-22）
 
 - 迁移 `c9e1f3a5b7d0` 为 `order_items` 增加可空 `coverage_start_mode`（month/issue/date）和 `coverage_start_issue`。不回填历史行，不修改历史日期或金额；降级只删除新增字段。
@@ -2406,3 +2429,17 @@ python -m scripts.backup --verify /path/to/offsite-backups/zgjyb_YYYYMMDD_HHMMSS
 - `POST /api/orders/coverage-preview` 接收实际起止日期，返回 `first_issue`、`last_issue`、`expected_issue_count`、`schedule_incomplete`，不修改任何订单。刊期表不完整仅影响预览提示，不截短合同日期。
 - `PUT /api/orders/{id}` 可传 `items_update`（结构同明细更新端点），基础资料、明细和事件流在同一事务中提交。`PUT /api/orders/{id}/items` 支持草稿；已生效订单仍要求 `effective_from_issue`。草稿保留初始 allocation；已生效订单沿用原有版本变更、来源及转投保护。日期调整如果排除非孤立的已关联发货刊期，则 409 阻断。
 - 编辑页重新打开优先使用已存起投模式；旧数据没有模式时按实际日期回显，避免舍入。日期、模式和起投刊期变更写入 `item_modified` 事件；订单详情同步展示起投方式。
+
+### 机构渠道需求一期（2026-10-16）
+
+- Alembic `d0e2f4a6b8c1` 新增 `channel_demand_profiles / channel_demands / channel_demand_lines / channel_demand_attachments / channel_demand_adoptions`。升级仅按已知旧档案建立稳定 `partner_id` 映射，不改旧名称、旧报数、旧发货或金额；降级直接按依赖顺序删除新增表。机构与合同删除检查新增需求引用，未使用的机构映射可随档案删除。
+- `/api/channel-demands` 提供数据库分页列表、选项、创建／保存草稿、人工确认、更正版本、原件上传／鉴权下载、逐期追溯、年度价格，以及 `/print/{issue_id}` 预览和 `/apply` 采用。router 复用登录及 viewer 写保护，业务放在 `channel_demand_service.py`；写操作与 `operation_logs` 同事务。
+- 原件使用通用附件服务和既有渠道 OCR 解析器，内容去重；建议、警告与原文独立保留，不自动创建需求行。上传递增单据版本；确认明确提交当前版本和 `reviewed=true`，附件记录人工核对版本。更正复制原件引用，原有效单在新版本确认后才标为 superseded。跨期更正允许保持锁定行的日期、数量、状态和单价完全不变，仅修改未锁定行；追溯用递归版本链查找实际采用来源，保留旧采用快照。
+- 明细依据 `publication_schedule` 校验完整分项；成都年度价格要求已提交的年度刊期确认记录且数量一致，保存价格与刊期指纹，确认再验证。整数数量区分 null / 0 / 明确不订。单据乐观版本与 MySQL 当前读行锁保护保存、确认和重复基础需求；价格及正式刊期变化返回 409，不猜测。
+- 印数预览按渠道／分项聚合有效需求并保留来源版本，指纹同时覆盖当前报数、需求、旧来源冲突与锁定状态。采用在锁定刊期后重新当前读校验，原子替换项目并记录来源快照、采用请求 token；重复相同请求返回当前采用结果，不累加、不重复审计。报数确认同时验证待定项、需求版本和数量偏移；原始来源反向写入也检查采用记录，阻止双重贡献。
+- 前端 `/orders/channel-demands[/new|/:id]` 懒加载，入口在订单管理。复用 Ant Design、主题变量和 TanStack Query；写入失效需求域，采用还刷新报数、刊期、总览与追溯。印数预览先保存当前编辑，采用后同步编辑态和自动保存引用，防止旧本地数值回写。
+- 第一阶段只记录需求与印数引用，不生成销售订单、履约目标、发货、结算、收款或发票。旧来源到新需求的切换必须单独核对，不能绕过冲突保护。
+
+验证边界：已在独立临时 MySQL 完成空库完整 `alembic upgrade head`、新增迁移 downgrade／upgrade，以及使用 ORM 合成库验证过期快照重复确认与印数采用。完整历史迁移虽能执行，但空库 `issues` 缺少当前 ORM 的 `page_count` 列，这是本次检查发现的既有迁移缺口；开发隔离验证阶段未连接或修复正式库。新安装仍需在单独任务补齐这项历史 schema 差异，不能把迁移命令成功等同于全库与 ORM 一致。
+
+2026-10-16 经用户授权，机构渠道需求一期已部署至本机正式系统，正式库从 `c9e1f3a5b7d0` 升至 `d0e2f4a6b8c1`；升级前核实正式库已有 `issues.page_count`，本次无需修复该字段。升级前后备份、原有业务表与附件一致性及正式只读接口／页面验证见 [实施记录](channel-demand-progress.md#本机正式部署2026-10-16用户授权后)。

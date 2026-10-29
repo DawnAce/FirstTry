@@ -40,6 +40,7 @@ from app.schemas.order import (
 )
 from app.services.address_service import normalize_address
 from app.services.order_event_logger import log_event
+from app.services.order_delivery_policy import managed_target_ids, target_channel
 
 
 SYNC_FIELDS = (
@@ -98,7 +99,8 @@ def preview_order_shipping_sync(
             message="目标期号为休刊期，不生成发货明细",
         )
 
-    candidates, skipped = _build_candidates(order, issue_number, issue.publish_date)
+    candidates, skipped = _build_candidates(order, issue_number, issue.publish_date,
+        managed_target_ids(db, [item.id for item in order.items]))
     items: list[OrderShippingSyncItem] = skipped[:]
     summary = OrderShippingSyncSummary(skipped=len(skipped))
 
@@ -274,6 +276,7 @@ def _build_candidates(
     order: Order,
     issue_number: int,
     publish_date: date,
+    managed: set[int] | None = None,
 ) -> tuple[list[SyncCandidate], list[OrderShippingSyncItem]]:
     candidates: list[SyncCandidate] = []
     skipped: list[OrderShippingSyncItem] = []
@@ -306,7 +309,7 @@ def _build_candidates(
             if target.status != TargetStatus.active:
                 skipped.append(_skip_item(order.id, item.id, target.id, "履约目标非 active"))
                 continue
-            if target.shipping_channel != ShippingChannel.zto_outsource:
+            if target_channel(item, target, managed or set()) != ShippingChannel.zto_outsource:
                 skipped.append(_skip_item(order.id, item.id, target.id, "非中通外包目标"))
                 continue
             if not _target_applies_to_issue(target, issue_number):

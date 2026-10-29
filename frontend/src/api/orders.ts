@@ -216,6 +216,8 @@ export interface FulfillmentTargetOut {
   status: TargetStatus;
   replaced_by_target_id?: number | null;
   source_delivery_managed?: boolean;
+  resolved_shipping_channel?: ShippingChannel | null;
+  delivery_warning?: string | null;
   notes: string | null;
 }
 
@@ -239,6 +241,7 @@ export interface FulfillmentProgress {
 }
 
 export interface OrderItemOut {
+  delivery_segments?: { target_id: number; shipping_channel: ShippingChannel; from_issue: number; until_issue: number; start_date: string; end_date: string }[];
   id: number;
   publication: Publication;
   publication_format: PublicationFormat;

@@ -13,6 +13,8 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import (
     ChannelSettlement,
+    ChannelDemand,
+    ChannelDemandProfile,
     Contract,
     FulfillmentTarget,
     Partner,
@@ -115,8 +117,11 @@ def delete_partner(
         .filter(PostalComplaint.routed_unit_id == partner_id)
         .count()
     )
-    if contract_count or settlement_count or target_count or delivery_count or complaint_count:
+    demand_count = db.query(ChannelDemand).filter(ChannelDemand.partner_id == partner_id).count()
+    if contract_count or settlement_count or target_count or delivery_count or complaint_count or demand_count:
         parts = []
+        if demand_count:
+            parts.append(f"{demand_count} 份机构渠道需求")
         if contract_count:
             parts.append(f"{contract_count} 份合同")
         if settlement_count:
@@ -131,5 +136,6 @@ def delete_partner(
             status_code=409,
             detail=f"该渠道下还有 {' / '.join(parts)}，不能删除（可改为「停用」）",
         )
+    db.query(ChannelDemandProfile).filter(ChannelDemandProfile.partner_id == partner_id).delete(synchronize_session=False)
     db.delete(partner)
     db.commit()

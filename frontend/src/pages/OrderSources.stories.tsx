@@ -80,7 +80,7 @@ export const LinkSubscription: Story = {
     await userEvent.type(body.getByRole('textbox', { name: '关联原因' }), '已核对合成收件资料');
     await userEvent.click(body.getByRole('button', { name: '预览关联' }));
     await userEvent.click(await body.findByRole('button', { name: '确认保存关联' }));
-    await waitFor(() => expect(body.getByText('关联已保存，投递安排需另行确认')).toBeVisible());
+    await waitFor(() => expect(body.getByText('运费关联与已确认的投递安排已保存')).toBeVisible());
   },
 };
 

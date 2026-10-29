@@ -61,7 +61,7 @@ export default function LogisticsOverview() {
   const planPending = scopeRows.filter((row) => !['已就绪', '未创建'].includes(row.plan_status)).length;
   const actualComplete = scopeRows.filter((row) => row.waybill_status === '已完成').length;
   const actualPending = scopeRows.filter((row) => ['待上传', '部分完成', '需核对'].includes(row.waybill_status)).length;
-  const pct = (v: number) => (kpi.total > 0 ? `占本年 ${Math.round((v / kpi.total) * 1000) / 10}%` : '—');
+  const pct = (v: number) => (kpi.total > 0 ? `占本年已到出版日期期数 ${Math.round((v / kpi.total) * 1000) / 10}%` : '—');
 
   const goDetail = (row: PeriodRow) => {
     if (row.issue_id != null) navigate(`/logistics/issues/${row.issue_id}`);

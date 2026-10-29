@@ -20,17 +20,19 @@ from app.schemas.order_source import SourceDeliveryIn, SourceDeliveryUndoIn
 from app.services.order_source_service import get_source, bump_version, source_event, target_version, _sql_normalize, normalize
 from app.services.order_source_finance_service import finance_state
 from app.services.order_event_logger import log_event
+from app.services.order_delivery_policy import managed_target_ids, target_channel
 
 
 def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, default=str, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def _load(db: Session, source_id: int, link_id: int, version: int | None = None, lock: bool = False) -> tuple[OrderSource, OrderSourceLink, Order, OrderItem, FulfillmentTarget, FulfillmentAllocation]:
+def _load(db: Session, source_id: int, link_id: int, version: int | None = None, lock: bool = False,
+          proposed_link: OrderSourceLink | None = None) -> tuple[OrderSource, OrderSourceLink, Order, OrderItem, FulfillmentTarget, FulfillmentAllocation]:
     source = get_source(db, source_id, version, lock=lock)
     def current(query):
         return (query.with_for_update() if lock else query).populate_existing()
-    link = current(db.query(OrderSourceLink).filter_by(id=link_id, source_id=source_id, active=1)).first()
+    link = proposed_link if proposed_link is not None else current(db.query(OrderSourceLink).filter_by(id=link_id, source_id=source_id, active=1)).first()
     if source.kind != "shipping_fee" or link is None or link.target_id is None:
         raise HTTPException(409, "请先将运费关联到具体订阅收件目标")
     order = db.query(Order).filter_by(id=link.order_id).populate_existing()
@@ -62,11 +64,16 @@ def _load(db: Session, source_id: int, link_id: int, version: int | None = None,
 
 
 def _channel(db: Session, item: OrderItem, target: FulfillmentTarget) -> str:
-    managed = db.query(OrderSourceDeliveryChange.id).filter(OrderSourceDeliveryChange.status == "applied", or_(
-        OrderSourceDeliveryChange.from_target_id == target.id, OrderSourceDeliveryChange.to_target_id == target.id)).first()
-    if not managed and item.delivery_method == DeliveryMethod.post_office:
-        return "post_office"
-    return target.shipping_channel.value
+    return target_channel(item, target, managed_target_ids(db, [item.id])).value
+
+
+def first_issue(db: Session, item: OrderItem) -> PublicationSchedule:
+    first = db.query(PublicationSchedule).filter(PublicationSchedule.issue_number.isnot(None),
+        PublicationSchedule.is_suspended.is_(False), PublicationSchedule.publish_date >= item.coverage_start_date,
+        PublicationSchedule.publish_date <= item.coverage_end_date).order_by(PublicationSchedule.publish_date).first()
+    if first is None:
+        raise HTTPException(422, "订期内没有正式刊期，请先核对刊期表")
+    return first
 
 
 def options(db: Session, source_id: int, link_id: int) -> dict:
@@ -76,8 +83,10 @@ def options(db: Session, source_id: int, link_id: int) -> dict:
         PublicationSchedule.publish_date > date.today(),
         PublicationSchedule.publish_date >= item.coverage_start_date,
         PublicationSchedule.publish_date <= item.coverage_end_date).order_by(PublicationSchedule.publish_date).limit(200).all()
+    first = first_issue(db, item)
     return {"target_id": target.id, "recipient_name": target.recipient_name,
             "shipping_channel": _channel(db, item, target),
+            "full_period_issue": first.issue_number, "full_period_available": first.publish_date > date.today(),
             "issues": [{"issue_number": row.issue_number, "publish_date": row.publish_date} for row in rows]}
 
 
@@ -108,10 +117,13 @@ def _schedule(db: Session, item: OrderItem, issue_number: int, lock: bool = Fals
 def _guard_shipping(db: Session, item: OrderItem, target: FulfillmentTarget, issue_number: int, lock: bool = False) -> None:
     same_reader = (_sql_normalize(ShippingDetail.name) == normalize(target.recipient_name)) & (
         _sql_normalize(ShippingDetail.address) == normalize(target.recipient_address))
+    bound = []
+    if target.id is not None:
+        bound.append(ShippingDetail.fulfillment_target_id == target.id)
+    if item.id is not None:
+        bound.append((ShippingDetail.order_item_id == item.id) & same_reader)
     query = db.query(ShippingDetail.id).filter(ShippingDetail.issue_number >= issue_number,
-        or_(ShippingDetail.fulfillment_target_id == target.id,
-            (ShippingDetail.order_item_id == item.id) & same_reader,
-            ShippingDetail.order_id.is_(None) & same_reader))
+        or_(*bound, ShippingDetail.order_id.is_(None) & same_reader))
     row = (query.with_for_update() if lock else query).first()
     if row:
         raise HTTPException(409, f"生效范围已有发货计划或实发记录 #{row.id}，请先在发货页面核对处理，再重新预览")
@@ -121,12 +133,15 @@ def _postal_candidates(db: Session, item: OrderItem, target: FulfillmentTarget,
                        effective_date: date, lock: bool = False) -> list[PostalDelivery]:
     exact_contact = (_sql_normalize(PostalDelivery.recipient_name) == normalize(target.recipient_name)) & (
         _sql_normalize(PostalDelivery.recipient_address) == normalize(target.recipient_address))
+    bound = []
+    if target.id is not None:
+        bound.append(PostalDelivery.fulfillment_target_id == target.id)
+    if item.id is not None:
+        bound.append((PostalDelivery.order_item_id == item.id) & exact_contact)
     query = db.query(PostalDelivery).filter(PostalDelivery.is_archived.is_(False),
         or_(PostalDelivery.coverage_end_date.is_(None), PostalDelivery.coverage_end_date >= effective_date),
         or_(PostalDelivery.coverage_start_date.is_(None), PostalDelivery.coverage_start_date <= item.coverage_end_date),
-        or_(PostalDelivery.fulfillment_target_id == target.id,
-            (PostalDelivery.order_item_id == item.id) & exact_contact,
-            PostalDelivery.order_id.is_(None) & exact_contact)).order_by(PostalDelivery.id).populate_existing()
+        or_(*bound, PostalDelivery.order_id.is_(None) & exact_contact)).order_by(PostalDelivery.id).populate_existing()
     if lock:
         query = query.with_for_update()
     rows = query.limit(101).all()
@@ -143,39 +158,45 @@ def _postal_state(row: PostalDelivery) -> dict:
             "copies": row.copies, "notes": row.notes}
 
 
-def preview(db: Session, source_id: int, data: SourceDeliveryIn, lock: bool = False) -> dict:
-    source, link, order, item, target, allocation = _load(db, source_id, data.link_id, data.version, lock)
+def preview(db: Session, source_id: int, data: SourceDeliveryIn, lock: bool = False, *,
+            context: tuple | None = None, links_override: list[OrderSourceLink] | None = None) -> dict:
+    source, link, order, item, target, allocation = context or _load(db, source_id, data.link_id, data.version, lock)
     if not data.reason.strip():
         raise HTTPException(422, "请填写转投或更正依据")
-    links = db.query(OrderSourceLink).filter_by(source_id=source_id, active=1).all()
+    links = links_override if links_override is not None else db.query(OrderSourceLink).filter_by(source_id=source_id, active=1).all()
     state = finance_state(source, links)
     if data.shipping_channel == "zto_outsource" and (
             not state["allocation_valid"] or state["refund_pending"] or link.amount - (link.refund_amount or 0) <= 0 or not state["net_amount"]
-            or state["net_amount"] < 0 or source.commercial_status in {"refunded", "cancelled", "pending_payment"}):
+            or state["net_amount"] < 0 or source.commercial_status not in {"paid", "shipped", "partial_refund"}):
         raise HTTPException(409, "运费已退、未付款或金额待核，请先核对费用；退款记录可继续留档")
     if _channel(db, item, target) == data.shipping_channel:
         raise HTTPException(409, "当前目标已使用该投递方式，无需重复转换")
     schedule = _schedule(db, item, data.effective_from_issue, lock)
-    if target.effective_from_issue is not None and data.effective_from_issue <= target.effective_from_issue:
+    if data.scope == "full_period" and schedule.issue_number != first_issue(db, item).issue_number:
+        raise HTTPException(422, "全订期中通必须从订期内首个正式刊期开始")
+    if target.effective_from_issue is not None and (data.effective_from_issue < target.effective_from_issue
+            or (data.effective_from_issue == target.effective_from_issue and data.scope != "full_period")):
         raise HTTPException(409, "更正应从当前安排之后的刊期生效；尚未执行的安排可使用撤回")
     if target.effective_until_issue is not None and data.effective_from_issue > target.effective_until_issue:
         raise HTTPException(409, "生效期超出当前收件目标范围")
     _guard_shipping(db, item, target, data.effective_from_issue, lock)
     postal = _postal_candidates(db, item, target, schedule.publish_date, lock)
     selected = set(data.postal_delivery_ids)
-    required = {row.id for row in postal if row.fulfillment_target_id == target.id}
+    required = {row.id for row in postal if target.id is not None and row.fulfillment_target_id == target.id}
     if not selected.issubset({row.id for row in postal}):
         raise HTTPException(409, "邮局记录已变化，请重新预览选择")
     selected |= required
     if data.shipping_channel == "post_office" and postal:
         raise HTTPException(409, "覆盖范围存在疑似邮局投递记录，请先核对台账，避免重复起投")
     for row in postal:
-        if row.id in selected and (row.coverage_start_date is None or row.coverage_start_date >= schedule.publish_date):
-            raise HTTPException(409, f"邮局记录 #{row.id} 尚未开始或缺少起投日，请先撤销未执行名单或补齐记录，再转投")
+        if row.id in selected and row.coverage_start_date is None:
+            raise HTTPException(409, f"邮局记录 #{row.id} 缺少起投日，请先补齐记录，再转投")
     evidence = {"version": source.lock_version, "target": target_version(order, item, target),
                 "allocation": [allocation.id, allocation.version_no, allocation.effective_from_issue, allocation.effective_until_issue],
-                "link": [link.id, link.target_id, link.delivery_from_issue], "issue": [schedule.id, schedule.issue_number, schedule.publish_date],
-                "postal": [_postal_state(row) for row in postal], "selected": sorted(selected), "channel": data.shipping_channel}
+                "link": [link.id, link.target_id, link.delivery_from_issue, link.amount, link.refund_amount],
+                "allocations": [(row.target_id, row.amount, row.refund_amount) for row in links],
+                "issue": [schedule.id, schedule.issue_number, schedule.publish_date],
+                "postal": [_postal_state(row) for row in postal], "selected": sorted(selected), "channel": data.shipping_channel, "scope": data.scope}
     return {"expected_state": _digest(evidence), "effective_date": schedule.publish_date,
             "postal_until_date": schedule.publish_date - timedelta(days=1), "order_id": order.id,
             "target_id": target.id, "recipient_name": target.recipient_name,
@@ -199,11 +220,19 @@ def apply(db: Session, source_id: int, data: SourceDeliveryIn, operator_id: int 
              "link_target_id": link.target_id, "link_delivery_from": link.delivery_from_issue, "postal": []}
     selected = [row["id"] for row in result["postal_records"] if row["selected"]]
     for row in db.query(PostalDelivery).filter(PostalDelivery.id.in_(selected)).all():
-        prior["postal"].append({"id": row.id, "end": row.coverage_end_date.isoformat() if row.coverage_end_date else None})
-        row.coverage_end_date = result["postal_until_date"]
+        prior["postal"].append({"id": row.id, "end": row.coverage_end_date.isoformat() if row.coverage_end_date else None,
+                                "archived": row.is_archived})
+        if row.coverage_start_date >= result["effective_date"]:
+            row.is_archived = True
+        else:
+            row.coverage_end_date = result["postal_until_date"]
     prior["target_channel"] = target.shipping_channel.value
     target.shipping_channel = ShippingChannel(result["from_channel"])
-    target.effective_until_issue = data.effective_from_issue - 1
+    previous_issue = db.query(PublicationSchedule).filter(
+        PublicationSchedule.issue_number.isnot(None), PublicationSchedule.is_suspended.is_(False),
+        PublicationSchedule.publish_date >= item.coverage_start_date,
+        PublicationSchedule.publish_date < result["effective_date"]).order_by(PublicationSchedule.publish_date.desc()).first()
+    target.effective_until_issue = previous_issue.issue_number if previous_issue else data.effective_from_issue - 1
     new = FulfillmentTarget(order_item_id=item.id, allocation_id=allocation.id,
         recipient_name=target.recipient_name, recipient_phone=target.recipient_phone,
         recipient_address=target.recipient_address, recipient_postal_code=target.recipient_postal_code,
@@ -242,7 +271,7 @@ def apply(db: Session, source_id: int, data: SourceDeliveryIn, operator_id: int 
     change.previous_state = json.loads(json.dumps(prior, default=str))
     payload = {"change_id": change.id, "source_id": source_id, "from_target_id": target.id,
                "to_target_id": new.id, "from_channel": result["from_channel"], "to_channel": result["to_channel"],
-               "effective_from_issue": data.effective_from_issue, "reason": data.reason.strip(), "postal_confirmed": True}
+               "effective_from_issue": data.effective_from_issue, "scope": data.scope, "reason": data.reason.strip(), "postal_confirmed": True}
     source_event(db, source, "delivery_applied", payload, operator_id)
     log_event(db, order.id, OrderEventType.allocation_updated, payload=payload, operator_id=operator_id)
     db.flush()
@@ -287,7 +316,10 @@ def undo(db: Session, source_id: int, data: SourceDeliveryUndoIn, operator_id: i
         link.target_id = change.previous_state["link_target_id"]
         link.delivery_from_issue = change.previous_state["link_delivery_from"]
         for state in change.previous_state["postal"]:
-            db.get(PostalDelivery, state["id"]).coverage_end_date = date.fromisoformat(state["end"]) if state["end"] else None
+            row = db.get(PostalDelivery, state["id"])
+            row.coverage_end_date = date.fromisoformat(state["end"]) if state["end"] else None
+            if "archived" in state:
+                row.is_archived = state["archived"]
         if change.previous_state.get("created_postal_id"):
             db.get(PostalDelivery, change.previous_state["created_postal_id"]).is_archived = True
         change.status = "reverted"

@@ -101,7 +101,6 @@ import {
   canVoidOrder,
   commercialStatusColor,
   commercialStatusLabel,
-  deliveryMethodLabel,
   entryMethodLabel,
   eventTypeLabel,
   fulfillmentTypeLabel,
@@ -116,11 +115,10 @@ import {
 import './OrderManagement.css';
 import OrderSources from './OrderSources';
 import SourceFinancialSummary from './SourceFinancialSummary';
+import { targetDeliveryLabel, itemDeliveryLabel, allocationDisplayTargets } from './orderDeliveryDisplay';
 
 const { Text } = Typography;
 const isSourceDeliveryTarget = (target: FulfillmentTargetOut) => !!target.source_delivery_managed;
-const targetDeliveryLabel = (item: OrderItemOut, target: FulfillmentTargetOut) => isSourceDeliveryTarget(target)
-  ? target.shipping_channel === 'post_office' ? '邮局投递' : '中通快递' : deliveryMethodLabel(item.delivery_method);
 const onlyPostal = (items: OrderItemOut[]) => items.length > 0 && items.every(item => item.delivery_method === 'post_office'
   && !item.allocations.some(allocation => allocation.targets.some(target => isSourceDeliveryTarget(target) && target.status === 'active' && target.shipping_channel === 'zto_outsource')));
 
@@ -897,7 +895,7 @@ function computeOrderProgress(items: OrderItemOut[]) {
   const synced = items.reduce((sum, item) => sum + item.progress.synced_count, 0);
   const fulfilled = items.reduce((sum, item) => sum + item.progress.shipped_count, 0);
   const postalOnly = onlyPostal(items);
-  const deliveryLabels = [...new Set(items.map((item) => deliveryMethodLabel(item.delivery_method)).filter((label) => label !== '-'))];
+  const deliveryLabels = [...new Set(items.map(itemDeliveryLabel).filter((label) => label !== '-'))];
   return {
     expected,
     synced,
@@ -984,7 +982,7 @@ function ItemCard({
       ?? [...item.allocations].sort((a, b) => b.version_no - a.version_no)[0],
     [item.allocations],
   );
-  const targets = activeAllocation?.targets ?? [];
+  const targets = allocationDisplayTargets(item, activeAllocation);
 
   const subtotal = useMemo(
     () => Number(item.subtotal) || Number(item.unit_price) * item.total_quantity,
@@ -1023,7 +1021,7 @@ function ItemCard({
       )}
       <div className="order-detail-item-facts">
         <div><span>覆盖期</span><strong>{formatCoverage(item.coverage_start_date, item.coverage_end_date)}</strong></div>
-        <div><span>投递方式</span><strong>{deliveryMethodLabel(item.delivery_method)}</strong></div>
+        <div><span>投递方式</span><strong>{itemDeliveryLabel(item)}</strong></div>
         <div><span>{item.coverage_start_mode === 'issue' ? '起投刊期' : '起投方式'}</span><strong>{item.coverage_start_mode === 'issue'
           ? `第 ${item.coverage_start_issue} 期` : item.coverage_start_mode === 'date' ? '按实际日期' : item.term_start_month ?? '按已有覆盖日期'}</strong></div>
         <div><span>每期总份数</span><strong>{item.total_quantity} 份</strong></div>
@@ -1161,9 +1159,9 @@ function FulfillmentDossierTab({
       .filter((candidate) => candidate.effective_until_issue == null)
       .sort((a, b) => b.version_no - a.version_no)[0]
       ?? [...item.allocations].sort((a, b) => b.version_no - a.version_no)[0];
-    return (allocation?.targets ?? []).map((target) => {
-      const delivery = deliveries.find((row) => row.fulfillment_target_id === target.id)
-        ?? deliveries.find((row) => row.order_item_id === item.id && row.recipient_name === target.recipient_name);
+    return allocationDisplayTargets(item, allocation).map((target) => {
+      const delivery = targetDeliveryLabel(item, target) === '邮局投递' ? deliveries.find((row) => row.fulfillment_target_id === target.id)
+        ?? deliveries.find((row) => row.order_item_id === item.id && row.recipient_name === target.recipient_name) : undefined;
       const targetAddressTickets = delivery
         ? addressTickets.filter((ticket) => ticket.postal_delivery_id === delivery.id)
         : [];
@@ -1222,7 +1220,7 @@ function FulfillmentDossierTab({
                 </div>
                 <div>
                   <span>{delivery ? '邮局投递' : '投递方式'}</span>
-                  <strong>{delivery ? `${delivery.year}-${delivery.delivery_no}` : deliveryMethodLabel(item.delivery_method)}</strong>
+                  <strong>{delivery ? `${delivery.year}-${delivery.delivery_no}` : targetDeliveryLabel(item, target)}</strong>
                   <small>每期 {delivery?.copies ?? target.quantity} 份</small>
                 </div>
               </div>
@@ -1672,6 +1670,8 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
           const allocations = [...item.allocations].sort((a, b) => b.version_no - a.version_no);
           return allocations.map((allocation, allocationIndex) => {
             const current = allocationIndex === 0;
+            const targets = current ? allocationDisplayTargets(item, allocation) : allocation.targets;
+            const readers = new Set(targets.map(target => `${target.recipient_name}|${target.recipient_phone}|${target.recipient_address}`)).size;
             return (
               <article className={`order-detail-work-ticket ${current ? 'is-green' : 'is-muted'}`} key={`${item.id}-${allocation.id}`}>
                 <div className="order-detail-ticket-head">
@@ -1684,22 +1684,23 @@ function AllocationsTab({ items }: { items: OrderItemOut[] }) {
 
                 <div className="order-detail-plan-facts">
                   <div><span>生效范围</span><strong>{allocationEffectiveRange(allocation)}</strong></div>
-                  <div><span>履约目标</span><strong>{allocation.targets.length} 位收报人</strong></div>
+                  <div><span>履约目标</span><strong>{readers} 位收报人</strong></div>
                   <div><span>变更原因</span><strong>{allocationReasonLabel(allocation.change_reason)}</strong></div>
                   <div><span>创建时间</span><strong>{formatOrderTimestamp(allocation.created_at)}</strong></div>
                 </div>
 
                 <div className="order-detail-subsection-title">
-                  <span><UserOutlined />履约目标</span><small>共 {allocation.targets.length} 位</small>
+                  <span><UserOutlined />履约目标</span><small>共 {readers} 位</small>
                 </div>
                 <div className="order-detail-plan-targets">
-                  {allocation.targets.map((target) => (
+                  {targets.map((target) => (
                     <div className="order-detail-plan-target" key={target.id}>
                       <span className="order-detail-target-avatar">{target.recipient_name.slice(0, 1)}</span>
                       <div className="order-detail-plan-target-main">
                         <small>收报人 / 联系电话</small>
                         <strong>{target.recipient_name} · {target.recipient_phone || '未记录电话'}</strong>
                         <p>{target.recipient_address || '未记录投递地址'}</p>
+                        {target.delivery_warning && <small>{target.delivery_warning}</small>}
                       </div>
                       <div className="order-detail-delivery-config">
                         <span>{targetDeliveryLabel(item, target) === '邮局投递' ? <MailOutlined /> : <TruckOutlined />}</span>

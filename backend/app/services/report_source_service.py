@@ -563,6 +563,8 @@ def _apply_print_totals_to_issue(
     for key, total in totals.items():
         if keys is not None and key not in keys:
             continue
+        from app.services.channel_demand_service import assert_no_demand_adoption
+        assert_no_demand_adoption(db, issue.issue_number, key[0], key[1])
         entry = entries.get(key)
         if entry is not None:
             entry.value = total
@@ -631,6 +633,9 @@ def confirm_document(
             source_action = "archive_only"
             applied_phase = "post_confirmation"
 
+        if item_kind == "base":
+            from app.services.channel_demand_service import assert_no_demand_adoption
+            assert_no_demand_adoption(db, item.issue_number, item.category, item.sub_category)
         key = (item.issue_number, item_kind, item.category, item.sub_category, document.channel)
         if key in seen:
             raise HTTPException(status_code=400, detail="同一来源文件存在重复刊期映射")
