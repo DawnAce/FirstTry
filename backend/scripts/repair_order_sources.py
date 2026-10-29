@@ -22,6 +22,8 @@ def main() -> int:
     mode.add_argument('--apply', type=Path, help='执行人工核对并修改 resolutions 后的预览文件')
     parser.add_argument('--operator', help='管理员用户名')
     parser.add_argument('--reason', help='明确的核对与修复原因')
+    parser.add_argument('--order-id', type=int, action='append', dest='order_ids',
+                        help='仅预览指定订单的来源身份；可重复，自动包含同身份全部订单和原件')
     args = parser.parse_args()
     try:
         if args.preview:
@@ -34,7 +36,7 @@ def main() -> int:
                     connection.exec_driver_sql('SET TRANSACTION READ ONLY')
                     connection.exec_driver_sql('START TRANSACTION WITH CONSISTENT SNAPSHOT')
                 with Session(bind=connection, autoflush=False) as db:
-                    plan = preview_repair(db)
+                    plan = preview_repair(db, order_ids=args.order_ids)
                     db.rollback()
                 connection.rollback()
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -49,6 +51,8 @@ def main() -> int:
                               'duplicate_groups': len(plan['duplicate_groups']),
                               'source_conflicts': len(plan['source_identity_conflicts'])}, ensure_ascii=False))
         else:
+            if args.order_ids:
+                parser.error('--order-id 只能用于生成预览；执行范围取自已核对的预览文件')
             if not args.operator or not args.reason:
                 parser.error('--apply 必须同时指定 --operator 和 --reason')
             plan = json.loads(args.apply.read_text())

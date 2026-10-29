@@ -118,3 +118,74 @@ def test_preview_omits_personal_data_and_does_not_flush(db):
     assert manual in db.dirty
     text = json.dumps(plan, ensure_ascii=False)
     assert '合成订户' not in text and '00000000000' not in text and 'SYNTHETIC-IDENTITY' not in text
+
+
+def test_scoped_repair_leaves_other_identities_and_duplicates_untouched(db):
+    manual, duplicate, source, admin = setup_pair(db)
+    outside = Order(order_date=manual.order_date, external_order_no='SYNTHETIC-OTHER',
+                    source_platform='CBJ小程序', entry_method=manual.entry_method,
+                    payer_name='合成其他订户', status=OrderStatus.active)
+    outside_duplicate = Order(order_date=manual.order_date, external_order_no='SYNTHETIC-OTHER',
+                              source_platform='微信小程序', source_store='CBJ+',
+                              entry_method=manual.entry_method, payer_name='合成其他订户',
+                              status=OrderStatus.active)
+    outside_source = OrderSource(platform='CBJ小程序', store='', external_order_no='SYNTHETIC-OTHER',
+                                 kind='subscription', paid_amount=100)
+    db.add_all([outside, outside_duplicate, outside_source])
+    db.commit()
+    plan = approve(preview_repair(db, order_ids=[manual.id]), manual, duplicate)
+    assert plan['scope_order_ids'] == [manual.id]
+    assert len(plan['duplicate_groups']) == 1
+    assert {row['id'] for row in plan['normalizations']['orders']} == {duplicate.id}
+    assert {row['id'] for row in plan['normalizations']['sources']} == {source.id}
+    outside.notes = '其他身份在预览后正常更新'
+    db.commit()
+    result = apply_repair(db, plan, operator_id=admin.id, reason='合成限定范围修复')
+    assert result['voided_orders'] == 1 and result['moved_source_links'] == 1
+    assert outside.status == outside_duplicate.status == OrderStatus.active
+    assert outside.source_platform == outside_source.platform == 'CBJ小程序'
+    assert outside_source.store == ''
+    assert duplicate.status == OrderStatus.void
+
+
+def test_scoped_repair_detects_a_new_duplicate_after_preview(db):
+    manual, duplicate, source, admin = setup_pair(db)
+    plan = approve(preview_repair(db, order_ids=[manual.id, duplicate.id]), manual, duplicate)
+    third = order(db, 'CBJ+小程序', None)
+    with pytest.raises(HTTPException) as exc:
+        apply_repair(db, plan, operator_id=admin.id, reason='合成并发重复校验')
+    assert exc.value.status_code == 409
+    assert duplicate.status == third.status == OrderStatus.active
+    assert source.platform == 'CBJ小程序'
+
+
+def test_scoped_preview_includes_all_orders_of_the_selected_identity(db):
+    manual, duplicate, _, admin = setup_pair(db)
+    third = order(db, 'CBJ+小程序', None)
+    plan = approve(preview_repair(db, order_ids=[manual.id]), manual, duplicate)
+    assert {row['order_id'] for row in plan['duplicate_groups'][0]['orders']} == {
+        manual.id, duplicate.id, third.id}
+    with pytest.raises(HTTPException):
+        apply_repair(db, plan, operator_id=admin.id, reason='合成遗漏同源订单校验')
+    assert duplicate.status == third.status == OrderStatus.active
+
+
+@pytest.mark.parametrize('order_ids', [[], [0], [True], ['1'], [999999]])
+def test_scoped_preview_rejects_invalid_or_missing_orders(db, order_ids):
+    setup_pair(db)
+    with pytest.raises(HTTPException) as exc:
+        preview_repair(db, order_ids=order_ids)
+    assert exc.value.status_code == 422
+
+
+def test_scoped_repair_preserves_downstream_protection(db):
+    from app.models import PostalDelivery
+    manual, duplicate, source, admin = setup_pair(db)
+    db.add(PostalDelivery(order_id=duplicate.id, year=2026, delivery_no='SYNTHETIC-SCOPE',
+                         recipient_name='合成订户', recipient_address='合成路', copies=1))
+    db.commit()
+    plan = approve(preview_repair(db, order_ids=[manual.id]), manual, duplicate)
+    with pytest.raises(HTTPException) as exc:
+        apply_repair(db, plan, operator_id=admin.id, reason='合成限定范围下游保护')
+    assert exc.value.status_code == 409
+    assert source.platform == 'CBJ小程序' and duplicate.status == OrderStatus.active
